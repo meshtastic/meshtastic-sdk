@@ -1,0 +1,160 @@
+-- Meshtastic — open source mesh radio
+-- Copyright © 2024-2026 Meshtastic LLC
+--
+-- Licensed under the GPL-3.0-or-later license (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.html)
+-- SPDX-License-Identifier: GPL-3.0-or-later
+--
+-- src/commonMain/sqldelight/org/meshtastic/kmp/storage/sqldelight/Mesh.sq
+--
+-- SQLDelight schema for the Meshtastic-KMP MVP storage backend.
+-- Exposed via DeviceStorage; one logical database per TransportIdentity
+-- (see ADR-005). For the PSK column we store ciphertext only — the consumer's
+-- chosen `KeyVault` (Builder.keyVault(...)) wraps the raw bytes before insert.
+--
+-- Schema version: 3
+-- Migration policy: every breaking change increments version, ships a
+-- migration_<N>__<N+1>.sqm under databases/MeshDatabase/, and is verified by
+-- `verifyMigrations = true` in the SQLDelight DSL.
+
+-- ============================================================================
+-- nodes
+-- ============================================================================
+CREATE TABLE nodes (
+    node_num           INTEGER PRIMARY KEY NOT NULL,         -- NodeNum (uint32)
+    user_id            TEXT,                                  -- '!a1b2c3d4'
+    long_name          TEXT,
+    short_name         TEXT,
+    hw_model           INTEGER,
+    is_licensed        INTEGER NOT NULL DEFAULT 0,            -- bool
+    role               INTEGER,                                -- Config.DeviceConfig.Role
+    public_key         BLOB,                                   -- curve25519 pubkey for PKI DM
+    last_heard_epoch   INTEGER,                                -- UNIX seconds (from NodeInfo proto)
+    snr                REAL,
+    rssi               INTEGER,
+    hops_away          INTEGER,
+    via_mqtt           INTEGER NOT NULL DEFAULT 0,
+    is_self            INTEGER NOT NULL DEFAULT 0,
+    raw_node_info      BLOB,                                   -- last seen NodeInfo proto bytes; escape hatch
+    last_heartbeat_at  INTEGER                                 -- P1-6: engine-observed activity epoch ms (nullable)
+);
+
+CREATE INDEX nodes_last_heard_idx ON nodes(last_heard_epoch);
+
+-- Upsert a node row. The `last_heartbeat_at` column is preserved from any
+-- existing row via a SELECT lookup so engine heartbeat bookkeeping (see
+-- upsertHeartbeat below) is not clobbered by NodeInfo refreshes.
+upsertNode:
+INSERT OR REPLACE INTO nodes(node_num, user_id, long_name, short_name, hw_model, is_licensed,
+                  role, public_key, last_heard_epoch, snr, rssi, hops_away, via_mqtt, is_self,
+                  raw_node_info, last_heartbeat_at)
+VALUES (:node_num, :user_id, :long_name, :short_name, :hw_model, :is_licensed,
+        :role, :public_key, :last_heard_epoch, :snr, :rssi, :hops_away, :via_mqtt, :is_self,
+        :raw_node_info,
+        (SELECT last_heartbeat_at FROM nodes WHERE node_num = :node_num));
+
+selectAllNodes:
+SELECT * FROM nodes ORDER BY last_heard_epoch DESC;
+
+selectNode:
+SELECT * FROM nodes WHERE node_num = ?;
+
+selectSelfNode:
+SELECT * FROM nodes WHERE is_self = 1 LIMIT 1;
+
+deleteAllNodes:
+DELETE FROM nodes;
+
+deleteNode:
+DELETE FROM nodes WHERE node_num = ?;
+
+-- P1-6: heartbeat persistence.
+-- Engine updates this column independently of the NodeInfo proto on every frame
+-- observed from a node, so presence (last-heard-heartbeat) survives process death.
+-- SQLite 3.18 lacks `ON CONFLICT DO UPDATE`; we emulate via INSERT OR IGNORE
+-- (to seed the row if it doesn't exist) plus a conditional UPDATE.
+upsertHeartbeat {
+    INSERT OR IGNORE INTO nodes(node_num, last_heartbeat_at) VALUES (:node_num, :last_heartbeat_at);
+    UPDATE nodes SET last_heartbeat_at = :last_heartbeat_at WHERE node_num = :node_num;
+}
+
+selectAllHeartbeats:
+SELECT node_num, last_heartbeat_at FROM nodes WHERE last_heartbeat_at IS NOT NULL;
+
+-- ============================================================================
+-- channels
+-- ============================================================================
+CREATE TABLE channels (
+    idx          INTEGER PRIMARY KEY NOT NULL,              -- 0..7
+    role         INTEGER NOT NULL,                          -- Channel.Role
+    name         TEXT,
+    psk          BLOB,                                       -- ciphertext via KeyVault; may be NULL for unencrypted
+    psk_index    INTEGER,                                    -- shorthand index, see glossary
+    uplink       INTEGER NOT NULL DEFAULT 0,
+    downlink     INTEGER NOT NULL DEFAULT 0,
+    settings_raw BLOB                                        -- raw ChannelSettings proto bytes
+);
+
+upsertChannel:
+INSERT OR REPLACE INTO channels(idx, role, name, psk, psk_index, uplink, downlink, settings_raw)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+selectAllChannels:
+SELECT * FROM channels ORDER BY idx ASC;
+
+deleteAllChannels:
+DELETE FROM channels;
+
+-- ============================================================================
+-- configs (LocalConfig + LocalModuleConfig blobs, keyed by section name)
+-- ============================================================================
+CREATE TABLE configs (
+    section  TEXT PRIMARY KEY NOT NULL,                     -- 'device', 'lora', 'mqtt', etc.
+    payload  BLOB NOT NULL                                   -- raw proto bytes for that section
+);
+
+upsertConfig:
+INSERT OR REPLACE INTO configs(section, payload) VALUES (?, ?);
+
+selectConfig:
+SELECT payload FROM configs WHERE section = ?;
+
+selectAllConfigs:
+SELECT section, payload FROM configs;
+
+deleteAllConfigs:
+DELETE FROM configs;
+
+-- ============================================================================
+-- messages: removed in schema v2 (was orphaned, never wired in SqlDelightStorage)
+-- See ADR for storage rationale; message history is reserved for Phase 2+.
+-- The migration_1__2.sqm file drops this table from existing databases.
+-- ============================================================================
+
+-- ============================================================================
+-- session
+-- ============================================================================
+CREATE TABLE session (
+    key TEXT PRIMARY KEY NOT NULL,
+    value BLOB
+);
+-- Known keys: 'session_passkey', 'last_handshake_epoch', 'firmware_version',
+-- 'identity_node_num', 'identity_long_name'.
+
+upsertSession:
+INSERT OR REPLACE INTO session(key, value) VALUES (?, ?);
+
+selectSession:
+SELECT value FROM session WHERE key = ?;
+
+deleteSession:
+DELETE FROM session WHERE key = ?;
+
+-- ============================================================================
+-- one-shot wipe (used by identity rebind in DeviceStorage.clear())
+-- ============================================================================
+clearAll {
+    DELETE FROM nodes;
+    DELETE FROM channels;
+    DELETE FROM configs;
+    DELETE FROM session;
+}

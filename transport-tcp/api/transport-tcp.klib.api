@@ -1,0 +1,21 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <org.meshtastic:transport-tcp>
+final class org.meshtastic.sdk.transport.tcp/TcpTransport : org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk.transport.tcp/TcpTransport|null[0]
+    constructor <init>(kotlin/String, kotlin/Int = ...) // org.meshtastic.sdk.transport.tcp/TcpTransport.<init>|<init>(kotlin.String;kotlin.Int){}[0]
+
+    final val identity // org.meshtastic.sdk.transport.tcp/TcpTransport.identity|{}identity[0]
+        final fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk.transport.tcp/TcpTransport.identity.<get-identity>|<get-identity>(){}[0]
+    final val state // org.meshtastic.sdk.transport.tcp/TcpTransport.state|{}state[0]
+        final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk.transport.tcp/TcpTransport.state.<get-state>|<get-state>(){}[0]
+
+    final fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk.transport.tcp/TcpTransport.frames|frames(){}[0]
+    final suspend fun connect() // org.meshtastic.sdk.transport.tcp/TcpTransport.connect|connect(){}[0]
+    final suspend fun disconnect() // org.meshtastic.sdk.transport.tcp/TcpTransport.disconnect|disconnect(){}[0]
+    final suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.transport.tcp/TcpTransport.send|send(org.meshtastic.sdk.Frame){}[0]
+}

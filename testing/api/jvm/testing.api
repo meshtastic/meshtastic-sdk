@@ -1,0 +1,65 @@
+public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtastic/sdk/RadioTransport {
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/sdk/TransportIdentity;Ljava/util/List;ZI)V
+	public fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun frames ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getAutoHandshake ()Z
+	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
+	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public final fun getNodeNum ()I
+	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun injectAdminResponse (ILorg/meshtastic/proto/AdminMessage;I)V
+	public static synthetic fun injectAdminResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/AdminMessage;IILjava/lang/Object;)V
+	public final fun injectFrame (Lorg/meshtastic/sdk/Frame;)V
+	public final fun injectNeighborInfoResponse (ILorg/meshtastic/proto/NeighborInfo;I)V
+	public static synthetic fun injectNeighborInfoResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/NeighborInfo;IILjava/lang/Object;)V
+	public final fun injectRouteReply (ILorg/meshtastic/proto/RouteDiscovery;I)V
+	public static synthetic fun injectRouteReply$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/RouteDiscovery;IILjava/lang/Object;)V
+	public final fun injectRoutingAck (II)V
+	public static synthetic fun injectRoutingAck$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;IIILjava/lang/Object;)V
+	public final fun injectRoutingError (ILorg/meshtastic/proto/Routing$Error;I)V
+	public static synthetic fun injectRoutingError$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/Routing$Error;IILjava/lang/Object;)V
+	public final fun injectTelemetryResponse (ILorg/meshtastic/proto/Telemetry;I)V
+	public static synthetic fun injectTelemetryResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/Telemetry;IILjava/lang/Object;)V
+	public final fun outboundFrames ()Ljava/util/List;
+	public final fun outboundPackets ()Ljava/util/List;
+	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun simulateError (Ljava/lang/Throwable;Z)V
+	public static synthetic fun simulateError$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;Ljava/lang/Throwable;ZILjava/lang/Object;)V
+}
+
+public final class org/meshtastic/sdk/testing/InMemoryStorage : org/meshtastic/sdk/DeviceStorage {
+	public fun <init> ()V
+	public fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public fun loadChannels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveConfig (Lorg/meshtastic/sdk/ConfigBundle;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveHeartbeat-TEw7vI0 (IJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveNode (Lorg/meshtastic/proto/NodeInfo;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveSessionPasskey (Lorg/meshtastic/sdk/SessionPasskey;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/testing/InMemoryStorageProvider : org/meshtastic/sdk/StorageProvider {
+	public fun <init> ()V
+	public fun activate-153iwNM (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/testing/TestClock : kotlin/time/Clock {
+	public fun <init> ()V
+	public fun <init> (Lkotlin/time/Instant;)V
+	public synthetic fun <init> (Lkotlin/time/Instant;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun advance (Lkotlin/time/Duration;)V
+	public final fun advance-LRDsOJo (J)V
+	public fun now ()Lkotlin/time/Instant;
+	public final fun set (Lkotlin/time/Instant;)V
+}
+

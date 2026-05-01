@@ -1,0 +1,13 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <org.meshtastic:storage-sqldelight>
+final class org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider : org.meshtastic.sdk/StorageProvider { // org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider|null[0]
+    constructor <init>(kotlin/String = ...) // org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider.<init>|<init>(kotlin.String){}[0]
+
+    final suspend fun activate(org.meshtastic.sdk/TransportIdentity): org.meshtastic.sdk/DeviceStorage // org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider.activate|activate(org.meshtastic.sdk.TransportIdentity){}[0]
+}

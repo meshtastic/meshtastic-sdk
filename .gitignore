@@ -1,0 +1,12 @@
+*.hprof
+.gradle
+.gradle/
+.idea/
+.kotlin/
+build/
+com/
+local.properties
+
+# Xcode user-specific
+xcuserdata/
+.DS_Store

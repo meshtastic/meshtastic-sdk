@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    ":timezone(UTC)"
+  ],
+  "labels": ["dependencies"],
+  "schedule": ["before 6am on monday"],
+  "prHourlyLimit": 4,
+  "prConcurrentLimit": 10,
+  "rangeStrategy": "bump",
+  "configMigration": true,
+  "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] },
+  "git-submodules": {
+    "enabled": true,
+    "schedule": ["before 6am on monday"],
+    "commitMessageTopic": "proto submodule",
+    "prBodyNotes": [
+      "Bumps the vendored `meshtastic/protobufs` submodule. Review the generated API diff carefully — new `oneof` arms break exhaustive `when` for consumers; see `docs/versioning.md`."
+    ]
+  },
+  "packageRules": [
+    {
+      "matchManagers": ["gradle", "gradle-wrapper"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": false
+    },
+    {
+      "matchPackagePatterns": ["^org\\.jetbrains\\.kotlin"],
+      "groupName": "kotlin"
+    },
+    {
+      "matchPackagePatterns": ["^io\\.ktor"],
+      "groupName": "ktor"
+    },
+    {
+      "matchPackagePatterns": ["^app\\.cash\\.sqldelight"],
+      "groupName": "sqldelight"
+    },
+    {
+      "matchPackagePatterns": ["^com\\.juul\\.kable"],
+      "groupName": "kable"
+    },
+    {
+      "matchPackagePatterns": ["^com\\.squareup\\.wire"],
+      "groupName": "wire"
+    },
+    {
+      "matchPackagePatterns": ["^org\\.jetbrains\\.kotlinx"],
+      "groupName": "kotlinx"
+    }
+  ],
+  "vulnerabilityAlerts": { "enabled": true, "labels": ["security"] }
+}

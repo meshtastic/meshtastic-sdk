@@ -1,0 +1,24 @@
+public final class org/meshtastic/sdk/transport/ble/BleConstants {
+	public static final field INSTANCE Lorg/meshtastic/sdk/transport/ble/BleConstants;
+	public final fun getFROMNUM ()Lcom/juul/kable/Characteristic;
+	public final fun getFROMNUM_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getFROMRADIO ()Lcom/juul/kable/Characteristic;
+	public final fun getFROMRADIO_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getMESH_SERVICE_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getTORADIO ()Lcom/juul/kable/Characteristic;
+	public final fun getTORADIO_UUID ()Lkotlin/uuid/Uuid;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtastic/sdk/RadioTransport {
+	public fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;)V
+	public synthetic fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun frames ()Lkotlinx/coroutines/flow/Flow;
+	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
+	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun shutdown ()V
+}
+

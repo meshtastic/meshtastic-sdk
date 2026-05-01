@@ -1,0 +1,7 @@
+-- Migration from schema version 2 to version 3
+-- P1-6: adds per-node engine-observed heartbeat timestamp column so presence
+-- state (last time the engine heard any frame from a node) survives process
+-- death. Populated from in-memory state by the engine on flush; NULL for any
+-- row that predates this migration.
+
+ALTER TABLE nodes ADD COLUMN last_heartbeat_at INTEGER;

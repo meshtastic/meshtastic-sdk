@@ -1,0 +1,225 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+
+jobs:
+  test-jvm:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [ 17, 21 ]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Determine cache mode
+        id: cache_config
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "cache_read_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          java_version: ${{ matrix.java-version }}
+          cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Build and test (JVM)
+        run: ./gradlew jvmTest
+
+      - name: Lint (Spotless, detekt)
+        run: ./gradlew spotlessCheck detekt
+
+  test-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Determine cache mode
+        id: cache_config
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "cache_read_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Build Android
+        run: ./gradlew :core:compileAndroidMain :core:assembleAndroidMain
+
+  test-ios:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        ios-target: [ iosSimulatorArm64 ]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Determine cache mode
+        id: cache_config
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "cache_read_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Cache Konan
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml','gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Build & test iOS (${{ matrix.ios-target }})
+        run: ./gradlew :core:${{ matrix.ios-target }}Test
+
+      - name: Assemble Compose-app iOS framework
+        run: ./gradlew :samples:parity-app:linkReleaseFrameworkIosSimulatorArm64
+
+      - name: Compile SwiftUI iosApp shell (SKIE export gate)
+        run: |
+          xcodebuild \
+            -project samples/parity-app/iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+  api-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Check public API compatibility
+        run: ./gradlew checkKotlinAbi
+
+  arch-consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Verify architecture rules (ADR-008)
+        run: ./gradlew :core:verifyModuleBoundary detekt
+
+  full-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+
+      - name: Determine cache mode
+        id: cache_config
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "cache_read_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Run full check (gate)
+        run: ./gradlew check
+
+  publish-snapshot:
+    name: Publish snapshot to Sonatype Central
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test-jvm, test-android, test-ios, api-check, arch-consistency, full-check]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'true'
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Check publishing secrets
+        id: secrets
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+        run: |
+          if [ -z "${MAVEN_CENTRAL_USERNAME}" ]; then
+            echo "::warning::MAVEN_CENTRAL_USERNAME not configured; skipping snapshot publish."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish snapshot
+        if: steps.secrets.outputs.skip != 'true'
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
+        run: |
+          ./gradlew \
+            -Prelease.forceSnapshot \
+            publishAllPublicationsToMavenCentralRepository \
+            --no-configuration-cache

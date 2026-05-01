@@ -1,0 +1,5 @@
+-- Migration from schema version 1 to version 2
+-- Removes orphaned messages table (P0 finding: table was defined but never used)
+-- Message history is reserved for future phases (Phase 2+)
+
+DROP TABLE IF EXISTS messages;

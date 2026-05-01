@@ -1,0 +1,50 @@
+# CODEOWNERS — review routing
+#
+# Lines later in the file take precedence. Order is most-general → most-specific.
+# All paths are repo-relative. See https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners.
+#
+# TODO(scaffold): Replace @meshtastic/sdk-* placeholders with real GitHub teams once
+# they exist. For solo or pre-team phase, replace with individual @username handles.
+
+# Catch-all
+*                                                       @meshtastic/sdk-maintainers
+
+# Build & infrastructure
+/build-logic/                                           @meshtastic/sdk-maintainers @meshtastic/build-infra
+/gradle/                                                @meshtastic/sdk-maintainers @meshtastic/build-infra
+/.github/                                               @meshtastic/sdk-maintainers @meshtastic/build-infra
+/renovate.json                                          @meshtastic/build-infra
+/settings.gradle.kts                                    @meshtastic/sdk-maintainers @meshtastic/build-infra
+/build.gradle.kts                                       @meshtastic/sdk-maintainers @meshtastic/build-infra
+
+# Protocol surface — needs protocol expertise
+/proto/                                                 @meshtastic/sdk-maintainers @meshtastic/protocol
+/docs/protocol.md                                       @meshtastic/protocol
+/docs/glossary.md                                       @meshtastic/protocol
+
+# Engine + public API — single source of truth, requires API review
+/core/                                                  @meshtastic/sdk-maintainers
+/core/api/                                              @meshtastic/sdk-maintainers @meshtastic/api-stewards
+/docs/SPEC.md                                           @meshtastic/sdk-maintainers @meshtastic/api-stewards
+/docs/api-reference.md                                  @meshtastic/api-stewards
+
+# Transports — owners per stack
+/transport-ble/                                         @meshtastic/sdk-maintainers @meshtastic/transport-ble
+/transport-tcp/                                         @meshtastic/sdk-maintainers @meshtastic/transport-net
+/transport-serial/                                      @meshtastic/sdk-maintainers @meshtastic/android @meshtastic/transport-net
+
+# Storage
+/storage-sqldelight/                                    @meshtastic/sdk-maintainers @meshtastic/storage
+
+# iOS distribution
+/samples/ios-app/                                       @meshtastic/sdk-maintainers @meshtastic/ios
+/docs/decisions/007-ios-distribution.md                 @meshtastic/sdk-maintainers @meshtastic/ios
+
+# Security-sensitive areas — require security review
+/SECURITY.md                                            @meshtastic/security
+/docs/security.md                                       @meshtastic/security
+/core/src/**/internal/Crypto*.kt                        @meshtastic/security @meshtastic/sdk-maintainers
+/core/src/**/internal/KeyVault*.kt                      @meshtastic/security @meshtastic/sdk-maintainers
+
+# ADRs always need a maintainer review
+/docs/decisions/                                        @meshtastic/sdk-maintainers

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2019-09/schema",
+  "$id": "https://meshtastic-sdk.github.io/schemas/agent-report.schema.json",
+  "title": "AgentReport",
+  "type": "object",
+  "required": [
+    "agent",
+    "verdict",
+    "summary",
+    "evidence",
+    "commandsRun",
+    "risks",
+    "followUps"
+  ],
+  "properties": {
+    "agent": {
+      "type": "string"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "pass-with-risk", "fail", "info"]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "note"],
+        "properties": {
+          "path": { "type": "string" },
+          "note": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "commandsRun": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "followUps": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

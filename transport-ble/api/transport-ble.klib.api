@@ -1,0 +1,39 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <org.meshtastic:transport-ble>
+final class org.meshtastic.sdk.transport.ble/BleTransport : org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk.transport.ble/BleTransport|null[0]
+    constructor <init>(com.juul.kable/Peripheral, kotlin/String, kotlin.coroutines/CoroutineContext = ...) // org.meshtastic.sdk.transport.ble/BleTransport.<init>|<init>(com.juul.kable.Peripheral;kotlin.String;kotlin.coroutines.CoroutineContext){}[0]
+
+    final val identity // org.meshtastic.sdk.transport.ble/BleTransport.identity|{}identity[0]
+        final fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk.transport.ble/BleTransport.identity.<get-identity>|<get-identity>(){}[0]
+    final val state // org.meshtastic.sdk.transport.ble/BleTransport.state|{}state[0]
+        final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk.transport.ble/BleTransport.state.<get-state>|<get-state>(){}[0]
+
+    final fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk.transport.ble/BleTransport.frames|frames(){}[0]
+    final fun shutdown() // org.meshtastic.sdk.transport.ble/BleTransport.shutdown|shutdown(){}[0]
+    final suspend fun connect() // org.meshtastic.sdk.transport.ble/BleTransport.connect|connect(){}[0]
+    final suspend fun disconnect() // org.meshtastic.sdk.transport.ble/BleTransport.disconnect|disconnect(){}[0]
+    final suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.transport.ble/BleTransport.send|send(org.meshtastic.sdk.Frame){}[0]
+}
+
+final object org.meshtastic.sdk.transport.ble/BleConstants { // org.meshtastic.sdk.transport.ble/BleConstants|null[0]
+    final val FROMNUM // org.meshtastic.sdk.transport.ble/BleConstants.FROMNUM|{}FROMNUM[0]
+        final fun <get-FROMNUM>(): com.juul.kable/Characteristic // org.meshtastic.sdk.transport.ble/BleConstants.FROMNUM.<get-FROMNUM>|<get-FROMNUM>(){}[0]
+    final val FROMNUM_UUID // org.meshtastic.sdk.transport.ble/BleConstants.FROMNUM_UUID|{}FROMNUM_UUID[0]
+        final fun <get-FROMNUM_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.FROMNUM_UUID.<get-FROMNUM_UUID>|<get-FROMNUM_UUID>(){}[0]
+    final val FROMRADIO // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO|{}FROMRADIO[0]
+        final fun <get-FROMRADIO>(): com.juul.kable/Characteristic // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO.<get-FROMRADIO>|<get-FROMRADIO>(){}[0]
+    final val FROMRADIO_UUID // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO_UUID|{}FROMRADIO_UUID[0]
+        final fun <get-FROMRADIO_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO_UUID.<get-FROMRADIO_UUID>|<get-FROMRADIO_UUID>(){}[0]
+    final val MESH_SERVICE_UUID // org.meshtastic.sdk.transport.ble/BleConstants.MESH_SERVICE_UUID|{}MESH_SERVICE_UUID[0]
+        final fun <get-MESH_SERVICE_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.MESH_SERVICE_UUID.<get-MESH_SERVICE_UUID>|<get-MESH_SERVICE_UUID>(){}[0]
+    final val TORADIO // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO|{}TORADIO[0]
+        final fun <get-TORADIO>(): com.juul.kable/Characteristic // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO.<get-TORADIO>|<get-TORADIO>(){}[0]
+    final val TORADIO_UUID // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO_UUID|{}TORADIO_UUID[0]
+        final fun <get-TORADIO_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO_UUID.<get-TORADIO_UUID>|<get-TORADIO_UUID>(){}[0]
+}

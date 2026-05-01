@@ -1,0 +1,54 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <org.meshtastic:transport-serial>
+final enum class org.meshtastic.sdk.transport.serial/SerialPortTransport : kotlin/Enum<org.meshtastic.sdk.transport.serial/SerialPortTransport> { // org.meshtastic.sdk.transport.serial/SerialPortTransport|null[0]
+    enum entry Bluetooth // org.meshtastic.sdk.transport.serial/SerialPortTransport.Bluetooth|null[0]
+    enum entry Native // org.meshtastic.sdk.transport.serial/SerialPortTransport.Native|null[0]
+    enum entry Unknown // org.meshtastic.sdk.transport.serial/SerialPortTransport.Unknown|null[0]
+    enum entry Usb // org.meshtastic.sdk.transport.serial/SerialPortTransport.Usb|null[0]
+
+    final val entries // org.meshtastic.sdk.transport.serial/SerialPortTransport.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<org.meshtastic.sdk.transport.serial/SerialPortTransport> // org.meshtastic.sdk.transport.serial/SerialPortTransport.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): org.meshtastic.sdk.transport.serial/SerialPortTransport // org.meshtastic.sdk.transport.serial/SerialPortTransport.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<org.meshtastic.sdk.transport.serial/SerialPortTransport> // org.meshtastic.sdk.transport.serial/SerialPortTransport.values|values#static(){}[0]
+}
+
+final class org.meshtastic.sdk.transport.serial/SerialPortInfo { // org.meshtastic.sdk.transport.serial/SerialPortInfo|null[0]
+    constructor <init>(kotlin/String, kotlin/String? = ..., org.meshtastic.sdk.transport.serial/SerialPortTransport = ..., kotlin/Int? = ..., kotlin/Int? = ..., kotlin/String? = ..., kotlin/String? = ..., kotlin/String? = ...) // org.meshtastic.sdk.transport.serial/SerialPortInfo.<init>|<init>(kotlin.String;kotlin.String?;org.meshtastic.sdk.transport.serial.SerialPortTransport;kotlin.Int?;kotlin.Int?;kotlin.String?;kotlin.String?;kotlin.String?){}[0]
+
+    final val description // org.meshtastic.sdk.transport.serial/SerialPortInfo.description|{}description[0]
+        final fun <get-description>(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.description.<get-description>|<get-description>(){}[0]
+    final val name // org.meshtastic.sdk.transport.serial/SerialPortInfo.name|{}name[0]
+        final fun <get-name>(): kotlin/String // org.meshtastic.sdk.transport.serial/SerialPortInfo.name.<get-name>|<get-name>(){}[0]
+    final val transport // org.meshtastic.sdk.transport.serial/SerialPortInfo.transport|{}transport[0]
+        final fun <get-transport>(): org.meshtastic.sdk.transport.serial/SerialPortTransport // org.meshtastic.sdk.transport.serial/SerialPortInfo.transport.<get-transport>|<get-transport>(){}[0]
+    final val usbManufacturer // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbManufacturer|{}usbManufacturer[0]
+        final fun <get-usbManufacturer>(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbManufacturer.<get-usbManufacturer>|<get-usbManufacturer>(){}[0]
+    final val usbProduct // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbProduct|{}usbProduct[0]
+        final fun <get-usbProduct>(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbProduct.<get-usbProduct>|<get-usbProduct>(){}[0]
+    final val usbProductId // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbProductId|{}usbProductId[0]
+        final fun <get-usbProductId>(): kotlin/Int? // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbProductId.<get-usbProductId>|<get-usbProductId>(){}[0]
+    final val usbSerialNumber // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbSerialNumber|{}usbSerialNumber[0]
+        final fun <get-usbSerialNumber>(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbSerialNumber.<get-usbSerialNumber>|<get-usbSerialNumber>(){}[0]
+    final val usbVendorId // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbVendorId|{}usbVendorId[0]
+        final fun <get-usbVendorId>(): kotlin/Int? // org.meshtastic.sdk.transport.serial/SerialPortInfo.usbVendorId.<get-usbVendorId>|<get-usbVendorId>(){}[0]
+
+    final fun component1(): kotlin/String // org.meshtastic.sdk.transport.serial/SerialPortInfo.component1|component1(){}[0]
+    final fun component2(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.component2|component2(){}[0]
+    final fun component3(): org.meshtastic.sdk.transport.serial/SerialPortTransport // org.meshtastic.sdk.transport.serial/SerialPortInfo.component3|component3(){}[0]
+    final fun component4(): kotlin/Int? // org.meshtastic.sdk.transport.serial/SerialPortInfo.component4|component4(){}[0]
+    final fun component5(): kotlin/Int? // org.meshtastic.sdk.transport.serial/SerialPortInfo.component5|component5(){}[0]
+    final fun component6(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.component6|component6(){}[0]
+    final fun component7(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.component7|component7(){}[0]
+    final fun component8(): kotlin/String? // org.meshtastic.sdk.transport.serial/SerialPortInfo.component8|component8(){}[0]
+    final fun copy(kotlin/String = ..., kotlin/String? = ..., org.meshtastic.sdk.transport.serial/SerialPortTransport = ..., kotlin/Int? = ..., kotlin/Int? = ..., kotlin/String? = ..., kotlin/String? = ..., kotlin/String? = ...): org.meshtastic.sdk.transport.serial/SerialPortInfo // org.meshtastic.sdk.transport.serial/SerialPortInfo.copy|copy(kotlin.String;kotlin.String?;org.meshtastic.sdk.transport.serial.SerialPortTransport;kotlin.Int?;kotlin.Int?;kotlin.String?;kotlin.String?;kotlin.String?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk.transport.serial/SerialPortInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk.transport.serial/SerialPortInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk.transport.serial/SerialPortInfo.toString|toString(){}[0]
+}

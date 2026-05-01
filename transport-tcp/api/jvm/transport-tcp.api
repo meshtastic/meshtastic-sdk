@@ -1,0 +1,14 @@
+public final class org/meshtastic/sdk/transport/tcp/TcpTransport : org/meshtastic/sdk/RadioTransport {
+	public static final field READ_CHUNK_BYTES I
+	public static final field READ_TIMEOUT_MS J
+	public fun <init> (Ljava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun frames ()Lkotlinx/coroutines/flow/Flow;
+	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
+	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+

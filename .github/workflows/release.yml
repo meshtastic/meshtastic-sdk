@@ -1,0 +1,98 @@
+name: Release
+
+# Release pipeline. See docs/release-runbook.md.
+#
+# Triggers:
+#   - Tag push (vX.Y.Z) — automatic publish.
+#   - workflow_dispatch — manual fallback / dry-run support.
+#
+# Pre-flight (done before tagging):
+#   - main is green
+#   - CHANGELOG.md [Unreleased] section is finalized
+#   - Tag signed and pushed: git tag -s vX.Y.Z -m "vX.Y.Z" && git push --tags
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.1.0). Must match a pushed tag vX.Y.Z.'
+        required: true
+        type: string
+      dry_run:
+        description: 'If true, build artifacts but skip publish.'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
+  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
+  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.version || github.ref_name }}
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "ref=refs/tags/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            tag="${GITHUB_REF_NAME}"
+            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout tag v${{ steps.ver.outputs.version }}
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.ver.outputs.ref }}
+          submodules: recursive
+          fetch-depth: 0  # axion-release reads tags
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: 'true'
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Verify version matches tag
+        run: |
+          actual=$(./gradlew -q currentVersion)
+          if [[ "$actual" != "${{ steps.ver.outputs.version }}" ]]; then
+            echo "::error::Tag v${{ steps.ver.outputs.version }} resolves to '$actual' (expected ${{ steps.ver.outputs.version }})"
+            exit 1
+          fi
+
+      - name: Build all artifacts
+        run: ./gradlew assemble
+
+      - name: Run gate
+        run: ./gradlew check
+
+      - name: Publish to Maven Central
+        if: ${{ inputs.dry_run != true }}
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
+        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
+
+      - name: Dry-run summary
+        if: ${{ inputs.dry_run == true }}
+        run: echo "Dry run complete; artifacts built but not published."

@@ -1,0 +1,137 @@
+# gradle/libs.versions.toml
+
+[versions]
+# --- Kotlin & build ---
+kotlin                      = "2.3.20"           # pinned for SKIE 0.10.11 compatibility
+agp                         = "9.2.0"
+gradle                      = "9.4.1"
+javaVersion                 = "21"
+androidMinSdk               = "26"
+androidCompileSdk           = "36"
+androidTargetSdk            = "36"
+
+# --- Coroutines / IO / time ---
+coroutines                  = "1.11.0-rc02"      # pre-release: SharedFlow race fix, R8 stateIn/shareIn GC fix
+kotlinxIo                   = "0.9.0"
+kotlinxDatetime             = "0.7.1"
+kotlinxSerialization        = "1.11.0"
+atomicfu                    = "0.32.1"
+okio                        = "3.17.0"
+
+# --- Protobuf / Wire ---
+wire                        = "6.2.0"
+protobuf                    = "4.34.1"
+
+# --- Storage ---
+sqldelight                  = "2.3.2"
+
+# --- Transports ---
+kable                       = "0.42.0"
+ktor                        = "3.4.3"
+jSerialComm                 = "2.11.4"
+
+# --- TUI (samples/cli) ---
+mosaic                      = "0.18.0"
+clikt                       = "5.1.0"
+
+# --- Compose Multiplatform (samples/parity-app) ---
+composeMultiplatform        = "1.10.3"
+androidxActivityCompose     = "1.13.0"
+androidxLifecycleCompose    = "2.10.0"
+
+# --- Logging ---
+kermit                      = "2.1.0"
+
+# --- Testing ---
+turbine                     = "1.2.1"
+kotest                      = "6.1.11"
+mockk                       = "1.14.9"
+junit                       = "4.13.2"
+
+# --- Publishing / iOS distribution ---
+vanniktechMavenPublish      = "0.36.0"
+kmmBridge                   = "1.2.1"
+skie                        = "0.10.11"
+applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
+dokka                       = "2.2.0"
+
+# --- Static analysis & tooling ---
+ktlint                      = "1.8.0"
+spotless                    = "8.4.0"
+detekt                      = "2.0.0-alpha.3"
+detektComposeRules          = "0.5.8"
+axionRelease                = "1.21.1"
+kover                       = "0.9.8"
+
+[libraries]
+coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",        version.ref = "coroutines" }
+coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android",     version.ref = "coroutines" }
+coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutines" }
+kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
+kotlinxSerializationCore    = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core",     version.ref = "kotlinxSerialization" }
+kotlinxIoCore               = { module = "org.jetbrains.kotlinx:kotlinx-io-core",                version.ref = "kotlinxIo" }
+atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
+okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
+
+wireRuntime                 = { module = "com.squareup.wire:wire-runtime",                       version.ref = "wire" }
+wireMoshiAdapter            = { module = "com.squareup.wire:wire-moshi-adapter",                 version.ref = "wire" }
+wireGradlePlugin            = { module = "com.squareup.wire:wire-gradle-plugin",                 version.ref = "wire" }
+protobufKotlin              = { module = "com.google.protobuf:protobuf-kotlin",                  version.ref = "protobuf" }
+
+sqldelightRuntime           = { module = "app.cash.sqldelight:runtime",                          version.ref = "sqldelight" }
+sqldelightCoroutinesExt     = { module = "app.cash.sqldelight:coroutines-extensions",            version.ref = "sqldelight" }
+sqldelightAndroidDriver     = { module = "app.cash.sqldelight:android-driver",                   version.ref = "sqldelight" }
+sqldelightSqliteDriver      = { module = "app.cash.sqldelight:sqlite-driver",                    version.ref = "sqldelight" }
+sqldelightNativeDriver      = { module = "app.cash.sqldelight:native-driver",                    version.ref = "sqldelight" }
+sqldelightGradlePlugin      = { module = "app.cash.sqldelight:gradle-plugin",                    version.ref = "sqldelight" }
+
+kable                       = { module = "com.juul.kable:kable-core",                            version.ref = "kable" }
+ktorNetwork                 = { module = "io.ktor:ktor-network",                                 version.ref = "ktor" }
+ktorNetworkTls              = { module = "io.ktor:ktor-network-tls",                             version.ref = "ktor" }
+jSerialComm                 = { module = "com.fazecast:jSerialComm",                             version.ref = "jSerialComm" }
+
+mosaicRuntime               = { module = "com.jakewharton.mosaic:mosaic-runtime",                 version.ref = "mosaic" }
+mosaicTerminal              = { module = "com.jakewharton.mosaic:mosaic-terminal",                version.ref = "mosaic" }
+clikt                       = { module = "com.github.ajalt.clikt:clikt",                          version.ref = "clikt" }
+
+kermit                      = { module = "co.touchlab:kermit",                                   version.ref = "kermit" }
+
+kotlinTest                  = { module = "org.jetbrains.kotlin:kotlin-test",                     version.ref = "kotlin" }
+turbine                     = { module = "app.cash.turbine:turbine",                             version.ref = "turbine" }
+kotestAssertions            = { module = "io.kotest:kotest-assertions-core",                     version.ref = "kotest" }
+mockk                       = { module = "io.mockk:mockk",                                       version.ref = "mockk" }
+junit                       = { module = "junit:junit",                                          version.ref = "junit" }
+
+androidxActivityCompose     = { module = "androidx.activity:activity-compose",                   version.ref = "androidxActivityCompose" }
+lifecycleRuntimeCompose     = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycleCompose" }
+
+kotlinGradlePlugin          = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin",            version.ref = "kotlin" }
+agpGradlePlugin             = { module = "com.android.tools.build:gradle",                       version.ref = "agp" }
+
+detektComposeRules          = { module = "io.nlopez.compose.rules:detekt",                       version.ref = "detektComposeRules" }
+
+[plugins]
+kotlinMultiplatform         = { id = "org.jetbrains.kotlin.multiplatform",                       version.ref = "kotlin" }
+kotlinAndroid               = { id = "org.jetbrains.kotlin.android",                             version.ref = "kotlin" }
+kotlinSerialization         = { id = "org.jetbrains.kotlin.plugin.serialization",                version.ref = "kotlin" }
+androidLibrary              = { id = "com.android.library",                                      version.ref = "agp" }
+androidKotlinMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library",           version.ref = "agp" }
+wire                        = { id = "com.squareup.wire",                                        version.ref = "wire" }
+sqldelight                  = { id = "app.cash.sqldelight",                                      version.ref = "sqldelight" }
+vanniktechMavenPublish      = { id = "com.vanniktech.maven.publish",                             version.ref = "vanniktechMavenPublish" }
+androidApplication          = { id = "com.android.application",                                  version.ref = "agp" }
+composeMultiplatform        = { id = "org.jetbrains.compose",                                    version.ref = "composeMultiplatform" }
+kmmBridge                   = { id = "co.touchlab.kmmbridge",                                    version.ref = "kmmBridge" }
+skie                        = { id = "co.touchlab.skie",                                         version.ref = "skie" }
+applePrivacyManifests       = { id = "org.jetbrains.kotlin.plugin.apple-privacy-manifests",      version.ref = "applePrivacyManifests" }
+composeCompiler             = { id = "org.jetbrains.kotlin.plugin.compose",                      version.ref = "kotlin" }
+dokka                       = { id = "org.jetbrains.dokka",                                      version.ref = "dokka" }
+powerAssert                 = { id = "org.jetbrains.kotlin.plugin.power-assert",               version.ref = "kotlin" }
+spotless                    = { id = "com.diffplug.spotless",                                    version.ref = "spotless" }
+detekt                      = { id = "dev.detekt",                                               version.ref = "detekt" }
+axionRelease                = { id = "pl.allegro.tech.build.axion-release",                      version.ref = "axionRelease" }
+kover                       = { id = "org.jetbrains.kotlinx.kover",                              version.ref = "kover" }
+
+[bundles]
+sqldelightDrivers           = ["sqldelightAndroidDriver", "sqldelightSqliteDriver", "sqldelightNativeDriver"]
+testCommon                  = ["kotlinTest", "turbine", "kotestAssertions"]

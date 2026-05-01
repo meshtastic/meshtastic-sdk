@@ -1,0 +1,60 @@
+name: Feature request
+description: Suggest an addition or change.
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion! For larger design changes, consider opening a discussion first
+        or proposing an ADR per [`CONTRIBUTING.md`](../../CONTRIBUTING.md#adrs-architecture-decision-records).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What gap or pain are you trying to solve? Who else has this need?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        What API surface, behavior, or tooling change would solve it? Keep it concrete —
+        ideally a snippet of the API as you'd want to use it.
+      render: kotlin
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What else have you tried or thought about?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Likely scope
+      options:
+        - "core (engine / public API)"
+        - "transport-* (a transport module)"
+        - "storage-* (a storage module)"
+        - "tooling / build / CI"
+        - "docs / spec"
+        - "samples"
+        - "not sure"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Affirmations
+      options:
+        - label: I have searched existing issues and discussions.
+          required: true
+        - label: I am willing to discuss design trade-offs before implementation.
+          required: true

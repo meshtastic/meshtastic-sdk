@@ -1,0 +1,5 @@
+# Aligns with the rest of the meshtastic org. The project as a whole is
+# funded via GitHub Sponsors and Open Collective at the org level; this
+# repo does not run independent campaigns.
+github: [meshtastic]
+open_collective: meshtastic

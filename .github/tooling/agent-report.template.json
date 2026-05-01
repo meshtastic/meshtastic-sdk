@@ -1,0 +1,20 @@
+{
+  "agent": "<agent name>",
+  "verdict": "pass",
+  "summary": "<one paragraph>",
+  "evidence": [
+    {
+      "path": "<workspace-relative-path>",
+      "note": "<why this is evidence>"
+    }
+  ],
+  "commandsRun": [
+    "<command>"
+  ],
+  "risks": [
+    "<risk or none>"
+  ],
+  "followUps": [
+    "<next action or none>"
+  ]
+}

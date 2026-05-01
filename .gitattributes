@@ -1,0 +1,28 @@
+# Auto detect text files and ensure LF line endings
+* text=auto eol=lf
+
+# Binary files
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.jar    binary
+*.zip    binary
+*.tar.gz binary
+*.keystore binary
+*.jks    binary
+
+# Gradle wrapper
+gradlew      text eol=lf
+gradlew.bat  text eol=crlf
+gradle/wrapper/gradle-wrapper.jar binary
+
+# Generated / vendored sources should not skew GitHub language stats
+proto/src/protobufs/**           linguist-vendored
+**/build/generated/**            linguist-generated
+docs/scaffold/**                 linguist-documentation
+
+# Diff hints
+*.kt     diff=kotlin
+*.kts    diff=kotlin
