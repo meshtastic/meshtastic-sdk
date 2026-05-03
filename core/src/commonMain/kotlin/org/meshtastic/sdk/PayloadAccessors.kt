@@ -8,6 +8,8 @@
 package org.meshtastic.sdk
 
 import com.squareup.wire.ProtoAdapter
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filter
 import okio.ByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.MeshPacket
@@ -34,6 +36,23 @@ private fun <T> MeshPacket.decodeIfPort(expected: PortNum, adapter: ProtoAdapter
  * Decodes the payload as a UTF-8 string if [MeshPacket.decoded.portnum] matches [PortNum.TEXT_MESSAGE_APP].
  */
 public fun MeshPacket.asText(): String? = payloadOrNull(PortNum.TEXT_MESSAGE_APP)?.utf8()
+
+/**
+ * Filters [RadioClient.packets] to only text-message packets — those with
+ * `decoded.portnum == [PortNum.TEXT_MESSAGE_APP]`.
+ *
+ * Each emitted [MeshPacket] can be accessed via:
+ * - `asText()` — decoded UTF-8 body; returns `null` if the payload is empty
+ * - `NodeId(packet.from)` — sender node
+ * - `ChannelIndex(packet.channel)` — channel index (0–7)
+ * - `packet.rx_time` — receive timestamp (Unix seconds, `Int`)
+ * - `packet.to` — destination node num (`0xFFFFFFFF` = broadcast)
+ *
+ * This flow is **hot with no replay** — it inherits [RadioClient.packets] semantics.
+ * Subscribers receive only packets that arrive after they start collecting.
+ */
+public val RadioClient.textMessages: Flow<MeshPacket>
+    get() = packets.filter { it.decoded?.portnum == PortNum.TEXT_MESSAGE_APP }
 
 /**
  * Decodes the payload as [Position] if [MeshPacket.decoded.portnum] matches [PortNum.POSITION_APP].

@@ -87,6 +87,14 @@ public class FakeRadioTransport(
     }
 
     /**
+     * Inject an arbitrary [MeshPacket] as if it arrived from the radio.
+     * Use this to test flows that consume [RadioClient.packets] (e.g. [RadioClient.textMessages]).
+     */
+    public fun injectPacket(packet: MeshPacket) {
+        injectFromRadio(FromRadio(packet = packet))
+    }
+
+    /**
      * Inject an admin response packet correlated to [requestId]. The packet is constructed with
      * `decoded.request_id = requestId` so the engine's [CommandDispatcher] / `processRoutingAck`
      * can match it against an outstanding request.
