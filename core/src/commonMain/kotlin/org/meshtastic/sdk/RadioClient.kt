@@ -111,6 +111,19 @@ public class RadioClient internal constructor(
         get() = engine.configBundleState.asStateFlow()
 
     /**
+     * Channel list for the active session.
+     *
+     * Seeded during the handshake from the device's channel payload; falls back to the
+     * persisted storage snapshot on reconnect if the device does not re-send channels.
+     * `null` until [ConnectionState.Connected] is reached.
+     *
+     * Updated in-memory (and persisted) when [AdminApi.setChannel] succeeds. Call
+     * [AdminApi.listChannels] to force a full device re-read (8 RPCs).
+     */
+    public val channels: StateFlow<List<org.meshtastic.proto.Channel>?>
+        get() = engine.channelsState.asStateFlow()
+
+    /**
      * Node-change deltas. Late subscribers receive a [NodeChange.Snapshot] immediately
      * (single-replay), then live [NodeChange.Added] / [NodeChange.Updated] /
      * [NodeChange.Removed] in causal order.

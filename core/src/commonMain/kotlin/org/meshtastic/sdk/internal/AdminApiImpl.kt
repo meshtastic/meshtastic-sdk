@@ -87,8 +87,10 @@ internal class AdminApiImpl(
         )
     }
 
-    override suspend fun setChannel(channel: Channel): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage(set_channel = channel))
+    override suspend fun setChannel(channel: Channel): AdminResult<Unit> {
+        val result = retryOnSessionExpiry { submitAdminAck(AdminMessage(set_channel = channel)) }
+        if (result is AdminResult.Success) engine.updateChannelAndPersist(channel)
+        return result
     }
 
     override suspend fun listChannels(): AdminResult<List<Channel>> {

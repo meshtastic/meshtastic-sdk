@@ -21,6 +21,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -38,6 +39,7 @@ import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.AutoReconnectConfig
+import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.ConfigBundle
 import org.meshtastic.sdk.ConfigPhase
 import org.meshtastic.sdk.ConnectionState
@@ -95,6 +97,15 @@ internal class MeshEngine(
      * Cleared on cleanup so a stale bundle never leaks into a new session.
      */
     val configBundleState = MutableStateFlow<ConfigBundle?>(null)
+
+    /**
+     * Channel list for the active session, seeded from the handshake or from storage on
+     * reconnect. `null` until [ConnectionState.Connected] is reached.
+     *
+     * Unlike [configBundleState], this survives auto-reconnect resets so the UI does not
+     * flash back to null between reconnect cycles.
+     */
+    val channelsState = MutableStateFlow<List<org.meshtastic.proto.Channel>?>(null)
 
     val nodes = MutableSharedFlow<NodeChange>(
         replay = 1,
@@ -534,6 +545,7 @@ internal class MeshEngine(
         reconnectAttempt = 0
         autoReconnectInProgress = false
         configBundleState.value = null
+        channelsState.value = null
 
         dispatcher.cancelAll(AdminResult.NodeUnreachable)
 
@@ -1047,6 +1059,13 @@ internal class MeshEngine(
                             lastHeartbeatAt[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
                         }
                         if (pendingChannels.isNotEmpty()) s.saveChannels(pendingChannels)
+                        // Populate channelsState from handshake payload; fall back to storage
+                        // for reconnect sessions where the device skips re-sending channels.
+                        channelsState.value = if (pendingChannels.isNotEmpty()) {
+                            pendingChannels.toList()
+                        } else {
+                            s.loadChannels().ifEmpty { null }
+                        }
                         meshState.configBundle?.let {
                             s.saveConfig(it)
                             configBundleState.value = it
@@ -1820,6 +1839,44 @@ internal class MeshEngine(
         if (!nodes.tryEmit(change)) {
             logger.warn(TAG) { "nodes flow rejected emit ($change); reporting drop" }
             events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Events, count = 1))
+        }
+    }
+
+    /**
+     * Atomically patches [channelsState] with the updated [channel] and enqueues a
+     * best-effort storage flush. Called from [AdminApiImpl] after a successful `setChannel` ACK.
+     *
+     * Thread-safe: uses `StateFlow.update` for the in-memory atomic update.
+     * Storage write is fire-and-forget on [engineScope] — failure is logged but does NOT
+     * degrade the session (the next handshake re-syncs channels from the device anyway).
+     */
+    internal fun updateChannelAndPersist(channel: org.meshtastic.proto.Channel) {
+        val idx = channel.index
+        if (idx < 0 || idx > ChannelIndex.MAX_CHANNEL_INDEX) {
+            logger.warn(TAG) { "setChannel: ignoring out-of-range index $idx" }
+            return
+        }
+        channelsState.update { current: List<org.meshtastic.proto.Channel>? ->
+            if (current == null) return@update null
+            current.toMutableList().also { list ->
+                when {
+                    idx < list.size -> list[idx] = channel
+                    idx == list.size -> list.add(channel)
+                    // idx > list.size: sparse gap — ignore to avoid holes in the list
+                }
+            }.toList()
+        }
+        val updated = channelsState.value
+        if (updated != null) {
+            engineScope?.launch {
+                try {
+                    storage?.saveChannels(updated)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(TAG, e) { "updateChannelAndPersist: saveChannels failed (non-fatal)" }
+                }
+            }
         }
     }
 
