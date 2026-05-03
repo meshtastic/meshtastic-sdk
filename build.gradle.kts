@@ -16,17 +16,29 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.detekt) apply false
     alias(libs.plugins.kover)
-    alias(libs.plugins.axionRelease)
+    // axionRelease applied conditionally below — it fails to apply when this build is
+    // included as a Gradle composite build because the root project is not yet available.
+    alias(libs.plugins.axionRelease) apply false
 }
 
-scmVersion {
-    tag {
-        prefix.set("v")
+// Only configure SCM versioning when running as a standalone build. When included as a
+// composite build (gradle.parent != null), version management is unnecessary and the plugin
+// errors out trying to reach the root project too early.
+if (gradle.parent == null) {
+    apply(plugin = "pl.allegro.tech.build.axion-release")
+    configure<pl.allegro.tech.build.axion.release.domain.VersionConfig> {
+        tag {
+            prefix.set("v")
+        }
+        versionIncrementer("incrementPatch")
     }
-    versionIncrementer("incrementPatch")
 }
 
-val resolvedVersion: String = scmVersion.version
+val resolvedVersion: String = if (gradle.parent == null) {
+    extensions.getByType<pl.allegro.tech.build.axion.release.domain.VersionConfig>().version
+} else {
+    "0.0.0-composite"
+}
 
 allprojects {
     group = "org.meshtastic"
