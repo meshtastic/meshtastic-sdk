@@ -34,12 +34,11 @@ class PayloadAccessorsTest {
     private fun pkt(port: PortNum, payload: ByteArray) =
         MeshPacket(decoded = Data(portnum = port, payload = payload.toByteString()))
 
-    private fun TestScope.buildClient(transport: FakeRadioTransport): RadioClient =
-        RadioClient.Builder()
-            .transport(transport)
-            .storage(InMemoryStorageProvider())
-            .coroutineContext(backgroundScope.coroutineContext)
-            .build()
+    private fun TestScope.buildClient(transport: FakeRadioTransport): RadioClient = RadioClient.Builder()
+        .transport(transport)
+        .storage(InMemoryStorageProvider())
+        .coroutineContext(backgroundScope.coroutineContext)
+        .build()
 
     private fun fakeTransport() = FakeRadioTransport(
         identity = TransportIdentity("fake:test"),
@@ -93,13 +92,20 @@ class PayloadAccessorsTest {
         runCurrent() // start the collector coroutine (no virtual-time advance)
 
         transport.injectPacket(
-            MeshPacket(from = 0xABCD, decoded = Data(portnum = PortNum.TEXT_MESSAGE_APP, payload = "test".encodeToByteArray().toByteString()))
+            MeshPacket(
+                from = 0xABCD,
+                decoded = Data(portnum = PortNum.TEXT_MESSAGE_APP, payload = "test".encodeToByteArray().toByteString()),
+            ),
         )
         runCurrent() // frame-reader → engine actor → emitPacketOrLog → collector
         runCurrent() // second pass: catch any second-hop scheduled work
         job.cancel()
 
-        assertEquals(1, received.size, "rawPackets: expected 1 packet, got ${received.size} — injectPacket/engine may be broken")
+        assertEquals(
+            1,
+            received.size,
+            "rawPackets: expected 1 packet, got ${received.size} — injectPacket/engine may be broken",
+        )
     }
 
     @Test fun textMessagesEmitsTextPackets() = runTest {
@@ -135,10 +141,14 @@ class PayloadAccessorsTest {
         runCurrent()
 
         transport.injectPacket(
-            MeshPacket(decoded = Data(portnum = PortNum.POSITION_APP, payload = "xyz".encodeToByteArray().toByteString()))
+            MeshPacket(
+                decoded = Data(portnum = PortNum.POSITION_APP, payload = "xyz".encodeToByteArray().toByteString()),
+            ),
         )
         transport.injectPacket(
-            MeshPacket(decoded = Data(portnum = PortNum.TELEMETRY_APP, payload = "xyz".encodeToByteArray().toByteString()))
+            MeshPacket(
+                decoded = Data(portnum = PortNum.TELEMETRY_APP, payload = "xyz".encodeToByteArray().toByteString()),
+            ),
         )
         runCurrent()
         runCurrent()
@@ -159,7 +169,7 @@ class PayloadAccessorsTest {
         runCurrent()
 
         transport.injectPacket(
-            MeshPacket(decoded = Data(portnum = PortNum.TEXT_MESSAGE_APP)) // no payload
+            MeshPacket(decoded = Data(portnum = PortNum.TEXT_MESSAGE_APP)), // no payload
         )
         runCurrent()
         runCurrent()
