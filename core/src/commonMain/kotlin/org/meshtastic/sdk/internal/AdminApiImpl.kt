@@ -17,11 +17,14 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
+import org.meshtastic.proto.KeyVerificationAdmin
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
+import org.meshtastic.proto.SensorConfig
+import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminApi
 import org.meshtastic.sdk.AdminEdit
@@ -251,6 +254,56 @@ internal class AdminApiImpl(
 
     override suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage(remove_backup_preferences = location))
+    }
+
+    // ── Node removal ────────────────────────────────────────────────────────
+
+    override suspend fun removeNode(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(remove_by_nodenum = node.raw))
+    }
+
+    // ── Input / Display ─────────────────────────────────────────────────────
+
+    override suspend fun setScale(scale: Int): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_scale = scale))
+    }
+
+    override suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(send_input_event = event))
+    }
+
+    // ── Contacts ────────────────────────────────────────────────────────────
+
+    override suspend fun addContact(contact: SharedContact): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(add_contact = contact))
+    }
+
+    // ── Key verification ────────────────────────────────────────────────────
+
+    override suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(key_verification = verification))
+    }
+
+    // ── OTA updates ─────────────────────────────────────────────────────────
+
+    override suspend fun rebootOta(after: Duration): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(reboot_ota_seconds = after.inWholeSeconds.toInt().coerceAtLeast(0)))
+    }
+
+    override suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(ota_request = event))
+    }
+
+    // ── Sensor ──────────────────────────────────────────────────────────────
+
+    override suspend fun setSensorConfig(config: SensorConfig): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(sensor_config = config))
+    }
+
+    // ── Simulator ───────────────────────────────────────────────────────────
+
+    override suspend fun exitSimulator(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(exit_simulator = true))
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────

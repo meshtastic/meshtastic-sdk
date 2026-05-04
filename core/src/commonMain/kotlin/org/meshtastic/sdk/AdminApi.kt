@@ -13,9 +13,12 @@ import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
+import org.meshtastic.proto.KeyVerificationAdmin
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.Position
+import org.meshtastic.proto.SensorConfig
+import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import kotlin.time.Duration
 import kotlin.time.Instant
@@ -146,6 +149,47 @@ public interface AdminApi {
 
     /** Remove a stored preference backup from [location]. */
     public suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
+
+    // ── Node removal ────────────────────────────────────────────────────────
+
+    /** Remove a node from the device's NodeDB by its node number. */
+    public suspend fun removeNode(node: NodeId): AdminResult<Unit>
+
+    // ── Input / Display ─────────────────────────────────────────────────────
+
+    /** Set the device's scale calibration value (e-ink display DPI). */
+    public suspend fun setScale(scale: Int): AdminResult<Unit>
+
+    /** Send a synthetic input event to the device (button press, touch, etc.). */
+    public suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit>
+
+    // ── Contacts ────────────────────────────────────────────────────────────
+
+    /** Add a shared contact to the device's contact list. */
+    public suspend fun addContact(contact: SharedContact): AdminResult<Unit>
+
+    // ── Key verification ────────────────────────────────────────────────────
+
+    /** Initiate or respond to a key verification exchange. */
+    public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
+
+    // ── OTA updates ─────────────────────────────────────────────────────────
+
+    /** Reboot into OTA update mode after [after] (default: immediately). */
+    public suspend fun rebootOta(after: Duration = Duration.ZERO): AdminResult<Unit>
+
+    /** Send an OTA event (firmware update control). */
+    public suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit>
+
+    // ── Sensor ──────────────────────────────────────────────────────────────
+
+    /** Configure a sensor attached to the device. */
+    public suspend fun setSensorConfig(config: SensorConfig): AdminResult<Unit>
+
+    // ── Simulator ───────────────────────────────────────────────────────────
+
+    /** Exit the firmware simulator mode (development only). */
+    public suspend fun exitSimulator(): AdminResult<Unit>
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
