@@ -46,6 +46,18 @@ internal class AdminApiImpl(
     private val nowProvider: () -> Instant = { Clock.System.now() },
 ) : AdminApi {
 
+    /**
+     * Returns `true` if the device is in managed mode, meaning all admin commands from non-zero
+     * `from` addresses are silently dropped by firmware. The SDK always sends with
+     * `from = myNodeNum` (non-zero post-handshake), so all admin commands would be ignored.
+     */
+    private fun isDeviceManaged(): Boolean {
+        val bundle = engine.configBundleState.value ?: return false
+        return bundle.configs.any { config ->
+            config.security?.is_managed == true
+        }
+    }
+
     override suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config> = retryOnSessionExpiry {
         submitAdminRpc(
             adminMsg = AdminMessage(get_config_request = type),
@@ -82,7 +94,9 @@ internal class AdminApiImpl(
 
     override suspend fun getChannel(index: ChannelIndex): AdminResult<Channel> = retryOnSessionExpiry {
         submitAdminRpc(
-            adminMsg = AdminMessage(get_channel_request = index.raw),
+            // Firmware expects 1-based index (proto3 omits 0 as default value).
+            // See admin.proto: "NOTE: This field is sent with the channel index + 1"
+            adminMsg = AdminMessage(get_channel_request = index.raw + 1),
             kind = ResponseKind.AdminChannel,
         )
     }
@@ -154,9 +168,7 @@ internal class AdminApiImpl(
         submitAdminAck(msg)
     }
 
-    override suspend fun nodeDbReset(preserveFavorites: Boolean): AdminResult<Unit> = retryOnSessionExpiry {
-        // Firmware exposes only `nodedb_reset = true`; preserveFavorites is honoured by the
-        // device's own NodeDB module which keeps favorite-marked entries across the wipe.
+    override suspend fun nodeDbReset(): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage(nodedb_reset = true))
     }
 
@@ -246,6 +258,7 @@ internal class AdminApiImpl(
      * so a second `SessionKeyExpired` surfaces to the caller (the device is rejecting our key).
      */
     private suspend fun <T> retryOnSessionExpiry(block: suspend () -> AdminResult<T>): AdminResult<T> {
+        if (isDeviceManaged()) return AdminResult.Unauthorized
         val first = block()
         if (first !is AdminResult.SessionKeyExpired) return first
         // Re-seed: a fresh getOwner round-trip latches a new session_passkey. We don't propagate

@@ -72,8 +72,8 @@ import kotlin.math.pow
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -738,6 +738,15 @@ internal class MeshEngine(
      */
     private fun startStage1Handshake() {
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+
+        // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
+        // want_config_id to resync the firmware's frame decoder after an unclean disconnect.
+        // BLE doesn't need this since each GATT write is self-framing.
+        if (!transport.identity.raw.startsWith("ble:")) {
+            val wakeBytes = byteArrayOf(0x94.toByte(), 0x94.toByte(), 0x94.toByte(), 0x94.toByte())
+            outbound.trySend(Frame(ByteString(wakeBytes)))
+        }
+
         sendToRadio(ToRadio(want_config_id = NONCE_STAGE1))
         handshakeStage = HandshakeStage.Stage1Draining
 
@@ -1810,7 +1819,7 @@ internal class MeshEngine(
 
     private fun handleHeartbeatTick() {
         if (handshakeStage != HandshakeStage.Ready) return
-        if (!bleHeartbeatEnabled && transport::class.simpleName == "BleTransport") return
+        if (!bleHeartbeatEnabled && transport.identity.raw.startsWith("ble:")) return
         // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
         sendToRadio(ToRadio(heartbeat = keepaliveHeartbeat))
         logger.verbose(TAG) { "Heartbeat sent nonce=0" }
@@ -2163,8 +2172,10 @@ internal class MeshEngine(
         // after wire round-trip). Used so we don't arm an ACK timer for broadcasts.
         const val BROADCAST_ADDR: Int = -1
 
-        // persisted session passkeys expire 24 hours after seeding.
-        val SESSION_PASSKEY_TTL: Duration = 24.hours
+        // Firmware regenerates session passkeys every ~150s and they remain valid for ~300s.
+        // A 4-minute TTL ensures we don't use a stale passkey on reconnect while still
+        // avoiding unnecessary re-seeding within a single connected session.
+        val SESSION_PASSKEY_TTL: Duration = 4.minutes
 
         // minimum interval between consecutive encrypted-packet skip warnings.
         const val ENCRYPTED_SKIP_WARNING_INTERVAL_MS: Long = 60_000L

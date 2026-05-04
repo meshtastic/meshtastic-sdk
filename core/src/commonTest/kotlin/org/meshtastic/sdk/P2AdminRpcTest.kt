@@ -233,11 +233,14 @@ class P2AdminRpcTest {
             val outbound = transport.outboundPackets().drop(outboundBefore)
             val req = outbound.lastOrNull { adminOf(it)?.get_channel_request != null }
             assertNotNull(req)
-            val index = adminOf(req)!!.get_channel_request!!
-            val channel = if (index < 2) {
-                Channel(index = index, role = Channel.Role.PRIMARY)
+            // SDK sends 1-based index on wire (proto3 zero-value omission). Simulate firmware
+            // converting back to 0-based for the response.
+            val wireIndex = adminOf(req)!!.get_channel_request!!
+            val realIndex = wireIndex - 1
+            val channel = if (realIndex < 2) {
+                Channel(index = realIndex, role = Channel.Role.PRIMARY)
             } else {
-                Channel(index = index, role = Channel.Role.DISABLED)
+                Channel(index = realIndex, role = Channel.Role.DISABLED)
             }
             transport.injectAdminResponse(
                 requestId = req.id,
