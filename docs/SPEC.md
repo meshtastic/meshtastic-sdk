@@ -411,7 +411,7 @@ public interface AdminApi {
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
-    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
+    public suspend fun nodeDbReset(): AdminResult<Unit>
 
     /**
      * Push the host clock to the device as `set_time_only`. Useful for routers and headless
