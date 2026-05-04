@@ -177,6 +177,10 @@ internal class AdminApiImpl(
         }
         val commit = retryOnSessionExpiry { submitAdminAck(AdminMessage(commit_edit_settings = true)) }
         if (commit !is AdminResult.Success) return commit.cast()
+
+        // Gap G: optimistically update configBundle with written values after successful commit.
+        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+
         return AdminResult.Success(payload)
     }
 
@@ -253,9 +257,17 @@ internal class AdminApiImpl(
     private fun localNode(): NodeId = NodeId(engine.myNodeNumOrNull() ?: 0)
 
     private inner class AdminEditImpl : AdminEdit {
-        override suspend fun setConfig(config: Config) = enqueueOrThrow(AdminMessage(set_config = config))
-        override suspend fun setModuleConfig(config: ModuleConfig) =
+        val writtenConfigs = mutableListOf<Config>()
+        val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+
+        override suspend fun setConfig(config: Config) {
+            enqueueOrThrow(AdminMessage(set_config = config))
+            writtenConfigs += config
+        }
+        override suspend fun setModuleConfig(config: ModuleConfig) {
             enqueueOrThrow(AdminMessage(set_module_config = config))
+            writtenModuleConfigs += config
+        }
         override suspend fun setOwner(user: User) = enqueueOrThrow(AdminMessage(set_owner = user))
         override suspend fun setChannel(channel: Channel) = enqueueOrThrow(AdminMessage(set_channel = channel))
         override suspend fun setFavorite(node: NodeId, favorite: Boolean) {

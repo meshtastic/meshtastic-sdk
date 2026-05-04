@@ -178,4 +178,44 @@ class PayloadAccessorsTest {
         assertEquals(1, received.size)
         assertNull(received[0].asText()) // empty payload => asText() is null, but packet was emitted
     }
+
+    // ── Waypoint / Traceroute / NeighborInfo accessors ────────────────────
+
+    @Test fun waypointDecodes() {
+        val wp = org.meshtastic.proto.Waypoint(id = 42, name = "Base")
+        val decoded = pkt(PortNum.WAYPOINT_APP, org.meshtastic.proto.Waypoint.ADAPTER.encode(wp)).asWaypoint()
+        assertNotNull(decoded)
+        assertEquals(42, decoded.id)
+        assertEquals("Base", decoded.name)
+    }
+
+    @Test fun waypointWrongPortReturnsNull() {
+        val wp = org.meshtastic.proto.Waypoint(id = 1)
+        assertNull(pkt(PortNum.TEXT_MESSAGE_APP, org.meshtastic.proto.Waypoint.ADAPTER.encode(wp)).asWaypoint())
+    }
+
+    @Test fun tracerouteDecodes() {
+        val route = org.meshtastic.proto.RouteDiscovery(route = listOf(100, 200, 300))
+        val decoded = pkt(PortNum.TRACEROUTE_APP, org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(route)).asTraceroute()
+        assertNotNull(decoded)
+        assertEquals(listOf(100, 200, 300), decoded.route)
+    }
+
+    @Test fun tracerouteWrongPortReturnsNull() {
+        val route = org.meshtastic.proto.RouteDiscovery(route = listOf(1))
+        assertNull(pkt(PortNum.ROUTING_APP, org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(route)).asTraceroute())
+    }
+
+    @Test fun neighborInfoDecodes() {
+        val ni = org.meshtastic.proto.NeighborInfo(node_id = 0xABCD, last_sent_by_id = 0x1234)
+        val decoded = pkt(PortNum.NEIGHBORINFO_APP, org.meshtastic.proto.NeighborInfo.ADAPTER.encode(ni)).asNeighborInfo()
+        assertNotNull(decoded)
+        assertEquals(0xABCD, decoded.node_id)
+        assertEquals(0x1234, decoded.last_sent_by_id)
+    }
+
+    @Test fun neighborInfoWrongPortReturnsNull() {
+        val ni = org.meshtastic.proto.NeighborInfo(node_id = 1)
+        assertNull(pkt(PortNum.TELEMETRY_APP, org.meshtastic.proto.NeighborInfo.ADAPTER.encode(ni)).asNeighborInfo())
+    }
 }

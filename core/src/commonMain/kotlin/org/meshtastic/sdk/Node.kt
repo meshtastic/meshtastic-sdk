@@ -227,6 +227,28 @@ public sealed interface MeshEvent {
      * @since 0.1.0
      */
     public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
+
+    /**
+     * An external source (another admin client) pushed a configuration change to the connected
+     * device. The engine has already applied the update to local state ([RadioClient.config],
+     * [RadioClient.channels]). Subscribers should refresh any cached configuration.
+     *
+     * @param kind indicates which aspect of the device configuration changed
+     * @since 0.1.0
+     */
+    public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
+}
+
+/**
+ * Describes which category of device configuration was changed externally.
+ */
+public enum class ExternalChangeKind {
+    /** A channel was added, removed, or modified. */
+    CHANNEL,
+    /** A radio/device config section was modified. */
+    CONFIG,
+    /** A module config section was modified. */
+    MODULE_CONFIG,
 }
 
 /**

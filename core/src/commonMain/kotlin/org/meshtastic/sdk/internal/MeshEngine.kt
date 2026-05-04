@@ -36,6 +36,7 @@ import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Routing
+import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.AutoReconnectConfig
@@ -45,12 +46,14 @@ import org.meshtastic.sdk.ConfigPhase
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
+import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.MessageId
 import org.meshtastic.sdk.NodeChange
+import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendFailure
@@ -479,6 +482,21 @@ internal class MeshEngine(
 
         inbox.close()
         outbound.close()
+
+        // Final flush of any dirty heartbeats so presence data survives a clean disconnect.
+        try {
+            if (!storageDegraded && dirtyHeartbeats.isNotEmpty()) {
+                val s = storage
+                if (s != null) {
+                    for (nodeId in dirtyHeartbeats) {
+                        lastHeartbeatAt[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
+                    }
+                    dirtyHeartbeats.clear()
+                }
+            }
+        } catch (_: Exception) {
+            // best-effort — don't fail cleanup
+        }
 
         try {
             storage?.close()
@@ -1227,6 +1245,12 @@ internal class MeshEngine(
                 // so a route_reply doesn't get mistakenly classified as a generic Acked send.
                 dispatcher.tryComplete(packet)
                 processRoutingAck(packet)
+                // Telemetry → node update: merge device_metrics into the node DB so that
+                // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
+                maybeMergeDeviceMetrics(packet)
+                // External config change detection: unsolicited admin messages from firmware
+                // indicating another client modified channels/config on this device.
+                maybeProcessExternalAdminChange(packet)
             }
 
             nodeInfo != null -> {
@@ -1238,7 +1262,10 @@ internal class MeshEngine(
                 if (existing == null) {
                     emitNodeChangeOrLog(NodeChange.Added(nodeInfo))
                 } else {
-                    emitNodeChangeOrLog(NodeChange.Updated(nodeInfo, emptySet()))
+                    val changed = diffNodeFields(existing, nodeInfo)
+                    if (changed.isNotEmpty()) {
+                        emitNodeChangeOrLog(NodeChange.Updated(nodeInfo, changed))
+                    }
                 }
             }
 
@@ -1437,6 +1464,99 @@ internal class MeshEngine(
                 // No oneof arm set — informational, not actionable.
                 logger.debug(TAG) { "Routing payload with no oneof variant for id=$messageId" }
             }
+        }
+    }
+
+    /**
+     * When a TELEMETRY_APP packet arrives with device_metrics, merge them into the corresponding
+     * node in the node DB and emit [NodeChange.Updated] so node-list subscribers see telemetry
+     * changes (battery, channel utilization, etc.) without separate TelemetryApi subscription.
+     */
+    private fun maybeMergeDeviceMetrics(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.portnum != PortNum.TELEMETRY_APP) return
+        if (packet.from == 0) return
+
+        val telemetry = try {
+            Telemetry.ADAPTER.decode(decoded.payload)
+        } catch (_: Exception) {
+            return
+        }
+
+        val deviceMetrics = telemetry.device_metrics ?: return
+        val nodeId = NodeId(packet.from)
+        val existing = meshState.nodes[nodeId] ?: return
+
+        val updated = existing.copy(device_metrics = deviceMetrics)
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (nodeId == NodeId(myNodeNum)) ownNode.value = updated
+
+        val changed = diffNodeFields(existing, updated)
+        if (changed.isNotEmpty()) {
+            emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
+        }
+    }
+
+    /**
+     * Detect unsolicited admin messages from the firmware that indicate an external client
+     * changed channels, config, or module config on the connected device. Updates local
+     * state (channelsState / configBundleState) and emits [MeshEvent.ExternalConfigChange].
+     *
+     * Only processes packets addressed to us (from our own node) with request_id == 0
+     * (unsolicited push from firmware, not a response to our own RPC).
+     */
+    private fun maybeProcessExternalAdminChange(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.portnum != PortNum.ADMIN_APP) return
+        // Only consider packets from our own node (firmware pushing changes locally)
+        if (packet.from != myNodeNum && packet.from != 0) return
+        // Solicited responses have a non-zero request_id matching a pending RPC
+        if (decoded.request_id != 0) return
+
+        val adminMsg = try {
+            AdminMessage.ADAPTER.decode(decoded.payload)
+        } catch (_: Exception) {
+            return
+        }
+
+        adminMsg.get_channel_response?.let { channel ->
+            logger.info(TAG) { "External channel change detected (index=${channel.index})" }
+            updateChannelAndPersist(channel)
+            events.tryEmit(MeshEvent.ExternalConfigChange(ExternalChangeKind.CHANNEL))
+            return
+        }
+
+        adminMsg.get_config_response?.let { config ->
+            logger.info(TAG) { "External config change detected" }
+            val current = configBundleState.value ?: return
+            val merged = mergeConfigs(current.configs, listOf(config))
+            val updated = current.copy(configs = merged)
+            configBundleState.value = updated
+            // Persist the merged config bundle
+            engineScope?.launch {
+                if (storageDegraded) return@launch
+                try {
+                    storage?.saveConfig(updated)
+                } catch (_: Exception) { /* non-fatal */ }
+            }
+            events.tryEmit(MeshEvent.ExternalConfigChange(ExternalChangeKind.CONFIG))
+            return
+        }
+
+        adminMsg.get_module_config_response?.let { moduleConfig ->
+            logger.info(TAG) { "External module config change detected" }
+            val current = configBundleState.value ?: return
+            val merged = mergeModuleConfigs(current.moduleConfigs, listOf(moduleConfig))
+            val updated = current.copy(moduleConfigs = merged)
+            configBundleState.value = updated
+            engineScope?.launch {
+                if (storageDegraded) return@launch
+                try {
+                    storage?.saveConfig(updated)
+                } catch (_: Exception) { /* non-fatal */ }
+            }
+            events.tryEmit(MeshEvent.ExternalConfigChange(ExternalChangeKind.MODULE_CONFIG))
+            return
         }
     }
 
@@ -1857,14 +1977,19 @@ internal class MeshEngine(
             return
         }
         channelsState.update { current: List<org.meshtastic.proto.Channel>? ->
-            if (current == null) return@update null
-            current.toMutableList().also { list ->
-                when {
-                    idx < list.size -> list[idx] = channel
-                    idx == list.size -> list.add(channel)
-                    // idx > list.size: sparse gap — ignore to avoid holes in the list
+            val list = (current ?: emptyList()).toMutableList()
+            when {
+                idx < list.size -> list[idx] = channel
+                idx == list.size -> list.add(channel)
+                // idx > list.size: sparse gap — pad with DISABLED channels to avoid holes
+                else -> {
+                    while (list.size < idx) {
+                        list.add(org.meshtastic.proto.Channel(index = list.size, role = org.meshtastic.proto.Channel.Role.DISABLED))
+                    }
+                    list.add(channel)
                 }
-            }.toList()
+            }
+            list.toList()
         }
         val updated = channelsState.value
         if (updated != null) {
@@ -1876,6 +2001,48 @@ internal class MeshEngine(
                 } catch (e: Exception) {
                     logger.warn(TAG, e) { "updateChannelAndPersist: saveChannels failed (non-fatal)" }
                 }
+            }
+        }
+    }
+
+    /**
+     * Optimistically update [configBundleState] after a successful `editSettings` commit.
+     *
+     * Merges written [Config] and [ModuleConfig] objects into the existing bundle, replacing
+     * sections that were written while preserving sections that weren't touched.
+     */
+    internal fun applyConfigEdits(
+        writtenConfigs: List<org.meshtastic.proto.Config>,
+        writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+    ) {
+        if (writtenConfigs.isEmpty() && writtenModuleConfigs.isEmpty()) return
+
+        val current = configBundleState.value ?: return
+
+        val mergedConfigs = if (writtenConfigs.isEmpty()) {
+            current.configs
+        } else {
+            mergeConfigs(current.configs, writtenConfigs)
+        }
+        val mergedModuleConfigs = if (writtenModuleConfigs.isEmpty()) {
+            current.moduleConfigs
+        } else {
+            mergeModuleConfigs(current.moduleConfigs, writtenModuleConfigs)
+        }
+
+        val updated = current.copy(configs = mergedConfigs, moduleConfigs = mergedModuleConfigs)
+        configBundleState.value = updated
+        meshState = meshState.withConfig(updated)
+
+        // Persist the updated bundle to storage.
+        engineScope?.launch {
+            if (storageDegraded) return@launch
+            try {
+                storage?.saveConfig(updated)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(TAG, e) { "applyConfigEdits: saveConfig failed (non-fatal)" }
             }
         }
     }
