@@ -14,9 +14,14 @@ import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DeviceUIConfig
+import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminApi
 import org.meshtastic.sdk.AdminEdit
@@ -148,6 +153,107 @@ internal class AdminApiImpl(
         }
         submitAdminAck(msg)
     }
+
+    override suspend fun toggleMuted(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(toggle_muted_node = node.raw))
+    }
+
+    // ── Position ────────────────────────────────────────────────────────────
+
+    override suspend fun setFixedPosition(position: Position): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_fixed_position = position))
+    }
+
+    override suspend fun removeFixedPosition(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(remove_fixed_position = true))
+    }
+
+    // ── Device UI Config ────────────────────────────────────────────────────
+
+    override suspend fun getUIConfig(): AdminResult<DeviceUIConfig> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_ui_config_request = true),
+            kind = ResponseKind.AdminDeviceUIConfig,
+        )
+    }
+
+    override suspend fun storeUIConfig(config: DeviceUIConfig): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(store_ui_config = config))
+    }
+
+    // ── Canned Messages ─────────────────────────────────────────────────────
+
+    override suspend fun getCannedMessages(): AdminResult<String> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_canned_message_module_messages_request = true),
+            kind = ResponseKind.AdminCannedMessages,
+        )
+    }
+
+    override suspend fun setCannedMessages(messages: String): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_canned_message_module_messages = messages))
+    }
+
+    // ── Ringtone ────────────────────────────────────────────────────────────
+
+    override suspend fun getRingtone(): AdminResult<String> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_ringtone_request = true),
+            kind = ResponseKind.AdminRingtone,
+        )
+    }
+
+    override suspend fun setRingtone(rtttl: String): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_ringtone_message = rtttl))
+    }
+
+    // ── Device status ───────────────────────────────────────────────────────
+
+    override suspend fun getDeviceConnectionStatus(): AdminResult<DeviceConnectionStatus> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_device_connection_status_request = true),
+            kind = ResponseKind.AdminDeviceConnectionStatus,
+        )
+    }
+
+    override suspend fun getRemoteHardwarePins(): AdminResult<NodeRemoteHardwarePinsResponse> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_node_remote_hardware_pins_request = true),
+            kind = ResponseKind.AdminRemoteHardwarePins,
+        )
+    }
+
+    // ── Ham radio ───────────────────────────────────────────────────────────
+
+    override suspend fun setHamMode(params: HamParameters): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_ham_mode = params))
+    }
+
+    // ── DFU / file management ───────────────────────────────────────────────
+
+    override suspend fun enterDfuMode(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(enter_dfu_mode_request = true))
+    }
+
+    override suspend fun deleteFile(path: String): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(delete_file_request = path))
+    }
+
+    // ── Backup / Restore ────────────────────────────────────────────────────
+
+    override suspend fun backupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(backup_preferences = location))
+    }
+
+    override suspend fun restorePreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(restore_preferences = location))
+    }
+
+    override suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(remove_backup_preferences = location))
+    }
+
+    // ── Lifecycle ───────────────────────────────────────────────────────────
 
     override suspend fun reboot(after: Duration): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage(reboot_seconds = after.inWholeSeconds.toInt().coerceAtLeast(0)))

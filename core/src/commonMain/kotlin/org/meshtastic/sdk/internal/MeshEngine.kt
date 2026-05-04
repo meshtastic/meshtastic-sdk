@@ -178,6 +178,7 @@ internal class MeshEngine(
     private val pendingChannels = mutableListOf<org.meshtastic.proto.Channel>()
     private var pendingMyInfo: org.meshtastic.proto.MyNodeInfo? = null
     private var pendingMetadata: org.meshtastic.proto.DeviceMetadata? = null
+    private var pendingDeviceUIConfig: org.meshtastic.proto.DeviceUIConfig? = null
 
     // Sends that arrived while still handshaking — dispatched in flushQueuedSends().
     private val preSendQueue = mutableListOf<EngineMessage.Send>()
@@ -541,6 +542,7 @@ internal class MeshEngine(
         pendingChannels.clear()
         pendingMyInfo = null
         pendingMetadata = null
+        pendingDeviceUIConfig = null
         preSendQueue.clear()
         // reset the degraded flag so the next connect attempt gets a fresh storage shot.
         storageDegraded = false
@@ -888,6 +890,7 @@ internal class MeshEngine(
         val config = fromRadio.config
         val modConfig = fromRadio.moduleConfig
         val nodeInfo = fromRadio.node_info
+        val deviceUIConf = fromRadio.deviceuiConfig
         val completeId = fromRadio.config_complete_id
 
         when {
@@ -900,6 +903,8 @@ internal class MeshEngine(
             config != null -> pendingConfigs.add(config)
 
             modConfig != null -> pendingModuleConfigs.add(modConfig)
+
+            deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
 
             nodeInfo != null -> {
                 val nodeId = NodeId(nodeInfo.num)
@@ -1060,6 +1065,7 @@ internal class MeshEngine(
                         metadata = pendingMetadata ?: org.meshtastic.proto.DeviceMetadata(),
                         configs = pendingConfigs.toList(),
                         moduleConfigs = pendingModuleConfigs.toList(),
+                        deviceUIConfig = pendingDeviceUIConfig,
                     )
                     meshState = meshState.withConfig(bundle)
                 }
@@ -1348,7 +1354,8 @@ internal class MeshEngine(
         }
 
         fromRadio.deviceuiConfig != null -> {
-            warnUnhandledVariant("deviceui_config", stage)
+            // Capture deviceuiConfig if it arrives post-handshake (e.g., after storeUIConfig).
+            pendingDeviceUIConfig = fromRadio.deviceuiConfig
             true
         }
 

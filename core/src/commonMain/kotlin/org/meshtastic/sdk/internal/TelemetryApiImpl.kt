@@ -16,11 +16,14 @@ import org.meshtastic.proto.AirQualityMetrics
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceMetrics
 import org.meshtastic.proto.EnvironmentMetrics
+import org.meshtastic.proto.HealthMetrics
+import org.meshtastic.proto.HostMetrics
 import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.PowerMetrics
 import org.meshtastic.proto.Telemetry
+import org.meshtastic.proto.TrafficManagementStats
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.TelemetryApi
@@ -57,6 +60,15 @@ internal class TelemetryApiImpl(
 
     override suspend fun requestLocalStats(): AdminResult<LocalStats> =
         requestTelemetry(NodeId.LOCAL) { it.local_stats }
+
+    override suspend fun requestHealth(node: NodeId): AdminResult<HealthMetrics> =
+        requestTelemetry(node) { it.health_metrics }
+
+    override suspend fun requestHost(node: NodeId): AdminResult<HostMetrics> =
+        requestTelemetry(node) { it.host_metrics }
+
+    override suspend fun requestTrafficManagement(node: NodeId): AdminResult<TrafficManagementStats> =
+        requestTelemetry(node) { it.traffic_management_stats }
 
     override fun observe(node: NodeId): Flow<Telemetry> = packetsFlow
         .filter { packet ->

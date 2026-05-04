@@ -10,7 +10,12 @@ package org.meshtastic.sdk
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
+import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DeviceUIConfig
+import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.User
 import kotlin.time.Duration
 import kotlin.time.Instant
@@ -74,6 +79,73 @@ public interface AdminApi {
 
     /** Mark [node] as ignored — packets from it are filtered before reaching apps. */
     public suspend fun setIgnored(node: NodeId, ignored: Boolean): AdminResult<Unit>
+
+    /** Toggle mute state on [node] — muted nodes do not forward packets. */
+    public suspend fun toggleMuted(node: NodeId): AdminResult<Unit>
+
+    // ── Position ────────────────────────────────────────────────────────────
+
+    /** Set a fixed GPS position for the device (disables GPS module). */
+    public suspend fun setFixedPosition(position: Position): AdminResult<Unit>
+
+    /** Remove the fixed position and re-enable GPS. */
+    public suspend fun removeFixedPosition(): AdminResult<Unit>
+
+    // ── Device UI Config ────────────────────────────────────────────────────
+
+    /** Read the device's UI configuration (display preferences, language, etc.). */
+    public suspend fun getUIConfig(): AdminResult<DeviceUIConfig>
+
+    /** Write the device's UI configuration. */
+    public suspend fun storeUIConfig(config: DeviceUIConfig): AdminResult<Unit>
+
+    // ── Canned Messages ─────────────────────────────────────────────────────
+
+    /** Read the canned message module's preset messages. */
+    public suspend fun getCannedMessages(): AdminResult<String>
+
+    /** Write the canned message module's preset messages (pipe-delimited). */
+    public suspend fun setCannedMessages(messages: String): AdminResult<Unit>
+
+    // ── Ringtone ────────────────────────────────────────────────────────────
+
+    /** Read the device's ringtone (RTTTL format). */
+    public suspend fun getRingtone(): AdminResult<String>
+
+    /** Write the device's ringtone (RTTTL format). */
+    public suspend fun setRingtone(rtttl: String): AdminResult<Unit>
+
+    // ── Device status ───────────────────────────────────────────────────────
+
+    /** Read the device's connection status (WiFi, BLE, Ethernet, MQTT). */
+    public suspend fun getDeviceConnectionStatus(): AdminResult<DeviceConnectionStatus>
+
+    /** Read the remote hardware pin configuration of [node]. */
+    public suspend fun getRemoteHardwarePins(): AdminResult<NodeRemoteHardwarePinsResponse>
+
+    // ── Ham radio ───────────────────────────────────────────────────────────
+
+    /** Configure the device for amateur radio use (sets call sign, disables encryption). */
+    public suspend fun setHamMode(params: HamParameters): AdminResult<Unit>
+
+    // ── DFU / file management ───────────────────────────────────────────────
+
+    /** Enter DFU (firmware update) mode. The device will reboot into its bootloader. */
+    public suspend fun enterDfuMode(): AdminResult<Unit>
+
+    /** Delete a file from the device's filesystem. */
+    public suspend fun deleteFile(path: String): AdminResult<Unit>
+
+    // ── Backup / Restore ────────────────────────────────────────────────────
+
+    /** Back up device preferences to the specified [location]. */
+    public suspend fun backupPreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
+
+    /** Restore device preferences from the specified [location]. */
+    public suspend fun restorePreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
+
+    /** Remove a stored preference backup from [location]. */
+    public suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
