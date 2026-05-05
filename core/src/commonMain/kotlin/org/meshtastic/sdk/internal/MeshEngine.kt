@@ -1910,7 +1910,7 @@ internal class MeshEngine(
         supervisorJobRef.value?.cancel()
     }
 
-    private fun sendToRadio(msg: ToRadio) {
+    internal fun sendToRadio(msg: ToRadio) {
         try {
             val encoded = WireCodec.encodeToRadio(msg)
             outbound.trySend(Frame(ByteString(encoded)))

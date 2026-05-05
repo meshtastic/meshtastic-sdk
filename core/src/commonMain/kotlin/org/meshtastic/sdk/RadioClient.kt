@@ -23,6 +23,7 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.internal.AdminApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.RoutingApiImpl
@@ -467,6 +468,28 @@ public class RadioClient internal constructor(
      */
     public val routing: RoutingApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
         RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout)
+    }
+
+    /**
+     * Sends a raw [ToRadio] frame to the device.
+     *
+     * This is a low-level escape hatch for device features not yet covered by higher-level APIs
+     * (e.g., MQTT client proxy messages, XModem file transfers). The SDK engine does **not** track
+     * or acknowledge these frames — delivery is best-effort at the transport level.
+     *
+     * Prefer [send], [sendText], or the typed sub-APIs ([admin], [telemetry], etc.) whenever
+     * possible.
+     *
+     * @param frame the fully constructed [ToRadio] message to send
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @since 0.2.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendRaw(frame: ToRadio) {
+        if (connection.value !is ConnectionState.Connected) {
+            throw MeshtasticException.NotConnected()
+        }
+        engine.sendToRadio(frame)
     }
 
     // ── Builder ─────────────────────────────────────────────────────────────
