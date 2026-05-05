@@ -10,7 +10,7 @@ package org.meshtastic.sdk.internal
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.NeighborInfo
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
@@ -26,7 +26,7 @@ import kotlin.time.Duration
  *   `ROUTING_APP` with `want_response = true`. The mesh propagates the discovery hop-by-hop;
  *   the destination replies with `route_reply` populated. The dispatcher matches by
  *   `request_id`.
- * - [requestNeighborInfo] sends an empty [NeighborInfo] on `NEIGHBORINFO_APP` with
+ * - [requestNeighborInfo] sends an empty [ProtoNeighborInfo] on `NEIGHBORINFO_APP` with
  *   `want_response = true`. The neighborinfo module on the device responds with its current
  *   neighbor table.
  */
@@ -50,14 +50,14 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
         return engine.submitRpc(packet, requestId, ResponseKind.RouteDiscoveryReply, rpcTimeout)
     }
 
-    override suspend fun requestNeighborInfo(node: NodeId): AdminResult<NeighborInfo> {
+    override suspend fun requestNeighborInfo(node: NodeId): AdminResult<ProtoNeighborInfo> {
         val target = if (node == NodeId.LOCAL) {
             NodeId(engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable)
         } else {
             node
         }
         val requestId = engine.nextMessageId().raw
-        val payload = NeighborInfo.ADAPTER.encode(NeighborInfo()).toByteString()
+        val payload = ProtoNeighborInfo.ADAPTER.encode(ProtoNeighborInfo()).toByteString()
         val packet = MeshPacket(
             id = requestId,
             from = engine.myNodeNumOrNull() ?: 0,

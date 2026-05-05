@@ -32,6 +32,12 @@ class NodeIdsTest {
         assertNull(NodeId.fromHex(""))
     }
 
+    @Test fun defaultIdRoundTrips() {
+        val nodeId = NodeId(0xa1b2c3d4.toInt())
+        assertEquals("!a1b2c3d4", nodeId.toDefaultId())
+        assertEquals(nodeId, NodeId.fromDefaultId("!a1b2c3d4"))
+    }
+
     @Test fun predicates() {
         assertTrue(NodeId.BROADCAST.isBroadcast)
         assertTrue(NodeId.LOCAL.isLocal())

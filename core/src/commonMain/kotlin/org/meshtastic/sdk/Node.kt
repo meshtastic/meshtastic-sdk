@@ -90,6 +90,21 @@ public sealed interface NodeChange {
      * @param nodeId the ID of the removed node
      */
     public data class Removed(val nodeId: NodeId) : NodeChange
+
+    /**
+     * Emitted when a node's [NodeInfo.last_heard] exceeds the configured presence timeout
+     * and transitions from online to offline.
+     *
+     * Emitted by the engine when presence tracking is enabled via `Builder.presenceTimeout()`.
+     */
+    public data class WentOffline(val nodeId: NodeId, val lastHeard: Int) : NodeChange
+
+    /**
+     * Emitted when a previously-offline node sends a new packet and becomes online again.
+     *
+     * Emitted by the engine when presence tracking is enabled via `Builder.presenceTimeout()`.
+     */
+    public data class CameOnline(val nodeId: NodeId) : NodeChange
 }
 
 /**
@@ -114,6 +129,24 @@ public sealed interface MeshEvent {
      * @param notification the wire [ClientNotification] type
      */
     public data class Notification(val notification: org.meshtastic.proto.ClientNotification) : MeshEvent
+
+    /**
+     * Emitted when congestion metrics cross a threshold level.
+     * Clients should use [metrics] to decide whether to delay non-urgent sends.
+     */
+    public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
+
+    /**
+     * Emitted when the device's MQTT connection state changes to connected.
+     */
+    public data object MqttConnected : MeshEvent
+
+    /**
+     * Emitted when the device's MQTT connection drops.
+     *
+     * @property reason human-readable disconnect reason, if available
+     */
+    public data class MqttDisconnected(val reason: String? = null) : MeshEvent
 
     /**
      * A transport-level error occurred.

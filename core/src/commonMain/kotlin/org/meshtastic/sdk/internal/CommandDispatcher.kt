@@ -13,7 +13,7 @@ import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.NeighborInfo
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
@@ -187,10 +187,10 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         return AdminResult.Success(reply)
     }
 
-    private fun decodeNeighborInfo(payload: okio.ByteString, portnum: PortNum?): AdminResult<NeighborInfo>? {
+    private fun decodeNeighborInfo(payload: okio.ByteString, portnum: PortNum?): AdminResult<ProtoNeighborInfo>? {
         if (portnum != PortNum.NEIGHBORINFO_APP) return null
         val info = try {
-            NeighborInfo.ADAPTER.decode(payload)
+            ProtoNeighborInfo.ADAPTER.decode(payload)
         } catch (_: Exception) {
             return null
         }
@@ -247,5 +247,5 @@ internal sealed interface ResponseKind<T> {
     data object AdminDeviceUIConfig : ResponseKind<org.meshtastic.proto.DeviceUIConfig>
     data object Telemetry : ResponseKind<org.meshtastic.proto.Telemetry>
     data object RouteDiscoveryReply : ResponseKind<RouteDiscovery>
-    data object NeighborInfoReply : ResponseKind<NeighborInfo>
+    data object NeighborInfoReply : ResponseKind<ProtoNeighborInfo>
 }

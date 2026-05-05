@@ -200,6 +200,27 @@ public sealed interface ConnectionState {
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
 }
 
+/** Whether the connection is fully established and ready for use. */
+public val ConnectionState.isUsable: Boolean
+    get() = this is ConnectionState.Connected
+
+/** Whether a connection attempt is actively in progress. */
+public val ConnectionState.isInProgress: Boolean
+    get() =
+        this is ConnectionState.Connecting ||
+            this is ConnectionState.Configuring ||
+            this is ConnectionState.Reconnecting
+
+/** Human-readable status description. */
+public val ConnectionState.statusMessage: String
+    get() = when (this) {
+        is ConnectionState.Disconnected -> "Disconnected"
+        is ConnectionState.Connecting -> "Connecting (attempt $attempt)"
+        is ConnectionState.Configuring -> "Configuring: ${phase.name} (${(progress * 100).toInt()}%)"
+        is ConnectionState.Connected -> "Connected"
+        is ConnectionState.Reconnecting -> "Reconnecting (attempt $attempt)"
+    }
+
 /**
  * Handshake phase for progress reporting.
  *

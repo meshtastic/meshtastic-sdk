@@ -57,4 +57,8 @@ class ChannelUrlsTest {
             byteArrayOf(0x01, 0x02).fold(0) { a, b -> a xor (b.toInt() and 0xff) }
         assertEquals(expected and 0xff, ChannelSettings.hash("abc", byteArrayOf(0x01, 0x02)))
     }
+
+    @Test fun channelNameHashUsesDjb2() {
+        assertEquals(130429955u, channelNameHashDjb2("LongFast"))
+    }
 }
