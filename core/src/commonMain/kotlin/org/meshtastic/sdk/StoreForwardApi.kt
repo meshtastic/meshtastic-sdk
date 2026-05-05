@@ -121,7 +121,12 @@ public sealed interface StoreForwardEvent {
      */
     public data class Heartbeat(val server: NodeId) : StoreForwardEvent
 
-    /** An SFPP link was provided — message is being routed or confirmed. */
+    /**
+     * An SFPP link was provided — message is being routed or confirmed.
+     *
+     * @property to The normalized destination node num (broadcast 0 is replaced with [NodeId.BROADCAST]).
+     * @property messageHash The computed or provided hash for correlation (null if unavailable).
+     */
     public data class SfppLinkProvided(
         val packetId: Int,
         val from: Int,

@@ -18,7 +18,7 @@ package org.meshtastic.sdk
  * val neighbors = topology.getNeighbors(nodeA)
  * ```
  *
- * Thread-safe for concurrent reads; mutations are intended to be single-writer.
+ * **Not thread-safe** — callers must synchronize externally if mutating and reading concurrently.
  * The graph is directed — if node A reports node B as a neighbor, that's a directed edge A→B.
  * Undirected queries consider both directions.
  */

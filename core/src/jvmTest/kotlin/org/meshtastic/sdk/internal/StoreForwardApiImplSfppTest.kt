@@ -179,7 +179,7 @@ class StoreForwardApiImplSfppTest {
         )
         assertEquals(42, event.packetId)
         assertEquals(0x0BADF00D, event.from)
-        assertEquals(0, event.to)
+        assertEquals(NodeId.BROADCAST.raw, event.to)
         assertContentEquals(expectedHash, assertNotNull(event.messageHash))
 
         client.disconnect()

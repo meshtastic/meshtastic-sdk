@@ -228,11 +228,12 @@ internal class StoreForwardApiImpl(
     private suspend fun handleLinkProvide(sfpp: StoreForwardPlusPlus) {
         val confirmed = sfpp.commit_hash.size != 0
         val isFragment = sfpp.sfpp_message_type != StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+        val normalizedTo = if (sfpp.encapsulated_to == 0) NodeId.BROADCAST.raw else sfpp.encapsulated_to
         val hash = when {
             sfpp.message_hash.size != 0 -> sfpp.message_hash.toByteArray()
             !isFragment && sfpp.message.size != 0 -> SfppHash.compute(
                 payload = sfpp.message.toByteArray(),
-                to = if (sfpp.encapsulated_to == 0) NodeId.BROADCAST.raw else sfpp.encapsulated_to,
+                to = normalizedTo,
                 from = sfpp.encapsulated_from,
                 id = sfpp.encapsulated_id,
             )
@@ -243,7 +244,7 @@ internal class StoreForwardApiImpl(
             StoreForwardEvent.SfppLinkProvided(
                 packetId = sfpp.encapsulated_id,
                 from = sfpp.encapsulated_from,
-                to = sfpp.encapsulated_to,
+                to = normalizedTo,
                 messageHash = hash,
                 confirmed = confirmed,
             ),
