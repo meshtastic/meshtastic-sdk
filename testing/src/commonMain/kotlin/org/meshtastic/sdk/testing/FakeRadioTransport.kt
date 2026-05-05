@@ -181,6 +181,25 @@ public class FakeRadioTransport(
         injectFromRadio(FromRadio(packet = packet))
     }
 
+    /** Inject a Store-and-Forward response correlated to [requestId]. */
+    public fun injectStoreForwardResponse(
+        requestId: Int,
+        message: org.meshtastic.proto.StoreAndForward,
+        fromNode: Int = nodeNum,
+    ) {
+        val payload = okio.ByteString.of(*org.meshtastic.proto.StoreAndForward.ADAPTER.encode(message))
+        val packet = MeshPacket(
+            from = fromNode,
+            to = 0,
+            decoded = Data(
+                portnum = PortNum.STORE_FORWARD_APP,
+                payload = payload,
+                request_id = requestId,
+            ),
+        )
+        injectFromRadio(FromRadio(packet = packet))
+    }
+
     /** Inject a Routing.Ack correlated to [requestId] (setter ack-style tests). */
     public fun injectRoutingAck(requestId: Int, fromNode: Int = nodeNum) {
         val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing(error_reason = Routing.Error.NONE)))

@@ -41,6 +41,8 @@ import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ChannelIndex
+import org.meshtastic.sdk.CongestionLevel
+import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConfigBundle
 import org.meshtastic.sdk.ConfigPhase
 import org.meshtastic.sdk.ConnectionState
@@ -72,6 +74,7 @@ import kotlin.math.pow
 import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
@@ -89,6 +92,7 @@ internal class MeshEngine(
     private val bleHeartbeatEnabled: Boolean,
     private val parentContext: CoroutineContext,
     private val sendTimeout: Duration = 30.seconds,
+    private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
 ) {
 
@@ -192,6 +196,8 @@ internal class MeshEngine(
      */
     private val lastHeartbeatAt = mutableMapOf<NodeId, Long>()
     private val dirtyHeartbeats = mutableSetOf<NodeId>()
+    private val offlineNodes = mutableSetOf<NodeId>()
+    private val lastCongestionLevel = mutableMapOf<NodeId, CongestionLevel>()
 
     /**
      * once a storage write fails we flip this flag, emit a single
@@ -549,6 +555,8 @@ internal class MeshEngine(
         // clear in-memory heartbeat bookkeeping (hydrated fresh on next connect).
         lastHeartbeatAt.clear()
         dirtyHeartbeats.clear()
+        offlineNodes.clear()
+        lastCongestionLevel.clear()
         // clear any leftover settle-buffer entries so a reconnect starts clean.
         settleBuffer.clear()
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
@@ -583,6 +591,7 @@ internal class MeshEngine(
             is EngineMessage.CancelHandle -> handleCancelHandle(msg)
             EngineMessage.HeartbeatTick -> handleHeartbeatTick()
             EngineMessage.LivenessTick -> handleLivenessTick()
+            EngineMessage.PresenceCheckTick -> handlePresenceCheckTick()
             is EngineMessage.HandshakeTimeout -> handleHandshakeTimeout(msg)
             EngineMessage.HandshakeStage1SettleComplete -> handleStage1SettleComplete()
             EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
@@ -706,12 +715,14 @@ internal class MeshEngine(
         try {
             val loaded = storage?.loadHeartbeats().orEmpty()
             lastHeartbeatAt.clear()
+            offlineNodes.clear()
             lastHeartbeatAt.putAll(loaded)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to load persisted heartbeats" }
             lastHeartbeatAt.clear()
+            offlineNodes.clear()
         }
 
         try {
@@ -1227,6 +1238,16 @@ internal class MeshEngine(
             }
         }
 
+        // Presence check: scan nodes for offline transitions every 30s (piggybacks on heartbeat interval).
+        if (presenceTimeout.isPositive() && presenceTimeout.isFinite()) {
+            engineScope?.launch {
+                while (true) {
+                    delay(HEARTBEAT_INTERVAL_MS)
+                    inbox.trySend(EngineMessage.PresenceCheckTick)
+                }
+            }
+        }
+
         // Drain the snapshot: dispatch every send that wasn't cancelled while waiting.
         for (msg in snapshot) {
             if (msg.stateFlow.value == SendState.Queued) {
@@ -1263,6 +1284,7 @@ internal class MeshEngine(
                 // Telemetry → node update: merge device_metrics into the node DB so that
                 // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
                 maybeMergeDeviceMetrics(packet)
+                maybeEmitCongestionWarning(packet)
                 // External config change detection: unsolicited admin messages from firmware
                 // indicating another client modified channels/config on this device.
                 maybeProcessExternalAdminChange(packet)
@@ -1510,6 +1532,33 @@ internal class MeshEngine(
         val changed = diffNodeFields(existing, updated)
         if (changed.isNotEmpty()) {
             emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
+        }
+    }
+
+    private fun maybeEmitCongestionWarning(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.portnum != PortNum.TELEMETRY_APP) return
+        if (packet.from == 0) return
+
+        val telemetry = try {
+            Telemetry.ADAPTER.decode(decoded.payload)
+        } catch (_: Exception) {
+            return
+        }
+
+        val deviceMetrics = telemetry.device_metrics ?: return
+        val airUtilTx: Float = deviceMetrics.air_util_tx ?: 0f
+        val channelUtil: Float = deviceMetrics.channel_utilization ?: 0f
+
+        if (airUtilTx == 0f && channelUtil == 0f) return
+
+        val metrics = CongestionMetrics(airUtilTx = airUtilTx, channelUtil = channelUtil)
+        val nodeId = NodeId(packet.from)
+        val prevLevel = lastCongestionLevel[nodeId]
+
+        if (prevLevel != metrics.level) {
+            lastCongestionLevel[nodeId] = metrics.level
+            events.tryEmit(MeshEvent.CongestionWarning(metrics))
         }
     }
 
@@ -1835,6 +1884,22 @@ internal class MeshEngine(
         flushDirtyHeartbeats()
     }
 
+    private fun handlePresenceCheckTick() {
+        if (handshakeStage != HandshakeStage.Ready) return
+        val now = Clock.System.now().toEpochMilliseconds()
+        val timeoutMs = presenceTimeout.inWholeMilliseconds
+
+        for ((nodeId, lastMs) in lastHeartbeatAt) {
+            if (nodeId == NodeId(myNodeNum)) continue
+            val elapsed = now - lastMs
+            if (elapsed > timeoutMs && nodeId !in offlineNodes) {
+                offlineNodes.add(nodeId)
+                val lastHeardSec = (lastMs / 1000).toInt()
+                emitNodeChangeOrLog(NodeChange.WentOffline(nodeId, lastHeardSec))
+            }
+        }
+    }
+
     /**
      * one-shot Stage 1 retry. If we're still waiting for the device's first
      * `my_info`/config envelope at the half-budget mark, re-send `want_config_id = NONCE_STAGE1`
@@ -2082,6 +2147,9 @@ internal class MeshEngine(
         val now = Clock.System.now().toEpochMilliseconds()
         lastHeartbeatAt[nodeId] = now
         dirtyHeartbeats.add(nodeId)
+        if (offlineNodes.remove(nodeId)) {
+            emitNodeChangeOrLog(NodeChange.CameOnline(nodeId))
+        }
     }
 
     private fun flushDirtyHeartbeats() {

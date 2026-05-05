@@ -106,6 +106,9 @@ internal sealed interface EngineMessage {
      */
     data object LivenessTick : EngineMessage
 
+    /** Periodic presence check: scans nodes and emits WentOffline/CameOnline events. */
+    data object PresenceCheckTick : EngineMessage
+
     /**
      * Handshake stage timed out.
      *

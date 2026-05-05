@@ -27,10 +27,12 @@ import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.internal.AdminApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.RoutingApiImpl
+import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -43,7 +45,7 @@ import kotlin.time.Duration.Companion.seconds
  * - **State:** [connection], [ownNode], [nodes] (reactive [StateFlow]s and [Flow]s).
  * - **Messaging:** [send] and [sendText] (enqueue immediately; return a [MessageHandle]).
  * - **Observability:** [packets], [events] (reactive flows).
- * - **Operations:** [admin], [telemetry], [routing] sub-APIs.
+ * - **Operations:** [admin], [telemetry], [routing], [storeForward] sub-APIs.
  *
  * **Drop-in philosophy:** configure once with [Builder], then observe and call:
  *
@@ -127,7 +129,7 @@ public class RadioClient internal constructor(
     /**
      * Node-change deltas. Late subscribers receive a [NodeChange.Snapshot] immediately
      * (single-replay), then live [NodeChange.Added] / [NodeChange.Updated] /
-     * [NodeChange.Removed] in causal order.
+     * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal order.
      *
      * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
      * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
@@ -471,13 +473,27 @@ public class RadioClient internal constructor(
     }
 
     /**
+     * Store-and-Forward API for requesting stored messages. Available while connected.
+     */
+    public val storeForward: StoreForwardApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        StoreForwardApiImpl(
+            engine = engine,
+            packetsFlow = engine.packets,
+            rpcTimeout = rpcTimeout,
+            coroutineContext = parentContext,
+            nowProvider = { clock.now() },
+        )
+    }
+
+    /**
      * Sends a raw [ToRadio] frame to the device.
      *
      * This is a low-level escape hatch for device features not yet covered by higher-level APIs
      * (e.g., MQTT client proxy messages, XModem file transfers). The SDK engine does **not** track
      * or acknowledge these frames — delivery is best-effort at the transport level.
      *
-     * Prefer [send], [sendText], or the typed sub-APIs ([admin], [telemetry], etc.) whenever
+     * Prefer [send], [sendText], or the typed sub-APIs ([admin], [telemetry], [routing],
+     * [storeForward], etc.) whenever
      * possible.
      *
      * @param frame the fully constructed [ToRadio] message to send
@@ -526,6 +542,7 @@ public class RadioClient internal constructor(
         private var payloadRedactor: PayloadRedactor = PayloadRedactor.Default
         private var sendTimeout: Duration = 30.seconds
         private var rpcTimeout: Duration = 30.seconds
+        private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
 
         /**
@@ -680,6 +697,9 @@ public class RadioClient internal constructor(
          */
         public fun rpcTimeout(duration: Duration): Builder = apply { rpcTimeout = duration }
 
+        /** Configure the online/offline presence timeout for node presence events. */
+        public fun presenceTimeout(timeout: Duration): Builder = apply { presenceTimeout = timeout }
+
         /**
          * Configure the engine's built-in auto-reconnect supervisor.
          *
@@ -728,6 +748,7 @@ public class RadioClient internal constructor(
                 bleHeartbeatEnabled = bleHeartbeatEnabled,
                 parentContext = coroutineContext,
                 sendTimeout = sendTimeout,
+                presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
             )
 

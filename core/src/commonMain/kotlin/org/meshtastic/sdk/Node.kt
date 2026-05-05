@@ -49,7 +49,8 @@ public enum class NodeField {
  * A delta notification of node state changes.
  *
  * The SDK emits these via the [RadioClient.nodes] flow. Late subscribers first receive a
- * [Snapshot] of all known nodes, then live deltas ([Added], [Updated], [Removed]) in causal order.
+ * [Snapshot] of all known nodes, then live deltas ([Added], [Updated], [Removed], [WentOffline],
+ * [CameOnline]) in causal order.
  *
  * This delta-based design is efficient for large meshes: a 200-node network with frequent
  * telemetry would be wasteful to emit as a full `StateFlow<Map<NodeId, NodeInfo>>` (200 entries

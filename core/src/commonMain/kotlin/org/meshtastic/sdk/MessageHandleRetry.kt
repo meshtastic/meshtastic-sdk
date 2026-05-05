@@ -7,8 +7,7 @@
  */
 package org.meshtastic.sdk
 
-import org.meshtastic.sdk.MeshtasticException
-import org.meshtastic.sdk.MessageHandle
+import kotlinx.coroutines.delay
 
 /**
  * Re-enqueue the same packet that produced this [MessageHandle]. The engine assigns
@@ -27,4 +26,63 @@ public suspend fun MessageHandle.retry(): MessageHandle {
         )
     }
     return resend(pkt)
+}
+
+/**
+ * Awaits the outcome of this [MessageHandle], retrying according to [policy] if the send fails
+ * with a retryable failure.
+ *
+ * Non-retryable failures ([SendFailure.Disconnected], [SendFailure.Cancelled],
+ * [SendFailure.HandshakeFailed]) abort immediately regardless of remaining attempts.
+ *
+ * Requires that [MessageHandle.packet] and [MessageHandle.resendFn] are non-null (i.e., the handle
+ * was produced by [RadioClient.send] or [RadioClient.sendText], which always populate these fields).
+ *
+ * @param policy the retry strategy to apply
+ * @return the final [SendOutcome] (success after any attempt, or the last failure)
+ */
+public suspend fun MessageHandle.retryWith(policy: RetryPolicy): SendOutcome {
+    if (policy is RetryPolicy.None) return await()
+
+    var currentHandle = this
+    var attempt = 0
+
+    while (true) {
+        val outcome = currentHandle.await()
+        if (outcome is SendOutcome.Success) return outcome
+
+        val failure = (outcome as SendOutcome.Failure).reason
+        if (!failure.isRetryable()) return outcome
+
+        val delayDuration = policy.delayForAttempt(attempt) ?: return outcome
+        val pkt = currentHandle.packet ?: return outcome
+        val resend = currentHandle.resendFn ?: return outcome
+
+        delay(delayDuration)
+        currentHandle = resend(pkt)
+        attempt++
+    }
+}
+
+/**
+ * Whether this failure type is safe to retry.
+ *
+ * Terminal failures (disconnected, cancelled, handshake) should never be retried because the
+ * underlying session is no longer valid.
+ */
+private fun SendFailure.isRetryable(): Boolean = when (this) {
+    SendFailure.Disconnected,
+    SendFailure.HandshakeFailed,
+    SendFailure.Cancelled,
+    SendFailure.IdCollision,
+    -> false
+
+    SendFailure.NoRoute,
+    SendFailure.MaxRetransmit,
+    SendFailure.Timeout,
+    SendFailure.DutyCycleLimit,
+    SendFailure.AckTimeout,
+    is SendFailure.Other,
+    is SendFailure.Unknown,
+    -> true
 }

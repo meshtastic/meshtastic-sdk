@@ -18,6 +18,7 @@ import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
+import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.LogSink
@@ -101,6 +102,8 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             ResponseKind.Telemetry -> decodeTelemetry(decoded.payload, decoded.portnum)
             ResponseKind.RouteDiscoveryReply -> decodeRoute(decoded.payload, decoded.portnum)
             ResponseKind.NeighborInfoReply -> decodeNeighborInfo(decoded.payload, decoded.portnum)
+            ResponseKind.StoreForwardReply -> decodeStoreForwardHistory(decoded.payload, decoded.portnum)
+            ResponseKind.StoreForwardStatsReply -> decodeStoreForwardStats(decoded.payload, decoded.portnum)
         }
 
         if (resolved == null) {
@@ -197,6 +200,49 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         return AdminResult.Success(info)
     }
 
+    private fun decodeStoreForwardHistory(
+        payload: okio.ByteString,
+        portnum: PortNum?,
+    ): AdminResult<StoreAndForward.History>? {
+        val message = decodeStoreForward(payload, portnum) ?: return null
+        return when (message.rr) {
+            StoreAndForward.RequestResponse.ROUTER_HISTORY -> {
+                val history = message.history ?: return null
+                AdminResult.Success(history)
+            }
+
+            StoreAndForward.RequestResponse.ROUTER_BUSY -> AdminResult.Failed(Routing.Error.NO_RESPONSE)
+            StoreAndForward.RequestResponse.ROUTER_ERROR -> AdminResult.Failed(Routing.Error.GOT_NAK)
+            else -> null
+        }
+    }
+
+    private fun decodeStoreForwardStats(
+        payload: okio.ByteString,
+        portnum: PortNum?,
+    ): AdminResult<StoreAndForward.Statistics>? {
+        val message = decodeStoreForward(payload, portnum) ?: return null
+        return when (message.rr) {
+            StoreAndForward.RequestResponse.ROUTER_STATS -> {
+                val stats = message.stats ?: return null
+                AdminResult.Success(stats)
+            }
+
+            StoreAndForward.RequestResponse.ROUTER_BUSY -> AdminResult.Failed(Routing.Error.NO_RESPONSE)
+            StoreAndForward.RequestResponse.ROUTER_ERROR -> AdminResult.Failed(Routing.Error.GOT_NAK)
+            else -> null
+        }
+    }
+
+    private fun decodeStoreForward(payload: okio.ByteString, portnum: PortNum?): StoreAndForward? {
+        if (portnum != PortNum.STORE_FORWARD_APP) return null
+        return try {
+            StoreAndForward.ADAPTER.decode(payload)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     companion object {
         private const val TAG = "CommandDispatcher"
 
@@ -248,4 +294,6 @@ internal sealed interface ResponseKind<T> {
     data object Telemetry : ResponseKind<org.meshtastic.proto.Telemetry>
     data object RouteDiscoveryReply : ResponseKind<RouteDiscovery>
     data object NeighborInfoReply : ResponseKind<ProtoNeighborInfo>
+    data object StoreForwardReply : ResponseKind<StoreAndForward.History>
+    data object StoreForwardStatsReply : ResponseKind<StoreAndForward.Statistics>
 }
