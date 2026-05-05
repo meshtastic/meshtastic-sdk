@@ -27,8 +27,10 @@ import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -183,8 +185,80 @@ class StoreForwardApiImplSfppTest {
         client.disconnect()
     }
 
+    @Test
+    fun `malformed SFPP payload does not crash`() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val eventDeferred = async { client.storeForward.events.first() }
+        runCurrent()
+
+        transport.injectStoreForwardPayload(byteArrayOf(0x0A))
+        runCurrent()
+
+        assertFalse(eventDeferred.isCompleted)
+        eventDeferred.cancel()
+        client.disconnect()
+    }
+
+    @Test
+    fun `SFPP LINK_PROVIDE with no hash and no message emits event with null hash`() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val eventDeferred = async {
+            client.storeForward.events.first { it is StoreForwardEvent.SfppLinkProvided }
+        }
+        runCurrent()
+
+        transport.injectSfpp(
+            StoreForwardPlusPlus(
+                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,
+                encapsulated_id = 99,
+                encapsulated_to = 0x11111111,
+                encapsulated_from = 0x22222222,
+            ),
+        )
+        runCurrent()
+
+        val event = assertIs<StoreForwardEvent.SfppLinkProvided>(eventDeferred.await())
+        assertEquals(99, event.packetId)
+        assertEquals(0x22222222, event.from)
+        assertEquals(0x11111111, event.to)
+        assertNull(event.messageHash)
+        assertFalse(event.confirmed)
+
+        client.disconnect()
+    }
+
+    @Test
+    fun `SFPP packet with unknown message type is ignored`() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val eventDeferred = async { client.storeForward.events.first() }
+        runCurrent()
+
+        transport.injectStoreForwardPayload(byteArrayOf(0x08, 0x63))
+        runCurrent()
+
+        assertFalse(eventDeferred.isCompleted)
+        eventDeferred.cancel()
+        client.disconnect()
+    }
+
     private fun FakeRadioTransport.injectSfpp(
         message: StoreForwardPlusPlus,
+        fromNode: Int = 0x10203040,
+    ) {
+        injectStoreForwardPayload(StoreForwardPlusPlus.ADAPTER.encode(message), fromNode)
+    }
+
+    private fun FakeRadioTransport.injectStoreForwardPayload(
+        payload: ByteArray,
         fromNode: Int = 0x10203040,
     ) {
         injectPacket(
@@ -194,7 +268,7 @@ class StoreForwardApiImplSfppTest {
                 to = 0,
                 decoded = Data(
                     portnum = PortNum.STORE_FORWARD_APP,
-                    payload = StoreForwardPlusPlus.ADAPTER.encode(message).toByteString(),
+                    payload = payload.toByteString(),
                 ),
             ),
         )

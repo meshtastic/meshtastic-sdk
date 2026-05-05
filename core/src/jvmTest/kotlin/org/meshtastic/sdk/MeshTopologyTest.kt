@@ -170,6 +170,48 @@ class MeshTopologyTest {
     }
 
     @Test
+    fun `clear removes all nodes and edges`() {
+        val topo = MeshTopology()
+
+        topo.addNeighborInfo(NeighborInfo(NodeId(1), listOf(NeighborInfo.Neighbor(NodeId(2), 5f))))
+        topo.clear()
+
+        assertEquals(emptySet<NodeId>(), topo.nodes)
+        assertEquals(0, topo.edgeCount)
+        assertEquals(emptyList<NodeId>(), topo.shortestPath(NodeId(1), NodeId(2)))
+    }
+
+    @Test
+    fun `self-loop does not break graph operations`() {
+        val topo = MeshTopology()
+
+        topo.addNeighborInfo(
+            NeighborInfo(
+                NodeId(1),
+                listOf(
+                    NeighborInfo.Neighbor(NodeId(1), 10f),
+                    NeighborInfo.Neighbor(NodeId(2), 5f),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(NodeId(1)), topo.shortestPath(NodeId(1), NodeId(1)))
+        assertEquals(listOf(NodeId(1), NodeId(2)), topo.shortestPath(NodeId(1), NodeId(2)))
+        assertTrue(topo.isDirectReach(NodeId(1), NodeId(1)))
+    }
+
+    @Test
+    fun `disconnected components have no path between them`() {
+        val topo = MeshTopology()
+
+        topo.addNeighborInfo(NeighborInfo(NodeId(1), listOf(NeighborInfo.Neighbor(NodeId(2), 5f))))
+        topo.addNeighborInfo(NeighborInfo(NodeId(3), listOf(NeighborInfo.Neighbor(NodeId(4), 7f))))
+
+        assertEquals(emptyList<NodeId>(), topo.shortestPath(NodeId(1), NodeId(4)))
+        assertFalse(topo.isDirectReach(NodeId(1), NodeId(4)))
+    }
+
+    @Test
     fun `allEdges returns correct count`() {
         val topology = MeshTopology()
 

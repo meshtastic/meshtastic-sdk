@@ -59,6 +59,8 @@ public sealed class RetryPolicy {
     /**
      * Computes the delay before the Nth retry attempt (0-indexed).
      * Returns null if the attempt exceeds maxAttempts.
+     *
+     * @return the delay before the next attempt, or null if max attempts exceeded
      */
     public fun delayForAttempt(attempt: Int): Duration? = when (this) {
         is None -> null

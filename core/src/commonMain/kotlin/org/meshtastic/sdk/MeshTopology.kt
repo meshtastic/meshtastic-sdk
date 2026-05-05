@@ -10,12 +10,23 @@ package org.meshtastic.sdk
 /**
  * Incremental mesh topology graph built from [NeighborInfo] reports.
  *
+ * Usage:
+ * ```kotlin
+ * val topology = MeshTopology()
+ * topology.addNeighborInfo(neighborInfo)
+ * val path = topology.shortestPath(nodeA, nodeB)
+ * val neighbors = topology.getNeighbors(nodeA)
+ * ```
+ *
  * Thread-safe for concurrent reads; mutations are intended to be single-writer.
  * The graph is directed — if node A reports node B as a neighbor, that's a directed edge A→B.
  * Undirected queries consider both directions.
  */
 public class MeshTopology {
-    /** Edge from a reporting node to its neighbor, with signal quality. */
+    /**
+     * Directed edge from a reporting node [from] to a neighbor [to], carrying the reported signal
+     * quality ([snr]) and the [NeighborInfo.lastUpdated] value from the source report.
+     */
     public data class Edge(
         val from: NodeId,
         val to: NodeId,
@@ -75,7 +86,9 @@ public class MeshTopology {
 
     /**
      * Find shortest path between two nodes using BFS on the undirected graph.
-     * Returns the path as a list of [NodeId]s (including start and end), or empty if unreachable.
+     * Returns the path as a list of [NodeId]s including start and end.
+     * Returns `listOf(from)` when [from] == [to].
+     * Returns an empty list when no path exists.
      */
     public fun shortestPath(from: NodeId, to: NodeId): List<NodeId> {
         if (from == to) return listOf(from)
