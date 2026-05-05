@@ -120,4 +120,35 @@ public sealed interface StoreForwardEvent {
      * Heartbeat received from a S&F server (indicates it's still active).
      */
     public data class Heartbeat(val server: NodeId) : StoreForwardEvent
+
+    /** An SFPP link was provided — message is being routed or confirmed. */
+    public data class SfppLinkProvided(
+        val packetId: Int,
+        val from: Int,
+        val to: Int,
+        val messageHash: ByteArray?,
+        val confirmed: Boolean,
+    ) : StoreForwardEvent {
+        override fun equals(other: Any?): Boolean = other is SfppLinkProvided &&
+            packetId == other.packetId &&
+            from == other.from &&
+            to == other.to &&
+            confirmed == other.confirmed &&
+            messageHash.contentEquals(other.messageHash)
+
+        override fun hashCode(): Int = (((packetId * 31 + from) * 31 + to) * 31 + confirmed.hashCode()) * 31 +
+            messageHash.contentHashCode()
+    }
+
+    /** An SFPP canon announce — message is confirmed on the chain. */
+    public data class SfppCanonAnnounced(
+        val messageHash: ByteArray,
+        val rxTime: Long,
+    ) : StoreForwardEvent {
+        override fun equals(other: Any?): Boolean = other is SfppCanonAnnounced &&
+            messageHash.contentEquals(other.messageHash) &&
+            rxTime == other.rxTime
+
+        override fun hashCode(): Int = messageHash.contentHashCode() * 31 + rxTime.hashCode()
+    }
 }

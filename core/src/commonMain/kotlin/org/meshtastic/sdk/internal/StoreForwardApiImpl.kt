@@ -22,10 +22,12 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.StoreAndForward
+import org.meshtastic.proto.StoreForwardPlusPlus
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeId
+import org.meshtastic.sdk.SfppHash
 import org.meshtastic.sdk.StoreForwardApi
 import org.meshtastic.sdk.StoreForwardEvent
 import org.meshtastic.sdk.StoreForwardStats
@@ -128,12 +130,28 @@ internal class StoreForwardApiImpl(
     private suspend fun handlePacket(packet: MeshPacket) {
         val decoded = packet.decoded ?: return
         if (decoded.portnum != PortNum.STORE_FORWARD_APP || packet.from == 0) return
-        val message = try {
+
+        val legacy = try {
             StoreAndForward.ADAPTER.decode(decoded.payload)
         } catch (_: Exception) {
+            null
+        }
+        if (legacy != null && legacy.unknownFields.size == 0 && looksLikeLegacyStoreForward(legacy)) {
+            handleLegacySf(legacy, NodeId(packet.from))
             return
         }
-        val server = NodeId(packet.from)
+
+        val sfpp = try {
+            StoreForwardPlusPlus.ADAPTER.decode(decoded.payload)
+        } catch (_: Exception) {
+            null
+        }
+        if (sfpp != null) {
+            handleSfpp(sfpp)
+        }
+    }
+
+    private suspend fun handleLegacySf(message: StoreAndForward, server: NodeId) {
         when (message.rr) {
             StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
             StoreAndForward.RequestResponse.ROUTER_PONG,
@@ -176,6 +194,70 @@ internal class StoreForwardApiImpl(
 
             else -> Unit
         }
+    }
+
+    private fun looksLikeLegacyStoreForward(message: StoreAndForward): Boolean = when (message.rr) {
+        StoreAndForward.RequestResponse.ROUTER_HEARTBEAT -> message.heartbeat != null
+        StoreAndForward.RequestResponse.ROUTER_HISTORY -> message.history != null
+        StoreAndForward.RequestResponse.ROUTER_STATS -> message.stats != null
+        StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST,
+        StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT,
+        -> message.text != null
+
+        StoreAndForward.RequestResponse.ROUTER_PONG,
+        StoreAndForward.RequestResponse.ROUTER_BUSY,
+        StoreAndForward.RequestResponse.ROUTER_ERROR,
+        StoreAndForward.RequestResponse.ROUTER_PING,
+        -> message.stats == null && message.history == null && message.heartbeat == null && message.text == null
+
+        else -> false
+    }
+
+    private suspend fun handleSfpp(sfpp: StoreForwardPlusPlus) {
+        when (sfpp.sfpp_message_type) {
+            StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,
+            StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF,
+            StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_SECONDHALF,
+            -> handleLinkProvide(sfpp)
+
+            StoreForwardPlusPlus.SFPP_message_type.CANON_ANNOUNCE -> handleCanonAnnounce(sfpp)
+            else -> Unit
+        }
+    }
+
+    private suspend fun handleLinkProvide(sfpp: StoreForwardPlusPlus) {
+        val confirmed = sfpp.commit_hash.size != 0
+        val isFragment = sfpp.sfpp_message_type != StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+        val hash = when {
+            sfpp.message_hash.size != 0 -> sfpp.message_hash.toByteArray()
+            !isFragment && sfpp.message.size != 0 -> SfppHash.compute(
+                payload = sfpp.message.toByteArray(),
+                to = if (sfpp.encapsulated_to == 0) NodeId.BROADCAST.raw else sfpp.encapsulated_to,
+                from = sfpp.encapsulated_from,
+                id = sfpp.encapsulated_id,
+            )
+
+            else -> null
+        }
+        _events.emit(
+            StoreForwardEvent.SfppLinkProvided(
+                packetId = sfpp.encapsulated_id,
+                from = sfpp.encapsulated_from,
+                to = sfpp.encapsulated_to,
+                messageHash = hash,
+                confirmed = confirmed,
+            ),
+        )
+    }
+
+    private suspend fun handleCanonAnnounce(sfpp: StoreForwardPlusPlus) {
+        if (sfpp.message_hash.size == 0) return
+        _events.emit(
+            StoreForwardEvent.SfppCanonAnnounced(
+                messageHash = sfpp.message_hash.toByteArray(),
+                rxTime = sfpp.encapsulated_rxtime.toLong() and 0xFFFFFFFFL,
+            ),
+        )
     }
 
     private suspend fun handleNodeChange(change: NodeChange) {
