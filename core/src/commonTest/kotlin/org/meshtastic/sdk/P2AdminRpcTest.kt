@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
@@ -386,6 +387,124 @@ class P2AdminRpcTest {
         val commitIdx = orderedAdmin.indexOfFirst { it.second.commit_edit_settings == true }
         assertTrue(beginIdx in 0..<favIdx, "set_favorite must come after begin")
         assertTrue(favIdx < commitIdx, "set_favorite must come before commit")
+        client.disconnect()
+    }
+
+    @Test
+    fun batchSupportsGettersAndSettersAndReturnsBlockValue() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val expectedConfig = Config(
+            device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT),
+        )
+        val updatedChannel = Channel(index = 3, role = Channel.Role.SECONDARY)
+        val expectedChannels = listOf(
+            Channel(index = 0, role = Channel.Role.PRIMARY),
+            Channel(index = 1, role = Channel.Role.SECONDARY),
+        )
+        val deferred = async {
+            client.admin.batch {
+                val device = getConfig(AdminMessage.ConfigType.DEVICE_CONFIG)
+                setChannel(updatedChannel)
+                val channels = listChannels()
+                device to channels
+            }
+        }
+
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+
+        val getConfig = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.get_config_request == AdminMessage.ConfigType.DEVICE_CONFIG }
+        transport.injectAdminResponse(
+            requestId = getConfig.id,
+            response = AdminMessage(get_config_response = expectedConfig),
+        )
+
+        repeat(3) {
+            runCurrent()
+            val req = transport.outboundPackets().drop(outboundBefore)
+                .lastOrNull { adminOf(it)?.get_channel_request != null }
+            assertNotNull(req)
+            val wireIndex = adminOf(req)!!.get_channel_request!!
+            val realIndex = wireIndex - 1
+            val channel = when (realIndex) {
+                0 -> expectedChannels[0]
+                1 -> expectedChannels[1]
+                else -> Channel(index = realIndex, role = Channel.Role.DISABLED)
+            }
+            transport.injectAdminResponse(
+                requestId = req.id,
+                response = AdminMessage(get_channel_response = channel),
+            )
+        }
+        runCurrent()
+
+        val commit = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.commit_edit_settings == true }
+        transport.injectRoutingAck(requestId = commit.id)
+        runCurrent()
+        advanceUntilIdle()
+
+        val result = deferred.await()
+        assertEquals(expectedConfig to expectedChannels, result)
+
+        val orderedAdmin = transport.outboundPackets().drop(outboundBefore)
+            .mapNotNull { packet -> adminOf(packet)?.let { packet to it } }
+        val beginIdx = orderedAdmin.indexOfFirst { it.second.begin_edit_settings == true }
+        val getConfigIdx = orderedAdmin.indexOfFirst {
+            it.second.get_config_request == AdminMessage.ConfigType.DEVICE_CONFIG
+        }
+        val setChannelIdx = orderedAdmin.indexOfFirst { it.second.set_channel == updatedChannel }
+        val firstListIdx = orderedAdmin.indexOfFirst { it.second.get_channel_request == 1 }
+        val commitIdx = orderedAdmin.indexOfFirst { it.second.commit_edit_settings == true }
+        assertTrue(beginIdx in 0..<getConfigIdx, "get_config must come after begin")
+        assertTrue(getConfigIdx < setChannelIdx, "set_channel must come after get_config")
+        assertTrue(setChannelIdx < firstListIdx, "listChannels must come after set_channel")
+        assertTrue(firstListIdx < commitIdx, "commit must come after listChannels")
+        client.disconnect()
+    }
+
+    @Test
+    fun batchGetterFailureSkipsCommit() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async {
+            runCatching {
+                client.admin.batch {
+                    getConfig(AdminMessage.ConfigType.DEVICE_CONFIG)
+                }
+            }
+        }
+
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+
+        transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.get_config_request == AdminMessage.ConfigType.DEVICE_CONFIG }
+
+        advanceTimeBy(70.seconds)
+        runCurrent()
+
+        val result = deferred.await()
+        assertIs<AdminResultException.Timeout>(result.exceptionOrNull())
+        assertTrue(
+            transport.outboundPackets().drop(outboundBefore)
+                .none { adminOf(it)?.commit_edit_settings == true },
+            "batch must not commit after a getter failure",
+        )
         client.disconnect()
     }
 

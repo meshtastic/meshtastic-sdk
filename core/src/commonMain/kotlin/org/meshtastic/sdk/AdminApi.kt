@@ -44,9 +44,9 @@ public interface AdminApi {
      * Return an [AdminApi] instance that targets [dest] instead of the local device.
      *
      * All calls on the returned instance route admin messages to the specified remote node
-     * over the mesh. Note: `editSettings`, `getDeviceConnectionStatus`, and lifecycle commands
-     * (`reboot`, `shutdown`, `factoryReset`, `nodeDbReset`) work identically — the firmware
-     * handles admin-over-mesh transparently.
+     * over the mesh. Note: `editSettings`, `batch`, `getDeviceConnectionStatus`, and lifecycle
+     * commands (`reboot`, `shutdown`, `factoryReset`, `nodeDbReset`) work identically — the
+     * firmware handles admin-over-mesh transparently.
      *
      * ```kotlin
      * val remoteAdmin = client.admin.forNode(NodeId(0x12345678.toInt()))
@@ -303,6 +303,14 @@ public interface AdminApi {
      * or commit fails, the result reflects that failure and the block's return value is discarded.
      */
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
+
+    /**
+     * Exception-based counterpart to [editSettings] that also exposes batched getter helpers.
+     *
+     * Getter failures throw [AdminResultException] via [getOrThrow]. If [block] throws, the SDK
+     * does not send `commit_edit_settings`; firmware eventually discards the buffered edits.
+     */
+    public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
 }
 
 /**
@@ -321,4 +329,16 @@ public interface AdminEdit {
     public suspend fun setChannel(channel: Channel)
     public suspend fun setFavorite(node: NodeId, favorite: Boolean)
     public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+}
+
+/**
+ * Receiver type for [AdminApi.batch] — combines [AdminEdit] setters with getter helpers.
+ *
+ * Getter failures throw [AdminResultException] via [getOrThrow]. Setters share the same deferred
+ * commit semantics as [AdminApi.editSettings].
+ */
+public interface AdminBatchScope : AdminEdit {
+    public suspend fun getConfig(type: AdminMessage.ConfigType): Config
+    public suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): ModuleConfig
+    public suspend fun listChannels(): List<Channel>
 }

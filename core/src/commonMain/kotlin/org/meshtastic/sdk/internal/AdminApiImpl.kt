@@ -30,8 +30,10 @@ import org.meshtastic.proto.SensorConfig
 import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminApi
+import org.meshtastic.sdk.AdminBatchScope
 import org.meshtastic.sdk.AdminEdit
 import org.meshtastic.sdk.AdminResult
+import org.meshtastic.sdk.getOrThrow
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.SendFailure
@@ -362,7 +364,7 @@ internal class AdminApiImpl(
     }
 
     override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> {
-        val begin = retryOnSessionExpiry { submitAdminAck(AdminMessage(begin_edit_settings = true)) }
+        val begin = beginEditSettings()
         if (begin !is AdminResult.Success) return begin.cast()
         val edit = AdminEditImpl()
         val payload = try {
@@ -370,13 +372,27 @@ internal class AdminApiImpl(
         } catch (e: AdminEditFailure) {
             return e.result.cast()
         }
-        val commit = retryOnSessionExpiry { submitAdminAck(AdminMessage(commit_edit_settings = true)) }
+        val commit = commitEditSettings()
         if (commit !is AdminResult.Success) return commit.cast()
 
         // Gap G: optimistically update configBundle with written values after successful commit.
         engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
 
         return AdminResult.Success(payload)
+    }
+
+    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T {
+        beginEditSettings().getOrThrow()
+        val edit = AdminEditImpl()
+        val payload = try {
+            AdminBatchScopeImpl(edit).block()
+        } catch (e: AdminEditFailure) {
+            e.result.getOrThrow()
+        }
+        commitEditSettings().getOrThrow()
+
+        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        return payload
     }
 
     // ── Internal helpers ────────────────────────────────────────────────────
@@ -445,6 +461,12 @@ internal class AdminApiImpl(
         return AdminResult.Success(Unit)
     }
 
+    private suspend fun beginEditSettings(): AdminResult<Unit> =
+        retryOnSessionExpiry { submitAdminAck(AdminMessage(begin_edit_settings = true)) }
+
+    private suspend fun commitEditSettings(): AdminResult<Unit> =
+        retryOnSessionExpiry { submitAdminAck(AdminMessage(commit_edit_settings = true)) }
+
     /**
      * Single-shot retry on `SessionKeyExpired`: re-issue `get_owner_request` to refresh the
      * session passkey, then replay the original [block] once. The retry result is returned as-is
@@ -461,6 +483,19 @@ internal class AdminApiImpl(
     }
 
     private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
+
+    private inner class AdminBatchScopeImpl(
+        edit: AdminEditImpl,
+    ) : AdminBatchScope, AdminEdit by edit {
+        override suspend fun getConfig(type: AdminMessage.ConfigType): Config =
+            this@AdminApiImpl.getConfig(type).getOrThrow()
+
+        override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): ModuleConfig =
+            this@AdminApiImpl.getModuleConfig(type).getOrThrow()
+
+        override suspend fun listChannels(): List<Channel> =
+            this@AdminApiImpl.listChannels().getOrThrow()
+    }
 
     private inner class AdminEditImpl : AdminEdit {
         val writtenConfigs = mutableListOf<Config>()
