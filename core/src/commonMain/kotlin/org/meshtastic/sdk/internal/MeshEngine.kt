@@ -64,6 +64,7 @@ import org.meshtastic.sdk.SessionPasskey
 import org.meshtastic.sdk.StorageProvider
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireCodec
+import org.meshtastic.sdk.WireFraming
 import org.meshtastic.sdk.debug
 import org.meshtastic.sdk.error
 import org.meshtastic.sdk.info
@@ -91,6 +92,7 @@ internal class MeshEngine(
     private val logger: LogSink,
     private val bleHeartbeatEnabled: Boolean,
     private val parentContext: CoroutineContext,
+    private val clock: Clock = Clock.System,
     private val sendTimeout: Duration = 30.seconds,
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
@@ -244,6 +246,10 @@ internal class MeshEngine(
 
     /** rate-limit clock for the encrypted-packet ACK-skip warning. */
     private var lastEncryptedSkipWarningAtMs: Long = 0L
+
+    /** recent inbound packet ids to suppress duplicate packet delivery. */
+    private val recentInboundPacketKeys = ArrayDeque<InboundPacketKey>(INBOUND_PACKET_DEDUP_CAP)
+    private val recentInboundPacketKeySet = mutableSetOf<InboundPacketKey>()
 
     /**
      * Connect-phase deferred. Stored so [cleanup] can fail it if the engine is cancelled before
@@ -567,6 +573,8 @@ internal class MeshEngine(
         stage2WatchdogJob = null
         stage2ProgressCounter = 0L
         lastEncryptedSkipWarningAtMs = 0L
+        recentInboundPacketKeys.clear()
+        recentInboundPacketKeySet.clear()
 
         reconnectJob?.cancel()
         reconnectJob = null
@@ -639,7 +647,7 @@ internal class MeshEngine(
         val decoded = packet.decoded ?: return packet
         if (decoded.portnum != PortNum.ADMIN_APP) return packet
         if (packet.to == 0 || packet.to == myNodeNum) return packet
-        val now = Clock.System.now().toEpochMilliseconds()
+        val now = clock.now().toEpochMilliseconds()
         val passkey = sessionPasskeyMem
         if (passkey == null || passkey.isEmpty() || now >= sessionPasskeyExpiresAtMs) {
             events.tryEmit(
@@ -808,9 +816,59 @@ internal class MeshEngine(
 
     private fun handleFrameRx(msg: EngineMessage.FrameRx) {
         val rawBytes = msg.frame.bytes.toByteArray()
-        if (rawBytes.size < 4) return // malformed frame
+        when {
+            rawBytes.size < WireFraming.HEADER_SIZE -> {
+                reportMalformedFrame(
+                    message = "Frame shorter than wire header",
+                    details = mapOf("bytes" to rawBytes.size),
+                )
+                return
+            }
 
-        val protoBytes = rawBytes.copyOfRange(4, rawBytes.size)
+            rawBytes[0] != WireFraming.MAGIC_0 || rawBytes[1] != WireFraming.MAGIC_1 -> {
+                reportMalformedFrame(
+                    message = "Frame has invalid wire header",
+                    details = mapOf(
+                        "magic0" to (rawBytes[0].toInt() and 0xFF),
+                        "magic1" to (rawBytes[1].toInt() and 0xFF),
+                    ),
+                )
+                return
+            }
+        }
+
+        val declaredPayloadSize = ((rawBytes[2].toInt() and 0xFF) shl 8) or (rawBytes[3].toInt() and 0xFF)
+        if (declaredPayloadSize == 0) {
+            reportMalformedFrame(
+                message = "Frame declares empty payload",
+                details = emptyMap(),
+            )
+            return
+        }
+        if (declaredPayloadSize > WireFraming.MAX_PAYLOAD_SIZE) {
+            reportMalformedFrame(
+                message = "Frame exceeds max payload size",
+                details = mapOf(
+                    "declared_payload_bytes" to declaredPayloadSize,
+                    "max_payload_bytes" to WireFraming.MAX_PAYLOAD_SIZE,
+                ),
+            )
+            return
+        }
+
+        val actualPayloadSize = rawBytes.size - WireFraming.HEADER_SIZE
+        if (declaredPayloadSize != actualPayloadSize) {
+            reportMalformedFrame(
+                message = "Frame payload length mismatch",
+                details = mapOf(
+                    "declared_payload_bytes" to declaredPayloadSize,
+                    "actual_payload_bytes" to actualPayloadSize,
+                ),
+            )
+            return
+        }
+
+        val protoBytes = rawBytes.copyOfRange(WireFraming.HEADER_SIZE, rawBytes.size)
         val fromRadio = try {
             WireCodec.decodeFromRadio(protoBytes)
         } catch (e: Exception) {
@@ -1126,7 +1184,7 @@ internal class MeshEngine(
 
                 // mark every pending node as heard now (before the async block above flushes).
                 run {
-                    val now = Clock.System.now().toEpochMilliseconds()
+                    val now = clock.now().toEpochMilliseconds()
                     for ((nodeId, _) in pendingNodes) {
                         lastHeartbeatAt[nodeId] = now
                     }
@@ -1165,33 +1223,30 @@ internal class MeshEngine(
         }
 
         if (adminMsg.get_owner_response != null) {
-            // Latch session passkey in memory so admin RPCs can use it immediately.
-            if (adminMsg.session_passkey.size > 0) {
-                val bytes = adminMsg.session_passkey.toByteArray()
-                sessionPasskeyMem = bytes
-                val expiresAtMs = Clock.System.now().toEpochMilliseconds() + SESSION_PASSKEY_TTL.inWholeMilliseconds
-                // also remember the expiry in memory so [sendAdminPacket] can decide
-                // whether to attach the passkey to outbound remote-admin messages.
-                sessionPasskeyExpiresAtMs = expiresAtMs
-                logger.debug(TAG) { "Session passkey latched (${bytes.size} bytes)" }
-                // persist asynchronously so a reconnect can resume admin RPCs without a
-                // fresh get_owner_request. Failures are non-fatal — we still have the in-memory
-                // copy for this session.
-                engineScope?.launch {
-                    if (storageDegraded) return@launch
-                    try {
-                        storage?.saveSessionPasskey(SessionPasskey(ByteString(bytes), expiresAtMs))
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        reportStorageDegraded(
-                            "saveSessionPasskey failed: ${e.message ?: e::class.simpleName}",
-                            e,
-                        )
-                    }
-                }
-            }
+            latchSessionPasskey(adminMsg)
             transitionToReady()
+        }
+    }
+
+    private fun latchSessionPasskey(adminMsg: AdminMessage) {
+        if (adminMsg.session_passkey.size <= 0) return
+        val bytes = adminMsg.session_passkey.toByteArray()
+        sessionPasskeyMem = bytes
+        val expiresAtMs = clock.now().toEpochMilliseconds() + SESSION_PASSKEY_TTL.inWholeMilliseconds
+        sessionPasskeyExpiresAtMs = expiresAtMs
+        logger.debug(TAG) { "Session passkey latched (${bytes.size} bytes)" }
+        engineScope?.launch {
+            if (storageDegraded) return@launch
+            try {
+                storage?.saveSessionPasskey(SessionPasskey(ByteString(bytes), expiresAtMs))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                reportStorageDegraded(
+                    "saveSessionPasskey failed: ${e.message ?: e::class.simpleName}",
+                    e,
+                )
+            }
         }
     }
 
@@ -1275,7 +1330,33 @@ internal class MeshEngine(
                 }
                 // any frame from a node counts as presence activity.
                 if (packet.from != 0) markNodeHeard(NodeId(packet.from))
+                if (shouldDropDuplicateInboundPacket(packet)) return
+                val decoded = packet.decoded
+                if (decoded == null) {
+                    maybeWarnEncryptedPacketSkipped()
+                    return
+                }
+                if (decoded.portnum == PortNum.UNKNOWN_APP) {
+                    logger.warn(TAG) { "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}" }
+                    events.tryEmit(
+                        MeshEvent.ProtocolWarning(
+                            "packet dropped for unknown port",
+                            details = mapOf(
+                                "id" to packet.id,
+                                "from" to packet.from,
+                                "port" to decoded.portnum.name,
+                            ),
+                        ),
+                    )
+                    return
+                }
                 emitPacketOrLog(packet)
+                if (decoded.portnum == PortNum.ADMIN_APP) {
+                    runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }
+                        .getOrNull()
+                        ?.takeIf { it.get_owner_response != null }
+                        ?.let(::latchSessionPasskey)
+                }
                 // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
                 // request matching this packet's request_id. Must run before processRoutingAck
                 // so a route_reply doesn't get mistakenly classified as a generic Acked send.
@@ -1631,15 +1712,42 @@ internal class MeshEngine(
      * the situation to consumers.
      */
     private fun maybeWarnEncryptedPacketSkipped() {
-        val now = Clock.System.now().toEpochMilliseconds()
+        val now = clock.now().toEpochMilliseconds()
         if (now - lastEncryptedSkipWarningAtMs < ENCRYPTED_SKIP_WARNING_INTERVAL_MS) return
         lastEncryptedSkipWarningAtMs = now
+        logger.warn(TAG) { "Dropping encrypted packet without decoded payload" }
         events.tryEmit(
             MeshEvent.ProtocolWarning(
                 "encrypted packet skipped for ACK correlation",
                 details = mapOf("rate_limited" to true),
             ),
         )
+    }
+
+    private fun reportMalformedFrame(message: String, details: Map<String, Any?>) {
+        logger.warn(TAG) { message }
+        events.tryEmit(MeshEvent.ProtocolWarning(message, details = details))
+    }
+
+    private fun shouldDropDuplicateInboundPacket(packet: MeshPacket): Boolean {
+        if (packet.id == 0 || packet.from == 0) return false
+        val key = InboundPacketKey(
+            from = packet.from,
+            to = packet.to,
+            channel = packet.channel,
+            id = packet.id,
+        )
+        if (!recentInboundPacketKeySet.add(key)) {
+            logger.debug(TAG) {
+                "Dropping duplicate inbound packet id=${packet.id} from=0x${packet.from.toString(16)}"
+            }
+            return true
+        }
+        recentInboundPacketKeys.addLast(key)
+        if (recentInboundPacketKeys.size > INBOUND_PACKET_DEDUP_CAP) {
+            recentInboundPacketKeySet.remove(recentInboundPacketKeys.removeFirst())
+        }
+        return false
     }
 
     /**
@@ -1725,6 +1833,8 @@ internal class MeshEngine(
         stage2WatchdogJob?.cancel()
         stage2WatchdogJob = null
         stage2ProgressCounter = 0L
+        recentInboundPacketKeys.clear()
+        recentInboundPacketKeySet.clear()
         livenessWatchdogJob?.cancel()
         livenessWatchdogJob = null
 
@@ -1886,7 +1996,7 @@ internal class MeshEngine(
 
     private fun handlePresenceCheckTick() {
         if (handshakeStage != HandshakeStage.Ready) return
-        val now = Clock.System.now().toEpochMilliseconds()
+        val now = clock.now().toEpochMilliseconds()
         val timeoutMs = presenceTimeout.inWholeMilliseconds
 
         for ((nodeId, lastMs) in lastHeartbeatAt) {
@@ -1996,7 +2106,7 @@ internal class MeshEngine(
         // a ProtocolWarning and proceed — the firmware will reject the packet, surfacing as a
         // SendFailure / AckTimeout to the caller.
         val outbound: AdminMessage = if (to != myNodeNum) {
-            val now = Clock.System.now().toEpochMilliseconds()
+            val now = clock.now().toEpochMilliseconds()
             val passkey = sessionPasskeyMem
             if (passkey != null && passkey.isNotEmpty() && now < sessionPasskeyExpiresAtMs) {
                 adminMsg.copy(session_passkey = passkey.toByteString())
@@ -2148,7 +2258,7 @@ internal class MeshEngine(
     // timestamp + dirty-mark a per-node heartbeat observation. Flushed to storage on the
     // next heartbeat tick (handleHeartbeatTick) or at the Ready transition.
     private fun markNodeHeard(nodeId: NodeId) {
-        val now = Clock.System.now().toEpochMilliseconds()
+        val now = clock.now().toEpochMilliseconds()
         lastHeartbeatAt[nodeId] = now
         dirtyHeartbeats.add(nodeId)
         if (offlineNodes.remove(nodeId)) {
@@ -2258,5 +2368,15 @@ internal class MeshEngine(
 
         // minimum interval between consecutive encrypted-packet skip warnings.
         const val ENCRYPTED_SKIP_WARNING_INTERVAL_MS: Long = 60_000L
+
+        // bounded recent-history window for inbound packet deduplication.
+        const val INBOUND_PACKET_DEDUP_CAP: Int = 256
     }
+
+    private data class InboundPacketKey(
+        val from: Int,
+        val to: Int,
+        val channel: Int,
+        val id: Int,
+    )
 }
