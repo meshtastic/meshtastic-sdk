@@ -348,3 +348,29 @@ public inline fun <T> AdminResult<T>.onFailure(action: (AdminResult<T>) -> Unit)
     if (this !is AdminResult.Success) action(this)
     return this
 }
+
+/**
+ * Returns the [Success] value or throws [AdminResultException] describing the failure.
+ *
+ * Useful for callers who prefer exception-based error handling over sealed-type matching.
+ */
+public fun <T> AdminResult<T>.getOrThrow(): T = when (this) {
+    is AdminResult.Success -> value
+    is AdminResult.SessionKeyExpired -> throw AdminResultException.SessionKeyExpired()
+    is AdminResult.Unauthorized -> throw AdminResultException.Unauthorized()
+    is AdminResult.Timeout -> throw AdminResultException.Timeout()
+    is AdminResult.RateLimited -> throw AdminResultException.RateLimited()
+    is AdminResult.NodeUnreachable -> throw AdminResultException.NodeUnreachable()
+    is AdminResult.Failed -> throw AdminResultException.RoutingFailed(routingError)
+}
+
+/** Exception hierarchy thrown by [getOrThrow]. */
+public sealed class AdminResultException(message: String) : Exception(message) {
+    public class SessionKeyExpired : AdminResultException("Admin session key expired")
+    public class Unauthorized : AdminResultException("Not authorized for this operation")
+    public class Timeout : AdminResultException("Operation timed out waiting for device response")
+    public class RateLimited : AdminResultException("Device rate-limited the request")
+    public class NodeUnreachable : AdminResultException("Destination node is unreachable")
+    public class RoutingFailed(public val error: Routing.Error) :
+        AdminResultException("Routing error: ${error.name}")
+}

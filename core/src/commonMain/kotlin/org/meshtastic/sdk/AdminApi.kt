@@ -122,7 +122,12 @@ public interface AdminApi {
     /** Mark [node] as ignored — packets from it are filtered before reaching apps. */
     public suspend fun setIgnored(node: NodeId, ignored: Boolean): AdminResult<Unit>
 
-    /** Toggle mute state on [node] — muted nodes do not forward packets. */
+    /**
+     * Toggle mute state on [node] — muted nodes do not forward packets.
+     *
+     * Note: The firmware uses a toggle primitive (`toggle_muted_node`), so calling this
+     * always flips the current state. Track local mute state if you need idempotent behavior.
+     */
     public suspend fun toggleMuted(node: NodeId): AdminResult<Unit>
 
     // ── Position ────────────────────────────────────────────────────────────
