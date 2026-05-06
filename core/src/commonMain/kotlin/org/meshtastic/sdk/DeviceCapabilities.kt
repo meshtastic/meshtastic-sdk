@@ -8,8 +8,9 @@
 package org.meshtastic.sdk
 
 /**
- * Parses firmware version strings (e.g., "2.7.12") into comparable values and provides
- * version-gated feature detection.
+ * Parsed firmware version value used for capability comparisons.
+ *
+ * @since 0.1.0
  */
 public data class DeviceVersion(val versionString: String) : Comparable<DeviceVersion> {
     /** Integer representation (e.g., "2.7.12" → 20712). */
@@ -31,8 +32,9 @@ public data class DeviceVersion(val versionString: String) : Comparable<DeviceVe
 }
 
 /**
- * Firmware capability detection. Instantiate with the device's firmware version string
- * to check which features are supported.
+ * Firmware capability flags derived from a device's reported firmware version.
+ *
+ * @since 0.1.0
  */
 public data class DeviceCapabilities(val firmwareVersion: String?) {
     private val version: DeviceVersion? = firmwareVersion?.let { DeviceVersion(it) }

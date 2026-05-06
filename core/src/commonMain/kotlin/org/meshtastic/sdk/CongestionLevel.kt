@@ -47,7 +47,9 @@ public data class CongestionMetrics(
 }
 
 /**
- * Congestion severity levels.
+ * Discrete congestion buckets derived from channel-utilization telemetry.
+ *
+ * @since 0.1.0
  */
 public enum class CongestionLevel {
     /** Channel is clear — send freely. */

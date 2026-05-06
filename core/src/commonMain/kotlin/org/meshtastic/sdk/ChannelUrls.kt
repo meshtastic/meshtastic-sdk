@@ -29,8 +29,8 @@ public object ChannelUrl {
     /**
      * Parses a Meshtastic share link into a [ChannelSet].
      *
-     * Returns `null` if the URL is malformed or its base64 payload fails to decode into a
-     * valid protobuf message.
+     * Returns `null` if the URL is malformed or its payload is not a valid channel protobuf.
+     * @since 0.1.0
      */
     public fun parse(url: String): ChannelSet? {
         val trimmed = url.trim()
@@ -53,9 +53,10 @@ public fun Channel.Companion.default(): Channel = Channel(
 )
 
 /**
- * Computes the 8-bit hash of [name] and [psk], used by firmware to identify channels on the wire.
+ * Computes the firmware-compatible 8-bit channel hash for [name] and [psk].
  *
  * Mirrors the logic in `Channels::generateHash`.
+ * @since 0.1.0
  */
 public fun ChannelSettings.Companion.hash(name: String, psk: ByteArray): Int {
     var code = 0

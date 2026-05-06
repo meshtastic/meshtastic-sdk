@@ -97,7 +97,7 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 | **detekt `ForbiddenImport` + `:core:verifyModuleBoundary`** | Architecture rules: detekt bans `java.*`/`android.*` in `commonMain` and hints against `kotlin.Result<T>` in public API; the Gradle `:core:verifyModuleBoundary` task enforces that `:core` does not depend on transport modules (see ADR-008). |
 | **`binary-compatibility-validator`** (`updateKotlinAbi`) | API surface freezes. From Phase 5 every public symbol change MUST regenerate `api/` files in the same commit. |
 | **Dokka 2.x** | API docs. Coverage gate from Phase 5. |
-| **Compose previews / sample apps** | Manual smoke (`samples/cli`, `samples/android-app`, `samples/desktop`, `samples/ios-app`). |
+| **Compose previews / sample apps** | Manual smoke (`samples/cli`, `samples/parity-app`, `samples/parity-android-app`). |
 
 ### Lint & format
 

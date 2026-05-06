@@ -163,7 +163,7 @@ internal class MeshEngine(
     // (PhoneAPI.cpp:202-209) interprets nonce == 1 as "broadcast our nodeinfo over LoRa";
     // nonces > 0 are reserved for explicit "ping our nodeinfo" semantics that we don't
     // expose today. Sending 0 is the safe keep-alive value and matches Android's reference
-    // client. Audit / .
+    // client.
     private val keepaliveHeartbeat = Heartbeat(nonce = 0)
     private var myNodeNum = 0
 

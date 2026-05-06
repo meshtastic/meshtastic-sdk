@@ -33,12 +33,10 @@ public object ChannelHelpers {
     )
 
     /**
-     * Validates channel settings for correctness.
+     * Validates channel metadata before it is sent to the device.
      *
-     * Checks:
-     * - Name length within bounds
-     * - PSK length is valid (0=none, 1=default, 16=AES128, 32=AES256)
-     * - Role is appropriate
+     * Checks name length, blank-only names, and supported PSK lengths.
+     * @since 0.1.0
      */
     public fun validate(
         name: String,
@@ -63,11 +61,10 @@ public object ChannelHelpers {
     }
 
     /**
-     * Finds the first available (disabled) channel slot index in a channel list.
-     * Returns null if all slots are occupied.
+     * Finds the first writable channel slot after the primary channel.
      *
-     * @param channels current channel list from the device
-     * @param maxChannels maximum number of channels supported (typically 8)
+     * Returns `null` when every slot up to [maxChannels] is already occupied.
+     * @since 0.1.0
      */
     public fun findEmptySlot(channels: List<Channel>, maxChannels: Int = 8): Int? {
         for (i in 1 until maxChannels) {
@@ -78,8 +75,10 @@ public object ChannelHelpers {
     }
 
     /**
-     * Creates a [ChannelSettings] with validated parameters.
-     * Returns null if validation fails.
+     * Creates a [ChannelSettings] only when [name] and [psk] pass [validate].
+     *
+     * Returns `null` instead of throwing when validation fails.
+     * @since 0.1.0
      */
     public fun createSettings(
         name: String,

@@ -32,6 +32,7 @@ import kotlin.time.Duration.Companion.seconds
  *
  * @throws MeshtasticException any failure surfaced by [RadioClient.connect]
  * @throws MeshtasticException.HandshakeTimeout if [timeout] elapses first
+ * @since 0.1.0
  */
 public suspend fun RadioClient.connectAndAwaitReady(timeout: Duration = 30.seconds): ConfigBundle {
     val bundle = withTimeoutOrNull(timeout) {

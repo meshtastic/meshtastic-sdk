@@ -624,8 +624,8 @@ public class RadioClient internal constructor(
          *     .build()
          * ```
          *
-         * Phase 2+ will add factory helpers so [TransportSpec] can be used without providing a
-         * transport implementation manually.
+         * Future: factory helpers for common transport configurations may allow
+         * [TransportSpec] to be used without manually constructing a transport implementation.
          */
         public fun transport(transport: RadioTransport): Builder = apply { radioTransport = transport }
 

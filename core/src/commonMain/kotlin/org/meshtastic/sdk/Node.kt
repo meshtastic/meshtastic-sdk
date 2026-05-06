@@ -303,21 +303,9 @@ public enum class DroppedFlow {
 /**
  * Key-verification prompt details surfaced via [MeshEvent.KeyVerification].
  *
- * **Phase 1:** marker interface only — emitted as a placeholder when the engine notices that
- * encryption setup *would* prompt for confirmation, but no payload is exposed yet. Hosts
- * should treat any non-null prompt as "show a generic verification UI" until the surface is
- * filled in.
- *
- * **Phase 2+:** this interface will gain at least:
- *
- * ```kotlin
- * public interface KeyVerificationPrompt {
- *     public val remoteNodeId: NodeId
- *     public val publicKeyFingerprint: String   // hex SHA-256, abbreviated for display
- *     public suspend fun confirm()              // accept; engine continues handshake
- *     public suspend fun reject()               // refuse; engine tears down with Protocol error
- * }
- * ```
+ * Marker interface; concrete verification methods will be added when PKI verification UI is
+ * implemented. Until then, any non-null prompt means the host should show a generic
+ * verification experience.
  *
  * The shape will be ratified in a follow-up ADR before 1.0; consumers wiring this today should
  * expect the interface to add abstract members (binary-incompatible for implementers, but a

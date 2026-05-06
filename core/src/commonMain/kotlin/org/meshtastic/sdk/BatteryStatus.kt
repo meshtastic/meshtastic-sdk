@@ -10,11 +10,12 @@ package org.meshtastic.sdk
 import org.meshtastic.proto.DeviceMetrics
 import org.meshtastic.proto.Telemetry
 /**
- * Curated battery health and state information.
+ * Curated battery health and state information reported by the device.
  *
  * @property percent charge level (0..100).
  * @property voltageVolts raw battery voltage, if reported.
  * @property pluggedIn `true` if the device is currently drawing external power.
+ * @since 0.1.0
  */
 public data class BatteryStatus(
     public val percent: Int?,
@@ -23,9 +24,10 @@ public data class BatteryStatus(
 )
 
 /**
- * Converts protobuf [DeviceMetrics] to [BatteryStatus].
+ * Converts protobuf [DeviceMetrics] into a normalized [BatteryStatus] snapshot.
  *
  * Maps the firmware's `>= 101` level sentinel to [BatteryStatus.pluggedIn].
+ * @since 0.1.0
  */
 public fun DeviceMetrics.toBatteryStatus(): BatteryStatus? {
     if (battery_level == null && voltage == null) return null
