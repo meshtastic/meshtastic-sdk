@@ -812,6 +812,7 @@ public class RadioClient internal constructor(
                 logger = logSink,
                 bleHeartbeatEnabled = bleHeartbeatEnabled,
                 parentContext = coroutineContext,
+                clock = clock,
                 sendTimeout = sendTimeout,
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,

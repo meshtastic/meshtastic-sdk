@@ -159,6 +159,12 @@ private suspend fun wireUpDashboard(
                         nodes.remove(change.nodeId)
                         appendLog("- node 0x" + change.nodeId.raw.toUInt().toString(16))
                     }
+
+                    is NodeChange.WentOffline ->
+                        appendLog("⊘ offline 0x" + change.nodeId.raw.toUInt().toString(16))
+
+                    is NodeChange.CameOnline ->
+                        appendLog("● online 0x" + change.nodeId.raw.toUInt().toString(16))
                 }
             }
         }

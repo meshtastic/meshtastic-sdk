@@ -476,11 +476,18 @@ internal class AdminApiImpl(
         if (isDeviceManaged()) return AdminResult.Unauthorized
         val first = block()
         if (first !is AdminResult.SessionKeyExpired) return first
-        // Re-seed: a fresh getOwner round-trip latches a new session_passkey. We don't propagate
-        // its success / failure — the original call's retry is the user-visible signal.
-        getOwner()
+        // Re-seed against the *local* device PhoneAPI, even when this AdminApiImpl is scoped to
+        // a remote node via forNode(dest). Remote getOwner requires a valid session passkey, so
+        // retrying against targetNode would just loop the same expiry failure.
+        reseedSessionPasskey()
         return block()
     }
+
+    private suspend fun reseedSessionPasskey(): AdminResult<User> = submitAdminRpc(
+        adminMsg = AdminMessage(get_owner_request = true),
+        kind = ResponseKind.AdminOwner,
+        to = NodeId(engine.myNodeNumOrNull() ?: 0),
+    )
 
     private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
 

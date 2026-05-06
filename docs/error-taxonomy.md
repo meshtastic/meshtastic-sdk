@@ -11,7 +11,7 @@
 | **Handshake failure** (timeout in any stage, malformed envelope, firmware too old) | `throw MeshtasticException` from `connect()` | Connect fails synchronously. |
 | **Async device drop** (heartbeat liveness timeout, transport drop after `Connected`) | `connection: ConnectionState.Reconnecting(cause)` + `MeshEvent.TransportError("liveness timeout")` (engine watchdog, 2 × heartbeat) or `TransportError("TCP read timeout after 65000ms")` (stream-transport backstop) | Already past `connect()`; the right channel is the state flow. The engine watchdog (`MeshEngine.LIVENESS_TIMEOUT_MS`) is the primary detector; TCP adds its own read deadline so the pre-`Ready` window is also covered. |
 | **Mesh send outcome** (NAK, no route, max retransmit, duty cycle, send-time disconnect) | `MessageHandle.state -> Failed(SendFailure.X)` | Routine on a flaky mesh; not exceptional. |
-| **Admin RPC outcome** (NAK, session-key expired, unauthorised, timeout) | `AdminResult.Error(...)` | Routine; handlers want exhaustive `when`. |
+| **Admin RPC outcome** (NAK, session-key expired, unauthorised, rate-limited, timeout) | `AdminResult.*` sealed variants | Routine; handlers want exhaustive `when`. |
 | **Engine drop of an inbound flow** (subscriber too slow) | `MeshEvent.PacketsDropped(flow, count)` | Observable backpressure; never silent. |
 | **Storage failure mid-session** | `MeshEvent.ProtocolWarning(...)` + retry; second failure escalates to `MeshtasticException.StorageUnavailable` and triggers reconnect | Storage outages shouldn't kill an active session if recoverable. |
 
@@ -88,7 +88,7 @@ The Wire-generated `Routing.Error` enum (from `meshtastic/protobufs:mesh.proto`)
 | `PKI_UNKNOWN_PUBKEY` | `Other(PKI_UNKNOWN_PUBKEY)` |
 | `ADMIN_BAD_SESSION_KEY` | `Other(ADMIN_BAD_SESSION_KEY)` (admin paths intercept; see below) |
 | `ADMIN_PUBLIC_KEY_UNAUTHORIZED` | `Other(ADMIN_PUBLIC_KEY_UNAUTHORIZED)` (admin paths intercept) |
-| `RATE_LIMIT_EXCEEDED` | `Other(RATE_LIMIT_EXCEEDED)` |
+| `RATE_LIMIT_EXCEEDED` | `Other(RATE_LIMIT_EXCEEDED)` (admin paths intercept → `AdminResult.RateLimited`) |
 | (any new value the proto schema adds) | `Other(value)` — forward-compatible without a code change |
 
 `SendFailure.Unknown` is reserved for engine-internal anomalies (encoded `MeshPacket` with no decoded payload, etc.) and should never appear in production.
@@ -101,6 +101,7 @@ public sealed interface AdminResult<out T> {
     public data object SessionKeyExpired : AdminResult<Nothing>      // → automatic 1× retry inside engine
     public data object Unauthorized : AdminResult<Nothing>           // NOT_AUTHORIZED / ADMIN_PUBLIC_KEY_UNAUTHORIZED
     public data object Timeout : AdminResult<Nothing>
+    public data object RateLimited : AdminResult<Nothing>            // RATE_LIMIT_EXCEEDED — back off before retry
     public data object NodeUnreachable : AdminResult<Nothing>        // remote-node admin: NO_ROUTE / MAX_RETRANSMIT
     public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>  // anything else
 }
@@ -116,6 +117,7 @@ Admin RPC paths intercept `Routing.Error` *before* it would map to a `SendFailur
 | `ADMIN_BAD_SESSION_KEY` | `SessionKeyExpired` (engine auto-retries once with refreshed `session_passkey`; if the retry also returns this, the result is forwarded) |
 | `NOT_AUTHORIZED`, `ADMIN_PUBLIC_KEY_UNAUTHORIZED` | `Unauthorized` |
 | `TIMEOUT` (or engine per-op timeout firing first) | `Timeout` |
+| `RATE_LIMIT_EXCEEDED` | `RateLimited` |
 | `NO_ROUTE`, `MAX_RETRANSMIT`, `NO_INTERFACE` (for remote-node admin) | `NodeUnreachable` |
 | Anything else | `Failed(routingError)` — caller can switch on the raw enum |
 
@@ -185,6 +187,7 @@ when (val r = client.admin.setConfig(c)) {
     is AdminResult.SessionKeyExpired -> { … }   // very rare — engine already retried once
     is AdminResult.Unauthorized,
     AdminResult.Timeout,
+    AdminResult.RateLimited,
     AdminResult.NodeUnreachable,
     is AdminResult.Failed -> { … }
 }

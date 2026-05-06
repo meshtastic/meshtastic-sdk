@@ -45,6 +45,8 @@ class MeshNodeListFragment : Fragment() {
                         is NodeChange.Added -> adapter.addNode(change.node)
                         is NodeChange.Updated -> adapter.updateNode(change.node)
                         is NodeChange.Removed -> adapter.removeNode(change.nodeId)
+                        is NodeChange.WentOffline -> adapter.setOffline(change.nodeId)
+                        is NodeChange.CameOnline -> adapter.setOnline(change.nodeId)
                     }
                 }
             }

@@ -92,6 +92,7 @@ internal object Scenarios {
                 AdminResult.NodeUnreachable -> error("node unreachable")
                 AdminResult.SessionKeyExpired -> error("session key expired (twice — retry exhausted)")
                 AdminResult.Unauthorized -> error("unauthorized")
+                AdminResult.RateLimited -> error("device rate-limited the request")
                 is AdminResult.Failed -> error("routing error: ${result.routingError}")
             }
         }
@@ -120,6 +121,8 @@ internal object Scenarios {
                 AdminResult.SessionKeyExpired -> error("session key expired")
 
                 AdminResult.Unauthorized -> error("unauthorized")
+
+                AdminResult.RateLimited -> error("device rate-limited the request")
 
                 is AdminResult.Failed -> error("routing error: ${result.routingError}")
             }

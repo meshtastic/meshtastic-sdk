@@ -8,7 +8,7 @@
 
 | Package | Stability | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `Clock`, `Constants`, `SessionPasskey` |
+| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android), `JvmSerialPorts` (JVM) |
@@ -73,11 +73,13 @@ RadioClient.Builder()
 |---|---|---|
 | `send(packet: MeshPacket): MessageHandle` | handle (state already `Queued`) | `NotConnected`, `PayloadTooLarge` |
 | `sendText(text: String, channel: ChannelIndex = ChannelIndex(0), to: NodeId = NodeId.BROADCAST): MessageHandle` | handle | same as `send` |
+| `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
+| `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
 
 ### Sub-API namespaces
 
-`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
+`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi`, `client.storeForward: StoreForwardApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
 
 ## `MessageHandle`
 
@@ -163,6 +165,8 @@ public sealed interface NodeChange {
     public data class Added(val node: NodeInfo) : NodeChange
     public data class Updated(val node: NodeInfo, val changed: Set<NodeField>) : NodeChange
     public data class Removed(val nodeId: NodeId) : NodeChange
+    public data class WentOffline(val nodeId: NodeId, val lastHeard: Int) : NodeChange
+    public data class CameOnline(val nodeId: NodeId) : NodeChange
 }
 
 public enum class NodeField {
@@ -174,6 +178,10 @@ Contract:
 - Every new subscriber receives exactly one `Snapshot` first, then deltas.
 - Deltas MUST NOT drop (`SUSPEND` overflow on the backing flow).
 - `Updated.changed` is the *minimal* set of fields whose value differs from the prior `NodeInfo`. Useful for diffing UI state without re-rendering everything.
+
+### Presence tracking *(since 0.2.0)*
+
+`WentOffline` and `CameOnline` are emitted by the engine when presence tracking is enabled via `Builder.presenceTimeout()`. `WentOffline.lastHeard` is the node's most recent `last_heard` epoch, allowing the UI to display "last seen" timestamps. A node transitions back to online when it sends any new packet.
 
 ## `ConnectionState`
 
@@ -285,6 +293,9 @@ Each method maps onto a single `AdminMessage` round-trip with the device. Setter
 
 ```kotlin
 public interface AdminApi {
+    /** Returns a copy of this AdminApi that targets a remote node. All subsequent calls route to [dest]. @since 0.2.0 */
+    public fun forNode(dest: NodeId): AdminApi
+
     public suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config>
     public suspend fun setConfig(config: Config): AdminResult<Unit>
     public suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig>
@@ -317,12 +328,13 @@ public sealed interface AdminResult<out T> {
     public data object SessionKeyExpired : AdminResult<Nothing>
     public data object Unauthorized : AdminResult<Nothing>
     public data object Timeout : AdminResult<Nothing>
+    public data object RateLimited : AdminResult<Nothing>
     public data object NodeUnreachable : AdminResult<Nothing>
     public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>
 }
 ```
 
-`SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified.
+`SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified. `RateLimited` indicates the device rejected the call due to rate limiting (`Routing.Error.RATE_LIMIT_EXCEEDED`); callers should back off before retrying.
 
 ## `TelemetryApi` *(Phase 2)*
 
@@ -347,6 +359,86 @@ public interface TelemetryApi {
 public interface RoutingApi {
     public suspend fun traceRoute(dest: NodeId, hopLimit: Int = 7): AdminResult<RouteDiscovery>
     public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<NeighborInfo>
+}
+```
+
+## `StoreForwardApi` *(since 0.2.0)*
+
+API for interacting with Store-and-Forward (S&F) nodes on the mesh. S&F nodes temporarily store messages for offline nodes and deliver them when the target comes back online. Access via `client.storeForward`.
+
+```kotlin
+public interface StoreForwardApi {
+    /** Known S&F server nodes on the mesh. Updated reactively when nodes advertise capability. */
+    public val servers: StateFlow<List<NodeId>>
+
+    /** Request delivery of stored messages since [since] (epoch seconds). */
+    public suspend fun requestHistory(since: Int? = null, server: NodeId? = null): AdminResult<Int>
+
+    /** Query statistics from a S&F server. */
+    public suspend fun requestStats(server: NodeId? = null): AdminResult<StoreForwardStats>
+
+    /** Flow of S&F-specific events (heartbeats, replays, SFPP link/canon). */
+    public val events: Flow<StoreForwardEvent>
+}
+
+public data class StoreForwardStats(
+    val messagesStored: Int, val messagesMax: Int, val uptime: Int,
+    val requests: Int, val requestsFailed: Int, val heartbeat: Boolean,
+)
+
+public sealed interface StoreForwardEvent {
+    public data class ServerDiscovered(val nodeId: NodeId) : StoreForwardEvent
+    public data class ServerLost(val nodeId: NodeId) : StoreForwardEvent
+    public data class HistoryReplayStarted(val server: NodeId, val messageCount: Int) : StoreForwardEvent
+    public data class HistoryReplayComplete(val server: NodeId, val delivered: Int) : StoreForwardEvent
+    public data class Heartbeat(val server: NodeId) : StoreForwardEvent
+    public data class SfppLinkProvided(val packetId: Int, val from: Int, val to: Int, val messageHash: ByteArray?, val confirmed: Boolean) : StoreForwardEvent
+    public data class SfppCanonAnnounced(val messageHash: ByteArray, val rxTime: Long) : StoreForwardEvent
+}
+```
+
+## Config Builder Extensions *(since 0.2.0)*
+
+Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:
+
+```kotlin
+// Config types (8 extensions)
+suspend fun AdminApi.setDeviceConfig(block: Config.DeviceConfig.() -> Config.DeviceConfig): AdminResult<Unit>
+suspend fun AdminApi.setPositionConfig(block: Config.PositionConfig.() -> Config.PositionConfig): AdminResult<Unit>
+suspend fun AdminApi.setPowerConfig(block: Config.PowerConfig.() -> Config.PowerConfig): AdminResult<Unit>
+suspend fun AdminApi.setNetworkConfig(block: Config.NetworkConfig.() -> Config.NetworkConfig): AdminResult<Unit>
+suspend fun AdminApi.setDisplayConfig(block: Config.DisplayConfig.() -> Config.DisplayConfig): AdminResult<Unit>
+suspend fun AdminApi.setLoraConfig(block: Config.LoRaConfig.() -> Config.LoRaConfig): AdminResult<Unit>
+suspend fun AdminApi.setBluetoothConfig(block: Config.BluetoothConfig.() -> Config.BluetoothConfig): AdminResult<Unit>
+suspend fun AdminApi.setSecurityConfig(block: Config.SecurityConfig.() -> Config.SecurityConfig): AdminResult<Unit>
+
+// Module config types (15 extensions)
+suspend fun AdminApi.setMqttConfig(block: ModuleConfig.MQTTConfig.() -> ModuleConfig.MQTTConfig): AdminResult<Unit>
+suspend fun AdminApi.setSerialConfig(block: ModuleConfig.SerialConfig.() -> ModuleConfig.SerialConfig): AdminResult<Unit>
+suspend fun AdminApi.setExternalNotificationConfig(block: ModuleConfig.ExternalNotificationConfig.() -> ModuleConfig.ExternalNotificationConfig): AdminResult<Unit>
+suspend fun AdminApi.setStoreForwardConfig(block: ModuleConfig.StoreForwardConfig.() -> ModuleConfig.StoreForwardConfig): AdminResult<Unit>
+suspend fun AdminApi.setRangeTestConfig(block: ModuleConfig.RangeTestConfig.() -> ModuleConfig.RangeTestConfig): AdminResult<Unit>
+suspend fun AdminApi.setTelemetryConfig(block: ModuleConfig.TelemetryConfig.() -> ModuleConfig.TelemetryConfig): AdminResult<Unit>
+suspend fun AdminApi.setCannedMessageConfig(block: ModuleConfig.CannedMessageConfig.() -> ModuleConfig.CannedMessageConfig): AdminResult<Unit>
+suspend fun AdminApi.setAudioConfig(block: ModuleConfig.AudioConfig.() -> ModuleConfig.AudioConfig): AdminResult<Unit>
+suspend fun AdminApi.setRemoteHardwareConfig(block: ModuleConfig.RemoteHardwareConfig.() -> ModuleConfig.RemoteHardwareConfig): AdminResult<Unit>
+suspend fun AdminApi.setNeighborInfoConfig(block: ModuleConfig.NeighborInfoConfig.() -> ModuleConfig.NeighborInfoConfig): AdminResult<Unit>
+suspend fun AdminApi.setAmbientLightingConfig(block: ModuleConfig.AmbientLightingConfig.() -> ModuleConfig.AmbientLightingConfig): AdminResult<Unit>
+suspend fun AdminApi.setDetectionSensorConfig(block: ModuleConfig.DetectionSensorConfig.() -> ModuleConfig.DetectionSensorConfig): AdminResult<Unit>
+suspend fun AdminApi.setPaxcounterConfig(block: ModuleConfig.PaxcounterConfig.() -> ModuleConfig.PaxcounterConfig): AdminResult<Unit>
+suspend fun AdminApi.setStatusMessageConfig(block: ModuleConfig.StatusMessageConfig.() -> ModuleConfig.StatusMessageConfig): AdminResult<Unit>
+suspend fun AdminApi.setTrafficManagementConfig(block: ModuleConfig.TrafficManagementConfig.() -> ModuleConfig.TrafficManagementConfig): AdminResult<Unit>
+```
+
+Usage:
+```kotlin
+client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
+client.admin.setMqttConfig { copy(enabled = true, address = "mqtt.example.com") }
+
+// Combined with editSettings for atomic batching:
+client.admin.editSettings {
+    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
+    setMqttConfig { copy(enabled = true) }
 }
 ```
 

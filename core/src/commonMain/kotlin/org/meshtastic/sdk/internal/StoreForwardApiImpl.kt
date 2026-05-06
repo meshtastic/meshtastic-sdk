@@ -47,6 +47,7 @@ internal class StoreForwardApiImpl(
     private val scope = CoroutineScope(coroutineContext + CoroutineName("meshtastic-store-forward"))
     private val knownServers = linkedSetOf<NodeId>()
     private val activeReplays = mutableMapOf<NodeId, ReplayProgress>()
+    private val pendingSfppFragments = mutableMapOf<SfppFragmentKey, SfppFragmentState>()
 
     private val _servers = MutableStateFlow<List<NodeId>>(emptyList())
     override val servers = _servers.asStateFlow()
@@ -101,7 +102,7 @@ internal class StoreForwardApiImpl(
         }
     }
 
-    override suspend fun requestStats(server: NodeId): AdminResult<StoreForwardStats> {
+    override suspend fun requestStats(server: NodeId?): AdminResult<StoreForwardStats> {
         val myNode = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
         val targetServer = resolveServer(server) ?: return AdminResult.NodeUnreachable
         val requestId = engine.nextMessageId().raw
@@ -139,7 +140,7 @@ internal class StoreForwardApiImpl(
             null
         }
         if (legacy != null && legacy.unknownFields.size == 0 && looksLikeLegacyStoreForward(legacy)) {
-            handleLegacySf(legacy, NodeId(packet.from))
+            handleLegacySf(legacy, packet)
             return
         }
 
@@ -153,7 +154,8 @@ internal class StoreForwardApiImpl(
         }
     }
 
-    private suspend fun handleLegacySf(message: StoreAndForward, server: NodeId) {
+    private suspend fun handleLegacySf(message: StoreAndForward, packet: MeshPacket) {
+        val server = NodeId(packet.from)
         when (message.rr) {
             StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
             StoreAndForward.RequestResponse.ROUTER_PONG,
@@ -179,12 +181,22 @@ internal class StoreForwardApiImpl(
             -> {
                 rememberServer(server)
                 val progress = activeReplays[server] ?: return
+                val fingerprint = ReplayMessageFingerprint(
+                    packetId = packet.id,
+                    response = message.rr,
+                    payload = message.text?.toByteArray(),
+                )
+                if (fingerprint in progress.seenMessages) return
                 val delivered = progress.delivered + 1
+                val updated = progress.copy(
+                    delivered = delivered,
+                    seenMessages = progress.seenMessages + fingerprint,
+                )
                 if (delivered >= progress.expected) {
                     activeReplays.remove(server)
                     _events.emit(StoreForwardEvent.HistoryReplayComplete(server, delivered))
                 } else {
-                    activeReplays[server] = progress.copy(delivered = delivered)
+                    activeReplays[server] = updated
                 }
             }
 
@@ -229,25 +241,84 @@ internal class StoreForwardApiImpl(
 
     private suspend fun handleLinkProvide(sfpp: StoreForwardPlusPlus) {
         val confirmed = sfpp.commit_hash.size != 0
-        val isFragment = sfpp.sfpp_message_type != StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+        val messageType = sfpp.sfpp_message_type
+        val isFragment = messageType != StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
         val normalizedTo = if (sfpp.encapsulated_to == 0) NodeId.BROADCAST.raw else sfpp.encapsulated_to
-        val hash = when {
-            sfpp.message_hash.size != 0 -> sfpp.message_hash.toByteArray()
-            !isFragment && sfpp.message.size != 0 -> SfppHash.compute(
-                payload = sfpp.message.toByteArray(),
-                to = normalizedTo,
-                from = sfpp.encapsulated_from,
-                id = sfpp.encapsulated_id,
-            )
-
-            else -> null
-        }
-        _events.emit(
-            StoreForwardEvent.SfppLinkProvided(
+        val providedHash = sfpp.message_hash.takeIf { it.size != 0 }?.toByteArray()
+        if (!isFragment || providedHash != null || sfpp.message.size == 0) {
+            emitLinkProvided(
                 packetId = sfpp.encapsulated_id,
                 from = sfpp.encapsulated_from,
                 to = normalizedTo,
-                messageHash = hash,
+                confirmed = confirmed,
+                messageHash = when {
+                    providedHash != null -> providedHash
+                    !isFragment && sfpp.message.size != 0 -> SfppHash.compute(
+                        payload = sfpp.message.toByteArray(),
+                        to = normalizedTo,
+                        from = sfpp.encapsulated_from,
+                        id = sfpp.encapsulated_id,
+                    )
+
+                    else -> null
+                },
+            )
+            return
+        }
+
+        val key = SfppFragmentKey(
+            packetId = sfpp.encapsulated_id,
+            from = sfpp.encapsulated_from,
+            to = normalizedTo,
+        )
+        val existing = pendingSfppFragments[key] ?: SfppFragmentState()
+        val updated = when (messageType) {
+            StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF -> existing.copy(
+                firstHalf = sfpp.message.toByteArray(),
+                confirmed = existing.confirmed || confirmed,
+            )
+
+            StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_SECONDHALF -> existing.copy(
+                secondHalf = sfpp.message.toByteArray(),
+                confirmed = existing.confirmed || confirmed,
+            )
+
+            else -> existing
+        }
+        val firstHalf = updated.firstHalf
+        val secondHalf = updated.secondHalf
+        if (firstHalf != null && secondHalf != null) {
+            pendingSfppFragments.remove(key)
+            emitLinkProvided(
+                packetId = key.packetId,
+                from = key.from,
+                to = key.to,
+                confirmed = updated.confirmed,
+                messageHash = SfppHash.compute(
+                    payload = firstHalf + secondHalf,
+                    to = key.to,
+                    from = key.from,
+                    id = key.packetId,
+                ),
+            )
+        } else {
+            pendingSfppFragments[key] = updated
+        }
+    }
+
+    private suspend fun emitLinkProvided(
+        packetId: Int,
+        from: Int,
+        to: Int,
+        confirmed: Boolean,
+        messageHash: ByteArray?,
+    ) {
+        _events.emit(
+            StoreForwardEvent.SfppLinkProvided(
+                packetId = packetId,
+                from = from,
+                to = to,
+                messageHash = messageHash,
                 confirmed = confirmed,
             ),
         )
@@ -264,8 +335,10 @@ internal class StoreForwardApiImpl(
     }
 
     private suspend fun handleNodeChange(change: NodeChange) {
-        if (change is NodeChange.Removed) {
-            forgetServer(change.nodeId)
+        when (change) {
+            is NodeChange.Removed -> forgetServer(change.nodeId)
+            is NodeChange.WentOffline -> forgetServer(change.nodeId)
+            else -> Unit
         }
     }
 
@@ -291,6 +364,7 @@ internal class StoreForwardApiImpl(
     }
 
     private suspend fun clearServers() {
+        pendingSfppFragments.clear()
         if (knownServers.isEmpty()) return
         val lost = knownServers.toList()
         knownServers.clear()
@@ -331,7 +405,36 @@ internal class StoreForwardApiImpl(
         data class Connection(val state: ConnectionState) : InternalSignal
     }
 
-    private data class ReplayProgress(val expected: Int, val delivered: Int = 0)
+    private data class ReplayProgress(
+        val expected: Int,
+        val delivered: Int = 0,
+        val seenMessages: Set<ReplayMessageFingerprint> = emptySet(),
+    )
+
+    private data class ReplayMessageFingerprint(
+        val packetId: Int,
+        val response: StoreAndForward.RequestResponse,
+        val payload: ByteArray?,
+    ) {
+        override fun equals(other: Any?): Boolean = other is ReplayMessageFingerprint &&
+            packetId == other.packetId &&
+            response == other.response &&
+            payload.contentEquals(other.payload)
+
+        override fun hashCode(): Int = ((packetId * 31) + response.hashCode()) * 31 + payload.contentHashCode()
+    }
+
+    private data class SfppFragmentKey(
+        val packetId: Int,
+        val from: Int,
+        val to: Int,
+    )
+
+    private data class SfppFragmentState(
+        val firstHalf: ByteArray? = null,
+        val secondHalf: ByteArray? = null,
+        val confirmed: Boolean = false,
+    )
 
     private companion object {
         const val ALL_HISTORY_WINDOW_MINUTES: Int = 60 * 24 * 365 * 100

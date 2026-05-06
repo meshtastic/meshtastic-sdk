@@ -53,10 +53,10 @@ public interface StoreForwardApi {
     /**
      * Query statistics from a Store-and-Forward server.
      *
-     * @param server the S&F node to query
+     * @param server the S&F node to query. If null, queries the first known server.
      * @return server statistics including capacity, stored message count, and uptime
      */
-    public suspend fun requestStats(server: NodeId): AdminResult<StoreForwardStats>
+    public suspend fun requestStats(server: NodeId? = null): AdminResult<StoreForwardStats>
 
     /**
      * Flow of S&F-specific events (heartbeats, delivery confirmations, etc.).
