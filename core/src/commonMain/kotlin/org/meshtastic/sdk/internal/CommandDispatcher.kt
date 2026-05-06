@@ -26,7 +26,7 @@ import org.meshtastic.sdk.debug
 import org.meshtastic.sdk.warn
 
 /**
- * Engine-actor-owned registry of in-flight Phase 2 RPC responses.
+ * Engine-actor-owned registry of in-flight admin/telemetry/routing RPC responses.
  *
  * **Single-writer.** All mutations happen on the engine coroutine — no atomic / mutex needed
  * (ADR-002).
@@ -249,7 +249,7 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         /**
          * Translate a Routing.Error enum value into the appropriate AdminResult failure.
          *
-         * Mirrors the error-taxonomy.md mapping for Phase 2 RPCs. Notably:
+         * Mirrors the error-taxonomy.md mapping for admin RPCs. Notably:
          *  - `ADMIN_BAD_SESSION_KEY` → [AdminResult.SessionKeyExpired] so the caller can trigger
          *    a single-shot retry after re-seeding via `get_owner_request`.
          *  - `NOT_AUTHORIZED` / `ADMIN_PUBLIC_KEY_UNAUTHORIZED` → [AdminResult.Unauthorized].

@@ -30,7 +30,7 @@ import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Phase 2 — AdminApi RPC coverage. Each test wires a [FakeRadioTransport] with auto-handshake,
+ * AdminApi RPC coverage. Each test wires a [FakeRadioTransport] with auto-handshake,
  * exercises one [AdminApi] method, and verifies (a) the outbound packet shape and (b) the
  * mapping from the scripted device response to the returned [AdminResult].
  */

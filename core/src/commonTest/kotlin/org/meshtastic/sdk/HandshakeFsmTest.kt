@@ -238,7 +238,7 @@ class HandshakeFsmTest {
         assertEquals(true, last?.disconnect, "Last outbound ToRadio must have disconnect=true (got: $last)")
     }
 
-    // ── Phase 2 — audit critical regressions ─────────────────────────────────
+    // ── Audit: critical regressions ─────────────────────────────────
 
     /**
      * Audit P1-2 / F-3.1: firmware (PhoneAPI.cpp:202-209) interprets `Heartbeat(nonce=1)` as

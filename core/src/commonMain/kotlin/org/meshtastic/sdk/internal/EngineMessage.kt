@@ -48,7 +48,7 @@ internal enum class HandshakeStage {
  *
  * Per SPEC engine-actor.md: lifecycle messages ([Connect], [Disconnect]) and outbound [Send] /
  * admin messages are **never dropped**. [FrameRx] may be dropped under extreme inbox pressure
- * once Phase 2 backpressure triage is implemented.
+ * once backpressure triage is implemented.
  */
 internal sealed interface EngineMessage {
 
@@ -66,7 +66,7 @@ internal sealed interface EngineMessage {
      * Graceful or error-triggered disconnection request.
      *
      * @param cause if non-null, the engine transitions to [ConnectionState.Reconnecting] with
-     *   this cause and attempts exponential-backoff reconnect (Phase 2). For `null`, the engine
+     *   this cause and attempts exponential-backoff reconnect. For `null`, the engine
      *   transitions directly to [ConnectionState.Disconnected] with no reconnect.
      */
     data class Disconnect(val cause: MeshtasticException? = null) : EngineMessage
@@ -128,10 +128,10 @@ internal sealed interface EngineMessage {
      */
     data object HandshakeHeartbeatSettleComplete : EngineMessage
 
-    /** An in-flight admin RPC did not receive a response within its deadline. Phase 2+. */
+    /** An in-flight admin RPC did not receive a response within its deadline. */
     data class AdminTimeout(val requestId: Int) : EngineMessage
 
-    // ── Phase 2 RPC dispatch (admin / telemetry / routing) ──────────────────
+    // ── RPC dispatch (admin / telemetry / routing) ──────────────────
 
     /**
      * Submit a typed RPC request whose response is correlated by [requestId] (the wire packet
