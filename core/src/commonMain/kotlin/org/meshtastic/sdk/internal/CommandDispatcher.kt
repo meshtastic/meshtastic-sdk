@@ -264,6 +264,8 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
             -> AdminResult.Unauthorized
 
+            Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
+
             Routing.Error.NO_ROUTE,
             Routing.Error.GOT_NAK,
             Routing.Error.MAX_RETRANSMIT,

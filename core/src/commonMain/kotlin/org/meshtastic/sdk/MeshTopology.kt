@@ -7,6 +7,9 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
 /**
  * Incremental mesh topology graph built from [NeighborInfo] reports.
  *
@@ -18,7 +21,8 @@ package org.meshtastic.sdk
  * val neighbors = topology.getNeighbors(nodeA)
  * ```
  *
- * **Not thread-safe** — callers must synchronize externally if mutating and reading concurrently.
+ * **Thread-safe** — all mutations and reads are guarded by an internal [Mutex]. Safe to call
+ * concurrently from the engine actor and UI collectors.
  * The graph is directed — if node A reports node B as a neighbor, that's a directed edge A→B.
  * Undirected queries consider both directions.
  */
@@ -34,6 +38,8 @@ public class MeshTopology {
         val lastUpdated: Int = 0,
     )
 
+    private val mutex = Mutex()
+
     // Internal adjacency: Map<reporter, Map<neighbor, Edge>>
     private val adjacency = mutableMapOf<NodeId, MutableMap<NodeId, Edge>>()
     private var cachedNodes: Set<NodeId>? = null
@@ -41,7 +47,7 @@ public class MeshTopology {
     /**
      * Ingest a [NeighborInfo] report, replacing all edges from the reporting node.
      */
-    public fun addNeighborInfo(info: NeighborInfo) {
+    public suspend fun addNeighborInfo(info: NeighborInfo): Unit = mutex.withLock {
         val edges = mutableMapOf<NodeId, Edge>()
         info.neighbors.forEach { neighbor ->
             edges[neighbor.nodeId] = Edge(
@@ -58,35 +64,37 @@ public class MeshTopology {
     /**
      * Remove a node and all edges referencing it.
      */
-    public fun removeNode(nodeId: NodeId) {
+    public suspend fun removeNode(nodeId: NodeId): Unit = mutex.withLock {
         adjacency.remove(nodeId)
         adjacency.values.forEach { it.remove(nodeId) }
         cachedNodes = null
     }
 
     /** All nodes that have reported neighbors or been reported as a neighbor. */
-    public val nodes: Set<NodeId>
-        get() {
-            cachedNodes?.let { return it }
-            val result = mutableSetOf<NodeId>()
-            adjacency.forEach { (reporter, neighbors) ->
-                result.add(reporter)
-                result.addAll(neighbors.keys)
-            }
-            return result.also { cachedNodes = it }
+    public suspend fun nodes(): Set<NodeId> = mutex.withLock {
+        cachedNodes?.let { return@withLock it }
+        val result = mutableSetOf<NodeId>()
+        adjacency.forEach { (reporter, neighbors) ->
+            result.add(reporter)
+            result.addAll(neighbors.keys)
         }
+        result.also { cachedNodes = it }
+    }
 
     /** Get all outgoing edges from a node (nodes it reported as neighbors). */
-    public fun getNeighbors(nodeId: NodeId): List<Edge> =
+    public suspend fun getNeighbors(nodeId: NodeId): List<Edge> = mutex.withLock {
         adjacency[nodeId]?.values?.toList() ?: emptyList()
+    }
 
     /** Check if there's a direct edge in either direction between two nodes. */
-    public fun isDirectReach(a: NodeId, b: NodeId): Boolean =
+    public suspend fun isDirectReach(a: NodeId, b: NodeId): Boolean = mutex.withLock {
         adjacency[a]?.containsKey(b) == true || adjacency[b]?.containsKey(a) == true
+    }
 
     /** Get the edge from [from] to [to] (if [from] reported [to] as neighbor). */
-    public fun getEdge(from: NodeId, to: NodeId): Edge? =
+    public suspend fun getEdge(from: NodeId, to: NodeId): Edge? = mutex.withLock {
         adjacency[from]?.get(to)
+    }
 
     /**
      * Find shortest path between two nodes using BFS on the undirected graph.
@@ -94,8 +102,8 @@ public class MeshTopology {
      * Returns `listOf(from)` when [from] == [to].
      * Returns an empty list when no path exists.
      */
-    public fun shortestPath(from: NodeId, to: NodeId): List<NodeId> {
-        if (from == to) return listOf(from)
+    public suspend fun shortestPath(from: NodeId, to: NodeId): List<NodeId> = mutex.withLock {
+        if (from == to) return@withLock listOf(from)
         val visited = mutableSetOf(from)
         val queue = ArrayDeque<List<NodeId>>()
         queue.add(listOf(from))
@@ -103,35 +111,38 @@ public class MeshTopology {
         while (queue.isNotEmpty()) {
             val path = queue.removeFirst()
             val current = path.last()
-            for (neighbor in undirectedNeighbors(current)) {
-                if (neighbor == to) return path + neighbor
+            for (neighbor in undirectedNeighborsLocked(current)) {
+                if (neighbor == to) return@withLock path + neighbor
                 if (visited.add(neighbor)) {
                     queue.add(path + neighbor)
                 }
             }
         }
-        return emptyList()
+        emptyList()
     }
 
     /**
      * Get all edges in the topology graph.
      */
-    public fun allEdges(): List<Edge> =
+    public suspend fun allEdges(): List<Edge> = mutex.withLock {
         adjacency.values.flatMap { it.values }
+    }
 
     /**
      * Number of directed edges.
      */
-    public val edgeCount: Int
-        get() = adjacency.values.sumOf { it.size }
+    public suspend fun edgeCount(): Int = mutex.withLock {
+        adjacency.values.sumOf { it.size }
+    }
 
     /** Clear all topology data. */
-    public fun clear() {
+    public suspend fun clear(): Unit = mutex.withLock {
         adjacency.clear()
         cachedNodes = null
     }
 
-    private fun undirectedNeighbors(nodeId: NodeId): Set<NodeId> {
+    /** Must be called while holding [mutex]. */
+    private fun undirectedNeighborsLocked(nodeId: NodeId): Set<NodeId> {
         val result = mutableSetOf<NodeId>()
         adjacency[nodeId]?.keys?.let { result.addAll(it) }
         adjacency.forEach { (reporter, neighbors) ->

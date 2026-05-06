@@ -122,6 +122,8 @@ internal class TelemetryApiImpl(
 
             AdminResult.Unauthorized -> AdminResult.Unauthorized
 
+            AdminResult.RateLimited -> AdminResult.RateLimited
+
             is AdminResult.Failed -> result
         }
     }

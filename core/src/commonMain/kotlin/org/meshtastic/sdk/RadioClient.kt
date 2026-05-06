@@ -93,16 +93,14 @@ public class RadioClient internal constructor(
      * [ConnectionState.Configuring] → [ConnectionState.Connected]. May cycle through
      * [ConnectionState.Reconnecting] on transport drops.
      */
-    public val connection: StateFlow<ConnectionState>
-        get() = engine.connectionState.asStateFlow()
+    public val connection: StateFlow<ConnectionState> = engine.connectionState.asStateFlow()
 
     /**
      * The local node's [NodeInfo], populated after handshake completes.
      *
      * `null` until [ConnectionState.Connected] is reached; remains non-null while connected.
      */
-    public val ownNode: StateFlow<NodeInfo?>
-        get() = engine.ownNode.asStateFlow()
+    public val ownNode: StateFlow<NodeInfo?> = engine.ownNode.asStateFlow()
 
     /**
      * Most recently committed [ConfigBundle] for the active session.
@@ -110,8 +108,7 @@ public class RadioClient internal constructor(
      * `null` until [ConnectionState.Connected] is reached. Cleared on disconnect / cleanup
      * so a stale bundle from a prior session can never leak into a new one.
      */
-    public val configBundle: StateFlow<ConfigBundle?>
-        get() = engine.configBundleState.asStateFlow()
+    public val configBundle: StateFlow<ConfigBundle?> = engine.configBundleState.asStateFlow()
 
     /**
      * Channel list for the active session.
@@ -123,8 +120,7 @@ public class RadioClient internal constructor(
      * Updated in-memory (and persisted) when [AdminApi.setChannel] succeeds. Call
      * [AdminApi.listChannels] to force a full device re-read (8 RPCs).
      */
-    public val channels: StateFlow<List<org.meshtastic.proto.Channel>?>
-        get() = engine.channelsState.asStateFlow()
+    public val channels: StateFlow<List<org.meshtastic.proto.Channel>?> = engine.channelsState.asStateFlow()
 
     /**
      * Node-change deltas. Late subscribers receive a [NodeChange.Snapshot] immediately
@@ -137,8 +133,7 @@ public class RadioClient internal constructor(
      * flow. If the engine inbox itself fills as a result, drops surface as
      * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
      */
-    public val nodes: Flow<NodeChange>
-        get() = engine.nodes.hide()
+    public val nodes: Flow<NodeChange> = engine.nodes.hide()
 
     /**
      * Inbound decoded packets.
@@ -156,8 +151,7 @@ public class RadioClient internal constructor(
      *
      * Populated by the HandshakeMachine after entering [ConnectionState.Connected].
      */
-    public val packets: Flow<MeshPacket>
-        get() = engine.packets.hide()
+    public val packets: Flow<MeshPacket> = engine.packets.hide()
 
     /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
@@ -165,8 +159,7 @@ public class RadioClient internal constructor(
      * ([MeshEvent.IdentityRebound] — emitted before the engine clears storage when the
      * device reports a different NodeNum than the one previously persisted).
      */
-    public val events: Flow<MeshEvent>
-        get() = engine.events.hide()
+    public val events: Flow<MeshEvent> = engine.events.hide()
 
     // ── On-demand query ─────────────────────────────────────────────────────
 

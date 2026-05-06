@@ -279,6 +279,13 @@ public sealed interface AdminResult<out T> {
     public data object Timeout : AdminResult<Nothing>
 
     /**
+     * The device rate-limited the request; back off before retrying.
+     *
+     * (From `Routing.Error.RATE_LIMIT_EXCEEDED`.)
+     */
+    public data object RateLimited : AdminResult<Nothing>
+
+    /**
      * Destination node is unreachable.
      */
     public data object NodeUnreachable : AdminResult<Nothing>
@@ -316,6 +323,7 @@ public inline fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R>
         is AdminResult.SessionKeyExpired -> this
         is AdminResult.Unauthorized -> this
         is AdminResult.Timeout -> this
+        is AdminResult.RateLimited -> this
         is AdminResult.NodeUnreachable -> this
         is AdminResult.Failed -> this
     }

@@ -96,6 +96,7 @@ internal class StoreForwardApiImpl(
             AdminResult.NodeUnreachable -> AdminResult.NodeUnreachable
             AdminResult.SessionKeyExpired -> AdminResult.SessionKeyExpired
             AdminResult.Unauthorized -> AdminResult.Unauthorized
+            AdminResult.RateLimited -> AdminResult.RateLimited
             is AdminResult.Failed -> result
         }
     }
@@ -123,6 +124,7 @@ internal class StoreForwardApiImpl(
             AdminResult.NodeUnreachable -> AdminResult.NodeUnreachable
             AdminResult.SessionKeyExpired -> AdminResult.SessionKeyExpired
             AdminResult.Unauthorized -> AdminResult.Unauthorized
+            AdminResult.RateLimited -> AdminResult.RateLimited
             is AdminResult.Failed -> result
         }
     }

@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -15,7 +16,7 @@ import kotlin.test.assertTrue
 
 class MeshTopologyTest {
     @Test
-    fun `addNeighborInfo populates nodes and edges`() {
+    fun `addNeighborInfo populates nodes and edges`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -29,8 +30,8 @@ class MeshTopologyTest {
             ),
         )
 
-        assertEquals(setOf(NodeId(1), NodeId(2), NodeId(3)), topology.nodes)
-        assertEquals(2, topology.edgeCount)
+        assertEquals(setOf(NodeId(1), NodeId(2), NodeId(3)), topology.nodes())
+        assertEquals(2, topology.edgeCount())
         assertEquals(
             setOf(
                 MeshTopology.Edge(NodeId(1), NodeId(2), 7.5f, 99),
@@ -42,14 +43,14 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `getNeighbors returns empty for unknown node`() {
+    fun `getNeighbors returns empty for unknown node`() = runTest {
         val topology = MeshTopology()
 
         assertTrue(topology.getNeighbors(NodeId(404)).isEmpty())
     }
 
     @Test
-    fun `isDirectReach works bidirectionally`() {
+    fun `isDirectReach works bidirectionally`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -65,7 +66,7 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `shortestPath finds multi-hop route`() {
+    fun `shortestPath finds multi-hop route`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -94,7 +95,7 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `shortestPath returns empty when unreachable`() {
+    fun `shortestPath returns empty when unreachable`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -114,7 +115,7 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `removeNode clears all references`() {
+    fun `removeNode clears all references`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -135,7 +136,7 @@ class MeshTopologyTest {
 
         topology.removeNode(NodeId(2))
 
-        assertFalse(NodeId(2) in topology.nodes)
+        assertFalse(NodeId(2) in topology.nodes())
         assertNull(topology.getEdge(NodeId(1), NodeId(2)))
         assertNull(topology.getEdge(NodeId(4), NodeId(2)))
         assertFalse(topology.isDirectReach(NodeId(1), NodeId(2)))
@@ -143,7 +144,7 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `addNeighborInfo replaces existing edges from same reporter`() {
+    fun `addNeighborInfo replaces existing edges from same reporter`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -166,23 +167,23 @@ class MeshTopologyTest {
         assertEquals(listOf(MeshTopology.Edge(NodeId(1), NodeId(4), 9.0f, 10)), topology.getNeighbors(NodeId(1)))
         assertNull(topology.getEdge(NodeId(1), NodeId(2)))
         assertNull(topology.getEdge(NodeId(1), NodeId(3)))
-        assertEquals(setOf(NodeId(1), NodeId(4)), topology.nodes)
+        assertEquals(setOf(NodeId(1), NodeId(4)), topology.nodes())
     }
 
     @Test
-    fun `clear removes all nodes and edges`() {
+    fun `clear removes all nodes and edges`() = runTest {
         val topo = MeshTopology()
 
         topo.addNeighborInfo(NeighborInfo(NodeId(1), listOf(NeighborInfo.Neighbor(NodeId(2), 5f))))
         topo.clear()
 
-        assertEquals(emptySet<NodeId>(), topo.nodes)
-        assertEquals(0, topo.edgeCount)
+        assertEquals(emptySet<NodeId>(), topo.nodes())
+        assertEquals(0, topo.edgeCount())
         assertEquals(emptyList<NodeId>(), topo.shortestPath(NodeId(1), NodeId(2)))
     }
 
     @Test
-    fun `self-loop does not break graph operations`() {
+    fun `self-loop does not break graph operations`() = runTest {
         val topo = MeshTopology()
 
         topo.addNeighborInfo(
@@ -201,7 +202,7 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `disconnected components have no path between them`() {
+    fun `disconnected components have no path between them`() = runTest {
         val topo = MeshTopology()
 
         topo.addNeighborInfo(NeighborInfo(NodeId(1), listOf(NeighborInfo.Neighbor(NodeId(2), 5f))))
@@ -212,7 +213,7 @@ class MeshTopologyTest {
     }
 
     @Test
-    fun `allEdges returns correct count`() {
+    fun `allEdges returns correct count`() = runTest {
         val topology = MeshTopology()
 
         topology.addNeighborInfo(
@@ -232,6 +233,6 @@ class MeshTopologyTest {
         )
 
         assertEquals(3, topology.allEdges().size)
-        assertEquals(3, topology.edgeCount)
+        assertEquals(3, topology.edgeCount())
     }
 }

@@ -9,6 +9,7 @@ package org.meshtastic.sdk.internal
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
@@ -24,6 +25,7 @@ import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
+import org.meshtastic.proto.Routing
 import org.meshtastic.proto.SensorConfig
 import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
@@ -145,6 +147,7 @@ internal class AdminApiImpl(
 
                 AdminResult.Timeout, AdminResult.NodeUnreachable,
                 AdminResult.SessionKeyExpired, AdminResult.Unauthorized,
+                AdminResult.RateLimited,
                 is AdminResult.Failed,
                 -> return result.let {
                     @Suppress("UNCHECKED_CAST")
@@ -417,9 +420,11 @@ internal class AdminApiImpl(
         )
         val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
         engine.trySend(packet, id, stateFlow)
-        val terminal = stateFlow.first {
-            it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
-        }
+        val terminal = withTimeoutOrNull(rpcTimeout) {
+            stateFlow.first {
+                it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
+            }
+        } ?: return AdminResult.Timeout
         return when (terminal) {
             SendState.Acked, SendState.Delivered -> AdminResult.Success(Unit)
             is SendState.Failed -> mapSendFailureToAdminResult(terminal.reason)
@@ -520,7 +525,14 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
-    is SendFailure.Other -> AdminResult.Failed(reason.routingError)
+    is SendFailure.Other -> when (reason.routingError) {
+        Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
+        Routing.Error.NOT_AUTHORIZED,
+        Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
+        -> AdminResult.Unauthorized
+        Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
+        else -> AdminResult.Failed(reason.routingError)
+    }
 
     is SendFailure.Unknown -> AdminResult.Timeout
 }

@@ -312,10 +312,10 @@ class P2AdminRpcTest {
         val begin = outbound.last { adminOf(it)?.begin_edit_settings == true }
         transport.injectRoutingAck(requestId = begin.id)
         runCurrent()
-        advanceUntilIdle()
 
         // Step 2: the inner setFavorite packet was enqueued without want_ack (engine path stops
         // tracking after Sent). The block returns. The commit packet is then sent and acked.
+        runCurrent()
         outbound = transport.outboundPackets().drop(outboundBefore)
         val commit = outbound.last { adminOf(it)?.commit_edit_settings == true }
         transport.injectRoutingAck(requestId = commit.id)
