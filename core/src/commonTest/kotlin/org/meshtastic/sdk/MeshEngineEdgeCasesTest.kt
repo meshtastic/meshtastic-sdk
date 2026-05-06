@@ -579,7 +579,8 @@ class MeshEngineEdgeCasesTest {
         runCurrent()
 
         assertEquals(10, handles.map { it.id.raw }.distinct().size)
-        assertTrue(handles.all { it.state.value == SendState.Sent })
+        // Broadcasts auto-resolve to Acked since no mesh-level ACK is expected.
+        assertTrue(handles.all { it.state.value == SendState.Acked })
 
         client.disconnect()
     }

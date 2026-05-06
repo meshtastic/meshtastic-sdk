@@ -15,6 +15,7 @@ import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.SendOutcome
 import org.meshtastic.sdk.connectAndAwaitReady
+import org.meshtastic.sdk.sendDirectMessage
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
@@ -65,17 +66,18 @@ internal object Scenarios {
     }
 
     /**
-     * **cs2 — Send-text round-trip** (manual C1). Broadcasts a small text packet on channel 0.
+     * **cs2 — Broadcast text acceptance** (manual C1). Broadcasts a small text packet on channel 0.
      * PASS if the [MessageHandle] resolves to [SendOutcome.Success] within [budget]; FAIL on
-     * any failure outcome or timeout.
+     * any failure outcome or timeout. Broadcasts auto-resolve once the device accepts the packet
+     * (no mesh-level ACK is expected for broadcast).
      */
     suspend fun cs2SendTextRoundTrip(client: RadioClient, budget: Duration = 30.seconds): ScenarioResult =
-        runScenario("cs2", "broadcast text round-trip") {
+        runScenario("cs2", "broadcast text acceptance") {
             val handle = client.sendText("conformance probe")
             val outcome = withTimeoutOrNull(budget) { handle.await() }
                 ?: error("did not reach terminal state in ${budget.inWholeSeconds}s")
             when (outcome) {
-                SendOutcome.Success -> "id=${handle.id} acked"
+                SendOutcome.Success -> "id=${handle.id} accepted"
                 is SendOutcome.Failure -> error("failed: ${outcome.reason::class.simpleName}")
             }
         }
@@ -172,6 +174,26 @@ internal object Scenarios {
     /** Build a SKIP result. Used for scenarios whose prerequisites weren't supplied. */
     fun skip(id: String, name: String, reason: String): ScenarioResult =
         ScenarioResult(id = id, name = name, status = ScenarioResult.Status.SKIP, durationMs = 0L, message = reason)
+
+    /**
+     * **cs7 — Unicast DM text round-trip** (manual C2). Sends a direct message to a specific peer
+     * with `wantAck = true`. PASS if the [MessageHandle] resolves to [SendOutcome.Success]
+     * within [budget]; FAIL on any failure outcome or timeout. Unlike cs2 (broadcast), this
+     * exercises the full send → routing-ACK path.
+     */
+    suspend fun cs7UnicastDmText(
+        client: RadioClient,
+        peer: NodeId,
+        budget: Duration = 30.seconds,
+    ): ScenarioResult = runScenario("cs7", "unicast DM to $peer") {
+        val handle = client.sendDirectMessage(to = peer, text = "dm conformance probe")
+        val outcome = withTimeoutOrNull(budget) { handle.await() }
+            ?: error("did not reach terminal state in ${budget.inWholeSeconds}s")
+        when (outcome) {
+            SendOutcome.Success -> "id=${handle.id} acked by ${peer}"
+            is SendOutcome.Failure -> error("failed: ${outcome.reason::class.simpleName}")
+        }
+    }
 
     /**
      * Wrap a single-scenario block: time it, catch every exception, and produce a

@@ -96,7 +96,7 @@ class P0ReliabilityTest {
         client.disconnect()
     }
 
-    // ── R-P0-6: broadcasts must NOT receive an ACK timeout ──────────────────────
+    // ── R-P0-6: broadcasts auto-resolve to Acked (no mesh-level ACK expected) ──
 
     @Test
     fun testBroadcastDoesNotTimeOut() = runTest {
@@ -105,15 +105,16 @@ class P0ReliabilityTest {
 
         val handle = client.send(broadcastPacket())
         runCurrent()
-        assertEquals(SendState.Sent, handle.state.value)
+
+        // Broadcasts auto-resolve to Acked once the device accepts the packet.
+        assertEquals(SendState.Acked, handle.state.value)
 
         advanceTimeBy(5_000) // far past the 1s sendTimeout
         runCurrent()
 
-        // Broadcasts never receive a routing ACK, so the engine must NOT arm an ACK timer for
-        // them — the handle stays in Sent.
-        assertNotEquals(
-            SendState.Failed(SendFailure.AckTimeout),
+        // Must not degrade to Failed — the auto-resolve is terminal.
+        assertEquals(
+            SendState.Acked,
             handle.state.value,
             "Broadcasts must not be subject to ACK timeouts",
         )
@@ -153,16 +154,13 @@ class P0ReliabilityTest {
         val client = buildClient()
         client.connect()
 
-        // First send — get a real handle so we can replay its id.
-        val first = client.send(broadcastPacket())
+        // First send — use unicast so it stays in pendingSends (broadcasts auto-resolve).
+        val first = client.send(unicastWantAckPacket())
         runCurrent()
         assertEquals(SendState.Sent, first.state.value)
 
-        // Manually post a second Send with the same id through the engine boundary by issuing
-        // a colliding raw send via reflection-free public API: not possible without internal
-        // access. Instead, rely on the symmetry that the engine treats `pendingSends[id]` as a
-        // collision marker — verify the negative path: a fresh id is *not* rejected.
-        val second = client.send(broadcastPacket())
+        // A fresh id is *not* rejected — verify the negative path.
+        val second = client.send(unicastWantAckPacket())
         runCurrent()
         assertNotEquals(SendState.Failed(SendFailure.IdCollision), second.state.value)
 

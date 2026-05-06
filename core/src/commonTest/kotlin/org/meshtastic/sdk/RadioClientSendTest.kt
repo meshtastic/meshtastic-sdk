@@ -407,6 +407,17 @@ class RadioClientSendTest {
         }
     }
 
+    @Test
+    fun sendText_broadcastAutoResolvesToSuccess() = runTest {
+        withConnectedClient { client, _ ->
+            val handle = client.sendText("broadcast test", to = NodeId.BROADCAST)
+            runCurrent()
+            val outcome = handle.await()
+            assertValue(SendOutcome.Success, outcome, "broadcast await outcome")
+            assertValue(SendState.Acked, handle.state.value, "broadcast terminal state")
+        }
+    }
+
     private companion object {
         const val TEST_NODE_NUM: Int = 0x11111111
         val TARGET_NODE: NodeId = NodeId(0x22222222)

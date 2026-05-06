@@ -1954,13 +1954,23 @@ internal class MeshEngine(
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
 
+        val wantsResponse = packet.decoded?.want_response == true
+
+        // Broadcasts never receive a Routing ACK from the mesh. Auto-resolve to Acked
+        // once the packet has been handed to the transport. Without this, broadcast
+        // MessageHandle.await() would suspend forever.
+        if (packet.to == BROADCAST_ADDR && !wantsResponse) {
+            msg.stateFlow.value = SendState.Acked
+            pendingSends.remove(MessageId(wireId))
+            logger.debug(TAG) { "Broadcast auto-acked id=${msg.id}" }
+            return
+        }
+
         // arm an ACK timeout for unicast want_ack sends so a silent device can't leave
-        // the handle in `Sent` forever. Broadcasts (`to == BROADCAST_ADDR`) never receive a
-        // routing ACK so we deliberately skip arming for them.
+        // the handle in `Sent` forever.
         // also arm for want_response-only requests (e.g. AdminMessage.get_owner_request)
         // these expect a unicast reply with `request_id` set, so the same Routing-ACK timer
         // semantics apply even when `want_ack` is false.
-        val wantsResponse = packet.decoded?.want_response == true
         if ((packet.want_ack || wantsResponse) && packet.to != BROADCAST_ADDR) {
             val key = MessageId(wireId)
             val scope = engineScope ?: return
