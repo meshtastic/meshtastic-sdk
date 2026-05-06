@@ -15,6 +15,7 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.KeyVerificationAdmin
@@ -52,7 +53,22 @@ internal class AdminApiImpl(
     private val engine: MeshEngine,
     private val rpcTimeout: Duration,
     private val nowProvider: () -> Instant = { Clock.System.now() },
+    private val targetNode: NodeId? = null,
 ) : AdminApi {
+
+    override fun forNode(dest: NodeId): AdminApi = AdminApiImpl(
+        engine = engine,
+        rpcTimeout = rpcTimeout,
+        nowProvider = nowProvider,
+        targetNode = dest,
+    )
+
+    override suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_device_metadata_request = true),
+            kind = ResponseKind.AdminDeviceMetadata,
+        )
+    }
 
     /**
      * Returns `true` if the device is in managed mode, meaning all admin commands from non-zero
@@ -426,7 +442,7 @@ internal class AdminApiImpl(
         return block()
     }
 
-    private fun localNode(): NodeId = NodeId(engine.myNodeNumOrNull() ?: 0)
+    private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
 
     private inner class AdminEditImpl : AdminEdit {
         val writtenConfigs = mutableListOf<Config>()

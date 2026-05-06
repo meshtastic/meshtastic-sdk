@@ -345,7 +345,47 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Convenience: build a [MeshPacket] for the given [portnum] with [payload] and enqueue it.
+     * Convenience: send an emoji reaction to an existing message.
+     *
+     * Wraps the [emoji] in a [MeshPacket] with `decoded.portnum = TEXT_MESSAGE_APP`,
+     * `decoded.emoji = 1` (indicating this is a reaction, not a standalone message), and
+     * `decoded.reply_id` set to [replyId] (the packet ID of the message being reacted to).
+     *
+     * @param emoji the emoji string (single emoji character or sequence)
+     * @param to the destination [NodeId] (the sender of the original message, or broadcast)
+     * @param channel the channel index the reaction should be sent on
+     * @param replyId the packet ID of the original message being reacted to
+     * @return a handle tracking delivery state
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @throws MeshtasticException.PayloadTooLarge if the encoded emoji exceeds the device limit
+     * @since 0.2.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendReaction(
+        emoji: String,
+        to: NodeId = NodeId.BROADCAST,
+        channel: ChannelIndex = ChannelIndex(0),
+        replyId: Int,
+    ): MessageHandle {
+        val payload = emoji.encodeToByteArray()
+        if (payload.size > DATA_PAYLOAD_LEN) {
+            throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
+        }
+        val packet = MeshPacket(
+            to = to.raw,
+            channel = channel.raw,
+            want_ack = true,
+            decoded = org.meshtastic.proto.Data(
+                portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
+                payload = payload.toByteString(),
+                emoji = EMOJI_INDICATOR,
+                reply_id = replyId,
+            ),
+        )
+        return send(packet)
+    }
+
+    /**
      *
      * Constructs a packet with `decoded = Data(portnum, payload, want_response = false)` and
      * forwards to [send]. Exists so callers do not need to import `org.meshtastic.proto.Data`
@@ -511,6 +551,9 @@ public class RadioClient internal constructor(
     // ── Builder ─────────────────────────────────────────────────────────────
 
     public companion object {
+        /** Indicates a reaction (emoji) rather than a standalone text message. */
+        private const val EMOJI_INDICATOR: Int = 1
+
         /** Create a new [Builder]. */
         public fun Builder(): Builder = Builder()
     }
