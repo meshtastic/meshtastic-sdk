@@ -177,7 +177,12 @@ public interface AdminApi {
 
     // ── DFU / file management ───────────────────────────────────────────────
 
-    /** Enter DFU (firmware update) mode. The device will reboot into its bootloader. */
+    /**
+     * Enter DFU (firmware update) mode. The device will reboot into its bootloader.
+     *
+     * This is a fire-and-forget admin write; [AdminResult.Success] means the request was queued
+     * locally, not that the device stayed connected long enough to acknowledge the reboot.
+     */
     public suspend fun enterDfuMode(): AdminResult<Unit>
 
     /** Delete a file from the device's filesystem. */
@@ -271,6 +276,14 @@ public interface AdminApi {
     public suspend fun nodeDbReset(): AdminResult<Unit>
 
     // ── Time ────────────────────────────────────────────────────────────────
+
+    /**
+     * Set the device's wall clock from raw Unix time seconds without sending position data.
+     *
+     * This uses `AdminMessage.set_time_only` directly and is fire-and-forget; [AdminResult.Success]
+     * means the packet was queued locally.
+     */
+    public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>
 
     /**
      * Set the device's wall clock to [at] (default: `Clock.System.now()`).

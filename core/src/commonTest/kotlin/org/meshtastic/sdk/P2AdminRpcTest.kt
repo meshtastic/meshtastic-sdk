@@ -258,6 +258,45 @@ class P2AdminRpcTest {
     }
 
     @Test
+    fun enterDfuModeIsFireAndForget() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val result = client.admin.enterDfuMode()
+        runCurrent()
+
+        val enterDfu = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.enter_dfu_mode_request == true }
+        assertIs<AdminResult.Success<Unit>>(result)
+        assertEquals(false, enterDfu.want_ack)
+        assertEquals(false, enterDfu.decoded?.want_response)
+        client.disconnect()
+    }
+
+    @Test
+    fun deleteFileAckSurfacesAsSuccess() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async { client.admin.deleteFile("logs/app.txt") }
+        runCurrent()
+
+        val deleteFile = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.delete_file_request == "logs/app.txt" }
+        assertTrue(deleteFile.want_ack, "deleteFile must request a wire-level ack")
+        transport.injectRoutingAck(requestId = deleteFile.id)
+        runCurrent()
+
+        val result = deferred.await()
+        assertIs<AdminResult.Success<Unit>>(result)
+        client.disconnect()
+    }
+
+    @Test
     fun setTimeUsesInjectedClock() = runTest {
         val frozen = kotlin.time.Instant.fromEpochSeconds(1_700_000_000L)
         val transport = FakeRadioTransport(
@@ -279,17 +318,33 @@ class P2AdminRpcTest {
         runCurrent()
 
         val outboundBefore = transport.outboundPackets().size
-        val deferred = async { client.admin.setTime() }
+        val result = client.admin.setTime()
         runCurrent()
 
         val setTime = transport.outboundPackets().drop(outboundBefore)
             .last { adminOf(it)?.set_time_only != null }
+        assertIs<AdminResult.Success<Unit>>(result)
         assertEquals(frozen.epochSeconds.toInt(), adminOf(setTime)!!.set_time_only)
-        transport.injectRoutingAck(requestId = setTime.id)
+        assertEquals(false, setTime.want_ack)
+        assertEquals(false, setTime.decoded?.want_response)
+        client.disconnect()
+    }
+
+    @Test
+    fun setTimeOnlyUsesProvidedUnixTimeAndIsFireAndForget() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
         runCurrent()
 
-        val result = deferred.await()
+        val outboundBefore = transport.outboundPackets().size
+        val result = client.admin.setTimeOnly(1_700_000_123)
+        runCurrent()
+
+        val setTimeOnly = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.set_time_only == 1_700_000_123 }
         assertIs<AdminResult.Success<Unit>>(result)
+        assertEquals(false, setTimeOnly.want_ack)
+        assertEquals(false, setTimeOnly.decoded?.want_response)
         client.disconnect()
     }
 

@@ -253,8 +253,9 @@ internal class AdminApiImpl(
 
     // ── DFU / file management ───────────────────────────────────────────────
 
-    override suspend fun enterDfuMode(): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage(enter_dfu_mode_request = true))
+    override suspend fun enterDfuMode(): AdminResult<Unit> {
+        if (isDeviceManaged()) return AdminResult.Unauthorized
+        return submitAdminFireAndForget(AdminMessage(enter_dfu_mode_request = true))
     }
 
     override suspend fun deleteFile(path: String): AdminResult<Unit> = retryOnSessionExpiry {
@@ -350,10 +351,14 @@ internal class AdminApiImpl(
         submitAdminAck(AdminMessage(nodedb_reset = true))
     }
 
-    override suspend fun setTime(at: Instant?): AdminResult<Unit> = retryOnSessionExpiry {
+    override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> {
+        if (isDeviceManaged()) return AdminResult.Unauthorized
+        return submitAdminFireAndForget(AdminMessage(set_time_only = unixTime))
+    }
+
+    override suspend fun setTime(at: Instant?): AdminResult<Unit> {
         val instant = at ?: nowProvider()
-        val seconds = instant.epochSeconds.toInt()
-        submitAdminAck(AdminMessage(set_time_only = seconds))
+        return setTimeOnly(instant.epochSeconds.toInt())
     }
 
     override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> {
@@ -430,6 +435,14 @@ internal class AdminApiImpl(
             is SendState.Failed -> mapSendFailureToAdminResult(terminal.reason)
             else -> AdminResult.Timeout
         }
+    }
+
+    /**
+     * Send an admin packet without waiting for a firmware reply or routing ACK.
+     */
+    private fun submitAdminFireAndForget(adminMsg: AdminMessage, to: NodeId = localNode()): AdminResult<Unit> {
+        engine.sendAdmin(adminMsg = adminMsg, to = to.raw)
+        return AdminResult.Success(Unit)
     }
 
     /**

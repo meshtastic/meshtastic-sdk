@@ -1984,6 +1984,10 @@ internal class MeshEngine(
         }
     }
 
+    internal fun sendAdmin(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
+        sendAdminPacket(adminMsg, wantResponse, to)
+    }
+
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
         if (myNodeNum == 0) return
         // attach the cached session passkey when targeting a *remote* node. Local admin
