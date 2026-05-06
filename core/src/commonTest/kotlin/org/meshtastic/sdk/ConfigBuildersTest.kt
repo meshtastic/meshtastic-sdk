@@ -1,3 +1,5 @@
+@file:Suppress("DEPRECATION")
+
 /*
  * Meshtastic — open source mesh radio
  * Copyright © 2026 Meshtastic LLC
@@ -8,6 +10,7 @@
 package org.meshtastic.sdk
 
 import kotlinx.coroutines.test.runTest
+import okio.ByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
@@ -24,35 +27,284 @@ import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Instant
 
 class ConfigBuildersTest {
 
     @Test
-    fun configBuildersWrapExpectedSections() = runTest {
+    fun deviceConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                device = Config.DeviceConfig().copy(
+                    role = Config.DeviceConfig.Role.TRACKER,
+                    serial_enabled = true,
+                    button_gpio = 23,
+                    buzzer_gpio = 12,
+                ),
+            ),
+        ) {
+            setDeviceConfig {
+                copy(
+                    role = Config.DeviceConfig.Role.TRACKER,
+                    serial_enabled = true,
+                    button_gpio = 23,
+                    buzzer_gpio = 12,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun loraConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                lora = Config.LoRaConfig().copy(
+                    use_preset = true,
+                    region = Config.LoRaConfig.RegionCode.EU_868,
+                    modem_preset = Config.LoRaConfig.ModemPreset.SHORT_FAST,
+                    bandwidth = 250,
+                    spread_factor = 9,
+                ),
+            ),
+        ) {
+            setLoraConfig {
+                copy(
+                    use_preset = true,
+                    region = Config.LoRaConfig.RegionCode.EU_868,
+                    modem_preset = Config.LoRaConfig.ModemPreset.SHORT_FAST,
+                    bandwidth = 250,
+                    spread_factor = 9,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun bluetoothConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                bluetooth = Config.BluetoothConfig().copy(
+                    enabled = true,
+                    fixed_pin = 123456,
+                    mode = Config.BluetoothConfig.PairingMode.FIXED_PIN,
+                ),
+            ),
+        ) {
+            setBluetoothConfig {
+                copy(
+                    enabled = true,
+                    fixed_pin = 123456,
+                    mode = Config.BluetoothConfig.PairingMode.FIXED_PIN,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun displayConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                display = Config.DisplayConfig().copy(
+                    screen_on_secs = 45,
+                    gps_format = Config.DisplayConfig.DeprecatedGpsCoordinateFormat.UNUSED,
+                    units = Config.DisplayConfig.DisplayUnits.IMPERIAL,
+                    flip_screen = true,
+                ),
+            ),
+        ) {
+            setDisplayConfig {
+                copy(
+                    screen_on_secs = 45,
+                    gps_format = Config.DisplayConfig.DeprecatedGpsCoordinateFormat.UNUSED,
+                    units = Config.DisplayConfig.DisplayUnits.IMPERIAL,
+                    flip_screen = true,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun networkConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                network = Config.NetworkConfig().copy(
+                    wifi_enabled = true,
+                    wifi_ssid = "mesh-wifi",
+                    wifi_psk = "super-secret",
+                    eth_enabled = true,
+                ),
+            ),
+        ) {
+            setNetworkConfig {
+                copy(
+                    wifi_enabled = true,
+                    wifi_ssid = "mesh-wifi",
+                    wifi_psk = "super-secret",
+                    eth_enabled = true,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun positionConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                position = Config.PositionConfig().copy(
+                    gps_enabled = true,
+                    fixed_position = true,
+                    position_broadcast_secs = 300,
+                    gps_mode = Config.PositionConfig.GpsMode.ENABLED,
+                ),
+            ),
+        ) {
+            setPositionConfig {
+                copy(
+                    gps_enabled = true,
+                    fixed_position = true,
+                    position_broadcast_secs = 300,
+                    gps_mode = Config.PositionConfig.GpsMode.ENABLED,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun powerConfigBuilderWrapsExpectedFields() = runTest {
+        assertConfigWrite(
+            Config(
+                power = Config.PowerConfig().copy(
+                    is_power_saving = true,
+                    on_battery_shutdown_after_secs = 90,
+                    wait_bluetooth_secs = 15,
+                ),
+            ),
+        ) {
+            setPowerConfig {
+                copy(
+                    is_power_saving = true,
+                    on_battery_shutdown_after_secs = 90,
+                    wait_bluetooth_secs = 15,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun securityConfigBuilderWrapsExpectedFields() = runTest {
+        val publicKey = bytes(1, 2, 3)
+        val privateKey = bytes(4, 5, 6)
+        val adminKey = bytes(7, 8, 9)
+
+        assertConfigWrite(
+            Config(
+                security = Config.SecurityConfig().copy(
+                    public_key = publicKey,
+                    private_key = privateKey,
+                    admin_key = listOf(adminKey),
+                    serial_enabled = true,
+                ),
+            ),
+        ) {
+            setSecurityConfig {
+                copy(
+                    public_key = publicKey,
+                    private_key = privateKey,
+                    admin_key = listOf(adminKey),
+                    serial_enabled = true,
+                )
+            }
+        }
+    }
+
+    @Test
+    fun multipleConfigBuilderCallsComposeExpectedConfigs() = runTest {
         val admin = CapturingAdminApi()
         val expectedResult = AdminResult.Success(Unit)
 
-        assertEquals(expectedResult, admin.setDeviceConfig { copy(role = Config.DeviceConfig.Role.CLIENT) })
-        assertEquals(expectedResult, admin.setPositionConfig { copy(position_broadcast_secs = 300) })
-        assertEquals(expectedResult, admin.setPowerConfig { copy(is_power_saving = true) })
-        assertEquals(expectedResult, admin.setNetworkConfig { copy(wifi_enabled = true, wifi_ssid = "mesh") })
-        assertEquals(expectedResult, admin.setDisplayConfig { copy(screen_on_secs = 45) })
-        assertEquals(expectedResult, admin.setLoraConfig { copy(use_preset = true) })
-        assertEquals(expectedResult, admin.setBluetoothConfig { copy(enabled = true) })
-        assertEquals(expectedResult, admin.setSecurityConfig { copy(is_managed = true) })
+        assertEquals(
+            expectedResult,
+            admin.setDeviceConfig {
+                copy(
+                    role = Config.DeviceConfig.Role.CLIENT_HIDDEN,
+                    button_gpio = 5,
+                )
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setNetworkConfig {
+                copy(
+                    wifi_enabled = true,
+                    wifi_ssid = "mesh",
+                    wifi_psk = "secret",
+                    eth_enabled = true,
+                )
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setLoraConfig {
+                copy(
+                    region = Config.LoRaConfig.RegionCode.US,
+                    modem_preset = Config.LoRaConfig.ModemPreset.LONG_TURBO,
+                    bandwidth = 500,
+                    spread_factor = 7,
+                )
+            },
+        )
 
         assertEquals(
             listOf(
-                Config(device = Config.DeviceConfig().copy(role = Config.DeviceConfig.Role.CLIENT)),
-                Config(position = Config.PositionConfig().copy(position_broadcast_secs = 300)),
-                Config(power = Config.PowerConfig().copy(is_power_saving = true)),
-                Config(network = Config.NetworkConfig().copy(wifi_enabled = true, wifi_ssid = "mesh")),
-                Config(display = Config.DisplayConfig().copy(screen_on_secs = 45)),
-                Config(lora = Config.LoRaConfig().copy(use_preset = true)),
-                Config(bluetooth = Config.BluetoothConfig().copy(enabled = true)),
-                Config(security = Config.SecurityConfig().copy(is_managed = true)),
+                Config(
+                    device = Config.DeviceConfig().copy(
+                        role = Config.DeviceConfig.Role.CLIENT_HIDDEN,
+                        button_gpio = 5,
+                    ),
+                ),
+                Config(
+                    network = Config.NetworkConfig().copy(
+                        wifi_enabled = true,
+                        wifi_ssid = "mesh",
+                        wifi_psk = "secret",
+                        eth_enabled = true,
+                    ),
+                ),
+                Config(
+                    lora = Config.LoRaConfig().copy(
+                        region = Config.LoRaConfig.RegionCode.US,
+                        modem_preset = Config.LoRaConfig.ModemPreset.LONG_TURBO,
+                        bandwidth = 500,
+                        spread_factor = 7,
+                    ),
+                ),
+            ),
+            admin.configs,
+        )
+    }
+
+    @Test
+    fun configBuildersAllowOutOfRangeScalarValuesWithoutCrashing() = runTest {
+        val admin = CapturingAdminApi()
+        val expectedResult = AdminResult.Success(Unit)
+
+        assertEquals(expectedResult, admin.setDeviceConfig { copy(button_gpio = -1) })
+        assertEquals(expectedResult, admin.setLoraConfig { copy(bandwidth = -1, spread_factor = -7) })
+        assertEquals(expectedResult, admin.setBluetoothConfig { copy(fixed_pin = -1) })
+        assertEquals(expectedResult, admin.setDisplayConfig { copy(screen_on_secs = -1) })
+        assertEquals(expectedResult, admin.setPositionConfig { copy(position_broadcast_secs = -1) })
+        assertEquals(expectedResult, admin.setPowerConfig { copy(on_battery_shutdown_after_secs = -1) })
+
+        assertEquals(
+            listOf(
+                Config(device = Config.DeviceConfig().copy(button_gpio = -1)),
+                Config(lora = Config.LoRaConfig().copy(bandwidth = -1, spread_factor = -7)),
+                Config(bluetooth = Config.BluetoothConfig().copy(fixed_pin = -1)),
+                Config(display = Config.DisplayConfig().copy(screen_on_secs = -1)),
+                Config(position = Config.PositionConfig().copy(position_broadcast_secs = -1)),
+                Config(power = Config.PowerConfig().copy(on_battery_shutdown_after_secs = -1)),
             ),
             admin.configs,
         )
@@ -99,6 +351,16 @@ class ConfigBuildersTest {
             ),
             admin.moduleConfigs,
         )
+    }
+
+    private suspend fun assertConfigWrite(
+        expected: Config,
+        call: suspend CapturingAdminApi.() -> AdminResult<Unit>,
+    ) {
+        val admin = CapturingAdminApi()
+        assertEquals(AdminResult.Success(Unit), admin.call())
+        assertEquals(listOf(expected), admin.configs)
+        assertTrue(admin.moduleConfigs.isEmpty())
     }
 }
 
@@ -208,3 +470,6 @@ private class CapturingAdminApi : AdminApi {
 }
 
 private fun unused(): Nothing = error("unused in ConfigBuildersTest")
+
+private fun bytes(vararg values: Int): ByteString =
+    ByteString.of(*ByteArray(values.size) { index -> values[index].toByte() })

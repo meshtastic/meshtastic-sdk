@@ -17,6 +17,7 @@ import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.HardwareModel
+import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -477,11 +478,15 @@ class P2AdminRpcTest {
         client.connect()
         runCurrent()
 
+        val favoriteNode = NodeId(0x11111111)
+        val ignoredNode = NodeId(0x22222222)
         val outboundBefore = transport.outboundPackets().size
         val deferred = async {
             runCatching {
                 client.admin.batch {
+                    setFavorite(favoriteNode, favorite = true)
                     getConfig(AdminMessage.ConfigType.DEVICE_CONFIG)
+                    setIgnored(ignoredNode, ignored = true)
                 }
             }
         }
@@ -491,9 +496,17 @@ class P2AdminRpcTest {
             .last { adminOf(it)?.begin_edit_settings == true }
         transport.injectRoutingAck(requestId = begin.id)
         runCurrent()
+        runCurrent()
 
         transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.set_favorite_node == favoriteNode.raw }
+        transport.outboundPackets().drop(outboundBefore)
             .last { adminOf(it)?.get_config_request == AdminMessage.ConfigType.DEVICE_CONFIG }
+        assertTrue(
+            transport.outboundPackets().drop(outboundBefore)
+                .none { adminOf(it)?.set_ignored_node == ignoredNode.raw },
+            "operations after the failing getter must not be enqueued",
+        )
 
         advanceTimeBy(70.seconds)
         runCurrent()
@@ -505,6 +518,214 @@ class P2AdminRpcTest {
                 .none { adminOf(it)?.commit_edit_settings == true },
             "batch must not commit after a getter failure",
         )
+        assertTrue(
+            transport.outboundPackets().drop(outboundBefore)
+                .none { adminOf(it)?.set_ignored_node == ignoredNode.raw },
+            "batch must stop before later writes when a getter fails",
+        )
+        client.disconnect()
+    }
+
+    @Test
+    fun batchCommitsMultipleQueuedWritesTogether() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val favoriteNode = NodeId(0x01020304)
+        val ignoredNode = NodeId(0x05060708)
+        val updatedChannel = Channel(index = 4, role = Channel.Role.SECONDARY)
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async {
+            client.admin.batch {
+                setFavorite(favoriteNode, favorite = true)
+                setIgnored(ignoredNode, ignored = true)
+                setChannel(updatedChannel)
+                "committed"
+            }
+        }
+
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+        runCurrent()
+
+        val orderedAdmin = adminPacketsSince(transport, outboundBefore)
+        val setFavorite = orderedAdmin.first { it.second.set_favorite_node == favoriteNode.raw }.first
+        val setIgnored = orderedAdmin.first { it.second.set_ignored_node == ignoredNode.raw }.first
+        val setChannel = orderedAdmin.first { it.second.set_channel == updatedChannel }.first
+        assertEquals(false, setFavorite.want_ack)
+        assertEquals(false, setFavorite.decoded?.want_response)
+        assertEquals(false, setIgnored.want_ack)
+        assertEquals(false, setChannel.want_ack)
+
+        val commit = orderedAdmin.last { it.second.commit_edit_settings == true }.first
+        transport.injectRoutingAck(requestId = commit.id)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("committed", deferred.await())
+
+        val beginIdx = orderedAdmin.indexOfFirst { it.second.begin_edit_settings == true }
+        val favoriteIdx = orderedAdmin.indexOfFirst { it.second.set_favorite_node == favoriteNode.raw }
+        val ignoredIdx = orderedAdmin.indexOfFirst { it.second.set_ignored_node == ignoredNode.raw }
+        val channelIdx = orderedAdmin.indexOfFirst { it.second.set_channel == updatedChannel }
+        val commitIdx = orderedAdmin.indexOfFirst { it.second.commit_edit_settings == true }
+        assertTrue(beginIdx in 0..<favoriteIdx, "batched writes must start after begin")
+        assertTrue(favoriteIdx < ignoredIdx, "favorite should be queued before ignored")
+        assertTrue(ignoredIdx < channelIdx, "ignored should be queued before channel write")
+        assertTrue(channelIdx < commitIdx, "commit must happen after all queued writes")
+        client.disconnect()
+    }
+
+    @Test
+    fun batchGetterReturnsModuleConfigWithinTransaction() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val expectedModuleConfig = ModuleConfig(
+            serial = ModuleConfig.SerialConfig(enabled = true),
+        )
+        val deferred = async {
+            client.admin.batch {
+                getModuleConfig(AdminMessage.ModuleConfigType.SERIAL_CONFIG)
+            }
+        }
+
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+
+        val getModuleConfig = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.get_module_config_request == AdminMessage.ModuleConfigType.SERIAL_CONFIG }
+        transport.injectAdminResponse(
+            requestId = getModuleConfig.id,
+            response = AdminMessage(get_module_config_response = expectedModuleConfig),
+        )
+        runCurrent()
+        runCurrent()
+
+        val commit = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.commit_edit_settings == true }
+        transport.injectRoutingAck(requestId = commit.id)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals(expectedModuleConfig, deferred.await())
+
+        val orderedAdmin = adminPacketsSince(transport, outboundBefore)
+        val beginIdx = orderedAdmin.indexOfFirst { it.second.begin_edit_settings == true }
+        val getModuleIdx = orderedAdmin.indexOfFirst {
+            it.second.get_module_config_request == AdminMessage.ModuleConfigType.SERIAL_CONFIG
+        }
+        val commitIdx = orderedAdmin.indexOfFirst { it.second.commit_edit_settings == true }
+        assertTrue(beginIdx in 0..<getModuleIdx, "getter must run after begin")
+        assertTrue(getModuleIdx < commitIdx, "commit must happen after getter completes")
+        client.disconnect()
+    }
+
+    @Test
+    fun emptyBatchOnlyBeginsAndCommits() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async {
+            client.admin.batch {
+                "empty"
+            }
+        }
+
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+        runCurrent()
+
+        val commit = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.commit_edit_settings == true }
+        transport.injectRoutingAck(requestId = commit.id)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals("empty", deferred.await())
+
+        val orderedAdmin = adminPacketsSince(transport, outboundBefore)
+        assertEquals(2, orderedAdmin.size)
+        assertTrue(orderedAdmin[0].second.begin_edit_settings == true)
+        assertTrue(orderedAdmin[1].second.commit_edit_settings == true)
+        client.disconnect()
+    }
+
+    @Test
+    fun batchSupportsSetGetSetSequence() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val writtenConfig = Config(
+            device = Config.DeviceConfig(role = Config.DeviceConfig.Role.ROUTER, button_gpio = 14),
+        )
+        val expectedModuleConfig = ModuleConfig(
+            serial = ModuleConfig.SerialConfig(enabled = true),
+        )
+        val writtenModuleConfig = ModuleConfig(
+            mqtt = ModuleConfig.MQTTConfig(enabled = true),
+        )
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async {
+            client.admin.batch {
+                setConfig(writtenConfig)
+                val serial = getModuleConfig(AdminMessage.ModuleConfigType.SERIAL_CONFIG)
+                setModuleConfig(writtenModuleConfig)
+                serial
+            }
+        }
+
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+        runCurrent()
+
+        val getModuleConfig = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.get_module_config_request == AdminMessage.ModuleConfigType.SERIAL_CONFIG }
+        transport.injectAdminResponse(
+            requestId = getModuleConfig.id,
+            response = AdminMessage(get_module_config_response = expectedModuleConfig),
+        )
+        runCurrent()
+        runCurrent()
+
+        val commit = transport.outboundPackets().drop(outboundBefore)
+            .last { adminOf(it)?.commit_edit_settings == true }
+        transport.injectRoutingAck(requestId = commit.id)
+        runCurrent()
+        advanceUntilIdle()
+
+        assertEquals(expectedModuleConfig, deferred.await())
+
+        val orderedAdmin = adminPacketsSince(transport, outboundBefore)
+        val beginIdx = orderedAdmin.indexOfFirst { it.second.begin_edit_settings == true }
+        val setConfigIdx = orderedAdmin.indexOfFirst { it.second.set_config == writtenConfig }
+        val getModuleIdx = orderedAdmin.indexOfFirst {
+            it.second.get_module_config_request == AdminMessage.ModuleConfigType.SERIAL_CONFIG
+        }
+        val setModuleIdx = orderedAdmin.indexOfFirst { it.second.set_module_config == writtenModuleConfig }
+        val commitIdx = orderedAdmin.indexOfFirst { it.second.commit_edit_settings == true }
+        assertTrue(beginIdx in 0..<setConfigIdx, "first setter must be sent after begin")
+        assertTrue(setConfigIdx < getModuleIdx, "getter must run after the first setter")
+        assertTrue(getModuleIdx < setModuleIdx, "second setter must run after the getter")
+        assertTrue(setModuleIdx < commitIdx, "commit must happen after the final setter")
         client.disconnect()
     }
 
@@ -515,6 +736,13 @@ class P2AdminRpcTest {
         if (decoded.portnum != org.meshtastic.proto.PortNum.ADMIN_APP) return null
         return runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()
     }
+
+    private fun adminPacketsSince(
+        transport: FakeRadioTransport,
+        outboundBefore: Int,
+    ): List<Pair<org.meshtastic.proto.MeshPacket, AdminMessage>> =
+        transport.outboundPackets().drop(outboundBefore)
+            .mapNotNull { packet -> adminOf(packet)?.let { packet to it } }
 
     private fun buildRoutingErrorFrame(requestId: Int, error: Routing.Error): Frame {
         val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing(error_reason = error)))
