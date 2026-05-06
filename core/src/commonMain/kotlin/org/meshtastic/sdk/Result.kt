@@ -290,3 +290,53 @@ public sealed interface AdminResult<out T> {
      */
     public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>
 }
+
+// ── AdminResult extensions ──────────────────────────────────────────────────
+
+/** Returns the [Success] value, or `null` if the result is not a success. */
+public fun <T> AdminResult<T>.getOrNull(): T? = (this as? AdminResult.Success<T>)?.value
+
+/** Returns the [Success] value, or [default] if the result is not a success. */
+public fun <T> AdminResult<T>.getOrElse(default: T): T = getOrNull() ?: default
+
+/** Returns the [Success] value, or the result of [block] if the result is not a success. */
+public inline fun <T> AdminResult<T>.getOrElse(block: (AdminResult<T>) -> T): T =
+    when (this) {
+        is AdminResult.Success -> value
+        else -> block(this)
+    }
+
+/** Returns `true` if this is [AdminResult.Success]. */
+public val <T> AdminResult<T>.isSuccess: Boolean get() = this is AdminResult.Success
+
+/** Transforms the [Success] value with [transform], propagating failures unchanged. */
+public inline fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R> =
+    when (this) {
+        is AdminResult.Success -> AdminResult.Success(transform(value))
+        is AdminResult.SessionKeyExpired -> this
+        is AdminResult.Unauthorized -> this
+        is AdminResult.Timeout -> this
+        is AdminResult.NodeUnreachable -> this
+        is AdminResult.Failed -> this
+    }
+
+/** Applies [onSuccess] or [onFailure] depending on the result. */
+public inline fun <T, R> AdminResult<T>.fold(
+    onSuccess: (T) -> R,
+    onFailure: (AdminResult<T>) -> R,
+): R = when (this) {
+    is AdminResult.Success -> onSuccess(value)
+    else -> onFailure(this)
+}
+
+/** Performs [action] if this is a [Success]. Returns the original result for chaining. */
+public inline fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T> {
+    if (this is AdminResult.Success) action(value)
+    return this
+}
+
+/** Performs [action] if this is not a [Success]. Returns the original result for chaining. */
+public inline fun <T> AdminResult<T>.onFailure(action: (AdminResult<T>) -> Unit): AdminResult<T> {
+    if (this !is AdminResult.Success) action(this)
+    return this
+}

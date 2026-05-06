@@ -289,6 +289,10 @@ public class RadioClient internal constructor(
      * Delegates to [disconnect] via `runBlocking`. Prefer the suspending [disconnect] when
      * already inside a coroutine — this overload exists so `RadioClient` works with Kotlin's
      * `use { }` idiom and Java's try-with-resources.
+     *
+     * **Warning:** Do not call from the main/UI thread — `runBlocking` will block the caller
+     * until disconnection completes, which can trigger ANR on Android or deadlock on iOS main.
+     * Use [disconnect] directly from a coroutine scope instead.
      */
     override fun close() {
         runBlocking { disconnect() }

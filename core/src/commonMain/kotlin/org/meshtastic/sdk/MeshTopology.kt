@@ -36,6 +36,7 @@ public class MeshTopology {
 
     // Internal adjacency: Map<reporter, Map<neighbor, Edge>>
     private val adjacency = mutableMapOf<NodeId, MutableMap<NodeId, Edge>>()
+    private var cachedNodes: Set<NodeId>? = null
 
     /**
      * Ingest a [NeighborInfo] report, replacing all edges from the reporting node.
@@ -51,6 +52,7 @@ public class MeshTopology {
             )
         }
         adjacency[info.nodeId] = edges
+        cachedNodes = null
     }
 
     /**
@@ -59,17 +61,19 @@ public class MeshTopology {
     public fun removeNode(nodeId: NodeId) {
         adjacency.remove(nodeId)
         adjacency.values.forEach { it.remove(nodeId) }
+        cachedNodes = null
     }
 
     /** All nodes that have reported neighbors or been reported as a neighbor. */
     public val nodes: Set<NodeId>
         get() {
+            cachedNodes?.let { return it }
             val result = mutableSetOf<NodeId>()
             adjacency.forEach { (reporter, neighbors) ->
                 result.add(reporter)
                 result.addAll(neighbors.keys)
             }
-            return result
+            return result.also { cachedNodes = it }
         }
 
     /** Get all outgoing edges from a node (nodes it reported as neighbors). */
@@ -124,6 +128,7 @@ public class MeshTopology {
     /** Clear all topology data. */
     public fun clear() {
         adjacency.clear()
+        cachedNodes = null
     }
 
     private fun undirectedNeighbors(nodeId: NodeId): Set<NodeId> {
