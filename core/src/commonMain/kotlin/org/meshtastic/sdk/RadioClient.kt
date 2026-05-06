@@ -190,6 +190,31 @@ public class RadioClient internal constructor(
         return engine.nodeSnapshot()
     }
 
+    /**
+     * Request a remote node to send its [NodeInfo] (user identity + position).
+     *
+     * Sends an empty `NODEINFO_APP` packet with `want_response = true`. The remote node will
+     * reply with its [User] information, which the engine processes and emits via [nodes].
+     *
+     * @param node the target node to request info from
+     * @return a [MessageHandle] tracking delivery state
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @since 0.2.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun requestNodeInfo(node: NodeId): MessageHandle {
+        val packet = MeshPacket(
+            to = node.raw,
+            want_ack = true,
+            decoded = org.meshtastic.proto.Data(
+                portnum = org.meshtastic.proto.PortNum.NODEINFO_APP,
+                payload = okio.ByteString.EMPTY,
+                want_response = true,
+            ),
+        )
+        return send(packet)
+    }
+
     // ── Lifecycle ───────────────────────────────────────────────────────────
 
     /**

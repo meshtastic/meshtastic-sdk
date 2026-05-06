@@ -490,7 +490,7 @@ internal class AdminApiImpl(
             val packet = MeshPacket(
                 id = id.raw,
                 from = engine.myNodeNumOrNull() ?: 0,
-                to = engine.myNodeNumOrNull() ?: 0,
+                to = localNode().raw,
                 decoded = Data(
                     portnum = PortNum.ADMIN_APP,
                     payload = payload,
