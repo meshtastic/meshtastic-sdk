@@ -22,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -96,17 +97,17 @@ class P0ReliabilityTest {
         client.disconnect()
     }
 
-    // ── R-P0-6: broadcasts auto-resolve to Acked (no mesh-level ACK expected) ──
+    // ── R-P0-6: fire-and-forget broadcasts (want_ack=false) auto-resolve ──────
 
     @Test
-    fun testBroadcastDoesNotTimeOut() = runTest {
+    fun testFireAndForgetBroadcastAutoResolves() = runTest {
         val client = buildClient(sendTimeout = 1.seconds)
         client.connect()
 
-        val handle = client.send(broadcastPacket())
+        val handle = client.send(broadcastPacket()) // want_ack=false
         runCurrent()
 
-        // Broadcasts auto-resolve to Acked once the device accepts the packet.
+        // Fire-and-forget broadcasts auto-resolve to Acked once the device accepts the packet.
         assertEquals(SendState.Acked, handle.state.value)
 
         advanceTimeBy(5_000) // far past the 1s sendTimeout
@@ -116,13 +117,35 @@ class P0ReliabilityTest {
         assertEquals(
             SendState.Acked,
             handle.state.value,
-            "Broadcasts must not be subject to ACK timeouts",
+            "Fire-and-forget broadcasts must not be subject to ACK timeouts",
         )
 
         client.disconnect()
     }
 
-    // ── R-P0-4: session passkey survives reconnect via storage ──────────────────
+    // ── R-P0-6b: broadcast with want_ack=true times out if no implicit ACK ──────
+
+    @Test
+    fun testBroadcastWithWantAckTimesOutWithoutImplicitAck() = runTest {
+        val client = buildClient(sendTimeout = 1.seconds)
+        client.connect()
+
+        val handle = client.send(broadcastWantAckPacket())
+        runCurrent()
+
+        // Broadcast with want_ack=true stays in Sent awaiting firmware implicit ACK.
+        assertEquals(SendState.Sent, handle.state.value)
+
+        advanceTimeBy(1_500) // past the 1s sendTimeout
+        runCurrent()
+
+        // Must degrade to Failed(AckTimeout) — no relay overheard the rebroadcast.
+        val state = handle.state.value
+        assertTrue(state is SendState.Failed, "Expected Failed, got $state")
+        assertEquals(SendFailure.AckTimeout, state.reason)
+
+        client.disconnect()
+    }
 
     @Test
     fun testSessionPasskeyIsPersistedAndReloaded() = runTest {
@@ -154,7 +177,7 @@ class P0ReliabilityTest {
         val client = buildClient()
         client.connect()
 
-        // First send — use unicast so it stays in pendingSends (broadcasts auto-resolve).
+        // First send — use unicast so it stays in pendingSends (fire-and-forget broadcasts auto-resolve).
         val first = client.send(unicastWantAckPacket())
         runCurrent()
         assertEquals(SendState.Sent, first.state.value)
@@ -186,6 +209,16 @@ class P0ReliabilityTest {
         decoded = Data(
             portnum = PortNum.TEXT_MESSAGE_APP,
             payload = ByteString.of(*"hello".encodeToByteArray()),
+        ),
+    )
+
+    private fun broadcastWantAckPacket() = MeshPacket(
+        to = NodeId.BROADCAST.raw,
+        channel = 0,
+        want_ack = true,
+        decoded = Data(
+            portnum = PortNum.TEXT_MESSAGE_APP,
+            payload = ByteString.of(*"hello-ack".encodeToByteArray()),
         ),
     )
 }

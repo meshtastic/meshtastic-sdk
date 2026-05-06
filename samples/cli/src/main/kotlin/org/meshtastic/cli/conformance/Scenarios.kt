@@ -66,10 +66,10 @@ internal object Scenarios {
     }
 
     /**
-     * **cs2 — Broadcast text acceptance** (manual C1). Broadcasts a small text packet on channel 0.
-     * PASS if the [MessageHandle] resolves to [SendOutcome.Success] within [budget]; FAIL on
-     * any failure outcome or timeout. Broadcasts auto-resolve once the device accepts the packet
-     * (no mesh-level ACK is expected for broadcast).
+     * **cs2 — Broadcast text acceptance** (manual C1). Broadcasts a small text packet on channel 0
+     * with `want_ack=true`. PASS if the [MessageHandle] resolves to [SendOutcome.Success] within
+     * [budget] (firmware sends an implicit ACK when it overhears a relay rebroadcast); FAIL on any
+     * failure outcome or timeout.
      */
     suspend fun cs2SendTextRoundTrip(client: RadioClient, budget: Duration = 30.seconds): ScenarioResult =
         runScenario("cs2", "broadcast text acceptance") {

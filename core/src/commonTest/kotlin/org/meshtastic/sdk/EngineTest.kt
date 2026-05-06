@@ -113,7 +113,7 @@ class EngineTest {
     @Test
     fun testCancelOnSentIsNoOp() = runTest {
         // Per SPEC: cancel() on Sent or later is a no-op; state is unchanged.
-        // Use a unicast packet so it stays in Sent (broadcasts auto-resolve to Acked).
+        // Use a unicast packet so it stays in Sent (fire-and-forget broadcasts auto-resolve to Acked).
         val client = buildClient()
         client.connect()
         val handle = client.send(unicastPacket())
@@ -126,7 +126,7 @@ class EngineTest {
 
     @Test
     fun testDisconnectFailsQueuedHandle() = runTest {
-        // Use a unicast packet so it stays in-flight (broadcasts auto-resolve to Acked).
+        // Use a unicast packet so it stays in-flight (fire-and-forget broadcasts auto-resolve to Acked).
         val client = buildClient()
         client.connect()
         val handle = client.send(unicastPacket())

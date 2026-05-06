@@ -408,10 +408,17 @@ class RadioClientSendTest {
     }
 
     @Test
-    fun sendText_broadcastAutoResolvesToSuccess() = runTest {
-        withConnectedClient { client, _ ->
+    fun sendText_broadcastWaitsForImplicitAck() = runTest {
+        withConnectedClient { client, transport ->
             val handle = client.sendText("broadcast test", to = NodeId.BROADCAST)
             runCurrent()
+            // sendText now sets want_ack=true; broadcast stays in Sent awaiting firmware implicit ACK.
+            assertValue(SendState.Sent, handle.state.value, "broadcast after dispatch")
+
+            // Simulate firmware implicit ACK (relay overheard the rebroadcast).
+            transport.injectRoutingAck(requestId = handle.id.raw)
+            runCurrent()
+
             val outcome = handle.await()
             assertValue(SendOutcome.Success, outcome, "broadcast await outcome")
             assertValue(SendState.Acked, handle.state.value, "broadcast terminal state")

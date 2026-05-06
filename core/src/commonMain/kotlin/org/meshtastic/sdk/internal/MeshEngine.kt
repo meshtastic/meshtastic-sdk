@@ -1956,22 +1956,21 @@ internal class MeshEngine(
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // Broadcasts never receive a Routing ACK from the mesh. Auto-resolve to Acked
-        // once the packet has been handed to the transport. Without this, broadcast
+        // Fire-and-forget broadcasts (want_ack=false, no want_response): auto-resolve to
+        // Acked immediately. No firmware ACK will arrive so without this the
         // MessageHandle.await() would suspend forever.
-        if (packet.to == BROADCAST_ADDR && !wantsResponse) {
+        if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
             pendingSends.remove(MessageId(wireId))
-            logger.debug(TAG) { "Broadcast auto-acked id=${msg.id}" }
+            logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
             return
         }
 
-        // arm an ACK timeout for unicast want_ack sends so a silent device can't leave
-        // the handle in `Sent` forever.
-        // also arm for want_response-only requests (e.g. AdminMessage.get_owner_request)
-        // these expect a unicast reply with `request_id` set, so the same Routing-ACK timer
-        // semantics apply even when `want_ack` is false.
-        if ((packet.want_ack || wantsResponse) && packet.to != BROADCAST_ADDR) {
+        // Arm an ACK timeout for any send expecting firmware feedback:
+        //  • unicast want_ack — waits for recipient's Routing ACK
+        //  • broadcast want_ack — waits for firmware's implicit ACK (relay overheard)
+        //  • want_response requests (e.g. AdminMessage.get_owner_request)
+        if (packet.want_ack || wantsResponse) {
             val key = MessageId(wireId)
             val scope = engineScope ?: return
             ackTimeoutJobs.remove(key)?.cancel()

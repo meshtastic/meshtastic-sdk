@@ -338,6 +338,14 @@ public class RadioClient internal constructor(
      * Wraps the text in a [MeshPacket] with `decoded.portnum = TEXT_MESSAGE_APP` and
      * `decoded.payload = text.encodeToByteArray()`, then calls [send].
      *
+     * Sets `want_ack = true` so the firmware provides delivery feedback:
+     * - **Unicast**: the recipient sends a Routing ACK back to the sender.
+     * - **Broadcast**: the firmware generates an implicit ACK when it overhears a neighbor
+     *   relay the packet. This confirms at least one mesh node retransmitted the message.
+     *
+     * The returned [MessageHandle] will resolve to [SendOutcome.Success] on ACK, or
+     * [SendOutcome.Failure] if the firmware exhausts retransmissions without confirmation.
+     *
      * @param text the message text (UTF-8 encoded)
      * @param channel the channel index (default: 0)
      * @param to the destination [NodeId] (default: [NodeId.BROADCAST])
@@ -358,6 +366,7 @@ public class RadioClient internal constructor(
         val packet = MeshPacket(
             to = to.raw,
             channel = channel.raw,
+            want_ack = true,
             decoded = org.meshtastic.proto.Data(
                 portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
                 payload = payload.toByteString(),

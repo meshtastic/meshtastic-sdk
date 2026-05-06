@@ -579,7 +579,12 @@ class MeshEngineEdgeCasesTest {
         runCurrent()
 
         assertEquals(10, handles.map { it.id.raw }.distinct().size)
-        // Broadcasts auto-resolve to Acked since no mesh-level ACK is expected.
+        // sendText sets want_ack=true; broadcasts await firmware implicit ACK so they stay in Sent.
+        assertTrue(handles.all { it.state.value == SendState.Sent })
+
+        // Inject implicit ACKs for all handles.
+        handles.forEach { transport.injectRoutingAck(requestId = it.id.raw) }
+        runCurrent()
         assertTrue(handles.all { it.state.value == SendState.Acked })
 
         client.disconnect()
