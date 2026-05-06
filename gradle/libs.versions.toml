@@ -3,7 +3,7 @@
 [versions]
 # --- Kotlin & build ---
 kotlin                      = "2.3.20"           # pinned for SKIE 0.10.11 compatibility
-agp                         = "9.2.0"
+agp                         = "9.2.1"
 gradle                      = "9.4.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
