@@ -19,7 +19,7 @@ import kotlin.time.Duration.Companion.seconds
  * ```kotlin
  * val policy = RetryPolicy.ExponentialBackoff()
  * val handle = client.sendText("hello")
- * policy.execute(handle) // suspends until delivered or max attempts exhausted
+ * handle.retryWith(policy) // suspends until success, non-retryable failure, or max attempts exhausted
  * ```
  */
 public sealed class RetryPolicy {

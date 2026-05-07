@@ -21,8 +21,11 @@ import kotlinx.coroutines.sync.withLock
  * val neighbors = topology.getNeighbors(nodeA)
  * ```
  *
- * **Thread-safe** — all mutations and reads are guarded by an internal [Mutex]. Safe to call
- * concurrently from the engine actor and UI collectors.
+ * **Thread-safe** — all mutations and reads are guarded by an internal [Mutex], so this class is
+ * safe to call concurrently from any coroutine context. This is a consumer-side utility; it is
+ * **not** used inside the engine actor's hot path and therefore does not violate the single-writer
+ * invariant (ADR-002).
+ *
  * The graph is directed — if node A reports node B as a neighbor, that's a directed edge A→B.
  * Undirected queries consider both directions.
  */
@@ -67,13 +70,14 @@ public class MeshTopology {
 
     /** All nodes that have reported neighbors or been reported as a neighbor. */
     public suspend fun nodes(): Set<NodeId> = mutex.withLock {
-        cachedNodes?.let { return@withLock it }
+        cachedNodes?.let { return@withLock it.toSet() }
         val result = mutableSetOf<NodeId>()
         adjacency.forEach { (reporter, neighbors) ->
             result.add(reporter)
             result.addAll(neighbors.keys)
         }
-        result.also { cachedNodes = it }
+        cachedNodes = result
+        result.toSet()
     }
 
     /** Get all outgoing edges from a node (nodes it reported as neighbors). */
