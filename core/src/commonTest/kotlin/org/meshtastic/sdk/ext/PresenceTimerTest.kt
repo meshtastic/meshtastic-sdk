@@ -151,13 +151,10 @@ class PresenceTimerTest {
     }
 }
 
-private class SeededHeartbeatStorageProvider(
-    private val heartbeats: Map<NodeId, Long>,
-) : StorageProvider {
-    override suspend fun activate(identity: TransportIdentity): DeviceStorage =
-        InMemoryStorage().also { storage ->
-            heartbeats.forEach { (nodeId, heartbeatMs) ->
-                storage.saveHeartbeat(nodeId, heartbeatMs)
-            }
+private class SeededHeartbeatStorageProvider(private val heartbeats: Map<NodeId, Long>) : StorageProvider {
+    override suspend fun activate(identity: TransportIdentity): DeviceStorage = InMemoryStorage().also { storage ->
+        heartbeats.forEach { (nodeId, heartbeatMs) ->
+            storage.saveHeartbeat(nodeId, heartbeatMs)
         }
+    }
 }

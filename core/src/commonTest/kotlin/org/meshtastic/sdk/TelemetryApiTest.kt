@@ -83,7 +83,11 @@ class TelemetryApiTest {
             relative_humidity = 62.0f,
             barometric_pressure = 1013.2f,
         )
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(environment_metrics = expected), fromNode = node.raw)
+        transport.injectTelemetryResponse(
+            requestId = request.id,
+            telemetry = Telemetry(environment_metrics = expected),
+            fromNode = node.raw,
+        )
         runCurrent()
 
         val result = deferred.await()
@@ -110,7 +114,11 @@ class TelemetryApiTest {
             pm100_standard = 20,
             particles_03um = 41,
         )
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(air_quality_metrics = expected), fromNode = node.raw)
+        transport.injectTelemetryResponse(
+            requestId = request.id,
+            telemetry = Telemetry(air_quality_metrics = expected),
+            fromNode = node.raw,
+        )
         runCurrent()
 
         val result = deferred.await()
@@ -132,7 +140,11 @@ class TelemetryApiTest {
 
         val request = transport.lastTelemetryRequest(outboundBefore)
         val expected = PowerMetrics(ch1_voltage = 4.18f, ch1_current = 0.42f, ch2_voltage = 5.0f)
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(power_metrics = expected), fromNode = node.raw)
+        transport.injectTelemetryResponse(
+            requestId = request.id,
+            telemetry = Telemetry(power_metrics = expected),
+            fromNode = node.raw,
+        )
         runCurrent()
 
         val result = deferred.await()
@@ -161,7 +173,11 @@ class TelemetryApiTest {
             num_packets_rx = 9,
             num_online_nodes = 3,
         )
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(local_stats = expected), fromNode = localNodeNum)
+        transport.injectTelemetryResponse(
+            requestId = request.id,
+            telemetry = Telemetry(local_stats = expected),
+            fromNode = localNodeNum,
+        )
         runCurrent()
 
         val result = deferred.await()
@@ -183,7 +199,11 @@ class TelemetryApiTest {
 
         val request = transport.lastTelemetryRequest(outboundBefore)
         val expected = HealthMetrics(heart_bpm = 72, spO2 = 98, temperature = 36.7f)
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(health_metrics = expected), fromNode = node.raw)
+        transport.injectTelemetryResponse(
+            requestId = request.id,
+            telemetry = Telemetry(health_metrics = expected),
+            fromNode = node.raw,
+        )
         runCurrent()
 
         val result = deferred.await()
@@ -212,7 +232,11 @@ class TelemetryApiTest {
             load5 = 17,
             load15 = 11,
         )
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(host_metrics = expected), fromNode = node.raw)
+        transport.injectTelemetryResponse(
+            requestId = request.id,
+            telemetry = Telemetry(host_metrics = expected),
+            fromNode = node.raw,
+        )
         runCurrent()
 
         val result = deferred.await()

@@ -45,10 +45,7 @@ public interface StoreForwardApi {
      * @param server specific S&F server to query. If null, queries the first known server.
      * @return the number of messages the server reports as pending, or failure reason
      */
-    public suspend fun requestHistory(
-        since: Int? = null,
-        server: NodeId? = null,
-    ): AdminResult<Int>
+    public suspend fun requestHistory(since: Int? = null, server: NodeId? = null): AdminResult<Int>
 
     /**
      * Query statistics from a Store-and-Forward server.
@@ -103,18 +100,12 @@ public sealed interface StoreForwardEvent {
      * @property server the S&F node delivering messages
      * @property messageCount number of messages being replayed
      */
-    public data class HistoryReplayStarted(
-        val server: NodeId,
-        val messageCount: Int,
-    ) : StoreForwardEvent
+    public data class HistoryReplayStarted(val server: NodeId, val messageCount: Int) : StoreForwardEvent
 
     /**
      * History replay is complete.
      */
-    public data class HistoryReplayComplete(
-        val server: NodeId,
-        val delivered: Int,
-    ) : StoreForwardEvent
+    public data class HistoryReplayComplete(val server: NodeId, val delivered: Int) : StoreForwardEvent
 
     /**
      * Heartbeat received from a S&F server (indicates it's still active).
@@ -146,10 +137,7 @@ public sealed interface StoreForwardEvent {
     }
 
     /** An SFPP canon announce — message is confirmed on the chain. */
-    public data class SfppCanonAnnounced(
-        val messageHash: ByteArray,
-        val rxTime: Long,
-    ) : StoreForwardEvent {
+    public data class SfppCanonAnnounced(val messageHash: ByteArray, val rxTime: Long) : StoreForwardEvent {
         override fun equals(other: Any?): Boolean = other is SfppCanonAnnounced &&
             messageHash.contentEquals(other.messageHash) &&
             rxTime == other.rxTime

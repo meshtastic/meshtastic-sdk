@@ -596,7 +596,8 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun addContactSendsSharedContact() = runTest {
-        val contact = SharedContact(node_num = 77, user = User(id = "!0000004d", long_name = "Contact", short_name = "CT"))
+        val contact =
+            SharedContact(node_num = 77, user = User(id = "!0000004d", long_name = "Contact", short_name = "CT"))
         assertAckedOperation(
             call = { it.addContact(contact) },
             requestMatches = { it.add_contact == contact },
@@ -795,7 +796,8 @@ class AdminApiImplComprehensiveTest {
             val result = client.admin.setTime(instant)
             runCurrent()
 
-            val packet = latestAdminPacket(transport, outboundBefore) { it.set_time_only == instant.epochSeconds.toInt() }
+            val packet =
+                latestAdminPacket(transport, outboundBefore) { it.set_time_only == instant.epochSeconds.toInt() }
             assertIs<AdminResult.Success<Unit>>(result)
             assertFalse(packet.want_ack)
             assertEquals(false, packet.decoded?.want_response)
@@ -841,7 +843,11 @@ class AdminApiImplComprehensiveTest {
 
             val packet = latestAdminPacket(transport, outboundBefore) { it.get_device_metadata_request == true }
             assertEquals(remote.raw, packet.to)
-            transport.injectAdminResponse(packet.id, AdminMessage(get_device_metadata_response = expected), fromNode = remote.raw)
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage(get_device_metadata_response = expected),
+                fromNode = remote.raw,
+            )
             runCurrent()
 
             assertEquals(AdminResult.Success(expected), deferred.await())
@@ -857,8 +863,12 @@ class AdminApiImplComprehensiveTest {
         val (transport, client) = connectedClient(
             frames = handshakeFrames(
                 org.meshtastic.proto.FromRadio(metadata = DeviceMetadata(firmware_version = "2.5.0")),
-                org.meshtastic.proto.FromRadio(config = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT))),
-                org.meshtastic.proto.FromRadio(moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false))),
+                org.meshtastic.proto.FromRadio(
+                    config = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT)),
+                ),
+                org.meshtastic.proto.FromRadio(
+                    moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false)),
+                ),
             ),
         )
         client.connect()
@@ -898,8 +908,12 @@ class AdminApiImplComprehensiveTest {
         val (transport, client) = connectedClient(
             frames = handshakeFrames(
                 org.meshtastic.proto.FromRadio(metadata = DeviceMetadata(firmware_version = "2.5.0")),
-                org.meshtastic.proto.FromRadio(config = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT))),
-                org.meshtastic.proto.FromRadio(moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false))),
+                org.meshtastic.proto.FromRadio(
+                    config = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT)),
+                ),
+                org.meshtastic.proto.FromRadio(
+                    moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false)),
+                ),
             ),
         )
         client.connect()

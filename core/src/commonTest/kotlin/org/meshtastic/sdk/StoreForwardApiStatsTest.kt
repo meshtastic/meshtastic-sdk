@@ -314,10 +314,9 @@ class StoreForwardApiStatsTest {
         )
     }
 
-    private fun FakeRadioTransport.lastStoreForwardRequest(outboundBefore: Int) =
-        outboundPackets()
-            .drop(outboundBefore)
-            .last { it.decoded?.portnum == PortNum.STORE_FORWARD_APP }
+    private fun FakeRadioTransport.lastStoreForwardRequest(outboundBefore: Int) = outboundPackets()
+        .drop(outboundBefore)
+        .last { it.decoded?.portnum == PortNum.STORE_FORWARD_APP }
 
     private class SchedulerClock(private val nowMs: () -> Long) : kotlin.time.Clock {
         override fun now(): Instant = Instant.fromEpochMilliseconds(nowMs())

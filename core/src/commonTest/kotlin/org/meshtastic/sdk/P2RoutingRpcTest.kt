@@ -12,7 +12,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
@@ -22,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.seconds
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class P2RoutingRpcTest {

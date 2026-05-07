@@ -70,7 +70,13 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectFrame(rawFrame(encodedFromRadio(FromRadio(node_info = org.meshtastic.proto.NodeInfo(num = 7))), header0 = 0x00, header1 = 0x00))
+        transport.injectFrame(
+            rawFrame(
+                encodedFromRadio(FromRadio(node_info = org.meshtastic.proto.NodeInfo(num = 7))),
+                header0 = 0x00,
+                header1 = 0x00,
+            ),
+        )
         runCurrent()
 
         assertEquals(ConnectionState.Connected, client.connection.value)
@@ -724,13 +730,10 @@ class MeshEngineEdgeCasesTest {
     private fun decodeToRadioOrNull(frame: Frame): ToRadio? {
         val bytes = frame.bytes.toByteArray()
         if (bytes.size < WireFraming.HEADER_SIZE) return null
-        return runCatching { ToRadio.ADAPTER.decode(bytes.copyOfRange(WireFraming.HEADER_SIZE, bytes.size)) }.getOrNull()
+        return runCatching {
+            ToRadio.ADAPTER.decode(bytes.copyOfRange(WireFraming.HEADER_SIZE, bytes.size))
+        }.getOrNull()
     }
 
-    private data class CapturedLog(
-        val level: LogLevel,
-        val tag: String,
-        val message: String,
-        val cause: Throwable?,
-    )
+    private data class CapturedLog(val level: LogLevel, val tag: String, val message: String, val cause: Throwable?)
 }

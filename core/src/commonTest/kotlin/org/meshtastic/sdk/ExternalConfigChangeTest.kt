@@ -185,9 +185,11 @@ class ExternalConfigChangeTest {
         runCurrent()
 
         // Inject a channel response WITH a non-zero request_id (simulates response to our RPC)
-        val payload = okio.ByteString.of(*AdminMessage.ADAPTER.encode(
-            AdminMessage(get_channel_response = Channel(index = 0, role = Channel.Role.PRIMARY))
-        ))
+        val payload = okio.ByteString.of(
+            *AdminMessage.ADAPTER.encode(
+                AdminMessage(get_channel_response = Channel(index = 0, role = Channel.Role.PRIMARY)),
+            ),
+        )
         val packet = MeshPacket(
             from = transport.nodeNum,
             to = 0,

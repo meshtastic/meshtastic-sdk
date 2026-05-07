@@ -25,10 +25,7 @@ public data class NeighborInfo(
      * @property nodeId the neighbor's node ID
      * @property snr signal-to-noise ratio in dB (higher is better)
      */
-    public data class Neighbor(
-        public val nodeId: NodeId,
-        public val snr: Float,
-    )
+    public data class Neighbor(public val nodeId: NodeId, public val snr: Float)
 
     /**
      * Formats the neighbor list as a human-readable string.

@@ -349,12 +349,13 @@ class RadioClientSendTest {
         }
     }
 
-    private fun TestScope.buildClient(transport: FakeRadioTransport = buildTransport()): RadioClient = RadioClient.Builder()
-        .transport(transport)
-        .storage(InMemoryStorageProvider())
-        .coroutineContext(backgroundScope.coroutineContext)
-        .autoSyncTimeOnConnect(false)
-        .build()
+    private fun TestScope.buildClient(transport: FakeRadioTransport = buildTransport()): RadioClient =
+        RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .build()
 
     private suspend fun TestScope.withConnectedClient(block: suspend (RadioClient, FakeRadioTransport) -> Unit) {
         val transport = buildTransport()

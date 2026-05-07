@@ -7,11 +7,11 @@
  */
 package org.meshtastic.sdk
 
-import kotlin.time.Duration.Companion.seconds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class CongestionTest {
     @Test fun levelIsLowWhenBothMetricsAreBelowMediumThreshold() {

@@ -196,7 +196,10 @@ class PayloadAccessorsTest {
 
     @Test fun tracerouteDecodes() {
         val route = org.meshtastic.proto.RouteDiscovery(route = listOf(100, 200, 300))
-        val decoded = pkt(PortNum.TRACEROUTE_APP, org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(route)).asTraceroute()
+        val decoded = pkt(
+            PortNum.TRACEROUTE_APP,
+            org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(route),
+        ).asTraceroute()
         assertNotNull(decoded)
         assertEquals(listOf(100, 200, 300), decoded.route)
     }
@@ -208,7 +211,10 @@ class PayloadAccessorsTest {
 
     @Test fun neighborInfoDecodes() {
         val ni = org.meshtastic.proto.NeighborInfo(node_id = 0xABCD, last_sent_by_id = 0x1234)
-        val decoded = pkt(PortNum.NEIGHBORINFO_APP, org.meshtastic.proto.NeighborInfo.ADAPTER.encode(ni)).asNeighborInfo()
+        val decoded = pkt(
+            PortNum.NEIGHBORINFO_APP,
+            org.meshtastic.proto.NeighborInfo.ADAPTER.encode(ni),
+        ).asNeighborInfo()
         assertNotNull(decoded)
         assertEquals(0xABCD, decoded.node_id)
         assertEquals(0x1234, decoded.last_sent_by_id)

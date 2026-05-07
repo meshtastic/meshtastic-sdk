@@ -27,10 +27,7 @@ public object ChannelHelpers {
     /**
      * Validation result for channel configuration.
      */
-    public data class ValidationResult(
-        val isValid: Boolean,
-        val errors: List<String> = emptyList(),
-    )
+    public data class ValidationResult(val isValid: Boolean, val errors: List<String> = emptyList())
 
     /**
      * Validates channel metadata before it is sent to the device.
@@ -38,11 +35,7 @@ public object ChannelHelpers {
      * Checks name length, blank-only names, and supported PSK lengths.
      * @since 0.1.0
      */
-    public fun validate(
-        name: String,
-        psk: ByteArray,
-        role: Channel.Role = Channel.Role.SECONDARY,
-    ): ValidationResult {
+    public fun validate(name: String, psk: ByteArray, role: Channel.Role = Channel.Role.SECONDARY): ValidationResult {
         val errors = mutableListOf<String>()
         if (name.length > MAX_NAME_LENGTH) {
             errors += "Channel name exceeds $MAX_NAME_LENGTH characters"
@@ -80,10 +73,7 @@ public object ChannelHelpers {
      * Returns `null` instead of throwing when validation fails.
      * @since 0.1.0
      */
-    public fun createSettings(
-        name: String,
-        psk: ByteArray = byteArrayOf(0x01),
-    ): ChannelSettings? {
+    public fun createSettings(name: String, psk: ByteArray = byteArrayOf(0x01)): ChannelSettings? {
         val validation = validate(name, psk)
         if (!validation.isValid) return null
         return ChannelSettings(

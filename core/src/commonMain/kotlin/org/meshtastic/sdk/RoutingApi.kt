@@ -7,8 +7,8 @@
  */
 package org.meshtastic.sdk
 
-import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.RouteDiscovery
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
  * Mesh route discovery and neighbor enumeration RPCs.

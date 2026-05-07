@@ -13,7 +13,6 @@ import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
@@ -24,6 +23,7 @@ import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.debug
 import org.meshtastic.sdk.warn
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
  * Engine-actor-owned registry of in-flight admin/telemetry/routing RPC responses.
@@ -90,19 +90,39 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
 
         val resolved = when (entry.kind) {
             ResponseKind.AdminConfig -> decodeAdmin(decoded.payload) { it.get_config_response }
+
             ResponseKind.AdminModuleConfig -> decodeAdmin(decoded.payload) { it.get_module_config_response }
+
             ResponseKind.AdminOwner -> decodeAdmin(decoded.payload) { it.get_owner_response }
+
             ResponseKind.AdminChannel -> decodeAdmin(decoded.payload) { it.get_channel_response }
+
             ResponseKind.AdminDeviceMetadata -> decodeAdmin(decoded.payload) { it.get_device_metadata_response }
-            ResponseKind.AdminCannedMessages -> decodeAdmin(decoded.payload) { it.get_canned_message_module_messages_response }
+
+            ResponseKind.AdminCannedMessages -> decodeAdmin(decoded.payload) {
+                it.get_canned_message_module_messages_response
+            }
+
             ResponseKind.AdminRingtone -> decodeAdmin(decoded.payload) { it.get_ringtone_response }
-            ResponseKind.AdminDeviceConnectionStatus -> decodeAdmin(decoded.payload) { it.get_device_connection_status_response }
-            ResponseKind.AdminRemoteHardwarePins -> decodeAdmin(decoded.payload) { it.get_node_remote_hardware_pins_response }
+
+            ResponseKind.AdminDeviceConnectionStatus -> decodeAdmin(decoded.payload) {
+                it.get_device_connection_status_response
+            }
+
+            ResponseKind.AdminRemoteHardwarePins -> decodeAdmin(decoded.payload) {
+                it.get_node_remote_hardware_pins_response
+            }
+
             ResponseKind.AdminDeviceUIConfig -> decodeAdmin(decoded.payload) { it.get_ui_config_response }
+
             ResponseKind.Telemetry -> decodeTelemetry(decoded.payload, decoded.portnum)
+
             ResponseKind.RouteDiscoveryReply -> decodeRoute(decoded.payload, decoded.portnum)
+
             ResponseKind.NeighborInfoReply -> decodeNeighborInfo(decoded.payload, decoded.portnum)
+
             ResponseKind.StoreForwardReply -> decodeStoreForwardHistory(decoded.payload, decoded.portnum)
+
             ResponseKind.StoreForwardStatsReply -> decodeStoreForwardStats(decoded.payload, decoded.portnum)
         }
 
@@ -212,7 +232,9 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             }
 
             StoreAndForward.RequestResponse.ROUTER_BUSY -> AdminResult.Failed(Routing.Error.NO_RESPONSE)
+
             StoreAndForward.RequestResponse.ROUTER_ERROR -> AdminResult.Failed(Routing.Error.GOT_NAK)
+
             else -> null
         }
     }
@@ -229,7 +251,9 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             }
 
             StoreAndForward.RequestResponse.ROUTER_BUSY -> AdminResult.Failed(Routing.Error.NO_RESPONSE)
+
             StoreAndForward.RequestResponse.ROUTER_ERROR -> AdminResult.Failed(Routing.Error.GOT_NAK)
+
             else -> null
         }
     }

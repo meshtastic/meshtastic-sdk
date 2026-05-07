@@ -250,17 +250,11 @@ class StoreForwardApiImplSfppTest {
         client.disconnect()
     }
 
-    private fun FakeRadioTransport.injectSfpp(
-        message: StoreForwardPlusPlus,
-        fromNode: Int = 0x10203040,
-    ) {
+    private fun FakeRadioTransport.injectSfpp(message: StoreForwardPlusPlus, fromNode: Int = 0x10203040) {
         injectStoreForwardPayload(StoreForwardPlusPlus.ADAPTER.encode(message), fromNode)
     }
 
-    private fun FakeRadioTransport.injectStoreForwardPayload(
-        payload: ByteArray,
-        fromNode: Int = 0x10203040,
-    ) {
+    private fun FakeRadioTransport.injectStoreForwardPayload(payload: ByteArray, fromNode: Int = 0x10203040) {
         injectPacket(
             MeshPacket(
                 id = 1,

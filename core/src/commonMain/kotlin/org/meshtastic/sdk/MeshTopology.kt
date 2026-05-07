@@ -31,12 +31,7 @@ public class MeshTopology {
      * Directed edge from a reporting node [from] to a neighbor [to], carrying the reported signal
      * quality ([snr]) and the [NeighborInfo.lastUpdated] value from the source report.
      */
-    public data class Edge(
-        val from: NodeId,
-        val to: NodeId,
-        val snr: Float,
-        val lastUpdated: Int = 0,
-    )
+    public data class Edge(val from: NodeId, val to: NodeId, val snr: Float, val lastUpdated: Int = 0)
 
     private val mutex = Mutex()
 

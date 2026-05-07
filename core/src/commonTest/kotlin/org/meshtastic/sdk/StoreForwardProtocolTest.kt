@@ -33,7 +33,6 @@ import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
-
 import kotlin.time.Duration.Companion.seconds
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -84,8 +83,14 @@ class StoreForwardProtocolTest {
         runCurrent()
 
         assertEquals(listOf(server), client.storeForward.servers.value)
-        assertEquals(listOf(StoreForwardEvent.ServerDiscovered(server)), observed.filterIsInstance<StoreForwardEvent.ServerDiscovered>())
-        assertEquals(listOf(StoreForwardEvent.Heartbeat(server)), observed.filterIsInstance<StoreForwardEvent.Heartbeat>())
+        assertEquals(
+            listOf(StoreForwardEvent.ServerDiscovered(server)),
+            observed.filterIsInstance<StoreForwardEvent.ServerDiscovered>(),
+        )
+        assertEquals(
+            listOf(StoreForwardEvent.Heartbeat(server)),
+            observed.filterIsInstance<StoreForwardEvent.Heartbeat>(),
+        )
 
         collector.cancel()
         client.disconnect()
@@ -401,7 +406,8 @@ class StoreForwardProtocolTest {
             client.packets.collect { packet ->
                 val decoded = packet.decoded ?: return@collect
                 if (decoded.portnum != PortNum.STORE_FORWARD_APP) return@collect
-                val message = runCatching { StoreAndForward.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return@collect
+                val message =
+                    runCatching { StoreAndForward.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return@collect
                 if (message.rr == StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT ||
                     message.rr == StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST
                 ) {
@@ -472,7 +478,12 @@ class StoreForwardProtocolTest {
         runCurrent()
 
         assertTrue(client.storeForward.servers.value.isEmpty())
-        assertEquals(setOf(first, second), observed.filterIsInstance<StoreForwardEvent.ServerLost>().map { it.nodeId }.toSet())
+        assertEquals(
+            setOf(first, second),
+            observed.filterIsInstance<StoreForwardEvent.ServerLost>().map {
+                it.nodeId
+            }.toSet(),
+        )
 
         collector.cancel()
     }

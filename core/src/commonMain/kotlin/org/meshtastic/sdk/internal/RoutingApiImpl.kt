@@ -10,7 +10,6 @@ package org.meshtastic.sdk.internal
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
@@ -18,6 +17,7 @@ import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RoutingApi
 import kotlin.time.Duration
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
  * Engine-backed [RoutingApi].

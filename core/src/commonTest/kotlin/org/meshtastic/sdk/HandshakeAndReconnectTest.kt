@@ -209,7 +209,8 @@ class HandshakeAndReconnectTest {
         assertIs<MeshtasticException.Transport>(firstConnect.await().exceptionOrNull())
         assertEquals(ConnectionState.Disconnected, firstClient.connection.value)
 
-        val retryClient = buildClient(ScriptedTransport(TransportIdentity("fake:drop-stage1-retry"), nowMs = { currentTime }))
+        val retryClient =
+            buildClient(ScriptedTransport(TransportIdentity("fake:drop-stage1-retry"), nowMs = { currentTime }))
         retryClient.connect()
         assertEquals(ConnectionState.Connected, retryClient.connection.value)
     }
@@ -231,7 +232,8 @@ class HandshakeAndReconnectTest {
         assertIs<MeshtasticException.Transport>(firstConnect.await().exceptionOrNull())
         assertEquals(ConnectionState.Disconnected, firstClient.connection.value)
 
-        val retryClient = buildClient(ScriptedTransport(TransportIdentity("fake:drop-stage2-retry"), nowMs = { currentTime }))
+        val retryClient =
+            buildClient(ScriptedTransport(TransportIdentity("fake:drop-stage2-retry"), nowMs = { currentTime }))
         retryClient.connect()
         advanceTimeBy(STAGE2_PROGRESS_TICK_MS + 5_000L)
         runCurrent()
@@ -257,7 +259,12 @@ class HandshakeAndReconnectTest {
         assertIs<MeshtasticException.HandshakeTimeout>(error)
         assertEquals(ConnectionState.Disconnected, firstClient.connection.value)
 
-        val retryClient = buildClient(ScriptedTransport(TransportIdentity("fake:stage2-timeout-retry-success"), nowMs = { currentTime }))
+        val retryClient =
+            buildClient(
+                ScriptedTransport(TransportIdentity("fake:stage2-timeout-retry-success"), nowMs = {
+                    currentTime
+                }),
+            )
         retryClient.connect()
         advanceTimeBy(STAGE2_PROGRESS_TICK_MS + 5_000L)
         runCurrent()
@@ -319,7 +326,9 @@ class HandshakeAndReconnectTest {
 
         val outboundBefore = transport.outboundPackets().size
         val expected = org.meshtastic.proto.Config(
-            lora = org.meshtastic.proto.Config.LoRaConfig(region = org.meshtastic.proto.Config.LoRaConfig.RegionCode.US),
+            lora = org.meshtastic.proto.Config.LoRaConfig(
+                region = org.meshtastic.proto.Config.LoRaConfig.RegionCode.US,
+            ),
         )
         val deferred = backgroundScope.async {
             client.admin.forNode(remoteNode).getConfig(AdminMessage.ConfigType.LORA_CONFIG)
@@ -699,7 +708,12 @@ class HandshakeAndReconnectTest {
 
         override suspend fun connect() {
             stateFlow.value = TransportState.Connecting
-            val shouldFail = if (connectTimes.isEmpty()) ConnectOutcome.Success else connectPlan.removeFirstOrNull() ?: ConnectOutcome.Success
+            val shouldFail = if (connectTimes.isEmpty()) {
+                ConnectOutcome.Success
+            } else {
+                connectPlan.removeFirstOrNull()
+                    ?: ConnectOutcome.Success
+            }
             val attemptedAt = nowMs()
             if (shouldFail is ConnectOutcome.Fail) {
                 connectTimes += attemptedAt
@@ -790,7 +804,9 @@ class HandshakeAndReconnectTest {
                 return
             }
             if (!autoCompleteStage1) return
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio(my_info = MyNodeInfo(my_node_num = nodeNum))))
+            inbound.tryEmit(
+                encodeFromRadioFrame(org.meshtastic.proto.FromRadio(my_info = MyNodeInfo(my_node_num = nodeNum))),
+            )
             inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio(config_complete_id = NONCE_STAGE1)))
         }
 

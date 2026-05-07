@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.filter
 import okio.ByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
@@ -22,6 +21,7 @@ import org.meshtastic.proto.Routing
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.User
 import org.meshtastic.proto.Waypoint
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 private fun MeshPacket.payloadOrNull(expected: PortNum): ByteString? {
     val data = decoded ?: return null
     if (data.portnum != expected) return null
@@ -103,4 +103,5 @@ public fun MeshPacket.asTraceroute(): RouteDiscovery? = decodeIfPort(PortNum.TRA
 /**
  * Decodes the payload as [ProtoNeighborInfo] if [MeshPacket.decoded.portnum] matches [PortNum.NEIGHBORINFO_APP].
  */
-public fun MeshPacket.asNeighborInfo(): ProtoNeighborInfo? = decodeIfPort(PortNum.NEIGHBORINFO_APP, ProtoNeighborInfo.ADAPTER)
+public fun MeshPacket.asNeighborInfo(): ProtoNeighborInfo? =
+    decodeIfPort(PortNum.NEIGHBORINFO_APP, ProtoNeighborInfo.ADAPTER)

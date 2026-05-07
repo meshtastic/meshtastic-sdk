@@ -32,10 +32,7 @@ public sealed class RetryPolicy {
      * @property maxAttempts maximum number of retry attempts (not counting the initial send)
      * @property delay fixed delay between retries
      */
-    public data class Fixed(
-        val maxAttempts: Int = 3,
-        val delay: Duration = 5.seconds,
-    ) : RetryPolicy()
+    public data class Fixed(val maxAttempts: Int = 3, val delay: Duration = 5.seconds) : RetryPolicy()
 
     /**
      * Retry with exponential backoff and optional jitter.
@@ -64,10 +61,13 @@ public sealed class RetryPolicy {
      */
     public fun delayForAttempt(attempt: Int): Duration? = when (this) {
         is None -> null
+
         is Fixed -> if (attempt < maxAttempts) delay else null
+
         is ExponentialBackoff -> {
-            if (attempt >= maxAttempts) null
-            else {
+            if (attempt >= maxAttempts) {
+                null
+            } else {
                 val base = initialDelay * multiplier.pow(attempt.toDouble())
                 val capped = if (base > maxDelay) maxDelay else base
                 if (jitterFactor > 0.0) {

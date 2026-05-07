@@ -181,19 +181,16 @@ internal object Scenarios {
      * within [budget]; FAIL on any failure outcome or timeout. Unlike cs2 (broadcast), this
      * exercises the full send → routing-ACK path.
      */
-    suspend fun cs7UnicastDmText(
-        client: RadioClient,
-        peer: NodeId,
-        budget: Duration = 30.seconds,
-    ): ScenarioResult = runScenario("cs7", "unicast DM to $peer") {
-        val handle = client.sendDirectMessage(to = peer, text = "dm conformance probe")
-        val outcome = withTimeoutOrNull(budget) { handle.await() }
-            ?: error("did not reach terminal state in ${budget.inWholeSeconds}s")
-        when (outcome) {
-            SendOutcome.Success -> "id=${handle.id} acked by ${peer}"
-            is SendOutcome.Failure -> error("failed: ${outcome.reason::class.simpleName}")
+    suspend fun cs7UnicastDmText(client: RadioClient, peer: NodeId, budget: Duration = 30.seconds): ScenarioResult =
+        runScenario("cs7", "unicast DM to $peer") {
+            val handle = client.sendDirectMessage(to = peer, text = "dm conformance probe")
+            val outcome = withTimeoutOrNull(budget) { handle.await() }
+                ?: error("did not reach terminal state in ${budget.inWholeSeconds}s")
+            when (outcome) {
+                SendOutcome.Success -> "id=${handle.id} acked by $peer"
+                is SendOutcome.Failure -> error("failed: ${outcome.reason::class.simpleName}")
+            }
         }
-    }
 
     /**
      * Wrap a single-scenario block: time it, catch every exception, and produce a

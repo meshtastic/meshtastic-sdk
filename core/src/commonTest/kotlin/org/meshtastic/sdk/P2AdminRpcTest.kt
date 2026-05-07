@@ -740,9 +740,8 @@ class P2AdminRpcTest {
     private fun adminPacketsSince(
         transport: FakeRadioTransport,
         outboundBefore: Int,
-    ): List<Pair<org.meshtastic.proto.MeshPacket, AdminMessage>> =
-        transport.outboundPackets().drop(outboundBefore)
-            .mapNotNull { packet -> adminOf(packet)?.let { packet to it } }
+    ): List<Pair<org.meshtastic.proto.MeshPacket, AdminMessage>> = transport.outboundPackets().drop(outboundBefore)
+        .mapNotNull { packet -> adminOf(packet)?.let { packet to it } }
 
     private fun buildRoutingErrorFrame(requestId: Int, error: Routing.Error): Frame {
         val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing(error_reason = error)))

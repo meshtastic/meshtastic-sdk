@@ -76,10 +76,7 @@ internal fun mergeConfigs(existing: List<Config>, written: List<Config>): List<C
 /**
  * Merge [written] module configs into [existing], replacing sections that share a [sectionKey].
  */
-internal fun mergeModuleConfigs(
-    existing: List<ModuleConfig>,
-    written: List<ModuleConfig>,
-): List<ModuleConfig> {
+internal fun mergeModuleConfigs(existing: List<ModuleConfig>, written: List<ModuleConfig>): List<ModuleConfig> {
     val writtenByKey = written.associateBy { it.sectionKey() }.filterKeys { it != null }
     val result = existing.map { cfg ->
         val key = cfg.sectionKey()

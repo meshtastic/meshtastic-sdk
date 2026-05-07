@@ -279,8 +279,10 @@ public sealed interface MeshEvent {
 public enum class ExternalChangeKind {
     /** A channel was added, removed, or modified. */
     CHANNEL,
+
     /** A radio/device config section was modified. */
     CONFIG,
+
     /** A module config section was modified. */
     MODULE_CONFIG,
 }

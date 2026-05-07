@@ -191,13 +191,19 @@ public interface AdminApi {
     // ── Backup / Restore ────────────────────────────────────────────────────
 
     /** Back up device preferences to the specified [location]. */
-    public suspend fun backupPreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
+    public suspend fun backupPreferences(
+        location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH,
+    ): AdminResult<Unit>
 
     /** Restore device preferences from the specified [location]. */
-    public suspend fun restorePreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
+    public suspend fun restorePreferences(
+        location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH,
+    ): AdminResult<Unit>
 
     /** Remove a stored preference backup from [location]. */
-    public suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH): AdminResult<Unit>
+    public suspend fun removeBackupPreferences(
+        location: AdminMessage.BackupLocation = AdminMessage.BackupLocation.FLASH,
+    ): AdminResult<Unit>
 
     // ── Node removal ────────────────────────────────────────────────────────
 

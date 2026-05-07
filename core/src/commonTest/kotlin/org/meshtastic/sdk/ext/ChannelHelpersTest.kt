@@ -7,12 +7,12 @@
  */
 package org.meshtastic.sdk
 
+import org.meshtastic.proto.Channel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import org.meshtastic.proto.Channel
 
 class ChannelHelpersTest {
     @Test

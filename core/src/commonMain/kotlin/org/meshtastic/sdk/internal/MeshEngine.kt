@@ -41,10 +41,10 @@ import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ChannelIndex
-import org.meshtastic.sdk.CongestionLevel
-import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConfigBundle
 import org.meshtastic.sdk.ConfigPhase
+import org.meshtastic.sdk.CongestionLevel
+import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
@@ -1337,7 +1337,9 @@ internal class MeshEngine(
                     return
                 }
                 if (decoded.portnum == PortNum.UNKNOWN_APP) {
-                    logger.warn(TAG) { "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}" }
+                    logger.warn(TAG) {
+                        "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}"
+                    }
                     events.tryEmit(
                         MeshEvent.ProtocolWarning(
                             "packet dropped for unknown port",
@@ -2184,11 +2186,18 @@ internal class MeshEngine(
             val list = (current ?: emptyList()).toMutableList()
             when {
                 idx < list.size -> list[idx] = channel
+
                 idx == list.size -> list.add(channel)
+
                 // idx > list.size: sparse gap — pad with DISABLED channels to avoid holes
                 else -> {
                     while (list.size < idx) {
-                        list.add(org.meshtastic.proto.Channel(index = list.size, role = org.meshtastic.proto.Channel.Role.DISABLED))
+                        list.add(
+                            org.meshtastic.proto.Channel(
+                                index = list.size,
+                                role = org.meshtastic.proto.Channel.Role.DISABLED,
+                            ),
+                        )
                     }
                     list.add(channel)
                 }
@@ -2382,10 +2391,5 @@ internal class MeshEngine(
         const val INBOUND_PACKET_DEDUP_CAP: Int = 256
     }
 
-    private data class InboundPacketKey(
-        val from: Int,
-        val to: Int,
-        val channel: Int,
-        val id: Int,
-    )
+    private data class InboundPacketKey(val from: Int, val to: Int, val channel: Int, val id: Int)
 }

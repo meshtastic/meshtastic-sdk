@@ -25,10 +25,9 @@ public object PositionUtils {
     public fun intToDegrees(positionInt: Int): Double = positionInt * 1e-7
 
     /** Returns true if lat/lng are within valid bounds and not both zero. */
-    public fun isValidPosition(latitude: Double, longitude: Double): Boolean =
-        !(latitude == 0.0 && longitude == 0.0) &&
-            latitude in -90.0..90.0 &&
-            longitude in -180.0..180.0
+    public fun isValidPosition(latitude: Double, longitude: Double): Boolean = !(latitude == 0.0 && longitude == 0.0) &&
+        latitude in -90.0..90.0 &&
+        longitude in -180.0..180.0
 
     /**
      * Computes the great-circle distance between two points using the Haversine formula.
@@ -62,7 +61,8 @@ public object PositionUtils {
     }
 
     /** Overload accepting [LatLng] instances. */
-    public fun bearing(from: LatLng, to: LatLng): Double = bearing(from.latitude, from.longitude, to.latitude, to.longitude)
+    public fun bearing(from: LatLng, to: LatLng): Double =
+        bearing(from.latitude, from.longitude, to.latitude, to.longitude)
 
     private fun Double.toRadians(): Double = this * PI / 180.0
 

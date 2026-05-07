@@ -119,7 +119,14 @@ internal class StoreForwardApiImpl(
                 want_response = true,
             ),
         )
-        return when (val result = engine.submitRpc(packet, requestId, ResponseKind.StoreForwardStatsReply, rpcTimeout)) {
+        return when (
+            val result = engine.submitRpc(
+                packet,
+                requestId,
+                ResponseKind.StoreForwardStatsReply,
+                rpcTimeout,
+            )
+        ) {
             is AdminResult.Success -> AdminResult.Success(result.value.toSdkStats())
             AdminResult.Timeout -> AdminResult.Timeout
             AdminResult.NodeUnreachable -> AdminResult.NodeUnreachable
@@ -212,8 +219,11 @@ internal class StoreForwardApiImpl(
 
     private fun looksLikeLegacyStoreForward(message: StoreAndForward): Boolean = when (message.rr) {
         StoreAndForward.RequestResponse.ROUTER_HEARTBEAT -> message.heartbeat != null
+
         StoreAndForward.RequestResponse.ROUTER_HISTORY -> message.history != null
+
         StoreAndForward.RequestResponse.ROUTER_STATS -> message.stats != null
+
         StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST,
         StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT,
         -> message.text != null
@@ -235,6 +245,7 @@ internal class StoreForwardApiImpl(
             -> handleLinkProvide(sfpp)
 
             StoreForwardPlusPlus.SFPP_message_type.CANON_ANNOUNCE -> handleCanonAnnounce(sfpp)
+
             else -> Unit
         }
     }
@@ -253,6 +264,7 @@ internal class StoreForwardApiImpl(
                 confirmed = confirmed,
                 messageHash = when {
                     providedHash != null -> providedHash
+
                     !isFragment && sfpp.message.size != 0 -> SfppHash.compute(
                         payload = sfpp.message.toByteArray(),
                         to = normalizedTo,
@@ -424,11 +436,7 @@ internal class StoreForwardApiImpl(
         override fun hashCode(): Int = ((packetId * 31) + response.hashCode()) * 31 + payload.contentHashCode()
     }
 
-    private data class SfppFragmentKey(
-        val packetId: Int,
-        val from: Int,
-        val to: Int,
-    )
+    private data class SfppFragmentKey(val packetId: Int, val from: Int, val to: Int)
 
     private data class SfppFragmentState(
         val firstHalf: ByteArray? = null,

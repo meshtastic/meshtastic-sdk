@@ -73,10 +73,7 @@ public val DEFAULT_ONLINE_THRESHOLD: Duration = 2.hours
  *
  * @since 0.1.0
  */
-public fun NodeInfo.isOnline(
-    nowEpochSeconds: Int,
-    threshold: Duration = DEFAULT_ONLINE_THRESHOLD,
-): Boolean {
+public fun NodeInfo.isOnline(nowEpochSeconds: Int, threshold: Duration = DEFAULT_ONLINE_THRESHOLD): Boolean {
     if (last_heard == 0) return false
     val cutoff = nowEpochSeconds - threshold.inWholeSeconds.toInt()
     return last_heard >= cutoff
@@ -104,7 +101,10 @@ public val NodeInfo.signalQuality: SignalQuality
     get() = when {
         // snr == 0f with no hops_away data likely means "no reading" (proto default)
         snr == 0f && hops_away == null -> SignalQuality.NONE
+
         snr >= 5f -> SignalQuality.GOOD
+
         snr >= 0f -> SignalQuality.FAIR
+
         else -> SignalQuality.POOR
     }

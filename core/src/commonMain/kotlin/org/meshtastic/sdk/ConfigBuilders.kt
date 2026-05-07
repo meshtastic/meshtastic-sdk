@@ -36,9 +36,8 @@ private suspend fun <T> AdminApi.setModuleConfigSection(
 ): AdminResult<Unit> = setModuleConfig(wrap(initial.block()))
 
 /** Convenience: build and send a [Config.DeviceConfig] in a single call. */
-public suspend fun AdminApi.setDeviceConfig(
-    block: Config.DeviceConfig.() -> Config.DeviceConfig,
-): AdminResult<Unit> = setConfigSection(Config.DeviceConfig(), block) { Config(device = it) }
+public suspend fun AdminApi.setDeviceConfig(block: Config.DeviceConfig.() -> Config.DeviceConfig): AdminResult<Unit> =
+    setConfigSection(Config.DeviceConfig(), block) { Config(device = it) }
 
 /** Convenience: build and send a [Config.PositionConfig] in a single call. */
 public suspend fun AdminApi.setPositionConfig(
@@ -46,9 +45,8 @@ public suspend fun AdminApi.setPositionConfig(
 ): AdminResult<Unit> = setConfigSection(Config.PositionConfig(), block) { Config(position = it) }
 
 /** Convenience: build and send a [Config.PowerConfig] in a single call. */
-public suspend fun AdminApi.setPowerConfig(
-    block: Config.PowerConfig.() -> Config.PowerConfig,
-): AdminResult<Unit> = setConfigSection(Config.PowerConfig(), block) { Config(power = it) }
+public suspend fun AdminApi.setPowerConfig(block: Config.PowerConfig.() -> Config.PowerConfig): AdminResult<Unit> =
+    setConfigSection(Config.PowerConfig(), block) { Config(power = it) }
 
 /** Convenience: build and send a [Config.NetworkConfig] in a single call. */
 public suspend fun AdminApi.setNetworkConfig(
@@ -61,9 +59,8 @@ public suspend fun AdminApi.setDisplayConfig(
 ): AdminResult<Unit> = setConfigSection(Config.DisplayConfig(), block) { Config(display = it) }
 
 /** Convenience: build and send a [Config.LoRaConfig] in a single call. */
-public suspend fun AdminApi.setLoraConfig(
-    block: Config.LoRaConfig.() -> Config.LoRaConfig,
-): AdminResult<Unit> = setConfigSection(Config.LoRaConfig(), block) { Config(lora = it) }
+public suspend fun AdminApi.setLoraConfig(block: Config.LoRaConfig.() -> Config.LoRaConfig): AdminResult<Unit> =
+    setConfigSection(Config.LoRaConfig(), block) { Config(lora = it) }
 
 /** Convenience: build and send a [Config.BluetoothConfig] in a single call. */
 public suspend fun AdminApi.setBluetoothConfig(

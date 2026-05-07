@@ -33,11 +33,11 @@ import org.meshtastic.sdk.AdminApi
 import org.meshtastic.sdk.AdminBatchScope
 import org.meshtastic.sdk.AdminEdit
 import org.meshtastic.sdk.AdminResult
-import org.meshtastic.sdk.getOrThrow
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
+import org.meshtastic.sdk.getOrThrow
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Instant
@@ -266,17 +266,20 @@ internal class AdminApiImpl(
 
     // ── Backup / Restore ────────────────────────────────────────────────────
 
-    override suspend fun backupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage(backup_preferences = location))
-    }
+    override suspend fun backupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> =
+        retryOnSessionExpiry {
+            submitAdminAck(AdminMessage(backup_preferences = location))
+        }
 
-    override suspend fun restorePreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage(restore_preferences = location))
-    }
+    override suspend fun restorePreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> =
+        retryOnSessionExpiry {
+            submitAdminAck(AdminMessage(restore_preferences = location))
+        }
 
-    override suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage(remove_backup_preferences = location))
-    }
+    override suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> =
+        retryOnSessionExpiry {
+            submitAdminAck(AdminMessage(remove_backup_preferences = location))
+        }
 
     // ── Node removal ────────────────────────────────────────────────────────
 
@@ -491,17 +494,16 @@ internal class AdminApiImpl(
 
     private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
 
-    private inner class AdminBatchScopeImpl(
-        edit: AdminEditImpl,
-    ) : AdminBatchScope, AdminEdit by edit {
+    private inner class AdminBatchScopeImpl(edit: AdminEditImpl) :
+        AdminBatchScope,
+        AdminEdit by edit {
         override suspend fun getConfig(type: AdminMessage.ConfigType): Config =
             this@AdminApiImpl.getConfig(type).getOrThrow()
 
         override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): ModuleConfig =
             this@AdminApiImpl.getModuleConfig(type).getOrThrow()
 
-        override suspend fun listChannels(): List<Channel> =
-            this@AdminApiImpl.listChannels().getOrThrow()
+        override suspend fun listChannels(): List<Channel> = this@AdminApiImpl.listChannels().getOrThrow()
     }
 
     private inner class AdminEditImpl : AdminEdit {
@@ -582,10 +584,13 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     is SendFailure.Other -> when (reason.routingError) {
         Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
+
         Routing.Error.NOT_AUTHORIZED,
         Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
         -> AdminResult.Unauthorized
+
         Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
+
         else -> AdminResult.Failed(reason.routingError)
     }
 

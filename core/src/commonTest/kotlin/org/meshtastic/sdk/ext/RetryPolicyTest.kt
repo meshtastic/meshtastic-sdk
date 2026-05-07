@@ -7,10 +7,10 @@
  */
 package org.meshtastic.sdk
 
-import kotlin.time.Duration.Companion.seconds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.time.Duration.Companion.seconds
 
 class RetryPolicyTest {
     @Test fun noneReturnsNullImmediately() {

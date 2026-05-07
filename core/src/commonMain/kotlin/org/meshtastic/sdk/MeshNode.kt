@@ -142,5 +142,4 @@ public fun NodeInfo.toMeshNode(nowEpochSeconds: Int): MeshNode = MeshNode(
  * @return list of [MeshNode] instances
  * @since 0.1.0
  */
-public fun Iterable<NodeInfo>.toMeshNodes(nowEpochSeconds: Int): List<MeshNode> =
-    map { it.toMeshNode(nowEpochSeconds) }
+public fun Iterable<NodeInfo>.toMeshNodes(nowEpochSeconds: Int): List<MeshNode> = map { it.toMeshNode(nowEpochSeconds) }

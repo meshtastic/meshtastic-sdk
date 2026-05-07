@@ -7,7 +7,9 @@
  */
 package org.meshtastic.sdk.ext
 
-import org.meshtastic.sdk.*
+import org.meshtastic.sdk.NodeId
+import org.meshtastic.sdk.StoreForwardEvent
+import org.meshtastic.sdk.StoreForwardStats
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

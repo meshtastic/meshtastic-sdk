@@ -16,10 +16,7 @@ import kotlin.time.Duration.Companion.seconds
  * @property airUtilTx current transmit air utilization percentage (0-100)
  * @property channelUtil current channel utilization percentage (0-100)
  */
-public data class CongestionMetrics(
-    val airUtilTx: Float,
-    val channelUtil: Float,
-) {
+public data class CongestionMetrics(val airUtilTx: Float, val channelUtil: Float) {
     /** Computed congestion level based on thresholds. */
     public val level: CongestionLevel get() = when {
         airUtilTx >= CRITICAL_THRESHOLD || channelUtil >= CRITICAL_THRESHOLD -> CongestionLevel.CRITICAL
@@ -54,10 +51,13 @@ public data class CongestionMetrics(
 public enum class CongestionLevel {
     /** Channel is clear — send freely. */
     LOW,
+
     /** Moderate activity — consider batching or delaying non-urgent messages. */
     MEDIUM,
+
     /** Heavy traffic — back off non-essential sends. */
     HIGH,
+
     /** Near capacity — only send critical messages. */
     CRITICAL,
 }
