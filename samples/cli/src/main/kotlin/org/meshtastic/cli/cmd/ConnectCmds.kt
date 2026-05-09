@@ -136,6 +136,23 @@ internal class NodesCmd : BaseCommand(name = "nodes") {
                                 put("num", change.nodeId.raw)
                             }
                         }
+
+                        is NodeChange.WentOffline -> {
+                            out.human("⊘ offline 0x" + change.nodeId.raw.toUInt().toString(16))
+                            out.emit("node") {
+                                put("op", "offline")
+                                put("num", change.nodeId.raw)
+                                put("last_heard", change.lastHeard)
+                            }
+                        }
+
+                        is NodeChange.CameOnline -> {
+                            out.human("● online 0x" + change.nodeId.raw.toUInt().toString(16))
+                            out.emit("node") {
+                                put("op", "online")
+                                put("num", change.nodeId.raw)
+                            }
+                        }
                     }
                 }
                 "disconnect"

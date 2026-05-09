@@ -203,6 +203,8 @@ val nodes: StateFlow<List<UiNode>> = combine(
                 is NodeChange.Added   -> acc + (change.node.num to change.node)
                 is NodeChange.Updated -> acc + (change.node.num to change.node)
                 is NodeChange.Removed -> acc - change.nodeId
+                is NodeChange.WentOffline,
+                is NodeChange.CameOnline -> acc // presence events don't change the map
             }
         }
         .flowOn(Dispatchers.Default), // ← required; SDK emits off-main
@@ -243,14 +245,16 @@ when (sendState) {
 ### 7.3 Admin, Config & Error Handling
 The SDK provides strongly-typed outcomes. ViewModels must handle them idiomatically.
 ```kotlin
-// AdminResult must be a sealed class in commonMain for exhaustive when to compile without else.
-// If it is an interface or open class, add an else branch.
 viewModelScope.launch {
     when (val result = client.admin.reboot()) {
         is AdminResult.Success     -> uiState.value = "Rebooting..."
         is AdminResult.Timeout     -> alertManager.show("Radio didn't respond in time")
         is AdminResult.Unauthorized -> alertManager.show("Invalid admin channel")
+        AdminResult.RateLimited    -> alertManager.show("Rate-limited — try again shortly")
         // No catch block needed; routine errors are returned as sealed subtypes, not thrown.
+        AdminResult.SessionKeyExpired,
+        AdminResult.NodeUnreachable,
+        is AdminResult.Failed      -> alertManager.show("Admin operation failed: $result")
     }
 }
 ```

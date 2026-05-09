@@ -49,7 +49,8 @@ public enum class NodeField {
  * A delta notification of node state changes.
  *
  * The SDK emits these via the [RadioClient.nodes] flow. Late subscribers first receive a
- * [Snapshot] of all known nodes, then live deltas ([Added], [Updated], [Removed]) in causal order.
+ * [Snapshot] of all known nodes, then live deltas ([Added], [Updated], [Removed], [WentOffline],
+ * [CameOnline]) in causal order.
  *
  * This delta-based design is efficient for large meshes: a 200-node network with frequent
  * telemetry would be wasteful to emit as a full `StateFlow<Map<NodeId, NodeInfo>>` (200 entries
@@ -90,6 +91,21 @@ public sealed interface NodeChange {
      * @param nodeId the ID of the removed node
      */
     public data class Removed(val nodeId: NodeId) : NodeChange
+
+    /**
+     * Emitted when a node's [NodeInfo.last_heard] exceeds the configured presence timeout
+     * and transitions from online to offline.
+     *
+     * Emitted by the engine when presence tracking is enabled via `Builder.presenceTimeout()`.
+     */
+    public data class WentOffline(val nodeId: NodeId, val lastHeard: Int) : NodeChange
+
+    /**
+     * Emitted when a previously-offline node sends a new packet and becomes online again.
+     *
+     * Emitted by the engine when presence tracking is enabled via `Builder.presenceTimeout()`.
+     */
+    public data class CameOnline(val nodeId: NodeId) : NodeChange
 }
 
 /**
@@ -114,6 +130,24 @@ public sealed interface MeshEvent {
      * @param notification the wire [ClientNotification] type
      */
     public data class Notification(val notification: org.meshtastic.proto.ClientNotification) : MeshEvent
+
+    /**
+     * Emitted when congestion metrics cross a threshold level.
+     * Clients should use [metrics] to decide whether to delay non-urgent sends.
+     */
+    public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
+
+    /**
+     * Emitted when the device's MQTT connection state changes to connected.
+     */
+    public data object MqttConnected : MeshEvent
+
+    /**
+     * Emitted when the device's MQTT connection drops.
+     *
+     * @property reason human-readable disconnect reason, if available
+     */
+    public data class MqttDisconnected(val reason: String? = null) : MeshEvent
 
     /**
      * A transport-level error occurred.
@@ -227,6 +261,30 @@ public sealed interface MeshEvent {
      * @since 0.1.0
      */
     public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
+
+    /**
+     * An external source (another admin client) pushed a configuration change to the connected
+     * device. The engine has already applied the update to local state ([RadioClient.config],
+     * [RadioClient.channels]). Subscribers should refresh any cached configuration.
+     *
+     * @param kind indicates which aspect of the device configuration changed
+     * @since 0.1.0
+     */
+    public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
+}
+
+/**
+ * Describes which category of device configuration was changed externally.
+ */
+public enum class ExternalChangeKind {
+    /** A channel was added, removed, or modified. */
+    CHANNEL,
+
+    /** A radio/device config section was modified. */
+    CONFIG,
+
+    /** A module config section was modified. */
+    MODULE_CONFIG,
 }
 
 /**
@@ -247,21 +305,9 @@ public enum class DroppedFlow {
 /**
  * Key-verification prompt details surfaced via [MeshEvent.KeyVerification].
  *
- * **Phase 1:** marker interface only — emitted as a placeholder when the engine notices that
- * encryption setup *would* prompt for confirmation, but no payload is exposed yet. Hosts
- * should treat any non-null prompt as "show a generic verification UI" until the surface is
- * filled in.
- *
- * **Phase 2+:** this interface will gain at least:
- *
- * ```kotlin
- * public interface KeyVerificationPrompt {
- *     public val remoteNodeId: NodeId
- *     public val publicKeyFingerprint: String   // hex SHA-256, abbreviated for display
- *     public suspend fun confirm()              // accept; engine continues handshake
- *     public suspend fun reject()               // refuse; engine tears down with Protocol error
- * }
- * ```
+ * Marker interface; concrete verification methods will be added when PKI verification UI is
+ * implemented. Until then, any non-null prompt means the host should show a generic
+ * verification experience.
  *
  * The shape will be ratified in a follow-up ADR before 1.0; consumers wiring this today should
  * expect the interface to add abstract members (binary-incompatible for implementers, but a

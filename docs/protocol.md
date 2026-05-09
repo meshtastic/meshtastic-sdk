@@ -775,7 +775,7 @@ Device administration (changing configs, rebooting, factory-reset, key managemen
 message AdminMessage {
   bytes session_passkey = 101;  // Required for state-changing requests
   oneof payload_variant {
-    bool   get_channel_request                = 1;   // (with channel index in get_channel_request)
+    bool   get_channel_request                = 1;   // uint32: channel index + 1 (1-based, proto3 zero-value omission)
     Channel get_channel_response              = 2;
     bool   get_owner_request                  = 3;
     User   get_owner_response                 = 4;
@@ -832,7 +832,7 @@ State-changing admin operations require a session passkey. Workflow:
 
 1. Phone sends `AdminMessage(get_device_metadata_request = true)` (no passkey required).
 2. Device responds with `DeviceMetadata` containing fields including the **session passkey** (8 bytes).
-3. Phone caches the passkey for ~5 minutes (firmware regenerates at ~150s for a sliding window).
+3. Phone caches the passkey for ~4 minutes (firmware regenerates every ~150s with a 300s validity window).
 4. Phone includes the passkey in the `session_passkey` field of every state-changing admin request.
 5. If the passkey expires or doesn't match, the device responds with `Routing.error_reason = ADMIN_BAD_SESSION_KEY`.
 
@@ -843,6 +843,14 @@ The SDK should:
 ### Edit transactions
 
 For multi-field config edits, use `begin_edit_settings` / `commit_edit_settings` to bundle changes atomically. The device locks against other clients during the edit window and applies all changes on commit.
+
+> **⚠️ BLE disconnect on commit.** When an `editSettings` commit changes BLE-related config (or most config in general), firmware calls `disableBluetooth()` before persisting to flash. This drops the active BLE connection. The SDK's auto-reconnect policy (ADR-002) handles this transparently — consumers see a brief disconnect/reconnect cycle. On TCP/Serial transports this does not apply.
+
+### Managed mode (`is_managed`)
+
+When the device's `Config.SecurityConfig.is_managed` is `true`, firmware silently drops **all** admin commands received with a non-zero `from` address. Since the SDK always sends admin packets with `from = myNodeNum` (non-zero after handshake), all admin operations would be silently ignored.
+
+The SDK detects this condition from the config bundle received during handshake and returns `AdminResult.Unauthorized` immediately for any admin call, avoiding a silent timeout.
 
 ### Admin channel routing
 
@@ -927,7 +935,7 @@ When a device enters DFU mode (XModem firmware update) or reboots (triggered via
 1. The host's resync FSM (§2) remains in effect: any garbage on the wire after the device reboots is correctly discarded.
 2. On TCP: the device may be unreachable for 5–30 s while rebooting; the transport's `connect()` will timeout and the SDK will auto-retry per the reconnect policy (ADR-002, exponential backoff with jitter).
 3. On Serial: if the device emits boot text or debug output before re-entering PhoneAPI mode, the resync FSM absorbs it and returns to `SCAN_FOR_START1`.
-4. **Wake bytes** (§2) are RECOMMENDED immediately after reconnect to ensure the firmware's framer is not left mid-frame by the DFU transition.
+4. **Wake bytes** (§2) are sent by the SDK immediately after reconnect on stream transports (TCP/Serial) to ensure the firmware's framer is not left mid-frame by the DFU transition.
 
 **For BLE**:
 
@@ -962,7 +970,7 @@ message Heartbeat {
 
 `ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter is sufficient).
 
-> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely (start the counter at `2`) unless they explicitly want to rebroadcast their NodeInfo. This SDK initialises its counter to `1` and pre-increments before send, so the first emitted nonce is `2`.
+> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK sends all keep-alive heartbeats with `nonce = 0` (a safe constant that avoids the nonce-1 trigger and satisfies the firmware's liveness watchdog).
 
 **Cadence by transport** (cross-validated against `Meshtastic-Apple:Transport.swift` + `AccessoryManager.setupPeriodicHeartbeat` and `Meshtastic-Android:SharedRadioInterfaceService.kt` + `HeartbeatSender.kt`):
 

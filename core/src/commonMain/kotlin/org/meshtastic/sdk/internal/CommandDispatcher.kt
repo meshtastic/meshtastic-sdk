@@ -10,19 +10,23 @@ package org.meshtastic.sdk.internal
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.NeighborInfo
+import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
+import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.debug
 import org.meshtastic.sdk.warn
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
- * Engine-actor-owned registry of in-flight Phase 2 RPC responses.
+ * Engine-actor-owned registry of in-flight admin/telemetry/routing RPC responses.
  *
  * **Single-writer.** All mutations happen on the engine coroutine — no atomic / mutex needed
  * (ADR-002).
@@ -86,13 +90,40 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
 
         val resolved = when (entry.kind) {
             ResponseKind.AdminConfig -> decodeAdmin(decoded.payload) { it.get_config_response }
+
             ResponseKind.AdminModuleConfig -> decodeAdmin(decoded.payload) { it.get_module_config_response }
+
             ResponseKind.AdminOwner -> decodeAdmin(decoded.payload) { it.get_owner_response }
+
             ResponseKind.AdminChannel -> decodeAdmin(decoded.payload) { it.get_channel_response }
+
             ResponseKind.AdminDeviceMetadata -> decodeAdmin(decoded.payload) { it.get_device_metadata_response }
+
+            ResponseKind.AdminCannedMessages -> decodeAdmin(decoded.payload) {
+                it.get_canned_message_module_messages_response
+            }
+
+            ResponseKind.AdminRingtone -> decodeAdmin(decoded.payload) { it.get_ringtone_response }
+
+            ResponseKind.AdminDeviceConnectionStatus -> decodeAdmin(decoded.payload) {
+                it.get_device_connection_status_response
+            }
+
+            ResponseKind.AdminRemoteHardwarePins -> decodeAdmin(decoded.payload) {
+                it.get_node_remote_hardware_pins_response
+            }
+
+            ResponseKind.AdminDeviceUIConfig -> decodeAdmin(decoded.payload) { it.get_ui_config_response }
+
             ResponseKind.Telemetry -> decodeTelemetry(decoded.payload, decoded.portnum)
+
             ResponseKind.RouteDiscoveryReply -> decodeRoute(decoded.payload, decoded.portnum)
+
             ResponseKind.NeighborInfoReply -> decodeNeighborInfo(decoded.payload, decoded.portnum)
+
+            ResponseKind.StoreForwardReply -> decodeStoreForwardHistory(decoded.payload, decoded.portnum)
+
+            ResponseKind.StoreForwardStatsReply -> decodeStoreForwardStats(decoded.payload, decoded.portnum)
         }
 
         if (resolved == null) {
@@ -179,14 +210,61 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         return AdminResult.Success(reply)
     }
 
-    private fun decodeNeighborInfo(payload: okio.ByteString, portnum: PortNum?): AdminResult<NeighborInfo>? {
+    private fun decodeNeighborInfo(payload: okio.ByteString, portnum: PortNum?): AdminResult<ProtoNeighborInfo>? {
         if (portnum != PortNum.NEIGHBORINFO_APP) return null
         val info = try {
-            NeighborInfo.ADAPTER.decode(payload)
+            ProtoNeighborInfo.ADAPTER.decode(payload)
         } catch (_: Exception) {
             return null
         }
         return AdminResult.Success(info)
+    }
+
+    private fun decodeStoreForwardHistory(
+        payload: okio.ByteString,
+        portnum: PortNum?,
+    ): AdminResult<StoreAndForward.History>? {
+        val message = decodeStoreForward(payload, portnum) ?: return null
+        return when (message.rr) {
+            StoreAndForward.RequestResponse.ROUTER_HISTORY -> {
+                val history = message.history ?: return null
+                AdminResult.Success(history)
+            }
+
+            StoreAndForward.RequestResponse.ROUTER_BUSY -> AdminResult.Failed(Routing.Error.NO_RESPONSE)
+
+            StoreAndForward.RequestResponse.ROUTER_ERROR -> AdminResult.Failed(Routing.Error.GOT_NAK)
+
+            else -> null
+        }
+    }
+
+    private fun decodeStoreForwardStats(
+        payload: okio.ByteString,
+        portnum: PortNum?,
+    ): AdminResult<StoreAndForward.Statistics>? {
+        val message = decodeStoreForward(payload, portnum) ?: return null
+        return when (message.rr) {
+            StoreAndForward.RequestResponse.ROUTER_STATS -> {
+                val stats = message.stats ?: return null
+                AdminResult.Success(stats)
+            }
+
+            StoreAndForward.RequestResponse.ROUTER_BUSY -> AdminResult.Failed(Routing.Error.NO_RESPONSE)
+
+            StoreAndForward.RequestResponse.ROUTER_ERROR -> AdminResult.Failed(Routing.Error.GOT_NAK)
+
+            else -> null
+        }
+    }
+
+    private fun decodeStoreForward(payload: okio.ByteString, portnum: PortNum?): StoreAndForward? {
+        if (portnum != PortNum.STORE_FORWARD_APP) return null
+        return try {
+            StoreAndForward.ADAPTER.decode(payload)
+        } catch (_: Exception) {
+            null
+        }
     }
 
     companion object {
@@ -195,7 +273,7 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         /**
          * Translate a Routing.Error enum value into the appropriate AdminResult failure.
          *
-         * Mirrors the error-taxonomy.md mapping for Phase 2 RPCs. Notably:
+         * Mirrors the error-taxonomy.md mapping for admin RPCs. Notably:
          *  - `ADMIN_BAD_SESSION_KEY` → [AdminResult.SessionKeyExpired] so the caller can trigger
          *    a single-shot retry after re-seeding via `get_owner_request`.
          *  - `NOT_AUTHORIZED` / `ADMIN_PUBLIC_KEY_UNAUTHORIZED` → [AdminResult.Unauthorized].
@@ -209,6 +287,8 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             Routing.Error.NOT_AUTHORIZED,
             Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
             -> AdminResult.Unauthorized
+
+            Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
 
             Routing.Error.NO_ROUTE,
             Routing.Error.GOT_NAK,
@@ -232,7 +312,14 @@ internal sealed interface ResponseKind<T> {
     data object AdminOwner : ResponseKind<org.meshtastic.proto.User>
     data object AdminChannel : ResponseKind<org.meshtastic.proto.Channel>
     data object AdminDeviceMetadata : ResponseKind<org.meshtastic.proto.DeviceMetadata>
+    data object AdminCannedMessages : ResponseKind<String>
+    data object AdminRingtone : ResponseKind<String>
+    data object AdminDeviceConnectionStatus : ResponseKind<org.meshtastic.proto.DeviceConnectionStatus>
+    data object AdminRemoteHardwarePins : ResponseKind<org.meshtastic.proto.NodeRemoteHardwarePinsResponse>
+    data object AdminDeviceUIConfig : ResponseKind<org.meshtastic.proto.DeviceUIConfig>
     data object Telemetry : ResponseKind<org.meshtastic.proto.Telemetry>
     data object RouteDiscoveryReply : ResponseKind<RouteDiscovery>
-    data object NeighborInfoReply : ResponseKind<NeighborInfo>
+    data object NeighborInfoReply : ResponseKind<ProtoNeighborInfo>
+    data object StoreForwardReply : ResponseKind<StoreAndForward.History>
+    data object StoreForwardStatsReply : ResponseKind<StoreAndForward.Statistics>
 }

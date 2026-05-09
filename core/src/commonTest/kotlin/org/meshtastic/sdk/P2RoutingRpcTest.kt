@@ -12,7 +12,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import org.meshtastic.proto.NeighborInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
@@ -22,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.time.Duration.Companion.seconds
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class P2RoutingRpcTest {
@@ -121,7 +121,7 @@ class P2RoutingRpcTest {
 
         val req = transport.outboundPackets().drop(outboundBefore)
             .last { it.decoded?.portnum == PortNum.NEIGHBORINFO_APP }
-        val expected = NeighborInfo(
+        val expected = ProtoNeighborInfo(
             node_id = 1,
             last_sent_by_id = 1,
             node_broadcast_interval_secs = 600,
@@ -131,7 +131,7 @@ class P2RoutingRpcTest {
         runCurrent()
 
         val result = deferred.await()
-        assertIs<AdminResult.Success<NeighborInfo>>(result)
+        assertIs<AdminResult.Success<ProtoNeighborInfo>>(result)
         assertEquals(expected, result.value)
         client.disconnect()
     }

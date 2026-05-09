@@ -200,6 +200,27 @@ public sealed interface ConnectionState {
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
 }
 
+/** Whether the connection is fully established and ready for use. */
+public val ConnectionState.isUsable: Boolean
+    get() = this is ConnectionState.Connected
+
+/** Whether a connection attempt is actively in progress. */
+public val ConnectionState.isInProgress: Boolean
+    get() =
+        this is ConnectionState.Connecting ||
+            this is ConnectionState.Configuring ||
+            this is ConnectionState.Reconnecting
+
+/** Human-readable status description. */
+public val ConnectionState.statusMessage: String
+    get() = when (this) {
+        is ConnectionState.Disconnected -> "Disconnected"
+        is ConnectionState.Connecting -> "Connecting (attempt $attempt)"
+        is ConnectionState.Configuring -> "Configuring: ${phase.name} (${(progress * 100).toInt()}%)"
+        is ConnectionState.Connected -> "Connected"
+        is ConnectionState.Reconnecting -> "Reconnecting (attempt $attempt)"
+    }
+
 /**
  * Handshake phase for progress reporting.
  *
@@ -258,6 +279,13 @@ public sealed interface AdminResult<out T> {
     public data object Timeout : AdminResult<Nothing>
 
     /**
+     * The device rate-limited the request; back off before retrying.
+     *
+     * (From `Routing.Error.RATE_LIMIT_EXCEEDED`.)
+     */
+    public data object RateLimited : AdminResult<Nothing>
+
+    /**
      * Destination node is unreachable.
      */
     public data object NodeUnreachable : AdminResult<Nothing>
@@ -268,4 +296,76 @@ public sealed interface AdminResult<out T> {
      * @param routingError the wire [Routing.Error] enum value
      */
     public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>
+}
+
+// ── AdminResult extensions ──────────────────────────────────────────────────
+
+/** Returns the [Success] value, or `null` if the result is not a success. */
+public fun <T> AdminResult<T>.getOrNull(): T? = (this as? AdminResult.Success<T>)?.value
+
+/** Returns the [Success] value, or [default] if the result is not a success. */
+public fun <T> AdminResult<T>.getOrElse(default: T): T = getOrNull() ?: default
+
+/** Returns the [Success] value, or the result of [block] if the result is not a success. */
+public inline fun <T> AdminResult<T>.getOrElse(block: (AdminResult<T>) -> T): T = when (this) {
+    is AdminResult.Success -> value
+    else -> block(this)
+}
+
+/** Returns `true` if this is [AdminResult.Success]. */
+public val <T> AdminResult<T>.isSuccess: Boolean get() = this is AdminResult.Success
+
+/** Transforms the [Success] value with [transform], propagating failures unchanged. */
+public inline fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R> = when (this) {
+    is AdminResult.Success -> AdminResult.Success(transform(value))
+    is AdminResult.SessionKeyExpired -> this
+    is AdminResult.Unauthorized -> this
+    is AdminResult.Timeout -> this
+    is AdminResult.RateLimited -> this
+    is AdminResult.NodeUnreachable -> this
+    is AdminResult.Failed -> this
+}
+
+/** Applies [onSuccess] or [onFailure] depending on the result. */
+public inline fun <T, R> AdminResult<T>.fold(onSuccess: (T) -> R, onFailure: (AdminResult<T>) -> R): R = when (this) {
+    is AdminResult.Success -> onSuccess(value)
+    else -> onFailure(this)
+}
+
+/** Performs [action] if this is a [Success]. Returns the original result for chaining. */
+public inline fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T> {
+    if (this is AdminResult.Success) action(value)
+    return this
+}
+
+/** Performs [action] if this is not a [Success]. Returns the original result for chaining. */
+public inline fun <T> AdminResult<T>.onFailure(action: (AdminResult<T>) -> Unit): AdminResult<T> {
+    if (this !is AdminResult.Success) action(this)
+    return this
+}
+
+/**
+ * Returns the [Success] value or throws [AdminResultException] describing the failure.
+ *
+ * Useful for callers who prefer exception-based error handling over sealed-type matching.
+ */
+public fun <T> AdminResult<T>.getOrThrow(): T = when (this) {
+    is AdminResult.Success -> value
+    is AdminResult.SessionKeyExpired -> throw AdminResultException.SessionKeyExpired()
+    is AdminResult.Unauthorized -> throw AdminResultException.Unauthorized()
+    is AdminResult.Timeout -> throw AdminResultException.Timeout()
+    is AdminResult.RateLimited -> throw AdminResultException.RateLimited()
+    is AdminResult.NodeUnreachable -> throw AdminResultException.NodeUnreachable()
+    is AdminResult.Failed -> throw AdminResultException.RoutingFailed(routingError)
+}
+
+/** Exception hierarchy thrown by [getOrThrow]. */
+public sealed class AdminResultException(message: String) : Exception(message) {
+    public class SessionKeyExpired : AdminResultException("Admin session key expired")
+    public class Unauthorized : AdminResultException("Not authorized for this operation")
+    public class Timeout : AdminResultException("Operation timed out waiting for device response")
+    public class RateLimited : AdminResultException("Device rate-limited the request")
+    public class NodeUnreachable : AdminResultException("Destination node is unreachable")
+    public class RoutingFailed(public val error: Routing.Error) :
+        AdminResultException("Routing error: ${error.name}")
 }

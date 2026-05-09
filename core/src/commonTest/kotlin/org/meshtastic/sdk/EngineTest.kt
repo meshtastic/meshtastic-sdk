@@ -113,11 +113,10 @@ class EngineTest {
     @Test
     fun testCancelOnSentIsNoOp() = runTest {
         // Per SPEC: cancel() on Sent or later is a no-op; state is unchanged.
-        // Post-handshake (Ready), sends are dispatched immediately, so they go from
-        // Queued → Sent before any cancel can take effect.
+        // Use a unicast packet so it stays in Sent (fire-and-forget broadcasts auto-resolve to Acked).
         val client = buildClient()
         client.connect()
-        val handle = client.send(testPacket())
+        val handle = client.send(unicastPacket())
         runCurrent() // let engine actor process the Send → state becomes Sent
         assertEquals(SendState.Sent, handle.state.value)
         handle.cancel()
@@ -127,9 +126,10 @@ class EngineTest {
 
     @Test
     fun testDisconnectFailsQueuedHandle() = runTest {
+        // Use a unicast packet so it stays in-flight (fire-and-forget broadcasts auto-resolve to Acked).
         val client = buildClient()
         client.connect()
-        val handle = client.send(testPacket())
+        val handle = client.send(unicastPacket())
         runCurrent() // ensure engine actor processes Send before we cancel the supervisor
         client.disconnect()
         val state = handle.state.value
@@ -207,6 +207,16 @@ class EngineTest {
     private fun testPacket() = org.meshtastic.proto.MeshPacket(
         to = NodeId.BROADCAST.raw,
         channel = 0,
+        decoded = org.meshtastic.proto.Data(
+            portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
+            payload = okio.ByteString.of(*"hello".encodeToByteArray()),
+        ),
+    )
+
+    private fun unicastPacket() = org.meshtastic.proto.MeshPacket(
+        to = 0x12345678,
+        channel = 0,
+        want_ack = true,
         decoded = org.meshtastic.proto.Data(
             portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
             payload = okio.ByteString.of(*"hello".encodeToByteArray()),

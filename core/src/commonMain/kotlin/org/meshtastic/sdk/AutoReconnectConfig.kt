@@ -11,7 +11,7 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 /**
- * Tunables for the engine's built-in auto-reconnect supervisor.
+ * Configuration for the engine's built-in auto-reconnect supervisor.
  *
  * Configure on the [RadioClient.Builder] via
  * [autoReconnect(...)][RadioClient.Builder.autoReconnect].

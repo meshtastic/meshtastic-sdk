@@ -7,8 +7,8 @@
  */
 package org.meshtastic.sdk
 
-import org.meshtastic.proto.NeighborInfo
 import org.meshtastic.proto.RouteDiscovery
+import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
  * Mesh route discovery and neighbor enumeration RPCs.
@@ -31,10 +31,10 @@ public interface RoutingApi {
     public suspend fun traceRoute(dest: NodeId, hopLimit: Int = DEFAULT_HOP_LIMIT): AdminResult<RouteDiscovery>
 
     /**
-     * Request the [NeighborInfo] of [node] (default: local). Surfaces immediate neighbors and
+     * Request the [ProtoNeighborInfo] of [node] (default: local). Surfaces immediate neighbors and
      * their last-heard SNR / interval.
      */
-    public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<NeighborInfo>
+    public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<ProtoNeighborInfo>
 
     public companion object {
         public const val DEFAULT_HOP_LIMIT: Int = 7

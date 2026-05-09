@@ -337,13 +337,40 @@ Want progress instead of the terminal outcome? Collect `handle.state` —
 it transitions `Queued → Sent → Acked|Delivered|Failed(reason)`. See
 [`api-reference.md` §SendState](./api-reference.md#sendstate-sendfailure-sendoutcome).
 
-## 6. Logging and diagnostics
+## 6. Admin operations and config builders
+
+```kotlin
+// Read the device config
+when (val result = client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)) {
+    is AdminResult.Success -> println("LoRa region: ${result.value.lora.region}")
+    AdminResult.Timeout -> println("timed out")
+    AdminResult.RateLimited -> println("rate-limited; try again later")
+    else -> println("failed: $result")
+}
+
+// Write config using convenience builders (avoids manual proto construction):
+client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
+
+// Batch multiple writes atomically:
+client.admin.editSettings {
+    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
+    setMqttConfig { copy(enabled = true) }
+}
+
+// Target a remote node:
+val remote = client.admin.forNode(NodeId(0x12345678.toInt()))
+remote.reboot()
+```
+
+See [`api-reference.md` §AdminApi](./api-reference.md#adminapi-phase-2) for the full method inventory, [`api-reference.md` §Config Builder Extensions](./api-reference.md#config-builder-extensions-since-020) for all 23 builder functions, and [`error-taxonomy.md`](./error-taxonomy.md) for `AdminResult` variant meanings.
+
+## 7. Logging and diagnostics
 
 By default the SDK is silent. Wire a `LogSink` at build time and, for
 deep debugging, opt into `protocolLogging` (with redaction). Full
 guide: [`observability.md`](./observability.md).
 
-## 7. Testing your integration
+## 8. Testing your integration
 
 ```kotlin
 // testImplementation("org.meshtastic:sdk-testing")
@@ -360,7 +387,7 @@ val client = RadioClient.Builder()
 // See testing/Module.md and core/src/commonTest/ for working patterns.
 ```
 
-## 8. PKI direct messages (DMs)
+## 9. PKI direct messages (DMs)
 
 Direct messages between two nodes are encrypted end-to-end with X25519 + AES-CTR keys derived from each peer's `User.public_key`. The SDK does not perform the crypto itself — the firmware does — but it does surface everything you need to verify peers:
 
@@ -370,7 +397,7 @@ Direct messages between two nodes are encrypted end-to-end with X25519 + AES-CTR
 
 Sending DMs is the same as any other text message — call `client.sendText(...)` with a non-broadcast `to` — but you should refuse the call if the destination's last-seen `public_key` does not match what the user previously verified. The engine will not reject the send for you.
 
-## 9. MQTT proxy mode (transparent)
+## 10. MQTT proxy mode (transparent)
 
 Some devices participate in a regional MQTT mesh. When the firmware has MQTT enabled, inbound packets that originated over MQTT arrive with `MeshPacket.via_mqtt = true` and outbound packets you send may be re-broadcast to the MQTT topic by the device itself. Both sides are transparent to the SDK: there is no `transport-mqtt` artifact (R-11 in [`roadmap.md`](./roadmap.md)) and you do not need to configure anything beyond the device. See [`protocol.md` §14](./protocol.md#14-mqtt-proxy-mode) for the wire details and the topic naming convention; `via_mqtt` is the only signal the SDK exposes today.
 

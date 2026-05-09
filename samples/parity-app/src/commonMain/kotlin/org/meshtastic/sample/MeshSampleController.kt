@@ -79,6 +79,8 @@ class MeshSampleController(private val storagePath: String, private val scope: C
                             is NodeChange.Added -> append("[+] node 0x${ev.node.num.toString(16)}")
                             is NodeChange.Updated -> append("[~] node 0x${ev.node.num.toString(16)}")
                             is NodeChange.Removed -> append("[-] node 0x${ev.nodeId.raw.toString(16)}")
+                            is NodeChange.WentOffline -> append("[offline] node 0x${ev.nodeId.raw.toString(16)}")
+                            is NodeChange.CameOnline -> append("[online] node 0x${ev.nodeId.raw.toString(16)}")
                         }
                     }
                     .launchIn(this)

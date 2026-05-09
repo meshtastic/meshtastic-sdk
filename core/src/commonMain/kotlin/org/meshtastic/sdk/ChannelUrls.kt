@@ -11,6 +11,8 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.sdk.internal.base64UrlDecode
+import org.meshtastic.sdk.internal.base64UrlEncode
 /** The default Pre-Shared Key (AES-128) used for the Meshtastic primary channel. */
 public val DefaultPsk: ByteArray = byteArrayOf(0x01)
 
@@ -27,8 +29,8 @@ public object ChannelUrl {
     /**
      * Parses a Meshtastic share link into a [ChannelSet].
      *
-     * Returns `null` if the URL is malformed or its base64 payload fails to decode into a
-     * valid protobuf message.
+     * Returns `null` if the URL is malformed or its payload is not a valid channel protobuf.
+     * @since 0.1.0
      */
     public fun parse(url: String): ChannelSet? {
         val trimmed = url.trim()
@@ -51,9 +53,10 @@ public fun Channel.Companion.default(): Channel = Channel(
 )
 
 /**
- * Computes the 8-bit hash of [name] and [psk], used by firmware to identify channels on the wire.
+ * Computes the firmware-compatible 8-bit channel hash for [name] and [psk].
  *
  * Mirrors the logic in `Channels::generateHash`.
+ * @since 0.1.0
  */
 public fun ChannelSettings.Companion.hash(name: String, psk: ByteArray): Int {
     var code = 0
@@ -62,57 +65,17 @@ public fun ChannelSettings.Companion.hash(name: String, psk: ByteArray): Int {
     return code and 0xff
 }
 
-private const val ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
-
-private fun base64UrlEncode(bytes: ByteArray): String {
-    if (bytes.isEmpty()) return ""
-    val sb = StringBuilder((bytes.size * 4 + 2) / 3)
-    var i = 0
-    while (i + 2 < bytes.size) {
-        val b0 = bytes[i].toInt() and 0xff
-        val b1 = bytes[i + 1].toInt() and 0xff
-        val b2 = bytes[i + 2].toInt() and 0xff
-        sb.append(ALPHABET[b0 ushr 2])
-        sb.append(ALPHABET[((b0 and 0x3) shl 4) or (b1 ushr 4)])
-        sb.append(ALPHABET[((b1 and 0xf) shl 2) or (b2 ushr 6)])
-        sb.append(ALPHABET[b2 and 0x3f])
-        i += 3
+/**
+ * Computes the DJB2 hash of a channel name. Used by some clients for channel identification
+ * separate from the on-wire XOR hash.
+ *
+ * @param name the channel name to hash
+ * @return unsigned 32-bit DJB2 hash
+ */
+public fun channelNameHashDjb2(name: String): UInt {
+    var hash = 5381u
+    for (c in name) {
+        hash += (hash shl 5) + c.code.toUInt()
     }
-    val rem = bytes.size - i
-    if (rem == 1) {
-        val b0 = bytes[i].toInt() and 0xff
-        sb.append(ALPHABET[b0 ushr 2])
-        sb.append(ALPHABET[(b0 and 0x3) shl 4])
-    } else if (rem == 2) {
-        val b0 = bytes[i].toInt() and 0xff
-        val b1 = bytes[i + 1].toInt() and 0xff
-        sb.append(ALPHABET[b0 ushr 2])
-        sb.append(ALPHABET[((b0 and 0x3) shl 4) or (b1 ushr 4)])
-        sb.append(ALPHABET[(b1 and 0xf) shl 2])
-    }
-    return sb.toString()
-}
-
-private fun base64UrlDecode(input: String): ByteArray? {
-    val cleaned = input.trimEnd('=')
-    val out = ArrayList<Byte>(cleaned.length * 3 / 4 + 2)
-    var buffer = 0
-    var bits = 0
-    for (ch in cleaned) {
-        val v = when (ch) {
-            in 'A'..'Z' -> ch - 'A'
-            in 'a'..'z' -> ch - 'a' + 26
-            in '0'..'9' -> ch - '0' + 52
-            '-' -> 62
-            '_' -> 63
-            else -> return null
-        }
-        buffer = (buffer shl 6) or v
-        bits += 6
-        if (bits >= 8) {
-            bits -= 8
-            out.add(((buffer ushr bits) and 0xff).toByte())
-        }
-    }
-    return out.toByteArray()
+    return hash
 }

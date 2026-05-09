@@ -15,12 +15,15 @@ public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtasti
 	public final fun injectFrame (Lorg/meshtastic/sdk/Frame;)V
 	public final fun injectNeighborInfoResponse (ILorg/meshtastic/proto/NeighborInfo;I)V
 	public static synthetic fun injectNeighborInfoResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/NeighborInfo;IILjava/lang/Object;)V
+	public final fun injectPacket (Lorg/meshtastic/proto/MeshPacket;)V
 	public final fun injectRouteReply (ILorg/meshtastic/proto/RouteDiscovery;I)V
 	public static synthetic fun injectRouteReply$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/RouteDiscovery;IILjava/lang/Object;)V
 	public final fun injectRoutingAck (II)V
 	public static synthetic fun injectRoutingAck$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;IIILjava/lang/Object;)V
 	public final fun injectRoutingError (ILorg/meshtastic/proto/Routing$Error;I)V
 	public static synthetic fun injectRoutingError$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/Routing$Error;IILjava/lang/Object;)V
+	public final fun injectStoreForwardResponse (ILorg/meshtastic/proto/StoreAndForward;I)V
+	public static synthetic fun injectStoreForwardResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/StoreAndForward;IILjava/lang/Object;)V
 	public final fun injectTelemetryResponse (ILorg/meshtastic/proto/Telemetry;I)V
 	public static synthetic fun injectTelemetryResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/Telemetry;IILjava/lang/Object;)V
 	public final fun outboundFrames ()Ljava/util/List;

@@ -23,13 +23,16 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.internal.AdminApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.RoutingApiImpl
+import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -42,7 +45,7 @@ import kotlin.time.Duration.Companion.seconds
  * - **State:** [connection], [ownNode], [nodes] (reactive [StateFlow]s and [Flow]s).
  * - **Messaging:** [send] and [sendText] (enqueue immediately; return a [MessageHandle]).
  * - **Observability:** [packets], [events] (reactive flows).
- * - **Operations:** [admin], [telemetry], [routing] sub-APIs.
+ * - **Operations:** [admin], [telemetry], [routing], [storeForward] sub-APIs.
  *
  * **Drop-in philosophy:** configure once with [Builder], then observe and call:
  *
@@ -90,16 +93,14 @@ public class RadioClient internal constructor(
      * [ConnectionState.Configuring] → [ConnectionState.Connected]. May cycle through
      * [ConnectionState.Reconnecting] on transport drops.
      */
-    public val connection: StateFlow<ConnectionState>
-        get() = engine.connectionState.asStateFlow()
+    public val connection: StateFlow<ConnectionState> = engine.connectionState.asStateFlow()
 
     /**
      * The local node's [NodeInfo], populated after handshake completes.
      *
      * `null` until [ConnectionState.Connected] is reached; remains non-null while connected.
      */
-    public val ownNode: StateFlow<NodeInfo?>
-        get() = engine.ownNode.asStateFlow()
+    public val ownNode: StateFlow<NodeInfo?> = engine.ownNode.asStateFlow()
 
     /**
      * Most recently committed [ConfigBundle] for the active session.
@@ -107,13 +108,24 @@ public class RadioClient internal constructor(
      * `null` until [ConnectionState.Connected] is reached. Cleared on disconnect / cleanup
      * so a stale bundle from a prior session can never leak into a new one.
      */
-    public val configBundle: StateFlow<ConfigBundle?>
-        get() = engine.configBundleState.asStateFlow()
+    public val configBundle: StateFlow<ConfigBundle?> = engine.configBundleState.asStateFlow()
+
+    /**
+     * Channel list for the active session.
+     *
+     * Seeded during the handshake from the device's channel payload; falls back to the
+     * persisted storage snapshot on reconnect if the device does not re-send channels.
+     * `null` until [ConnectionState.Connected] is reached.
+     *
+     * Updated in-memory (and persisted) when [AdminApi.setChannel] succeeds. Call
+     * [AdminApi.listChannels] to force a full device re-read (8 RPCs).
+     */
+    public val channels: StateFlow<List<org.meshtastic.proto.Channel>?> = engine.channelsState.asStateFlow()
 
     /**
      * Node-change deltas. Late subscribers receive a [NodeChange.Snapshot] immediately
      * (single-replay), then live [NodeChange.Added] / [NodeChange.Updated] /
-     * [NodeChange.Removed] in causal order.
+     * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal order.
      *
      * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
      * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
@@ -121,8 +133,7 @@ public class RadioClient internal constructor(
      * flow. If the engine inbox itself fills as a result, drops surface as
      * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
      */
-    public val nodes: Flow<NodeChange>
-        get() = engine.nodes.hide()
+    public val nodes: Flow<NodeChange> = engine.nodes.hide()
 
     /**
      * Inbound decoded packets.
@@ -140,8 +151,7 @@ public class RadioClient internal constructor(
      *
      * Populated by the HandshakeMachine after entering [ConnectionState.Connected].
      */
-    public val packets: Flow<MeshPacket>
-        get() = engine.packets.hide()
+    public val packets: Flow<MeshPacket> = engine.packets.hide()
 
     /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
@@ -149,8 +159,7 @@ public class RadioClient internal constructor(
      * ([MeshEvent.IdentityRebound] — emitted before the engine clears storage when the
      * device reports a different NodeNum than the one previously persisted).
      */
-    public val events: Flow<MeshEvent>
-        get() = engine.events.hide()
+    public val events: Flow<MeshEvent> = engine.events.hide()
 
     // ── On-demand query ─────────────────────────────────────────────────────
 
@@ -172,6 +181,31 @@ public class RadioClient internal constructor(
     public suspend fun nodeSnapshot(): Map<NodeId, NodeInfo> {
         if (connection.value !is ConnectionState.Connected) throw MeshtasticException.NotConnected()
         return engine.nodeSnapshot()
+    }
+
+    /**
+     * Request a remote node to send its [NodeInfo] (user identity + position).
+     *
+     * Sends an empty `NODEINFO_APP` packet with `want_response = true`. The remote node will
+     * reply with its [User] information, which the engine processes and emits via [nodes].
+     *
+     * @param node the target node to request info from
+     * @return a [MessageHandle] tracking delivery state
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @since 0.2.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun requestNodeInfo(node: NodeId): MessageHandle {
+        val packet = MeshPacket(
+            to = node.raw,
+            want_ack = true,
+            decoded = org.meshtastic.proto.Data(
+                portnum = org.meshtastic.proto.PortNum.NODEINFO_APP,
+                payload = okio.ByteString.EMPTY,
+                want_response = true,
+            ),
+        )
+        return send(packet)
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
@@ -248,6 +282,10 @@ public class RadioClient internal constructor(
      * Delegates to [disconnect] via `runBlocking`. Prefer the suspending [disconnect] when
      * already inside a coroutine — this overload exists so `RadioClient` works with Kotlin's
      * `use { }` idiom and Java's try-with-resources.
+     *
+     * **Warning:** Do not call from the main/UI thread — `runBlocking` will block the caller
+     * until disconnection completes, which can trigger ANR on Android or deadlock on iOS main.
+     * Use [disconnect] directly from a coroutine scope instead.
      */
     override fun close() {
         runBlocking { disconnect() }
@@ -300,6 +338,14 @@ public class RadioClient internal constructor(
      * Wraps the text in a [MeshPacket] with `decoded.portnum = TEXT_MESSAGE_APP` and
      * `decoded.payload = text.encodeToByteArray()`, then calls [send].
      *
+     * Sets `want_ack = true` so the firmware provides delivery feedback:
+     * - **Unicast**: the recipient sends a Routing ACK back to the sender.
+     * - **Broadcast**: the firmware generates an implicit ACK when it overhears a neighbor
+     *   relay the packet. This confirms at least one mesh node retransmitted the message.
+     *
+     * The returned [MessageHandle] will resolve to [SendOutcome.Success] on ACK, or
+     * [SendOutcome.Failure] if the firmware exhausts retransmissions without confirmation.
+     *
      * @param text the message text (UTF-8 encoded)
      * @param channel the channel index (default: 0)
      * @param to the destination [NodeId] (default: [NodeId.BROADCAST])
@@ -320,6 +366,7 @@ public class RadioClient internal constructor(
         val packet = MeshPacket(
             to = to.raw,
             channel = channel.raw,
+            want_ack = true,
             decoded = org.meshtastic.proto.Data(
                 portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
                 payload = payload.toByteString(),
@@ -329,7 +376,47 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Convenience: build a [MeshPacket] for the given [portnum] with [payload] and enqueue it.
+     * Convenience: send an emoji reaction to an existing message.
+     *
+     * Wraps the [emoji] in a [MeshPacket] with `decoded.portnum = TEXT_MESSAGE_APP`,
+     * `decoded.emoji = 1` (indicating this is a reaction, not a standalone message), and
+     * `decoded.reply_id` set to [replyId] (the packet ID of the message being reacted to).
+     *
+     * @param emoji the emoji string (single emoji character or sequence)
+     * @param to the destination [NodeId] (the sender of the original message, or broadcast)
+     * @param channel the channel index the reaction should be sent on
+     * @param replyId the packet ID of the original message being reacted to
+     * @return a handle tracking delivery state
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @throws MeshtasticException.PayloadTooLarge if the encoded emoji exceeds the device limit
+     * @since 0.2.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendReaction(
+        emoji: String,
+        to: NodeId = NodeId.BROADCAST,
+        channel: ChannelIndex = ChannelIndex(0),
+        replyId: Int,
+    ): MessageHandle {
+        val payload = emoji.encodeToByteArray()
+        if (payload.size > DATA_PAYLOAD_LEN) {
+            throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
+        }
+        val packet = MeshPacket(
+            to = to.raw,
+            channel = channel.raw,
+            want_ack = true,
+            decoded = org.meshtastic.proto.Data(
+                portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
+                payload = payload.toByteString(),
+                emoji = EMOJI_INDICATOR,
+                reply_id = replyId,
+            ),
+        )
+        return send(packet)
+    }
+
+    /**
      *
      * Constructs a packet with `decoded = Data(portnum, payload, want_response = false)` and
      * forwards to [send]. Exists so callers do not need to import `org.meshtastic.proto.Data`
@@ -456,9 +543,48 @@ public class RadioClient internal constructor(
         RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout)
     }
 
+    /**
+     * Store-and-Forward API for requesting stored messages. Available while connected.
+     */
+    public val storeForward: StoreForwardApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        StoreForwardApiImpl(
+            engine = engine,
+            packetsFlow = engine.packets,
+            rpcTimeout = rpcTimeout,
+            coroutineContext = parentContext,
+            nowProvider = { clock.now() },
+        )
+    }
+
+    /**
+     * Sends a raw [ToRadio] frame to the device.
+     *
+     * This is a low-level escape hatch for device features not yet covered by higher-level APIs
+     * (e.g., MQTT client proxy messages, XModem file transfers). The SDK engine does **not** track
+     * or acknowledge these frames — delivery is best-effort at the transport level.
+     *
+     * Prefer [send], [sendText], or the typed sub-APIs ([admin], [telemetry], [routing],
+     * [storeForward], etc.) whenever
+     * possible.
+     *
+     * @param frame the fully constructed [ToRadio] message to send
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @since 0.2.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendRaw(frame: ToRadio) {
+        if (connection.value !is ConnectionState.Connected) {
+            throw MeshtasticException.NotConnected()
+        }
+        engine.sendToRadio(frame)
+    }
+
     // ── Builder ─────────────────────────────────────────────────────────────
 
     public companion object {
+        /** Indicates a reaction (emoji) rather than a standalone text message. */
+        private const val EMOJI_INDICATOR: Int = 1
+
         /** Create a new [Builder]. */
         public fun Builder(): Builder = Builder()
     }
@@ -490,6 +616,7 @@ public class RadioClient internal constructor(
         private var payloadRedactor: PayloadRedactor = PayloadRedactor.Default
         private var sendTimeout: Duration = 30.seconds
         private var rpcTimeout: Duration = 30.seconds
+        private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
 
         /**
@@ -506,8 +633,8 @@ public class RadioClient internal constructor(
          *     .build()
          * ```
          *
-         * Phase 2+ will add factory helpers so [TransportSpec] can be used without providing a
-         * transport implementation manually.
+         * Future: factory helpers for common transport configurations may allow
+         * [TransportSpec] to be used without manually constructing a transport implementation.
          */
         public fun transport(transport: RadioTransport): Builder = apply { radioTransport = transport }
 
@@ -644,6 +771,9 @@ public class RadioClient internal constructor(
          */
         public fun rpcTimeout(duration: Duration): Builder = apply { rpcTimeout = duration }
 
+        /** Configure the online/offline presence timeout for node presence events. */
+        public fun presenceTimeout(timeout: Duration): Builder = apply { presenceTimeout = timeout }
+
         /**
          * Configure the engine's built-in auto-reconnect supervisor.
          *
@@ -691,7 +821,9 @@ public class RadioClient internal constructor(
                 logger = logSink,
                 bleHeartbeatEnabled = bleHeartbeatEnabled,
                 parentContext = coroutineContext,
+                clock = clock,
                 sendTimeout = sendTimeout,
+                presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
             )
 

@@ -40,3 +40,9 @@ public fun NodeId.isLocal(own: NodeId? = null): Boolean = this == NodeId.LOCAL |
 
 /** Returns `true` if this is a specific node address (neither local nor broadcast). */
 public val NodeId.isUnicast: Boolean get() = this != NodeId.BROADCAST && this != NodeId.LOCAL
+
+/** Returns the Meshtastic default ID format: `"!aabbccdd"` (lowercase hex with `!` prefix). */
+public fun NodeId.toDefaultId(): String = "!" + toHex()
+
+/** Parses a default ID string (`"!aabbccdd"`) into a [NodeId]. Delegates to [fromHex]. */
+public fun NodeId.Companion.fromDefaultId(id: String): NodeId? = fromHex(id)

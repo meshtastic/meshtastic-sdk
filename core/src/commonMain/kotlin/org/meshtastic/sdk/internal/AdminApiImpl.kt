@@ -9,22 +9,35 @@ package org.meshtastic.sdk.internal
 
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DeviceMetadata
+import org.meshtastic.proto.DeviceUIConfig
+import org.meshtastic.proto.HamParameters
+import org.meshtastic.proto.KeyVerificationAdmin
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
+import org.meshtastic.proto.Routing
+import org.meshtastic.proto.SensorConfig
+import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminApi
+import org.meshtastic.sdk.AdminBatchScope
 import org.meshtastic.sdk.AdminEdit
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
+import org.meshtastic.sdk.getOrThrow
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Instant
@@ -44,7 +57,34 @@ internal class AdminApiImpl(
     private val engine: MeshEngine,
     private val rpcTimeout: Duration,
     private val nowProvider: () -> Instant = { Clock.System.now() },
+    private val targetNode: NodeId? = null,
 ) : AdminApi {
+
+    override fun forNode(dest: NodeId): AdminApi = AdminApiImpl(
+        engine = engine,
+        rpcTimeout = rpcTimeout,
+        nowProvider = nowProvider,
+        targetNode = dest,
+    )
+
+    override suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_device_metadata_request = true),
+            kind = ResponseKind.AdminDeviceMetadata,
+        )
+    }
+
+    /**
+     * Returns `true` if the device is in managed mode, meaning all admin commands from non-zero
+     * `from` addresses are silently dropped by firmware. The SDK always sends with
+     * `from = myNodeNum` (non-zero post-handshake), so all admin commands would be ignored.
+     */
+    private fun isDeviceManaged(): Boolean {
+        val bundle = engine.configBundleState.value ?: return false
+        return bundle.configs.any { config ->
+            config.security?.is_managed == true
+        }
+    }
 
     override suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config> = retryOnSessionExpiry {
         submitAdminRpc(
@@ -82,13 +122,17 @@ internal class AdminApiImpl(
 
     override suspend fun getChannel(index: ChannelIndex): AdminResult<Channel> = retryOnSessionExpiry {
         submitAdminRpc(
-            adminMsg = AdminMessage(get_channel_request = index.raw),
+            // Firmware expects 1-based index (proto3 omits 0 as default value).
+            // See admin.proto: "NOTE: This field is sent with the channel index + 1"
+            adminMsg = AdminMessage(get_channel_request = index.raw + 1),
             kind = ResponseKind.AdminChannel,
         )
     }
 
-    override suspend fun setChannel(channel: Channel): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage(set_channel = channel))
+    override suspend fun setChannel(channel: Channel): AdminResult<Unit> {
+        val result = retryOnSessionExpiry { submitAdminAck(AdminMessage(set_channel = channel)) }
+        if (result is AdminResult.Success) engine.updateChannelAndPersist(channel)
+        return result
     }
 
     override suspend fun listChannels(): AdminResult<List<Channel>> {
@@ -105,6 +149,7 @@ internal class AdminApiImpl(
 
                 AdminResult.Timeout, AdminResult.NodeUnreachable,
                 AdminResult.SessionKeyExpired, AdminResult.Unauthorized,
+                AdminResult.RateLimited,
                 is AdminResult.Failed,
                 -> return result.let {
                     @Suppress("UNCHECKED_CAST")
@@ -133,6 +178,161 @@ internal class AdminApiImpl(
         submitAdminAck(msg)
     }
 
+    override suspend fun toggleMuted(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(toggle_muted_node = node.raw))
+    }
+
+    // ── Position ────────────────────────────────────────────────────────────
+
+    override suspend fun setFixedPosition(position: Position): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_fixed_position = position))
+    }
+
+    override suspend fun removeFixedPosition(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(remove_fixed_position = true))
+    }
+
+    // ── Device UI Config ────────────────────────────────────────────────────
+
+    override suspend fun getUIConfig(): AdminResult<DeviceUIConfig> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_ui_config_request = true),
+            kind = ResponseKind.AdminDeviceUIConfig,
+        )
+    }
+
+    override suspend fun storeUIConfig(config: DeviceUIConfig): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(store_ui_config = config))
+    }
+
+    // ── Canned Messages ─────────────────────────────────────────────────────
+
+    override suspend fun getCannedMessages(): AdminResult<String> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_canned_message_module_messages_request = true),
+            kind = ResponseKind.AdminCannedMessages,
+        )
+    }
+
+    override suspend fun setCannedMessages(messages: String): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_canned_message_module_messages = messages))
+    }
+
+    // ── Ringtone ────────────────────────────────────────────────────────────
+
+    override suspend fun getRingtone(): AdminResult<String> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_ringtone_request = true),
+            kind = ResponseKind.AdminRingtone,
+        )
+    }
+
+    override suspend fun setRingtone(rtttl: String): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_ringtone_message = rtttl))
+    }
+
+    // ── Device status ───────────────────────────────────────────────────────
+
+    override suspend fun getDeviceConnectionStatus(): AdminResult<DeviceConnectionStatus> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_device_connection_status_request = true),
+            kind = ResponseKind.AdminDeviceConnectionStatus,
+        )
+    }
+
+    override suspend fun getRemoteHardwarePins(): AdminResult<NodeRemoteHardwarePinsResponse> = retryOnSessionExpiry {
+        submitAdminRpc(
+            adminMsg = AdminMessage(get_node_remote_hardware_pins_request = true),
+            kind = ResponseKind.AdminRemoteHardwarePins,
+        )
+    }
+
+    // ── Ham radio ───────────────────────────────────────────────────────────
+
+    override suspend fun setHamMode(params: HamParameters): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_ham_mode = params))
+    }
+
+    // ── DFU / file management ───────────────────────────────────────────────
+
+    override suspend fun enterDfuMode(): AdminResult<Unit> {
+        if (isDeviceManaged()) return AdminResult.Unauthorized
+        return submitAdminFireAndForget(AdminMessage(enter_dfu_mode_request = true))
+    }
+
+    override suspend fun deleteFile(path: String): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(delete_file_request = path))
+    }
+
+    // ── Backup / Restore ────────────────────────────────────────────────────
+
+    override suspend fun backupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> =
+        retryOnSessionExpiry {
+            submitAdminAck(AdminMessage(backup_preferences = location))
+        }
+
+    override suspend fun restorePreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> =
+        retryOnSessionExpiry {
+            submitAdminAck(AdminMessage(restore_preferences = location))
+        }
+
+    override suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation): AdminResult<Unit> =
+        retryOnSessionExpiry {
+            submitAdminAck(AdminMessage(remove_backup_preferences = location))
+        }
+
+    // ── Node removal ────────────────────────────────────────────────────────
+
+    override suspend fun removeNode(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(remove_by_nodenum = node.raw))
+    }
+
+    // ── Input / Display ─────────────────────────────────────────────────────
+
+    override suspend fun setScale(scale: Int): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(set_scale = scale))
+    }
+
+    override suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(send_input_event = event))
+    }
+
+    // ── Contacts ────────────────────────────────────────────────────────────
+
+    override suspend fun addContact(contact: SharedContact): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(add_contact = contact))
+    }
+
+    // ── Key verification ────────────────────────────────────────────────────
+
+    override suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(key_verification = verification))
+    }
+
+    // ── OTA updates ─────────────────────────────────────────────────────────
+
+    override suspend fun rebootOta(after: Duration): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(reboot_ota_seconds = after.inWholeSeconds.toInt().coerceAtLeast(0)))
+    }
+
+    override suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(ota_request = event))
+    }
+
+    // ── Sensor ──────────────────────────────────────────────────────────────
+
+    override suspend fun setSensorConfig(config: SensorConfig): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(sensor_config = config))
+    }
+
+    // ── Simulator ───────────────────────────────────────────────────────────
+
+    override suspend fun exitSimulator(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage(exit_simulator = true))
+    }
+
+    // ── Lifecycle ───────────────────────────────────────────────────────────
+
     override suspend fun reboot(after: Duration): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage(reboot_seconds = after.inWholeSeconds.toInt().coerceAtLeast(0)))
     }
@@ -152,20 +352,22 @@ internal class AdminApiImpl(
         submitAdminAck(msg)
     }
 
-    override suspend fun nodeDbReset(preserveFavorites: Boolean): AdminResult<Unit> = retryOnSessionExpiry {
-        // Firmware exposes only `nodedb_reset = true`; preserveFavorites is honoured by the
-        // device's own NodeDB module which keeps favorite-marked entries across the wipe.
+    override suspend fun nodeDbReset(): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage(nodedb_reset = true))
     }
 
-    override suspend fun setTime(at: Instant?): AdminResult<Unit> = retryOnSessionExpiry {
+    override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> {
+        if (isDeviceManaged()) return AdminResult.Unauthorized
+        return submitAdminFireAndForget(AdminMessage(set_time_only = unixTime))
+    }
+
+    override suspend fun setTime(at: Instant?): AdminResult<Unit> {
         val instant = at ?: nowProvider()
-        val seconds = instant.epochSeconds.toInt()
-        submitAdminAck(AdminMessage(set_time_only = seconds))
+        return setTimeOnly(instant.epochSeconds.toInt())
     }
 
     override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> {
-        val begin = retryOnSessionExpiry { submitAdminAck(AdminMessage(begin_edit_settings = true)) }
+        val begin = beginEditSettings()
         if (begin !is AdminResult.Success) return begin.cast()
         val edit = AdminEditImpl()
         val payload = try {
@@ -173,9 +375,27 @@ internal class AdminApiImpl(
         } catch (e: AdminEditFailure) {
             return e.result.cast()
         }
-        val commit = retryOnSessionExpiry { submitAdminAck(AdminMessage(commit_edit_settings = true)) }
+        val commit = commitEditSettings()
         if (commit !is AdminResult.Success) return commit.cast()
+
+        // Gap G: optimistically update configBundle with written values after successful commit.
+        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+
         return AdminResult.Success(payload)
+    }
+
+    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T {
+        beginEditSettings().getOrThrow()
+        val edit = AdminEditImpl()
+        val payload = try {
+            AdminBatchScopeImpl(edit).block()
+        } catch (e: AdminEditFailure) {
+            e.result.getOrThrow()
+        }
+        commitEditSettings().getOrThrow()
+
+        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        return payload
     }
 
     // ── Internal helpers ────────────────────────────────────────────────────
@@ -224,9 +444,11 @@ internal class AdminApiImpl(
         )
         val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
         engine.trySend(packet, id, stateFlow)
-        val terminal = stateFlow.first {
-            it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
-        }
+        val terminal = withTimeoutOrNull(rpcTimeout) {
+            stateFlow.first {
+                it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
+            }
+        } ?: return AdminResult.Timeout
         return when (terminal) {
             SendState.Acked, SendState.Delivered -> AdminResult.Success(Unit)
             is SendState.Failed -> mapSendFailureToAdminResult(terminal.reason)
@@ -235,25 +457,67 @@ internal class AdminApiImpl(
     }
 
     /**
+     * Send an admin packet without waiting for a firmware reply or routing ACK.
+     */
+    private fun submitAdminFireAndForget(adminMsg: AdminMessage, to: NodeId = localNode()): AdminResult<Unit> {
+        engine.sendAdmin(adminMsg = adminMsg, to = to.raw)
+        return AdminResult.Success(Unit)
+    }
+
+    private suspend fun beginEditSettings(): AdminResult<Unit> =
+        retryOnSessionExpiry { submitAdminAck(AdminMessage(begin_edit_settings = true)) }
+
+    private suspend fun commitEditSettings(): AdminResult<Unit> =
+        retryOnSessionExpiry { submitAdminAck(AdminMessage(commit_edit_settings = true)) }
+
+    /**
      * Single-shot retry on `SessionKeyExpired`: re-issue `get_owner_request` to refresh the
      * session passkey, then replay the original [block] once. The retry result is returned as-is
      * so a second `SessionKeyExpired` surfaces to the caller (the device is rejecting our key).
      */
     private suspend fun <T> retryOnSessionExpiry(block: suspend () -> AdminResult<T>): AdminResult<T> {
+        if (isDeviceManaged()) return AdminResult.Unauthorized
         val first = block()
         if (first !is AdminResult.SessionKeyExpired) return first
-        // Re-seed: a fresh getOwner round-trip latches a new session_passkey. We don't propagate
-        // its success / failure — the original call's retry is the user-visible signal.
-        getOwner()
+        // Re-seed against the *local* device PhoneAPI, even when this AdminApiImpl is scoped to
+        // a remote node via forNode(dest). Remote getOwner requires a valid session passkey, so
+        // retrying against targetNode would just loop the same expiry failure.
+        reseedSessionPasskey()
         return block()
     }
 
-    private fun localNode(): NodeId = NodeId(engine.myNodeNumOrNull() ?: 0)
+    private suspend fun reseedSessionPasskey(): AdminResult<User> = submitAdminRpc(
+        adminMsg = AdminMessage(get_owner_request = true),
+        kind = ResponseKind.AdminOwner,
+        to = NodeId(engine.myNodeNumOrNull() ?: 0),
+    )
+
+    private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
+
+    private inner class AdminBatchScopeImpl(edit: AdminEditImpl) :
+        AdminBatchScope,
+        AdminEdit by edit {
+        override suspend fun getConfig(type: AdminMessage.ConfigType): Config =
+            this@AdminApiImpl.getConfig(type).getOrThrow()
+
+        override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): ModuleConfig =
+            this@AdminApiImpl.getModuleConfig(type).getOrThrow()
+
+        override suspend fun listChannels(): List<Channel> = this@AdminApiImpl.listChannels().getOrThrow()
+    }
 
     private inner class AdminEditImpl : AdminEdit {
-        override suspend fun setConfig(config: Config) = enqueueOrThrow(AdminMessage(set_config = config))
-        override suspend fun setModuleConfig(config: ModuleConfig) =
+        val writtenConfigs = mutableListOf<Config>()
+        val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+
+        override suspend fun setConfig(config: Config) {
+            enqueueOrThrow(AdminMessage(set_config = config))
+            writtenConfigs += config
+        }
+        override suspend fun setModuleConfig(config: ModuleConfig) {
             enqueueOrThrow(AdminMessage(set_module_config = config))
+            writtenModuleConfigs += config
+        }
         override suspend fun setOwner(user: User) = enqueueOrThrow(AdminMessage(set_owner = user))
         override suspend fun setChannel(channel: Channel) = enqueueOrThrow(AdminMessage(set_channel = channel))
         override suspend fun setFavorite(node: NodeId, favorite: Boolean) {
@@ -288,7 +552,7 @@ internal class AdminApiImpl(
             val packet = MeshPacket(
                 id = id.raw,
                 from = engine.myNodeNumOrNull() ?: 0,
-                to = engine.myNodeNumOrNull() ?: 0,
+                to = localNode().raw,
                 decoded = Data(
                     portnum = PortNum.ADMIN_APP,
                     payload = payload,
@@ -318,7 +582,17 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
-    is SendFailure.Other -> AdminResult.Failed(reason.routingError)
+    is SendFailure.Other -> when (reason.routingError) {
+        Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
+
+        Routing.Error.NOT_AUTHORIZED,
+        Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
+        -> AdminResult.Unauthorized
+
+        Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
+
+        else -> AdminResult.Failed(reason.routingError)
+    }
 
     is SendFailure.Unknown -> AdminResult.Timeout
 }

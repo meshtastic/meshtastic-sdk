@@ -58,7 +58,7 @@ internal class ConformanceCmd : BaseCommand(name = "conformance") {
 
     private val scenarioFilter by option(
         "--scenario",
-        help = "Restrict to a comma-separated list of scenario ids (cs1,cs2,cs3,cs4,cs5,cs6).",
+        help = "Restrict to a comma-separated list of scenario ids (cs1,cs2,cs3,cs4,cs5,cs6,cs7).",
         metavar = "CSV",
     ).split(",")
 
@@ -88,7 +88,7 @@ internal class ConformanceCmd : BaseCommand(name = "conformance") {
 
             // If cs1 fails, the rest cannot run — record SKIPs and bail out.
             if (results.last().status != ScenarioResult.Status.PASS) {
-                listOf("cs2", "cs3", "cs4", "cs5", "cs6").forEach { id ->
+                listOf("cs2", "cs3", "cs4", "cs5", "cs6", "cs7").forEach { id ->
                     results += Scenarios.skip(id, "skipped due to cs1 failure", "handshake never reached Connected")
                         .also { announce(it) }
                 }
@@ -107,6 +107,13 @@ internal class ConformanceCmd : BaseCommand(name = "conformance") {
                 }?.let { results += it.also(::announce) }
                 runIfRequested("cs6") { Scenarios.cs6ReconnectAfterDrop(client) }
                     ?.let { results += it.also(::announce) }
+                runIfRequested("cs7") {
+                    if (peer == null) {
+                        Scenarios.skip("cs7", "unicast DM", "no --peer-node supplied")
+                    } else {
+                        Scenarios.cs7UnicastDmText(client, peer)
+                    }
+                }?.let { results += it.also(::announce) }
             }
         } finally {
             runCatching { client.disconnect() }

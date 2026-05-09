@@ -87,6 +87,14 @@ public class FakeRadioTransport(
     }
 
     /**
+     * Inject an arbitrary [MeshPacket] as if it arrived from the radio.
+     * Use this to test flows that consume [RadioClient.packets] (e.g. [RadioClient.textMessages]).
+     */
+    public fun injectPacket(packet: MeshPacket) {
+        injectFromRadio(FromRadio(packet = packet))
+    }
+
+    /**
      * Inject an admin response packet correlated to [requestId]. The packet is constructed with
      * `decoded.request_id = requestId` so the engine's [CommandDispatcher] / `processRoutingAck`
      * can match it against an outstanding request.
@@ -166,6 +174,25 @@ public class FakeRadioTransport(
             to = 0,
             decoded = Data(
                 portnum = PortNum.NEIGHBORINFO_APP,
+                payload = payload,
+                request_id = requestId,
+            ),
+        )
+        injectFromRadio(FromRadio(packet = packet))
+    }
+
+    /** Inject a Store-and-Forward response correlated to [requestId]. */
+    public fun injectStoreForwardResponse(
+        requestId: Int,
+        message: org.meshtastic.proto.StoreAndForward,
+        fromNode: Int = nodeNum,
+    ) {
+        val payload = okio.ByteString.of(*org.meshtastic.proto.StoreAndForward.ADAPTER.encode(message))
+        val packet = MeshPacket(
+            from = fromNode,
+            to = 0,
+            decoded = Data(
+                portnum = PortNum.STORE_FORWARD_APP,
                 payload = payload,
                 request_id = requestId,
             ),

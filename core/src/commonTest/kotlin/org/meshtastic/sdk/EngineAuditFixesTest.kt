@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString
@@ -53,15 +54,18 @@ class EngineAuditFixesTest {
     // ── P1-1: Stage 1/2 unhandled FromRadio variants surface as ProtocolWarning ─
 
     /**
-     * P1-1: a `deviceuiConfig` envelope arriving mid-Stage-1 must be visible as a
-     * [MeshEvent.ProtocolWarning] with `details.stage == "Stage 1"` instead of being silently
-     * dropped. Same surface as Stage 2.
+     * P1-1: a `deviceuiConfig` envelope arriving mid-Stage-1 must be captured into the
+     * ConfigBundle (not discarded or warned about).
      */
     @Test
-    fun stage1UnhandledVariantEmitsProtocolWarning() = runTest {
+    fun stage1DeviceUIConfigIsCapturedInBundle() = runTest {
+        val uiConfig = DeviceUIConfig()
         val transport = ScriptedHandshakeTransport(
             identity = TransportIdentity("fake:p1-1-stage1"),
-            beforeStage1Complete = listOf(FromRadio(deviceuiConfig = DeviceUIConfig())),
+            beforeStage1Complete = listOf(
+                FromRadio(metadata = org.meshtastic.proto.DeviceMetadata()),
+                FromRadio(deviceuiConfig = uiConfig),
+            ),
         )
         val client = RadioClient.Builder()
             .transport(transport)
@@ -69,19 +73,14 @@ class EngineAuditFixesTest {
             .coroutineContext(backgroundScope.coroutineContext)
             .build()
 
-        val warnings = mutableListOf<MeshEvent.ProtocolWarning>()
-        val job = backgroundScope.launch {
-            client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
-        }
-
         client.connect()
         runCurrent()
+        advanceUntilIdle()
 
-        val match = warnings.firstOrNull { it.details["variant"] == "deviceui_config" }
-        assertNotNull(match, "Expected ProtocolWarning for deviceui_config; got: $warnings")
-        assertEquals("Stage 1", match.details["stage"], "Stage detail must distinguish handshake vs Ready arrivals")
+        val bundle = client.configBundle.value
+        assertNotNull(bundle, "ConfigBundle should be populated after handshake")
+        assertEquals(uiConfig, bundle.deviceUIConfig, "DeviceUIConfig should be captured in ConfigBundle")
 
-        job.cancel()
         client.disconnect()
     }
 

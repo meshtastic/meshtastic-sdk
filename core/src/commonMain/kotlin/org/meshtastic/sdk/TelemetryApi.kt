@@ -11,9 +11,12 @@ import kotlinx.coroutines.flow.Flow
 import org.meshtastic.proto.AirQualityMetrics
 import org.meshtastic.proto.DeviceMetrics
 import org.meshtastic.proto.EnvironmentMetrics
+import org.meshtastic.proto.HealthMetrics
+import org.meshtastic.proto.HostMetrics
 import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.PowerMetrics
 import org.meshtastic.proto.Telemetry
+import org.meshtastic.proto.TrafficManagementStats
 
 /**
  * Telemetry RPCs and observation.
@@ -43,6 +46,15 @@ public interface TelemetryApi {
 
     /** Request the local node's [LocalStats] (mesh-wide stats sourced from this device). */
     public suspend fun requestLocalStats(): AdminResult<LocalStats>
+
+    /** Request the latest [HealthMetrics] from [node] (heart rate, SpO2, temperature). */
+    public suspend fun requestHealth(node: NodeId = NodeId.LOCAL): AdminResult<HealthMetrics>
+
+    /** Request the latest [HostMetrics] from [node] (CPU, memory, disk usage on Linux hosts). */
+    public suspend fun requestHost(node: NodeId = NodeId.LOCAL): AdminResult<HostMetrics>
+
+    /** Request the latest [TrafficManagementStats] from [node] (packet counts, duty cycle). */
+    public suspend fun requestTrafficManagement(node: NodeId = NodeId.LOCAL): AdminResult<TrafficManagementStats>
 
     /**
      * Cold flow of every [Telemetry] packet observed for [node]. The flow never completes

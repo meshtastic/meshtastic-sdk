@@ -10,6 +10,7 @@ package org.meshtastic.sdk
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
+import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -34,6 +35,9 @@ public data class ConfigBundle(
 
     /** All module configs. */
     public val moduleConfigs: List<ModuleConfig>,
+
+    /** Device UI configuration (display preferences, language, etc.), if provided by firmware. */
+    public val deviceUIConfig: DeviceUIConfig? = null,
 )
 
 /**

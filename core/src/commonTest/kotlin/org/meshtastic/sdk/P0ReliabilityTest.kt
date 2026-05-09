@@ -22,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -96,32 +97,55 @@ class P0ReliabilityTest {
         client.disconnect()
     }
 
-    // ── R-P0-6: broadcasts must NOT receive an ACK timeout ──────────────────────
+    // ── R-P0-6: fire-and-forget broadcasts (want_ack=false) auto-resolve ──────
 
     @Test
-    fun testBroadcastDoesNotTimeOut() = runTest {
+    fun testFireAndForgetBroadcastAutoResolves() = runTest {
         val client = buildClient(sendTimeout = 1.seconds)
         client.connect()
 
-        val handle = client.send(broadcastPacket())
+        val handle = client.send(broadcastPacket()) // want_ack=false
         runCurrent()
-        assertEquals(SendState.Sent, handle.state.value)
+
+        // Fire-and-forget broadcasts auto-resolve to Acked once the device accepts the packet.
+        assertEquals(SendState.Acked, handle.state.value)
 
         advanceTimeBy(5_000) // far past the 1s sendTimeout
         runCurrent()
 
-        // Broadcasts never receive a routing ACK, so the engine must NOT arm an ACK timer for
-        // them — the handle stays in Sent.
-        assertNotEquals(
-            SendState.Failed(SendFailure.AckTimeout),
+        // Must not degrade to Failed — the auto-resolve is terminal.
+        assertEquals(
+            SendState.Acked,
             handle.state.value,
-            "Broadcasts must not be subject to ACK timeouts",
+            "Fire-and-forget broadcasts must not be subject to ACK timeouts",
         )
 
         client.disconnect()
     }
 
-    // ── R-P0-4: session passkey survives reconnect via storage ──────────────────
+    // ── R-P0-6b: broadcast with want_ack=true times out if no implicit ACK ──────
+
+    @Test
+    fun testBroadcastWithWantAckTimesOutWithoutImplicitAck() = runTest {
+        val client = buildClient(sendTimeout = 1.seconds)
+        client.connect()
+
+        val handle = client.send(broadcastWantAckPacket())
+        runCurrent()
+
+        // Broadcast with want_ack=true stays in Sent awaiting firmware implicit ACK.
+        assertEquals(SendState.Sent, handle.state.value)
+
+        advanceTimeBy(1_500) // past the 1s sendTimeout
+        runCurrent()
+
+        // Must degrade to Failed(AckTimeout) — no relay overheard the rebroadcast.
+        val state = handle.state.value
+        assertTrue(state is SendState.Failed, "Expected Failed, got $state")
+        assertEquals(SendFailure.AckTimeout, state.reason)
+
+        client.disconnect()
+    }
 
     @Test
     fun testSessionPasskeyIsPersistedAndReloaded() = runTest {
@@ -153,16 +177,13 @@ class P0ReliabilityTest {
         val client = buildClient()
         client.connect()
 
-        // First send — get a real handle so we can replay its id.
-        val first = client.send(broadcastPacket())
+        // First send — use unicast so it stays in pendingSends (fire-and-forget broadcasts auto-resolve).
+        val first = client.send(unicastWantAckPacket())
         runCurrent()
         assertEquals(SendState.Sent, first.state.value)
 
-        // Manually post a second Send with the same id through the engine boundary by issuing
-        // a colliding raw send via reflection-free public API: not possible without internal
-        // access. Instead, rely on the symmetry that the engine treats `pendingSends[id]` as a
-        // collision marker — verify the negative path: a fresh id is *not* rejected.
-        val second = client.send(broadcastPacket())
+        // A fresh id is *not* rejected — verify the negative path.
+        val second = client.send(unicastWantAckPacket())
         runCurrent()
         assertNotEquals(SendState.Failed(SendFailure.IdCollision), second.state.value)
 
@@ -188,6 +209,16 @@ class P0ReliabilityTest {
         decoded = Data(
             portnum = PortNum.TEXT_MESSAGE_APP,
             payload = ByteString.of(*"hello".encodeToByteArray()),
+        ),
+    )
+
+    private fun broadcastWantAckPacket() = MeshPacket(
+        to = NodeId.BROADCAST.raw,
+        channel = 0,
+        want_ack = true,
+        decoded = Data(
+            portnum = PortNum.TEXT_MESSAGE_APP,
+            payload = ByteString.of(*"hello-ack".encodeToByteArray()),
         ),
     )
 }
