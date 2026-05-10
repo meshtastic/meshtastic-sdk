@@ -1,4 +1,4 @@
-# `meshtastic-sdk` — Implementation Plan (v2.1, MQTTastic-aligned)
+# `meshtastic-sdk` — Implementation Plan (v2.2, post-audit)
 
 > **Mission.** A drop-in Kotlin Multiplatform SDK that lets any Android / iOS / JVM-desktop app talk to a Meshtastic radio through a clean, modern Kotlin API.
 >
@@ -75,9 +75,9 @@ The protocol reference (handshake, framing, `MeshPacket`, PortNums, admin, encry
 | **Contributor agreement** | DCO (`Signed-off-by:`); no separate CLA |
 | **Targets (per module subset)** | `androidTarget()`, `jvm()`, `iosArm64()`, `iosX64()`, `iosSimulatorArm64()` |
 | **Min Android SDK** | 26 |
-| **Compile/Target Android SDK** | latest stable |
-| **JVM target** | 17 |
-| **Kotlin** | latest stable; pinned in `gradle/libs.versions.toml` |
+| **Compile/Target Android SDK** | 36 (latest stable at time of writing) |
+| **JVM toolchain** | 21 |
+| **Kotlin** | 2.3.20 (pinned in `gradle/libs.versions.toml`) |
 | **Versioning** | SemVer via `axion-release-plugin` (git tags) |
 
 ---
@@ -123,9 +123,9 @@ meshtastic-sdk/
 │                                       # Turbine-compatible Flow harnesses
 │
 ├── samples/
-│   └── cli/                            # JVM main; TCP transport; first demoable artifact
-│                                       # (the previously-planned `android-app/`, `ios-app/`, and
-│                                       #  `desktop/` samples were removed pre-1.0; revisit post-1.0)
+│   ├── cli/                            # JVM main; TCP transport; first demoable artifact
+│   ├── parity-app/                     # Compose Multiplatform parity sample (Android + iOS + JVM desktop) over TCP
+│   └── parity-android-app/             # Android-only sample app
 │
 └── docs/
     ├── protocol.md                     # The §8 wire protocol reference, verbatim
@@ -155,12 +155,18 @@ MQTTastic has 2 transports (TCP, WS) over a single Ktor dependency, with no plat
 > **ADR-001:** the SDK exposes Wire-generated protobuf types directly. Anywhere the API below references a protocol payload (`MeshPacket`, `NodeInfo`, `Config`, `User`, `Channel`, `Position`, `Telemetry`, `AdminMessage`, `PortNum`, etc.), that is the **Wire-generated type from `org.meshtastic.proto.*`**, not a hand-rolled mirror. The SDK curates only what does not exist in the proto schema (lifecycle, transport, IDs, send tracking).
 
 ```kotlin
-public class RadioClient internal constructor(/* ... */) {
+public class RadioClient internal constructor(/* ... */) : AutoCloseable {
 
     public val connection: StateFlow<ConnectionState>
 
     /** The local node (NodeInfo for our own NodeNum), available after handshake. */
     public val ownNode: StateFlow<NodeInfo?>
+
+    /** Most recently committed ConfigBundle for the active session; null until Connected. */
+    public val configBundle: StateFlow<ConfigBundle?>
+
+    /** Channel list for the active session; null until Connected. Updated on setChannel success. */
+    public val channels: StateFlow<List<Channel>?>
 
     /** Per-node deltas. Late subscribers receive a Snapshot first, then live changes. */
     public val nodes: Flow<NodeChange>
@@ -172,17 +178,26 @@ public class RadioClient internal constructor(/* ... */) {
      */
     public val packets: Flow<MeshPacket>
 
-    /** Side-channel events: errors, queue status, client notifications, key-verification prompts. */
+    /**
+     * Side-channel events: errors, queue status, client notifications, key-verification prompts,
+     * drop notifications, identity-rebind signals, congestion warnings, external config changes.
+     */
     public val events: Flow<MeshEvent>
 
     /** Pull a snapshot on demand (cheap; backed by engine state). */
     public suspend fun nodeSnapshot(): Map<NodeId, NodeInfo>
+
+    /** Request a remote node to send its NodeInfo. */
+    public fun requestNodeInfo(node: NodeId): MessageHandle
 
     @Throws(MeshtasticException::class, CancellationException::class)
     public suspend fun connect()
 
     /** Idempotent; never throws. */
     public suspend fun disconnect()
+
+    /** Blocking close for AutoCloseable / use {} conformance. Delegates to disconnect via runBlocking. */
+    override fun close()
 
     /**
      * Enqueue an outbound packet. Returns immediately with a handle whose [MessageHandle.state]
@@ -194,35 +209,78 @@ public class RadioClient internal constructor(/* ... */) {
     @Throws(MeshtasticException::class)
     public fun send(packet: MeshPacket): MessageHandle
 
-    /** Convenience: wraps `MeshPacket { decoded = Data { portnum = TEXT_MESSAGE_APP; payload = text.encodeToByteString() } }`. */
+    /** Convenience: wraps text in TEXT_MESSAGE_APP. */
     public fun sendText(text: String, channel: ChannelIndex = ChannelIndex(0), to: NodeId = NodeId.BROADCAST): MessageHandle
+
+    /** Convenience: send an emoji reaction to an existing message. */
+    public fun sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle
+
+    /** Typed send overload: build Data(portnum, payload) and call send(). */
+    public suspend fun send(portnum: PortNum, payload: ByteArray, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), wantAck: Boolean = false, hopLimit: Int? = null): MessageHandle
+
+    /** Buffer payload overload (consumes the kotlinx.io.Buffer). */
+    public suspend fun send(portnum: PortNum, payload: kotlinx.io.Buffer, ...): MessageHandle
+
+    /** Low-level escape hatch: send a raw ToRadio frame directly. */
+    public fun sendRaw(frame: ToRadio)
 
     public val admin: AdminApi
     public val telemetry: TelemetryApi
     public val routing: RoutingApi
+    public val storeForward: StoreForwardApi
 
     public companion object { public fun Builder(): Builder }
 
     public class Builder {
-        public fun transport(spec: TransportSpec): Builder            // required
-        public fun storage(provider: StorageProvider): Builder        // required (no default)
-        public fun logger(sink: LogSink): Builder                     // default: LogSink.Silent
-        public fun clock(clock: kotlin.time.Clock): Builder              // default: Clock.System
-        public fun coroutineContext(ctx: CoroutineContext): Builder   // default: SupervisorJob + Default
-        public fun autoSyncTimeOnConnect(enabled: Boolean): Builder   // default: true (calls AdminApi.setTime
-                                                                      //   if device clock skew > 60s post-handshake)
-        public fun disableBleHeartbeat(): Builder                     // default: heartbeat-on-BLE enabled
-                                                                      //   (engine sends Heartbeat(nonce=++) every 30s
-                                                                      //   even on BLE; opt out for power-sensitive apps).
-                                                                      //   See §4.3 invariant 8 + protocol.md §16.
+        public fun transport(transport: RadioTransport): Builder        // required; takes a pre-built transport instance
+        public fun storage(provider: StorageProvider): Builder          // required (no default)
+        public fun logger(sink: LogSink): Builder                       // default: LogSink.Silent
+        public fun clock(clock: kotlin.time.Clock): Builder             // default: Clock.System
+        public fun coroutineContext(ctx: CoroutineContext): Builder     // default: SupervisorJob + Default
+        public fun autoSyncTimeOnConnect(enabled: Boolean): Builder     // default: true
+        public fun disableBleHeartbeat(): Builder                       // default: heartbeat-on-BLE enabled
         public fun protocolLogging(level: LogLevel, redactor: PayloadRedactor = PayloadRedactor.Default): Builder
-                                                                      // default: OFF (LogLevel.NONE).
-                                                                      //   Routes framed-packet diagnostics through the
-                                                                      //   configured LogSink. Redactor masks position,
-                                                                      //   text payloads, and PSKs. See docs/security.md.
+        public fun sendTimeout(duration: Duration): Builder             // default: 30s — per-send ACK timeout
+        public fun rpcTimeout(duration: Duration): Builder              // default: 30s — per-RPC admin timeout
+        public fun presenceTimeout(timeout: Duration): Builder          // default: 2h — node online/offline window
+        public fun autoReconnect(                                       // default: disabled (1.0 will flip to enabled)
+            enabled: Boolean = true,
+            initialBackoff: Duration = 1.seconds,
+            maxBackoff: Duration = 60.seconds,
+            maxAttempts: Int? = null,
+            backoffMultiplier: Double = 2.0,
+            jitter: Double = 0.2,
+        ): Builder
+        public fun autoReconnect(config: AutoReconnectConfig): Builder
         public fun build(): RadioClient
     }
 }
+
+/** Connect and suspend until the handshake settles; returns the resolved ConfigBundle. */
+public suspend fun RadioClient.connectAndAwaitReady(timeout: Duration = 30.seconds): ConfigBundle
+
+/** DSL form of send: `client.send { text("hello"); to(node); wantAck() }`. */
+public suspend fun RadioClient.send(block: SendBuilder.() -> Unit): MessageHandle
+```
+
+**`AutoReconnectConfig`** — configures the engine's built-in auto-reconnect supervisor:
+
+```kotlin
+public data class AutoReconnectConfig(
+    val enabled: Boolean = true,
+    val initialBackoff: Duration = 1.seconds,
+    val maxBackoff: Duration = 60.seconds,
+    val maxAttempts: Int? = null,           // null = retry indefinitely
+    val backoffMultiplier: Double = 2.0,
+    val jitter: Double = 0.2,              // ±20% symmetric randomization
+) {
+    public companion object {
+        public val Disabled: AutoReconnectConfig = AutoReconnectConfig(enabled = false)
+    }
+}
+```
+
+Backoff formula: `delay(n) = min(initialBackoff * backoffMultiplier^(n-1), maxBackoff) * (1 ± jitter * random())`. Uses `kotlinx.coroutines.delay` for virtual-time compatibility with `runTest`.
 
 public class MessageHandle internal constructor(
     public val id: MessageId,
@@ -231,13 +289,11 @@ public class MessageHandle internal constructor(
     /**
      * Suspends until terminal ([SendState.Acked], [SendState.Delivered], or [SendState.Failed]).
      *
-     * **Disconnect:** if the engine disconnects (transport drop, `client.disconnect()`,
-     * `RadioClient` scope cancel) before a terminal state, `state` resolves to
+     * **Disconnect:** if the engine disconnects before a terminal state, `state` resolves to
      * `Failed(Disconnected)` and `await()` returns the corresponding [SendOutcome].
      *
      * **Cancellation:** if the *caller's* coroutine is cancelled while suspended in `await()`,
-     * the function rethrows `CancellationException`; the underlying handle is **unaffected**
-     * (the engine continues to track the send and updates `state` for any other observer).
+     * the function rethrows `CancellationException`; the underlying handle is **unaffected**.
      * Use [cancel] to actively withdraw the send.
      */
     public suspend fun await(): SendOutcome
@@ -245,10 +301,14 @@ public class MessageHandle internal constructor(
     /**
      * Best-effort cancel. Idempotent. Behavior by current state:
      * - `Queued`: removed from the host outbound queue; `state` becomes `Failed(Cancelled)`.
-     * - `Sent` or later: no effect on the radio (device + mesh continue); `state` is unchanged.
-     * Callers waiting in [await] of the same handle wake when `state` settles.
+     * - `Sent` or later: no effect on the radio; `state` is unchanged.
      */
     public fun cancel()
+}
+
+public sealed interface SendOutcome {
+    public data object Success : SendOutcome
+    public data class Failure(val reason: SendFailure) : SendOutcome
 }
 
 public sealed interface SendState {
@@ -276,33 +336,50 @@ public sealed interface SendFailure {
 // directly. It is therefore not a SendFailure case (a handle is never returned in that situation).
 
 public sealed interface MeshEvent {
-    public data class QueueStatusChanged(val status: QueueStatus) : MeshEvent  // Wire QueueStatus
-    public data class Notification(val notification: ClientNotification) : MeshEvent  // Wire type
+    public data class QueueStatusChanged(val status: QueueStatus) : MeshEvent
+    public data class Notification(val notification: ClientNotification) : MeshEvent
     public data class TransportError(val error: MeshtasticException.Transport) : MeshEvent
-    public data class ProtocolWarning(val message: String) : MeshEvent
+    public data class ProtocolWarning(val message: String, val details: Map<String, Any?> = emptyMap()) : MeshEvent
     public data class KeyVerification(val prompt: KeyVerificationPrompt) : MeshEvent
-    /**
-     * Engine-side backpressure event: the named [Flow] dropped `count` items because the
-     * subscriber could not keep up. Emitted at most once per drop burst.
-     * See §4.4 for the per-flow buffering / overflow policy.
-     */
+    /** Engine-side backpressure: the named flow dropped `count` items. See §4.4. */
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
+    /** Storage backend encountered a write failure; engine continues in-memory for the session. */
+    public data class StorageDegraded(val reason: String) : MeshEvent
+    /** Device sent `FromRadio.rebooted = true`; session state is stale. */
+    public data class DeviceRebooted : MeshEvent
+    /**
+     * Device identity changed between sessions (factory reset / radio swap / hostname rebound).
+     * Emitted before the engine clears storage, so subscribers can react.
+     */
+    public data class IdentityRebound(val previousNodeNum: NodeId, val newNodeNum: NodeId, val reason: String) : MeshEvent
+    /** Firmware-reported security advisory (duplicated public key, low-entropy key). */
+    public sealed interface SecurityWarning : MeshEvent {
+        public data object DuplicatedPublicKey : SecurityWarning
+        public data object LowEntropyKey : SecurityWarning
+    }
+    /** Channel utilization / air_util_tx crossed a threshold; level changed. */
+    public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
+    /** External client modified channels/config on this device (unsolicited admin push). */
+    public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
 }
 
 public enum class DroppedFlow { Packets, Events }
+public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 
 public sealed interface NodeChange {
     /**
      * First emission to every new subscriber; never emitted again on the same subscription.
      * Implemented by replaying the engine's current `Map<NodeId, NodeInfo>` on `collect()` (single-replay),
-     * then stitching live deltas. Concurrency: the engine takes a lock-free snapshot of the immutable
-     * map under the actor and emits it as the first item — subsequent Added/Updated/Removed deltas
-     * are guaranteed to apply on top of that snapshot in causal order.
+     * then stitching live deltas.
      */
     public data class Snapshot(val nodes: Map<NodeId, NodeInfo>) : NodeChange
     public data class Added(val node: NodeInfo) : NodeChange
     public data class Updated(val node: NodeInfo, val changed: Set<NodeField>) : NodeChange
     public data class Removed(val nodeId: NodeId) : NodeChange
+    /** Node has not been heard within the configured `presenceTimeout`. */
+    public data class WentOffline(val nodeId: NodeId, val lastHeardSec: Int) : NodeChange
+    /** A previously-offline node sent a frame. */
+    public data class CameOnline(val nodeId: NodeId) : NodeChange
 }
 
 public sealed interface ConnectionState {
@@ -312,11 +389,13 @@ public sealed interface ConnectionState {
     public data object Connected : ConnectionState
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
 }
-// NOTE: There is no DeviceSleep state. Devices do not announce sleep on the wire (`PhoneAPI` simply
-// goes silent), so the SDK cannot reliably distinguish "device sleeping for ls_secs" from "transport
-// hung". Sleep timing is observable instead via `Config.power.ls_secs` from the handshake snapshot;
-// when the device stops responding, the state machine transitions through `Reconnecting` exactly as
-// for any other disconnect. Hosts that care about sleep-vs-error should inspect the `cause` field.
+// NOTE: There is no DeviceSleep state. Devices do not announce sleep on the wire.
+// Sleep timing is observable via `Config.power.ls_secs` from the handshake snapshot.
+
+// Extension properties on ConnectionState:
+public val ConnectionState.isUsable: Boolean          // true only when Connected
+public val ConnectionState.isInProgress: Boolean      // true for Connecting/Configuring/Reconnecting
+public val ConnectionState.statusMessage: String      // human-readable description
 
 public sealed interface TransportSpec {
     public val identity: TransportIdentity
@@ -350,28 +429,28 @@ public sealed interface TransportSpec {
 
 public sealed class MeshtasticException(message: String, cause: Throwable? = null)
     : Exception(message, cause) {
+    /** Diagnostic context: transport that produced this failure, if known. */
+    public var transportIdentity: TransportIdentity?
+    /** Diagnostic context: short operation tag (e.g. "connect", "engine.disconnect"). */
+    public var operation: String?
+
     public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
-    public class Protocol(reason: String) : MeshtasticException(reason)
-    /**
-     * Handshake timed out before completing.
-     *
-     * Thrown when the device does not send `config_complete` within the expected window
-     * (typically 15 seconds). Distinct from [Protocol] so callers can decide whether to retry
-     * vs. treat it as fatal.
-     *
-     * Recovery: Usually transient (device slow to respond). Caller can retry `connect()`.
-     *
-     * @param stage the handshake stage that was in progress when the timeout occurred
-     */
+    public class Protocol(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
     public class HandshakeTimeout(public val stage: String) :
         MeshtasticException("Handshake timed out during stage: $stage")
-    public class StorageUnavailable(cause: Throwable? = null) : MeshtasticException("Storage unavailable", cause)
+    public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null)
+        : MeshtasticException(message, cause)
     public class FirmwareTooOld(public val required: Int, public val present: Int)
         : MeshtasticException("Firmware requires newer client (need $required, have $present)")
     public class NotConnected : MeshtasticException("Client not connected")
     public class AlreadyConnected : MeshtasticException("Client already connected")
     public class PayloadTooLarge(public val maxBytes: Int)
         : MeshtasticException("Payload exceeds $maxBytes bytes")
+
+    public companion object {
+        /** Attach diagnostic context (transport identity, operation tag). Returns the same instance. */
+        public fun <T : MeshtasticException> tag(error: T, transportIdentity: TransportIdentity? = null, operation: String? = null): T
+    }
 }
 
 /** Type-safe wrappers over the protobuf `uint32` fields used as IDs. Used in operation signatures. */
@@ -397,58 +476,143 @@ public sealed class MeshtasticException(message: String, cause: Throwable? = nul
 
 ```kotlin
 public interface AdminApi {
+    /** Return an AdminApi that targets a remote node over the mesh. */
+    public fun forNode(dest: NodeId): AdminApi
+
+    // ── Device info ──
+    public suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata>
+    public suspend fun getDeviceConnectionStatus(): AdminResult<DeviceConnectionStatus>
+    public suspend fun getRemoteHardwarePins(): AdminResult<NodeRemoteHardwarePinsResponse>
+
+    // ── Configs ──
     public suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config>
     public suspend fun setConfig(config: Config): AdminResult<Unit>
     public suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig>
     public suspend fun setModuleConfig(config: ModuleConfig): AdminResult<Unit>
+
+    // ── Owner ──
     public suspend fun getOwner(): AdminResult<User>
     public suspend fun setOwner(user: User): AdminResult<Unit>
+
+    // ── Channels ──
     public suspend fun getChannel(index: ChannelIndex): AdminResult<Channel>
     public suspend fun setChannel(channel: Channel): AdminResult<Unit>
     public suspend fun listChannels(): AdminResult<List<Channel>>
+
+    // ── Node management ──
     public suspend fun setFavorite(node: NodeId, favorite: Boolean): AdminResult<Unit>
     public suspend fun setIgnored(node: NodeId, ignored: Boolean): AdminResult<Unit>
+    public suspend fun toggleMuted(node: NodeId): AdminResult<Unit>
+    public suspend fun removeNode(node: NodeId): AdminResult<Unit>
+
+    // ── Position ──
+    public suspend fun setFixedPosition(position: Position): AdminResult<Unit>
+    public suspend fun removeFixedPosition(): AdminResult<Unit>
+
+    // ── Device UI Config ──
+    public suspend fun getUIConfig(): AdminResult<DeviceUIConfig>
+    public suspend fun storeUIConfig(config: DeviceUIConfig): AdminResult<Unit>
+
+    // ── Canned Messages / Ringtone ──
+    public suspend fun getCannedMessages(): AdminResult<String>
+    public suspend fun setCannedMessages(messages: String): AdminResult<Unit>
+    public suspend fun getRingtone(): AdminResult<String>
+    public suspend fun setRingtone(rtttl: String): AdminResult<Unit>
+
+    // ── Ham radio ──
+    public suspend fun setHamMode(params: HamParameters): AdminResult<Unit>
+
+    // ── DFU / File management ──
+    public suspend fun enterDfuMode(): AdminResult<Unit>
+    public suspend fun deleteFile(path: String): AdminResult<Unit>
+
+    // ── Backup / Restore ──
+    public suspend fun backupPreferences(location: AdminMessage.BackupLocation = FLASH): AdminResult<Unit>
+    public suspend fun restorePreferences(location: AdminMessage.BackupLocation = FLASH): AdminResult<Unit>
+    public suspend fun removeBackupPreferences(location: AdminMessage.BackupLocation = FLASH): AdminResult<Unit>
+
+    // ── Contacts / Key verification ──
+    public suspend fun addContact(contact: SharedContact): AdminResult<Unit>
+    public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
+
+    // ── OTA / Sensor / Simulator ──
+    public suspend fun rebootOta(after: Duration = Duration.ZERO): AdminResult<Unit>
+    public suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit>
+    public suspend fun setSensorConfig(config: SensorConfig): AdminResult<Unit>
+    public suspend fun exitSimulator(): AdminResult<Unit>
+
+    // ── Display ──
+    public suspend fun setScale(scale: Int): AdminResult<Unit>
+    public suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit>
+
+    // ── Lifecycle ──
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
     public suspend fun nodeDbReset(): AdminResult<Unit>
 
-    /**
-     * Push the host clock to the device as `set_time_only`. Useful for routers and headless
-     * devices without GPS. Pitfall §19.17. The Builder option `autoSyncTimeOnConnect` (default
-     * `true`) calls this once after handshake when the device's reported clock differs from the
-     * host's by more than 60 seconds.
-     */
-    public suspend fun setTime(at: Instant = Clock.System.now()): AdminResult<Unit>
+    // ── Time ──
+    public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>
+    public suspend fun setTime(at: Instant? = null): AdminResult<Unit>
 
-    /**
-     * Batch multiple writes inside begin_edit_settings/commit_edit_settings to avoid
-     * intermediate reboots. The block runs against a transactional handle.
-     */
+    // ── Transactional batched writes ──
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
+    public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
+}
+
+public interface AdminEdit {
+    public suspend fun setConfig(config: Config)
+    public suspend fun setModuleConfig(config: ModuleConfig)
+    public suspend fun setOwner(user: User)
+    public suspend fun setChannel(channel: Channel)
+    public suspend fun setFavorite(node: NodeId, favorite: Boolean)
+    public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+}
+
+public interface AdminBatchScope : AdminEdit {
+    public suspend fun getConfig(type: AdminMessage.ConfigType): Config
+    public suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): ModuleConfig
+    public suspend fun listChannels(): List<Channel>
 }
 
 public sealed interface AdminResult<out T> {
     public data class Success<T>(val value: T) : AdminResult<T>
-    public data object SessionKeyExpired : AdminResult<Nothing>      // ADMIN_BAD_SESSION_KEY
-    public data object Unauthorized : AdminResult<Nothing>           // NOT_AUTHORIZED / ADMIN_PUBLIC_KEY_UNAUTHORIZED
+    public data object SessionKeyExpired : AdminResult<Nothing>
+    public data object Unauthorized : AdminResult<Nothing>
     public data object Timeout : AdminResult<Nothing>
+    public data object RateLimited : AdminResult<Nothing>           // Routing.Error.RATE_LIMIT_EXCEEDED
     public data object NodeUnreachable : AdminResult<Nothing>
-    public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>  // Wire enum
+    public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>
 }
 
+// AdminResult extension functions:
+public fun <T> AdminResult<T>.getOrNull(): T?
+public fun <T> AdminResult<T>.getOrElse(default: T): T
+public inline fun <T> AdminResult<T>.getOrElse(block: (AdminResult<T>) -> T): T
+public val <T> AdminResult<T>.isSuccess: Boolean
+public inline fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R>
+public inline fun <T, R> AdminResult<T>.fold(onSuccess: (T) -> R, onFailure: (AdminResult<T>) -> R): R
+public inline fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T>
+public inline fun <T> AdminResult<T>.onFailure(action: (AdminResult<T>) -> Unit): AdminResult<T>
+public fun <T> AdminResult<T>.getOrThrow(): T   // throws AdminResultException on failure
+
 public interface TelemetryApi {
-    public suspend fun requestDevice(node: NodeId = NodeId.LOCAL): AdminResult<DeviceMetrics>           // Wire type
+    public suspend fun requestDevice(node: NodeId = NodeId.LOCAL): AdminResult<DeviceMetrics>
     public suspend fun requestEnvironment(node: NodeId = NodeId.LOCAL): AdminResult<EnvironmentMetrics>
     public suspend fun requestPower(node: NodeId = NodeId.LOCAL): AdminResult<PowerMetrics>
     public suspend fun requestAirQuality(node: NodeId = NodeId.LOCAL): AdminResult<AirQualityMetrics>
     public suspend fun requestLocalStats(): AdminResult<LocalStats>
-    public fun observe(node: NodeId): Flow<Telemetry>                                                   // Wire Telemetry
+    public fun observe(node: NodeId): Flow<Telemetry>
 }
 
 public interface RoutingApi {
-    public suspend fun traceRoute(dest: NodeId, hopLimit: Int = 7): AdminResult<RouteDiscovery>        // Wire type
-    public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<NeighborInfo>     // Wire type
+    public suspend fun traceRoute(dest: NodeId, hopLimit: Int = 7): AdminResult<RouteDiscovery>
+    public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<NeighborInfo>
+}
+
+public interface StoreForwardApi {
+    public suspend fun requestHistory(node: NodeId, window: Duration): AdminResult<Unit>
+    public fun messages(): Flow<MeshPacket>
 }
 ```
 
@@ -463,35 +627,46 @@ public interface StorageProvider {
 }
 
 public interface DeviceStorage : AutoCloseable {
-    public suspend fun loadNodes(): Map<NodeId, NodeInfo>              // Wire NodeInfo
+    public suspend fun loadNodes(): Map<NodeId, NodeInfo>
     public suspend fun saveNode(node: NodeInfo)
     public suspend fun removeNode(nodeId: NodeId)
-    public suspend fun loadConfig(): ConfigBundle?                     // SDK aggregate (see below)
+    public suspend fun loadConfig(): ConfigBundle?
     public suspend fun saveConfig(config: ConfigBundle)
-    public suspend fun loadChannels(): List<Channel>                   // Wire Channel
+    public suspend fun loadChannels(): List<Channel>
     public suspend fun saveChannels(channels: List<Channel>)
 
     /**
      * Records the NodeNum the device reported for this transport identity. Audit trail and
-     * factory-reset detector. The engine MUST call this immediately after handshake completes
-     * with the value from `MyNodeInfo.my_node_num`. Implementations:
-     *  - on first call for an identity: persist `(nodeNum, firmwareVersion)`.
-     *  - on subsequent calls: if `nodeNum` differs from the stored value (factory-reset, swap,
-     *    or hostname now resolves to a different physical radio), implementations MUST atomically
-     *    `clear()` and then persist the new tuple before returning. Engine treats this as
-     *    end-of-session for caches: `MeshState` is rebuilt from the fresh handshake payload.
+     * factory-reset detector. If `nodeNum` differs from the stored value, implementations MUST
+     * atomically `clear()` and then persist the new tuple before returning.
      */
     public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String)
 
     public suspend fun clear()
+    override fun close()
+
+    /** Persist / load the session passkey for admin RPC resumption across sessions. */
+    public suspend fun saveSessionPasskey(passkey: SessionPasskey)
+    public suspend fun loadSessionPasskey(): SessionPasskey?
+
+    /** Persist / load per-node heartbeat timestamps for presence tracking across process death. */
+    public suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long)
+    public suspend fun loadHeartbeats(): Map<NodeId, Long>
 }
 
-/** Aggregate of everything received during the configure-handshake; pure SDK convenience over Wire types. */
+/** Aggregate of everything received during the configure-handshake. */
 public data class ConfigBundle(
-    public val myInfo: MyNodeInfo,                                     // Wire MyNodeInfo
-    public val metadata: DeviceMetadata,                               // Wire DeviceMetadata
-    public val configs: List<Config>,                                  // Wire Config (per ConfigType)
-    public val moduleConfigs: List<ModuleConfig>,                      // Wire ModuleConfig
+    public val myInfo: MyNodeInfo,
+    public val metadata: DeviceMetadata,
+    public val configs: List<Config>,
+    public val moduleConfigs: List<ModuleConfig>,
+    public val deviceUIConfig: DeviceUIConfig? = null,
+)
+
+/** Persisted session passkey with absolute expiry. */
+public data class SessionPasskey(
+    public val bytes: kotlinx.io.bytestring.ByteString,
+    public val expiresAtEpochMs: Long,
 )
 ```
 
@@ -529,7 +704,28 @@ public sealed interface TransportState {
 public class Frame(public val bytes: ByteString)                     // kotlinx.io.bytestring.ByteString (matches §5.4 + MQTTastic-Client-KMP)
 ```
 
-### 3.5 Logging
+### 3.5 Send DSL
+
+```kotlin
+@DslMarker public annotation class MeshSendDsl
+
+@MeshSendDsl
+public class SendBuilder internal constructor() {
+    public fun to(nodeId: NodeId)
+    public fun channel(channel: ChannelIndex)
+    public fun wantAck(value: Boolean = true)
+    public fun hopLimit(hops: Int?)
+    public fun text(text: String)                              // TEXT_MESSAGE_APP payload
+    public fun data(portnum: PortNum, bytes: ByteArray)        // arbitrary portnum + raw bytes
+    public fun position(latLng: LatLng)                        // POSITION_APP payload
+    public fun proto(packet: MeshPacket)                       // escape hatch — use packet verbatim
+}
+
+// Exactly one of text/data/position/proto must be called per builder.
+// After proto(), convenience setters (to, channel, wantAck, hopLimit) throw IllegalStateException.
+```
+
+### 3.6 Logging
 
 ```kotlin
 public fun interface LogSink {
@@ -550,21 +746,23 @@ SDK never depends on Kermit / Timber / SLF4J. Apps wire whatever they want.
                 ┌────────────────────────────────────────────────────┐
                 │                  MeshEngine                        │
                 │  one coroutine, drains Channel<EngineMessage>      │
-                │  ─ owns: MeshState, HandshakeMachine,              │
-                │           CommandDispatcher, MessageQueue,         │
-                │           DeferredDecryptBuffer                    │
-                └─────────────▲──────────────────────────▲───────────┘
-                              │                          │
-                  EngineMessage.FrameRx                  EngineMessage.Cmd
-                              │                          │
-                       ┌──────┴──────┐         ┌─────────┴────────┐
-                       │ FrameReader │         │  Public API call │
-                       │ (collects   │         │  (suspends until │
-                       │  transport. │         │  acked back via  │
-                       │  frames())  │         │  CompletableD.)  │
-                       └─────────────┘         └──────────────────┘
+                │  ─ owns: MeshState, CommandDispatcher,             │
+                │           pendingSends map, handshake FSM,         │
+                │           presence tracker, reconnect supervisor   │
+                └───▲─────────────▲──────────────────────────▲───────┘
+                    │             │                          │
+          EngineMessage.    EngineMessage.FrameRx      EngineMessage.Send/
+          TransportState         │                     PostRpc/Timer/...
+          Changed                │                          │
+                    │     ┌──────┴──────┐         ┌─────────┴────────┐
+             ┌──────┴──┐  │ FrameReader │         │  Public API call │
+             │Transport│  │ (collects   │         │  (suspends until │
+             │Observer │  │  transport. │         │  acked back via  │
+             │(state   │  │  frames())  │         │  CompletableD.)  │
+             │ flow)   │  └─────────────┘         └──────────────────┘
+             └─────────┘
 
-Outbound writes:  Engine → transport.send(frame)  (sequential; FIFO)
+Outbound writes:  Engine → Channel<Frame> → OutboundWriter → transport.send(frame) (sequential; FIFO)
 Outbound state:   Engine → MutableStateFlow / MutableSharedFlow → public Flows
 ```
 
@@ -574,14 +772,20 @@ All state mutation happens on the engine coroutine. No `Mutex`, no atomics-on-st
 
 | Component | Responsibility |
 |---|---|
-| `WireCodec` | Pure encode/decode `ToRadio` ↔ framed bytes ↔ `FromRadio`. Resync logic per v1 §8.2. No IO. |
+| `WireCodec` | Pure encode/decode `ToRadio` ↔ framed bytes ↔ `FromRadio`. Resync logic per v1 §8.2. `FrameDecoder` inner class for streaming byte-at-a-time TCP/Serial decode. No IO. |
+| `WireFraming` | Single source of truth for wire-framing constants: sync bytes (`0x94 0xC3`), `HEADER_SIZE`, `MAX_PAYLOAD_SIZE`, `MAX_FRAME_ON_WIRE`. Shared by all stream transports. |
 | `RadioTransport` (interface) | Per §3.4. Implementations in transport modules. |
-| `HandshakeMachine` | FSM driving the two-stage handshake: Stage 1 (`want_config_id = nonce₁` → metadata / my_info / configs / moduleConfigs / channels / file_info / `config_complete_id = nonce₁`) → 100 ms settle → `Heartbeat(nonce++)` → 100 ms settle → Stage 2 (`want_config_id = nonce₂` → nodeDB → `config_complete_id = nonce₂`) → seed `session_passkey` via `AdminMessage.get_owner_request`. Documented in `docs/architecture/handshake-fsm.md` with a Mermaid diagram. See `docs/protocol.md` §6. |
-| `MeshState` | Holds `Map<NodeId, NodeInfo>`, `ownNode`, `channels`, `ConfigBundle`, monotonic version counter. Single-writer (engine actor). All payload types are Wire-generated (per ADR-001). |
-| `CommandDispatcher` | Allocates monotonic `request_id`s, parks `CompletableDeferred<AdminResult<*>>` per id, applies per-op timeouts, recognizes `ROUTING_APP` Routing payloads addressed back as ACK/NAK for any in-flight request. |
-| `MessageQueue` | Tracks outbound `MessageHandle`s. Updates `SendState` from `QueueStatus` (Queued→Sent), `Routing` ACK (Sent→Acked/Delivered), or device-emitted Routing error (Sent→Failed). **Does NOT retry mesh delivery** (device's job). May retry the host-transport write once on `TransportState.Error(recoverable=true)`. |
-| `DeferredDecryptBuffer` | Bounded ring (default 64 packets) for `MeshPacket.encrypted` with unknown channel hash. Re-attempts decrypt when a `Channel`/`Config.security` arrives that adds a key. **Status: logic is inline in `MeshEngine`; no standalone class extracted yet.** |
-| `PersistenceCoordinator` | Calls `StorageProvider.activate(identity)` *before* `transport.connect()`. After handshake, calls `recordOwnNode(nodeNum, firmwareVersion)`. If `DeviceStorage` reports it had to `clear()` due to a NodeNum mismatch (§4.3 invariant 4), the coordinator emits `MeshEvent.ProtocolWarning("identity rebound to new NodeNum")` so hosts can audit. On disconnect, flushes and closes storage. |
+| Handshake FSM | Stage 1 → 100 ms settle → heartbeat → 100 ms settle → Stage 2 → seed `session_passkey` via `get_owner_request`. The FSM is implemented inline in `MeshEngine` (not a standalone class as originally planned) using the `HandshakeStage` enum + per-stage envelope processors. Stage 1 has a one-shot retry at the half-budget mark. Stage 2 uses a sliding-timeout watchdog (progress counter + hard cap) instead of a fixed deadline. |
+| `MeshState` | Immutable snapshot: `Map<NodeId, NodeInfo>`, `ownNode`, `channels`, `ConfigBundle`, monotonic version counter. Single-writer (engine actor). Replaced on mutation, never mutated in place. |
+| `CommandDispatcher` | Registers `(requestId, ResponseKind, CompletableDeferred)` triples. Completes or times out on matching inbound packets. Handles routing-error classification for RPC calls. |
+| Send tracking | Tracks outbound `MessageHandle`s via `pendingSends: Map<MessageId, MutableStateFlow<SendState>>`. Updates from `QueueStatus` (Queued→Sent), `Routing` ACK/NAK (Sent→Acked/Failed). Per-send ACK timeout via `ackTimeoutJobs`. Fire-and-forget broadcast auto-acks. No mesh-delivery retry on SDK side. |
+| Presence tracker | `lastHeartbeatAt: Map<NodeId, Long>` + `offlineNodes: Set<NodeId>`. Marks nodes heard on every inbound frame. Periodic tick scans for `presenceTimeout` expiry, emits `NodeChange.WentOffline`/`CameOnline`. Heartbeats persisted via `DeviceStorage` for survival across process death. |
+| Reconnect supervisor | Exponential-backoff reconnect on recoverable transport errors. Configurable via `AutoReconnectConfig` (disabled by default pre-1.0). Resets session state, re-enters Stage 1 handshake. |
+| Liveness watchdog | Budget-based watchdog (default 60 s = 2 × heartbeat interval). Reset on every decoded `FromRadio`; decremented on periodic ticks. Budget exhaustion → `TransportError` + teardown. Detects half-open TCP sockets / NAT timeouts. |
+| Duplicate detection | Bounded `ArrayDeque` + `Set` of `InboundPacketKey(from, to, channel, id)` with cap of 256 entries. Drop-oldest eviction. |
+| Session passkey management | Seeds via `get_owner_request` at handshake end. Persisted to storage. Auto-attached to remote admin packets. TTL-based expiry (4 min). |
+| External config change detection | Recognizes unsolicited admin messages (request_id == 0) from the local device and updates `channelsState`/`configBundleState`. Emits `MeshEvent.ExternalConfigChange`. |
+| Congestion monitoring | Watches `TELEMETRY_APP` device metrics for air utilization thresholds. Emits `MeshEvent.CongestionWarning` on level transitions. |
 
 ### 4.3 Anchor invariants (encoded as tests in `core/src/commonTest/.../invariants/`)
 
@@ -594,20 +798,29 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 5. **Handshake is an explicit FSM**, not pattern-matched ad hoc.
 6. **Admin requests are idempotent and `request_id`-correlated.** Per-op timeouts (default: 30s reads, 60s writes). Never wait forever.
 7. **Mesh delivery retries belong to the device.** The SDK never re-enqueues a packet after `Sent` based on its own timer; it waits for the device's `Routing` outcome.
-8. **Heartbeat MUST be sent on TCP and serial transports** as `ToRadio(heartbeat = Heartbeat(nonce = ++counter))` every 15–30 s (default 30 s, matching the Android reference; Apple uses 15 s). BLE is optional — the Android reference sends opportunistically (drain trigger + defence-in-depth); Apple skips. SDK ships heartbeat-on-BLE on by default. The `nonce` field is mandatory: it defeats the firmware's per-connection memcmp dedup on identical writes. See `docs/protocol.md` §16.
+8. **Heartbeat MUST be sent on TCP and serial transports** as `ToRadio(heartbeat = Heartbeat(nonce = 0))` every 30 s. BLE is optional — the SDK ships heartbeat-on-BLE on by default; power-sensitive apps can opt out via `Builder.disableBleHeartbeat()`. Keep-alive heartbeats use `nonce = 0` (firmware interprets `nonce == 1` as "broadcast our nodeinfo over LoRa"; nonces > 0 are reserved). See `docs/protocol.md` §16.
 9. **Deferred decrypt is bounded.** Buffer overflow drops oldest; never grows unbounded.
 10. **`PayloadTooLarge` is enforced client-side at enqueue** (`DATA_PAYLOAD_LEN = 233`) and surfaces as `MeshtasticException.PayloadTooLarge` thrown from `send()`. It is therefore *not* a `SendFailure` value and never appears in `MessageHandle.state`. The device's `Routing.Error.TOO_LARGE` (should it ever escape pre-validation due to a firmware schema bump) is mapped to `SendFailure.Other(routingError = TOO_LARGE)`.
+11. **Liveness watchdog.** After reaching Ready, the engine arms a budget-based watchdog (default 60 s = `HEARTBEAT_INTERVAL_MS * 2`). Every decoded `FromRadio` resets the budget; a periodic tick decrements it. Budget exhaustion tears down the session with a `TransportError("liveness timeout")` — detects half-open TCP sockets and NAT timeouts that `transport.state` may not surface.
+12. **Auto-reconnect is opt-in (pre-1.0).** When enabled via `AutoReconnectConfig`, the engine catches recoverable `TransportState.Error`s with exponential backoff + jitter. Session state (pending sends, dedup ring, passkey) is reset between cycles; storage and the supervisor stay live. `ConnectionState.Reconnecting(cause, attempt)` is emitted throughout.
+13. **Inbound packet dedup.** The engine maintains a bounded `(from, to, channel, id)` set (cap 256, drop-oldest eviction) and silently drops duplicate decoded packets. Firmware mesh relays can echo packets; the SDK deduplicates so callers never observe the same logical packet twice.
+14. **Identity rebind detection.** If `MyNodeInfo.my_node_num` differs from the previously-persisted value for the same `TransportIdentity`, the engine emits `MeshEvent.IdentityRebound` *before* clearing storage, then calls `DeviceStorage.recordOwnNode` (which atomically clears + re-persists). Hosts can observe this on `events` to audit factory resets or radio swaps.
+15. **Storage degradation is fail-open.** If any storage write fails during a session, the engine flips a `storageDegraded` flag, emits `MeshEvent.StorageDegraded` **at most once per connect cycle**, and skips all subsequent writes. In-memory state (flows, node DB, packets) continues uninterrupted. The flag resets on the next `connect()`.
+16. **Telemetry → node merge.** Inbound `TELEMETRY_APP` packets with `device_metrics` are merged into the node DB and emit `NodeChange.Updated` with `NodeField.Telemetry` / `NodeField.Battery`, so node-list subscribers see battery changes without separate `TelemetryApi` subscription.
+17. **External config change detection.** Unsolicited admin messages from firmware (request_id == 0, from == myNodeNum) are detected and used to update `channelsState` / `configBundleState` in-memory + storage. `MeshEvent.ExternalConfigChange` is emitted so hosts can react.
 
 ### 4.4 Concurrency model summary
 
 - **One engine coroutine** owns all mutable state; uses `Channel<EngineMessage>(capacity = UNLIMITED)` as inbox.
-- **One frame-reader coroutine** per active transport; collects `transport.frames()` and posts `EngineMessage.FrameRx` to the inbox.
-- **One outbound-writer coroutine** drains `MessageQueue.outbound: Channel<Frame>` and calls `transport.send(frame)` sequentially.
+- **One frame-reader coroutine** per active transport; collects `transport.frames()` and posts `EngineMessage.FrameRx` to the inbox. Gates on `TransportState.Connected` before first collect.
+- **One outbound-writer coroutine** drains `Channel<Frame>(UNLIMITED)` and calls `transport.send(frame)` sequentially.
+- **One transport-observer coroutine** collects `transport.state` and posts `EngineMessage.TransportStateChanged` to the inbox for disconnect/error detection.
+- **Timer coroutines** (heartbeat, liveness, presence check, reconnect backoff) post tick messages into the inbox; all mutations happen on the engine coroutine — timers never mutate state directly.
 - Public `Flow`s are backed by engine-owned writable shared state. Per-flow buffering policy:
   - `nodes: Flow<NodeChange>` — replay snapshot once on subscribe, then `extraBufferCapacity = 256` with `SUSPEND` overflow (deltas MUST NOT drop; the snapshot is the consistency anchor).
   - `packets: Flow<MeshPacket>` — `extraBufferCapacity = 128` with `SUSPEND` overflow (chat/text loss is unacceptable). Slow consumers backpressure the engine; if the engine inbox fills, the engine emits `MeshEvent.PacketsDropped(Packets, count)` and drops the *oldest engine-side queued frame* rather than blocking the transport reader. This converts silent loss into an observable event.
   - `events: Flow<MeshEvent>` — `extraBufferCapacity = 64`, `DROP_OLDEST` (events are advisory; never block the engine on observability). Drop bursts surface as `PacketsDropped(Events, n)` on the next event after pressure clears.
-  - `connectionState`, `ownNode` — `MutableStateFlow` (conflate, never drop).
+  - `connectionState`, `ownNode`, `configBundleState`, `channelsState` — `MutableStateFlow` (conflate, never drop).
 - Cancellation: `client.disconnect()` cancels the engine `CoroutineScope`; the actor's `finally` flushes storage and closes the transport.
 
 ---
@@ -622,7 +835,7 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 
 | Tool | Purpose |
 |---|---|
-| Gradle 9.x + Kotlin DSL + version catalog (`gradle/libs.versions.toml`) | Build (matches MQTTastic Gradle 9.3.0) |
+| Gradle 9.x + Kotlin DSL + version catalog (`gradle/libs.versions.toml`) | Build (Gradle 9.4.1) |
 | Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
 | Kotlin `explicitApi("strict")` on all `:sdk-*` modules **except `:proto`** (Wire-generated; modifier doesn't apply meaningfully to codegen) |
 | `org.jetbrains.kotlin.multiplatform` + `com.android.kotlin.multiplatform.library` | New Android KMP library plugin — what MQTTastic uses |
@@ -646,9 +859,9 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 
 - `kotlin.test` + Kotest assertions
 - Turbine (Flow testing)
-- Mokkery (KMP-friendly mocking)
-- Kotest property module (for `WireCodec`, `MessageQueue`, `HandshakeMachine`)
-- jqwik-style fuzz (or kotest property with shrinking) on `WireCodec.decode` against random byte streams — cheap insurance for the resync path
+- MockK (JVM-side mocking)
+- Power-assert plugin (test only) — pretty intermediate values
+- Kotest property module (for `WireCodec`, send tracking, handshake FSM)
 
 ### 5.3 Adopt only when justified
 
@@ -825,7 +1038,7 @@ From Phase 2: a dedicated radio either attached to a runner (TCP-over-WiFi night
 | Artifact prefix | `sdk-` (e.g. `sdk-core`, `sdk-transport-ble`) |
 | Kotlin package root | `org.meshtastic.sdk` |
 | Min Android SDK | 26 |
-| JVM target | 17 |
+| JVM toolchain | 21 |
 | CLA | DCO sign-off only |
 | Routine radio failures | Typed sealed (`SendState.Failed`, `AdminResult.*`) — never thrown |
 | Fatal/programmer errors | `MeshtasticException` (sealed); thrown |
@@ -888,6 +1101,35 @@ After each phase:
 
 ## 11. What Changed From v1 (for reviewers)
 
+### v2.2 (2026-05-10) — Post-audit sync
+
+Full audit of implementation vs spec revealed significant drift. This revision synchronizes the spec with the shipped codebase:
+
+| Was (v2.1) | Now (v2.2) | Why |
+|---|---|---|
+| JVM target 17 | JVM toolchain 21 | Actual `javaVersion` in `libs.versions.toml` is 21 |
+| Android SDK "latest stable" | Compile/Target SDK 36 (pinned) | Match actual `androidCompileSdk = "36"` |
+| Builder takes `TransportSpec` | Builder takes `RadioTransport` instance | Actual API takes pre-built transport; `TransportSpec` is informational |
+| No auto-reconnect | `AutoReconnectConfig` documented | Shipped in implementation; needs spec coverage |
+| No `sendTimeout` / `rpcTimeout` / `presenceTimeout` builder methods | Documented with defaults | Shipped builder knobs |
+| No `configBundle` / `channels` StateFlows | Documented as public API | Shipped; consumers depend on them |
+| No `sendReaction` / `requestNodeInfo` / `sendRaw` / `connectAndAwaitReady` | Documented | Shipped public surface |
+| No `StoreForwardApi` | Documented as sub-API | Shipped |
+| `AdminApi` had ~15 methods | ~45 methods documented | Full admin surface shipped |
+| `AdminResult` missing `RateLimited` | Added | Shipped variant |
+| No `AdminResult` extension functions | `getOrNull`, `map`, `fold`, `onSuccess`, `onFailure`, `getOrThrow` documented | Shipped ergonomic extensions |
+| `MeshEvent` had 6 variants | 13+ variants documented (StorageDegraded, DeviceRebooted, IdentityRebound, SecurityWarning, CongestionWarning, ExternalConfigChange) | All shipped |
+| `NodeChange` had 4 variants | 6 variants (added WentOffline, CameOnline) | Presence tracking shipped |
+| `DeviceStorage` missing passkey + heartbeat methods | 4 new methods documented | Shipped for session resumption + presence |
+| `ConfigBundle` missing `deviceUIConfig` | Added | Shipped field |
+| `SendOutcome` undocumented | Documented | Shipped type |
+| Components table listed `MessageQueue`, `DeferredDecryptBuffer`, `PersistenceCoordinator` as standalone classes | Updated to reflect inline implementation in `MeshEngine` | These were never extracted; spec now matches reality |
+| 10 anchor invariants | 17 invariants (liveness watchdog, auto-reconnect, dedup, identity rebind, storage degradation, telemetry merge, external config detection) | All implemented; spec was missing coverage |
+| Concurrency model listed 3 coroutines | 4+ coroutines (added transport observer, timer coroutines) | Shipped |
+| Test stack: Mokkery | MockK | Actual dependency |
+| Appendix A: sketch `jvmToolchain(17)`, `com.android.library`, Okio in commonMain | Actual: `jvmToolchain(21)`, `com.android.kotlin.multiplatform.library`, Kermit + kotlinx-datetime, Dokka + PowerAssert, `-Xjvm-expose-boxed` | Match shipped convention plugin |
+| Appendix B: placeholder versions | Actual pinned versions from `libs.versions.toml` | Eliminates guesswork |
+
 ### v2.1 (2026-04-17) — MQTTastic-Client-KMP alignment
 
 The Meshtastic org shipped [`MQTTastic-Client-KMP`](https://github.com/meshtastic/MQTTastic-Client-KMP) on 2026-04-16 (`org.meshtastic:mqtt-client:0.1.0`, GPL-3.0). Built by the same maintainers as this SDK. Locked deltas:
@@ -938,79 +1180,121 @@ The Meshtastic org shipped [`MQTTastic-Client-KMP`](https://github.com/meshtasti
 ```kotlin
 class KmpLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
-        pluginManager.apply("org.jetbrains.kotlin.multiplatform")
-        pluginManager.apply("com.android.library")
+        val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
+
+        with(pluginManager) {
+            apply("org.jetbrains.kotlin.multiplatform")
+            apply("org.jetbrains.dokka")
+            apply("org.jetbrains.kotlin.plugin.power-assert")
+        }
+
+        extensions.configure<DokkaExtension> {
+            moduleName.set(project.name)
+            dokkaSourceSets.configureEach {
+                includes.from("Module.md")
+                sourceLink { /* GitHub source links */ }
+            }
+        }
+
+        extensions.configure<PowerAssertGradleExtension> {
+            functions.set(listOf(
+                "kotlin.assert", "kotlin.require", "kotlin.check",
+                "kotlin.test.assertTrue", "kotlin.test.assertFalse",
+                "kotlin.test.assertEquals", "kotlin.test.assertNotEquals",
+                "kotlin.test.assertNull", "kotlin.test.assertNotNull",
+            ))
+            includedSourceSets.set(listOf(
+                "commonTest", "jvmTest", "jvmAndroidTest", "iosTest",
+                "iosArm64Test", "iosX64Test", "iosSimulatorArm64Test",
+                "appleTest", "androidUnitTest", "androidInstrumentedTest",
+            ))
+        }
+
         extensions.configure<KotlinMultiplatformExtension> {
+            jvmToolchain(libs.findVersion("javaVersion").get().requiredVersion.toInt())    // 21
             explicitApi()
-            jvmToolchain(17)
-            androidTarget()
-            jvm()
-            iosArm64(); iosX64(); iosSimulatorArm64()
-            sourceSets {
+            jvm(); iosArm64(); iosX64(); iosSimulatorArm64()
+            applyDefaultHierarchyTemplate()
+
+            sourceSets.apply {
                 commonMain.dependencies {
-                    implementation(libs.kotlinx.coroutines.core)
-                    implementation(libs.kotlinx.atomicfu)
-                    implementation(libs.kotlinx.datetime)
-                    implementation(libs.okio)
+                    implementation(libs.findLibrary("coroutinesCore").get())
+                    implementation(libs.findLibrary("kotlinxDatetime").get())
+                    implementation(libs.findLibrary("kermit").get())
                 }
                 commonTest.dependencies {
-                    implementation(kotlin("test"))
-                    implementation(libs.kotest.assertions)
-                    implementation(libs.turbine)
-                    implementation(libs.mokkery)
+                    implementation(libs.findLibrary("kotlinTest").get())
+                    implementation(libs.findLibrary("turbine").get())
+                    implementation(libs.findLibrary("kotestAssertions").get())
+                    implementation(libs.findLibrary("coroutinesTest").get())
+                }
+            }
+
+            targets.configureEach {
+                compilations.configureEach {
+                    compileTaskProvider.configure {
+                        compilerOptions { allWarningsAsErrors.set(true) }
+                    }
+                }
+            }
+
+            // -Xjvm-expose-boxed: non-mangled boxed accessors for value classes (Java interop)
+            targets.matching { it.platformType.name in listOf("jvm", "androidJvm") }.configureEach {
+                compilations.configureEach {
+                    compileTaskProvider.configure {
+                        compilerOptions { freeCompilerArgs.add("-Xjvm-expose-boxed") }
+                    }
                 }
             }
         }
-        configureSpotless(); configureDetekt(); configurePowerAssertForTests()
     }
 }
 ```
 
-`MeshtasticKmpPublishPlugin` applies Vanniktech + binary-compat-validator + Dokka.
+Note: Android library configuration (`namespace`, `compileSdk`, `minSdk`) is in the separate
+`AndroidLibraryConventionPlugin` using the `com.android.kotlin.multiplatform.library` plugin.
+Publishing (Vanniktech + Dokka + ABI validation) is in `PublishingConventionPlugin`.
 
 ---
 
-## Appendix B — `gradle/libs.versions.toml` skeleton
+## Appendix B — `gradle/libs.versions.toml` (actual, as of v2.2)
 
 ```toml
 [versions]
-kotlin = "2.x.y"
-agp = "8.x.y"
-coroutines = "1.10.x"
-serialization = "1.x.y"
-datetime = "0.7.x"
-atomicfu = "0.x.y"
-okio = "3.x.y"
-ktor = "3.x.y"
-wire = "5.x.y"
-sqldelight = "2.x.y"
-kable = "0.x.y"
-usb-serial-android = "3.x.y"
-jSerialComm = "2.x.y"
-dokka = "2.2.x"
-vanniktech-publish = "0.x.y"
-axion-release = "1.x.y"
-binary-compat = "0.x.y"
-spotless = "7.x.y"
-detekt = "1.x.y"
-power-assert = "2.x.y"
-mokkery = "2.x.y"
-turbine = "1.x.y"
-kotest = "5.x.y"
-
-[plugins]
-kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-android-library = { id = "com.android.library", version.ref = "agp" }
-wire = { id = "com.squareup.wire", version.ref = "wire" }
-sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
-dokka = { id = "org.jetbrains.dokka", version.ref = "dokka" }
-vanniktech-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-publish" }
-axion-release = { id = "pl.allegro.tech.build.axion-release", version.ref = "axion-release" }
-binary-compat = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "binary-compat" }
-spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
-detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
-power-assert = { id = "org.jetbrains.kotlin.plugin.power-assert", version.ref = "kotlin" }
-mokkery = { id = "dev.mokkery", version.ref = "mokkery" }
+kotlin                      = "2.3.20"
+agp                         = "9.2.1"
+gradle                      = "9.4.1"
+javaVersion                 = "21"
+androidMinSdk               = "26"
+androidCompileSdk           = "36"
+androidTargetSdk            = "36"
+coroutines                  = "1.11.0-rc02"
+kotlinxIo                   = "0.9.0"
+kotlinxDatetime             = "0.7.1"
+kotlinxSerialization        = "1.11.0"
+atomicfu                    = "0.32.1"
+okio                        = "3.17.0"
+wire                        = "6.2.0"
+sqldelight                  = "2.3.2"
+kable                       = "0.42.0"
+ktor                        = "3.4.3"
+jSerialComm                 = "2.11.4"
+mosaic                      = "0.18.0"
+clikt                       = "5.1.0"
+composeMultiplatform        = "1.10.3"
+kermit                      = "2.1.0"
+turbine                     = "1.2.1"
+kotest                      = "6.1.11"
+mockk                       = "1.14.9"
+vanniktechMavenPublish      = "0.36.0"
+kmmBridge                   = "1.2.1"
+skie                        = "0.10.11"
+dokka                       = "2.2.0"
+ktlint                      = "1.8.0"
+spotless                    = "8.4.0"
+detekt                      = "2.0.0-alpha.3"
+axionRelease                = "1.21.1"
+kover                       = "0.9.8"
 ```
 
-Populate `[libraries]` per module need.
+See `gradle/libs.versions.toml` for the full `[libraries]`, `[plugins]`, and `[bundles]` sections.
