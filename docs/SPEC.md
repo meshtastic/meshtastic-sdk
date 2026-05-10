@@ -623,7 +623,7 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 | Tool | Purpose |
 |---|---|
 | Gradle 9.x + Kotlin DSL + version catalog (`gradle/libs.versions.toml`) | Build (matches MQTTastic Gradle 9.3.0) |
-| Convention plugins in `build-logic/convention/` | `meshtastic.radio.library`, `meshtastic.radio.publish`, `meshtastic.radio.testing` |
+| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
 | Kotlin `explicitApi("strict")` on all `:sdk-*` modules **except `:proto`** (Wire-generated; modifier doesn't apply meaningfully to codegen) |
 | `org.jetbrains.kotlin.multiplatform` + `com.android.kotlin.multiplatform.library` | New Android KMP library plugin — what MQTTastic uses |
 | Spotless + ktlint + `licenseHeaderFile` | Formatting + GPL-3.0 header enforcement (copy `config/spotless/copyright.kt` from MQTTastic) |
@@ -690,7 +690,7 @@ The Meshtastic org already publishes official KMP libraries under `org.meshtasti
 - [ ] Submodule: `proto/src/protobufs` → `meshtastic/protobufs` `main`.
 - [ ] Gradle wrapper (9.x). `settings.gradle.kts` with `pluginManagement` + `dependencyResolutionManagement` (copy from MQTTastic, add multi-module includes).
 - [ ] Add to version catalog the SDK-specific deps not present in MQTTastic: `wire`, `sqldelight`, `kable`, `usb-serial-for-android`, `jSerialComm`, `mokkery`, `turbine`, `kotest`, `power-assert`, `axion-release`.
-- [ ] `build-logic/convention/` plugins: `meshtastic.radio.library`, `meshtastic.radio.publish`, `meshtastic.radio.testing`. Library plugin encodes the MQTTastic `applyDefaultHierarchyTemplate()` + custom intermediate-source-set pattern.
+- [ ] `build-logic/convention/` plugins: `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android`. Library plugin encodes the MQTTastic `applyDefaultHierarchyTemplate()` + custom intermediate-source-set pattern.
 - [ ] `core/` module compiles empty for `androidTarget`, `jvm`, `iosArm64`, `iosX64`, `iosSimulatorArm64`. `explicitApi("strict")` on. BCV `updateKotlinAbi` committed.
 - [ ] CI matrix builds + `spotlessCheck` + `detekt` + `allTests` + `checkKotlinAbi` + `koverVerify` on Ubuntu (android+jvm) and macOS (iOS).
 - [ ] Vanniktech `publishToMavenCentral()` wired; first publish: `org.meshtastic:sdk-core:0.0.1-SNAPSHOT`.
@@ -838,7 +838,7 @@ From Phase 2: a dedicated radio either attached to a runner (TCP-over-WiFi night
 | Concurrency model | Single-actor engine (one coroutine, `Channel` inbox) |
 | Node observation | `Flow<NodeChange>` deltas (Snapshot first to new subscribers) |
 | Mesh-delivery retry | Device's job — SDK never retries on its own timer |
-| Convention plugins | `meshtastic.radio.library`, `meshtastic.radio.publish`, `meshtastic.radio.testing` |
+| Convention plugins | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework` |
 | Build scaffold source | Forked verbatim from `meshtastic/MQTTastic-Client-KMP` |
 | Pre-1.0 ABI | Breaking allowed with `updateKotlinAbi` + CHANGELOG |
 | 1.0+ ABI | Hard-gated |
@@ -896,7 +896,7 @@ The Meshtastic org shipped [`MQTTastic-Client-KMP`](https://github.com/meshtasti
 |---|---|---|
 | Group `org.meshtastic.kmp`, artifact prefix `meshtastic-sdk-` | Group `org.meshtastic`, artifact prefix `sdk-` | Match sibling lib `org.meshtastic:mqtt-client`; `kmp` qualifier is org-redundant |
 | Kotlin package root `org.meshtastic.kmp.core` | `org.meshtastic.sdk` | Match `org.meshtastic.mqtt` namespace style |
-| Convention plugins `meshtastic.kmp.*` | `meshtastic.radio.*` | Same naming reason |
+| Convention plugins `meshtastic.kmp.*` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, etc. | Finer-grained per-concern plugins; naming reflects target/function |
 | Phase −1 governance as blocker | Resolved; ADR + cross-link issue only | Org already accepts KMP libs |
 | Phase 0 build-logic from scratch | **Forked verbatim from MQTTastic** (Spotless config, Detekt config, CI workflows, AGENTS.md pattern, Develocity, foojay, vanniktech `publishToMavenCentral()`) | Don't re-derive solved problems |
 | Spotless + ktfmt | Spotless + **ktlint** + `licenseHeaderFile` | Match MQTTastic |
@@ -933,10 +933,10 @@ The Meshtastic org shipped [`MQTTastic-Client-KMP`](https://github.com/meshtasti
 
 ## Appendix A — Convention plugin sketch
 
-`build-logic/convention/src/main/kotlin/MeshtasticKmpLibraryPlugin.kt`:
+`build-logic/convention/src/main/kotlin/KmpLibraryConventionPlugin.kt`:
 
 ```kotlin
-class MeshtasticKmpLibraryPlugin : Plugin<Project> {
+class KmpLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         pluginManager.apply("org.jetbrains.kotlin.multiplatform")
         pluginManager.apply("com.android.library")
