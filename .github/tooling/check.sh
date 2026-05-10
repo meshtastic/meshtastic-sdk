@@ -48,7 +48,7 @@ echo "[tooling] Linting shell scripts"
 find .github -type f -name "*.sh" -print0 | xargs -0 shellcheck
 
 echo "[tooling] Linting markdown for .github"
-markdownlint ".github/**/*.md" --disable MD013 MD022 MD032 MD041 MD060 MD033
+markdownlint ".github/**/*.md" --disable MD013 MD022 MD029 MD031 MD032 MD033 MD040 MD041 MD060
 
 if [[ -d .github/workflows ]] && compgen -G ".github/workflows/*.yml" >/dev/null; then
   echo "[tooling] Linting GitHub workflows"

@@ -10,6 +10,7 @@ package org.meshtastic.sdk
 import com.squareup.wire.ProtoAdapter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.mapNotNull
 import okio.ByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.MeshPacket
@@ -105,3 +106,36 @@ public fun MeshPacket.asTraceroute(): RouteDiscovery? = decodeIfPort(PortNum.TRA
  */
 public fun MeshPacket.asNeighborInfo(): ProtoNeighborInfo? =
     decodeIfPort(PortNum.NEIGHBORINFO_APP, ProtoNeighborInfo.ADAPTER)
+
+/**
+ * Filters [RadioClient.packets] to only neighbor-info packets — those with
+ * `decoded.portnum == [PortNum.NEIGHBORINFO_APP]`.
+ *
+ * Each emitted [MeshPacket] can be decoded via [asNeighborInfo] to get the raw proto, or
+ * use [neighborInfoFlow] to get pre-decoded [NeighborInfo] domain objects.
+ *
+ * This flow is **hot with no replay** — it inherits [RadioClient.packets] semantics.
+ */
+public val RadioClient.neighborInfoMessages: Flow<MeshPacket>
+    get() = packets.filter { it.decoded?.portnum == PortNum.NEIGHBORINFO_APP }
+
+/**
+ * A typed flow of [NeighborInfo] domain objects, decoded from inbound `NEIGHBORINFO_APP` packets.
+ *
+ * Each emission represents a single neighbor-info report from a node in the mesh.
+ * Packets that fail to decode are silently dropped.
+ *
+ * This flow is **hot with no replay** — it inherits [RadioClient.packets] semantics.
+ *
+ * @since 0.3.0
+ */
+public val RadioClient.neighborInfoFlow: Flow<NeighborInfo>
+    get() = neighborInfoMessages.mapNotNull { packet ->
+        val proto = packet.asNeighborInfo() ?: return@mapNotNull null
+        NeighborInfo.fromProto(
+            reportingNode = packet.from,
+            neighborNodeIds = proto.neighbors.map { it.node_id },
+            snrValues = proto.neighbors.map { it.snr },
+            timestamp = proto.last_sent_by_id,
+        )
+    }

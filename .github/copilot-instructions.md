@@ -181,3 +181,8 @@ The `samples/cli/` module is a standalone runnable example using the SDK with Cl
 
 **Version:** Updated 2026-04-21 after storage + dispatcher audit.
 For questions, consult the decision records or ask in `/ask` mode without polluting session history.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->

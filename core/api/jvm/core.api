@@ -1189,6 +1189,8 @@ public final class org/meshtastic/sdk/PayloadAccessorsKt {
 	public static final fun asText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
 	public static final fun asTraceroute (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/RouteDiscovery;
 	public static final fun asWaypoint (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/Waypoint;
+	public static final fun getNeighborInfoFlow (Lorg/meshtastic/sdk/RadioClient;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun getNeighborInfoMessages (Lorg/meshtastic/sdk/RadioClient;)Lkotlinx/coroutines/flow/Flow;
 	public static final fun getTextMessages (Lorg/meshtastic/sdk/RadioClient;)Lkotlinx/coroutines/flow/Flow;
 }
 

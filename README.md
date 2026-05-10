@@ -111,6 +111,8 @@ suspend fun observeAndSend(client: RadioClient) = coroutineScope {
                 is NodeChange.Added    -> println("+ ${change.node.user?.long_name}")
                 is NodeChange.Updated  -> println("~ ${change.node.user?.long_name} (${change.changed})")
                 is NodeChange.Removed  -> println("- ${change.nodeId}")
+                is NodeChange.WentOffline -> println("⊘ ${change.nodeId} offline")
+                is NodeChange.CameOnline  -> println("● ${change.nodeId} online")
             }
         }
     }
@@ -261,7 +263,7 @@ cd meshtastic-sdk
 Requirements:
 
 - JDK 21 (`sdk install java 21-tem`).
-- Android SDK with API 35 platform if building Android targets (set `ANDROID_HOME`).
+- Android SDK with API 36 platform if building Android targets (set `ANDROID_HOME`).
 - Xcode + iOS 14+ SDK if building iOS targets (mac only).
 
 ### Runtime requirements (consumers)

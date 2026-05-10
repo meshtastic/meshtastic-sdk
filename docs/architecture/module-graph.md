@@ -79,16 +79,26 @@ flowchart LR
     cli --> ble[":transport-ble"]
     cli --> serial[":transport-serial"]
     cli --> sqlstore[":storage-sqldelight"]
+    parityApp[":samples/parity-app (CMP)"] --> tcp
+    parityApp --> ble
+    parityApp --> sqlstore
+    parityAndroid[":samples/parity-android-app"] --> tcp
+    parityAndroid --> ble
+    parityAndroid --> sqlstore
 ```
 
-`:samples/cli` is currently the only sample. It exercises all three transports
+`:samples/cli` is a JVM-only sample exercising all three transports
 plus persistent storage from a single JVM entry point with a Mosaic-rendered
 TUI dashboard and headless probe sub-commands (`tcpprobe`, `bleprobe`,
 `serialprobe`) used as connection-robustness regression harnesses.
 
+`:samples/parity-app` is a Compose Multiplatform reference app targeting
+Android and Desktop (JVM). `:samples/parity-android-app` is a minimal
+Android-only companion for validating the Android integration path
+(permissions, foreground service, lifecycle).
+
 A minimal SwiftUI sample for iOS distribution validation will return in
-Phase 5; the previous Compose Multiplatform `:samples:app` and SwiftUI
-`samples/iosApp/` were removed (see CHANGELOG `[Unreleased] / Removed`).
+Phase 5.
 
 Sample-specific scope and acceptance criteria live in [`../samples.md`](../samples.md).
 

@@ -45,7 +45,7 @@ git push --force-with-lease
 | JDK | 21 (Temurin recommended; install via `sdk install java 21-tem`) |
 | Android Gradle Plugin (AGP) | **9.0+** (required for Kotlin 2.0 compatibility and KMP support; see **Build requirements** below) |
 | Gradle | 8.4+ (bundled; see `gradle/wrapper/gradle-wrapper.properties`) |
-| Android SDK | API 35 platform (only needed for Android targets); set `ANDROID_HOME` |
+| Android SDK | API 36 platform (only needed for Android targets); set `ANDROID_HOME` |
 | Xcode | 15+ with iOS 14+ SDK (only needed for iOS targets, mac only) |
 | Git | Any modern version with submodule support |
 

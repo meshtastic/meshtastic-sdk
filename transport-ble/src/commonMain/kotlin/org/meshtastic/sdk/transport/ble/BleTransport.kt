@@ -40,7 +40,6 @@ import org.meshtastic.sdk.TransportSpec
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.transport.ble.internal.AndroidGattStatus
 import org.meshtastic.sdk.transport.ble.internal.DrainCoordinator
-import org.meshtastic.sdk.transport.ble.internal.GattErrorCategory
 import org.meshtastic.sdk.transport.ble.internal.classifyGattError
 import org.meshtastic.sdk.transport.ble.internal.classifyGattStatus
 import org.meshtastic.sdk.transport.ble.internal.gattStatusCodeOrNull
@@ -85,16 +84,16 @@ public class BleTransport(
 
     private val frameChannel = Channel<Frame>(capacity = 64)
 
-    // Idempotent shutdown flag.
+    // ADR-012: lifecycle idempotency — idempotent shutdown flag.
     private val shuttingDown = atomic(false)
 
-    // Enforces single-collection of frames().
+    // ADR-012: lifecycle idempotency — enforces single-collection of frames().
     private val framesCollected = atomic(false)
 
-    // While false, bridgeKableState() won't promote to Connected (warmup read pending).
+    // ADR-012: lifecycle idempotency — while false, bridgeKableState() won't promote to Connected (warmup read pending).
     private val warmupComplete = atomic(false)
 
-    // Idempotency guard: only one Error transition per connect cycle.
+    // ADR-012: lifecycle idempotency — only one Error transition per connect cycle.
     private val errorPublished = atomic(false)
 
     override suspend fun connect() {
@@ -381,8 +380,6 @@ public class BleTransport(
 
         /** Total connect attempts (1 initial + N-1 retries) for transient GATT errors. */
         internal const val GATT_RETRY_ATTEMPTS: Int = 3
-
-        internal val GATT_RETRY_BACKOFF_MS: LongArray = longArrayOf(250L, 750L)
 
         /** GATT statuses indicating encryption/auth required (triggers bonding flow). */
         private fun isAuthRequiredStatus(status: Int): Boolean = status == 5 || status == 15 || status == 137
