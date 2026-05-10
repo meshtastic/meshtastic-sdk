@@ -381,7 +381,6 @@ public class BleTransport(
         /** Total connect attempts (1 initial + N-1 retries) for transient GATT errors. */
         internal const val GATT_RETRY_ATTEMPTS: Int = 3
 
-
         /** GATT statuses indicating encryption/auth required (triggers bonding flow). */
         private fun isAuthRequiredStatus(status: Int): Boolean = status == 5 || status == 15 || status == 137
 

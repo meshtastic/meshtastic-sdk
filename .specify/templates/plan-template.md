@@ -11,14 +11,14 @@
 
 ## Technical Context
 
-**Language/Version**: Kotlin 2.3.x (KMP), JDK 21 toolchain, JDK 17 bytecode target  
-**Build System**: Gradle with convention plugins (`build-logic/`), axion-release versioning  
-**Primary Dependencies**: Wire 6 (protobuf), kotlinx-coroutines, kotlinx-io, Kable (BLE), ktor-network (TCP)  
-**Storage**: SQLDelight 2.x (`:storage-sqldelight`); interface-based (`StorageProvider`) — consumers may substitute  
-**Testing**: kotlin-test, Turbine (Flow testing), Kotest assertions, coroutines-test; fakes in `:testing` module  
-**Target Platforms**: JVM, Android (minSdk 26), iOS (Arm64, X64, SimulatorArm64)  
-**Project Type**: Multiplatform SDK library  
-**Constraints**: `:core` depends only on `:proto`; no `java.*`/`android.*` in `commonMain`; actor-based engine (no mutex/synchronized); KDoc on every public symbol  
+**Language/Version**: Kotlin 2.3.x (KMP), JDK 21 toolchain, JDK 17 bytecode target
+**Build System**: Gradle with convention plugins (`build-logic/`), axion-release versioning
+**Primary Dependencies**: Wire 6 (protobuf), kotlinx-coroutines, kotlinx-io, Kable (BLE), ktor-network (TCP)
+**Storage**: SQLDelight 2.x (`:storage-sqldelight`); interface-based (`StorageProvider`) — consumers may substitute
+**Testing**: kotlin-test, Turbine (Flow testing), Kotest assertions, coroutines-test; fakes in `:testing` module
+**Target Platforms**: JVM, Android (minSdk 26), iOS (Arm64, X64, SimulatorArm64)
+**Project Type**: Multiplatform SDK library
+**Constraints**: `:core` depends only on `:proto`; no `java.*`/`android.*` in `commonMain`; actor-based engine (no mutex/synchronized); KDoc on every public symbol
 **CI Gates**: `./gradlew check` (build + test + lint + `checkKotlinAbi` + detekt + `:core:verifyModuleBoundary`)
 
 ## Constitution Check
