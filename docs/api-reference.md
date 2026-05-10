@@ -45,19 +45,39 @@ RadioClient.Builder()
     .disableBleHeartbeat(false)                                        // default: false (BLE only)
     .protocolLogging(LogLevel.NONE, PayloadRedactor.Default)           // default: NONE
     .sendTimeout(30.seconds)                                           // default: 30 s — applies to MessageHandle.await()
+    .rpcTimeout(10.seconds)                                            // default: 10 s — per-op admin RPC timeout
+    .presenceTimeout(15.minutes)                                       // default: 15 min — node offline threshold
+    .autoReconnect(AutoReconnectConfig())                              // default: disabled; opt-in exponential backoff
     .build()
 ```
 
 `Builder.transport(spec: TransportSpec)` is also available for spec-driven setups, but you must additionally provide a concrete `RadioTransport` — see `samples/cli` for a `TransportSpec → RadioTransport` opener pattern.
+
+#### `AutoReconnectConfig` *(since 0.2.0)*
+
+```kotlin
+public data class AutoReconnectConfig(
+    val initialDelay: Duration = 1.seconds,
+    val maxDelay: Duration = 60.seconds,
+    val multiplier: Double = 2.0,
+    val jitterFactor: Double = 0.15,
+    val maxAttempts: Int = Int.MAX_VALUE,
+)
+```
+
+When enabled, the engine automatically reconnects on transport drops, transitioning through `ConnectionState.Reconnecting(cause, attempt)`. Disable by omitting the `.autoReconnect(...)` builder call.
 
 ### Lifecycle
 
 | Member | Returns | Throws | Notes |
 |---|---|---|---|
 | `connect()` | `Unit` (suspends until `Connected`) | `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`, `FirmwareTooOld`), `CancellationException` | **Not** idempotent — calling `connect()` while already `Connected` throws `AlreadyConnected` (deliberate; silent no-op hides reconnect-loop bugs). |
+| `connectAndAwaitReady()` | `Unit` (suspends until `Connected` with session passkey seeded) | same as `connect()` | Convenience wrapper: calls `connect()`, then awaits the post-handshake admin session passkey seed. Prefer this unless you need to observe handshake progress. |
 | `disconnect()` | `Unit` | never | Idempotent. Cancels supervisor; resolves all open `MessageHandle`s to `Failed(Disconnected)`. |
 | `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
+| `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
+| `channels: StateFlow<List<Channel>>` | — | — | Empty until Stage 1 completes. Reactive view of all device channels. Updated on `setChannel` responses. |
 
 ### Streams
 
@@ -75,7 +95,21 @@ RadioClient.Builder()
 | `sendText(text: String, channel: ChannelIndex = ChannelIndex(0), to: NodeId = NodeId.BROADCAST): MessageHandle` | handle | same as `send` |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
 | `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
+| `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
+
+### Send DSL *(since 0.2.0)*
+
+```kotlin
+val handle = client.send {
+    text("hello mesh")
+    to(NodeId.BROADCAST)
+    channel(ChannelIndex(0))
+    wantAck(true)
+}
+```
+
+The `send { … }` lambda configures a `MeshPacket` builder. Available DSL methods: `text(String)`, `data(PortNum, ByteArray)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck(Boolean)`, `hopLimit(Int)`, `priority(Priority)`.
 
 ### Sub-API namespaces
 
@@ -124,7 +158,6 @@ public sealed interface SendFailure {
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure
 }
-
 // Separate sealed type — NOT a typealias for SendState.
 public sealed interface SendOutcome {
     public data object Success : SendOutcome
@@ -141,12 +174,14 @@ public sealed interface MeshEvent {
     public data class QueueStatusChanged(val status: QueueStatus) : MeshEvent
     public data class Notification(val notification: ClientNotification) : MeshEvent
     public data class TransportError(val error: MeshtasticException.Transport) : MeshEvent
-    public data class ProtocolWarning(val message: String) : MeshEvent
+    public data class ProtocolWarning(val message: String, val details: Map<String, String> = emptyMap()) : MeshEvent
     public data class KeyVerification(val prompt: KeyVerificationPrompt) : MeshEvent
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
     public data class IdentityRebound(val previous: NodeId, val current: NodeId) : MeshEvent
     public data class StorageDegraded(val cause: MeshtasticException.StorageUnavailable) : MeshEvent
     public data class DeviceRebooted(val rebootCount: Int) : MeshEvent
+    public data class CongestionWarning(val freeSlots: Int, val totalSlots: Int) : MeshEvent
+    public data class ExternalConfigChange(val config: Config) : MeshEvent
     public sealed interface SecurityWarning : MeshEvent {
         public data class DuplicatedPublicKey(val nodeId: NodeId) : SecurityWarning
         public data class LowEntropyKey(val nodeId: NodeId) : SecurityWarning
@@ -155,7 +190,7 @@ public sealed interface MeshEvent {
 public enum class DroppedFlow { Packets, Events }
 ```
 
-`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.). `IdentityRebound` is the dedicated signal for the engine clearing storage after a NodeNum change (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads.
+`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for the engine clearing storage after a NodeNum change (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads.
 
 ## `NodeChange`
 
@@ -222,6 +257,19 @@ public enum class ConfigPhase {
 
 `progress: 0f..1f` is monotonically non-decreasing within an attempt. `Connected` is reached **only** after Stage 2's `config_complete_id` matches and the `session_passkey` is seeded ([handshake-fsm](./architecture/handshake-fsm.md)).
 
+### Extension properties *(since 0.2.0)*
+
+```kotlin
+/** True for Connected — the client can send/receive. */
+public val ConnectionState.isUsable: Boolean
+
+/** True for Connecting, Configuring, Reconnecting — a transition is in progress. */
+public val ConnectionState.isInProgress: Boolean
+
+/** Human-readable status suitable for UI display (e.g., "Configuring (Stage 1 — 45%)"). */
+public val ConnectionState.statusMessage: String
+```
+
 ## `TransportSpec` and `TransportIdentity`
 
 ```kotlin
@@ -255,6 +303,12 @@ Identity normalisation: BLE address uppercased (canonical MAC form); TCP host + 
 public sealed class MeshtasticException(message: String, cause: Throwable? = null)
     : Exception(message, cause) {
 
+    /** The transport identity active when the exception was created (null if pre-connect). */
+    public open val transportIdentity: TransportIdentity? = null
+
+    /** The high-level operation that was in progress (e.g., "connect", "sendText", "admin.setConfig"). */
+    public open val operation: String? = null
+
     public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
     public class Protocol(reason: String) : MeshtasticException(reason)
     public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null) : MeshtasticException(message, cause)
@@ -265,6 +319,11 @@ public sealed class MeshtasticException(message: String, cause: Throwable? = nul
     public class PayloadTooLarge(public val maxBytes: Int) : MeshtasticException("Payload exceeds $maxBytes bytes")
     public class HandshakeTimeout(public val stage: String)
         : MeshtasticException("Handshake timed out in $stage")
+
+    public companion object {
+        /** Create a tagged exception for structured logging: `MeshtasticException.tag("engine.handshake")`. */
+        public fun tag(operation: String): String = operation
+    }
 }
 ```
 
@@ -335,6 +394,19 @@ public sealed interface AdminResult<out T> {
 ```
 
 `SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified. `RateLimited` indicates the device rejected the call due to rate limiting (`Routing.Error.RATE_LIMIT_EXCEEDED`); callers should back off before retrying.
+
+### `AdminResult` extensions *(since 0.2.0)*
+
+```kotlin
+public fun <T> AdminResult<T>.getOrNull(): T?
+public fun <T> AdminResult<T>.getOrThrow(): T
+public fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R>
+public fun <T, R> AdminResult<T>.fold(onSuccess: (T) -> R, onFailure: (AdminResult<Nothing>) -> R): R
+public fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T>
+public fun <T> AdminResult<T>.onFailure(action: (AdminResult<Nothing>) -> Unit): AdminResult<T>
+```
+
+These follow the same naming conventions as `kotlin.Result` extensions but operate on the `AdminResult` sealed type (per ADR-005: no `kotlin.Result<T>` in the public API).
 
 ## `TelemetryApi` *(Phase 2)*
 
@@ -461,9 +533,21 @@ public interface DeviceStorage : AutoCloseable {
     /**
      * Audit + factory-reset detector. On NodeNum mismatch with prior tuple for this identity,
      * implementations MUST atomically `clear()` then persist new tuple. Engine emits
-     * `MeshEvent.ProtocolWarning("identity rebound to new NodeNum")`.
+     * `MeshEvent.IdentityRebound(previous, current)`.
      */
     public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String)
+
+    /** Save the admin session passkey for session resumption. */
+    public suspend fun saveSessionPasskey(passkey: SessionPasskey)
+
+    /** Load a previously saved session passkey (null if none persisted). */
+    public suspend fun loadSessionPasskey(): SessionPasskey?
+
+    /** Record a heartbeat timestamp for a node (presence tracking). */
+    public suspend fun recordHeartbeat(nodeId: NodeId, epochSeconds: Int)
+
+    /** Load the last heartbeat timestamp for a node (null if never seen). */
+    public suspend fun loadLastHeartbeat(nodeId: NodeId): Int?
 
     public suspend fun clear()
 }
@@ -473,6 +557,7 @@ public data class ConfigBundle(
     public val metadata: DeviceMetadata,
     public val configs: List<Config>,
     public val moduleConfigs: List<ModuleConfig>,
+    public val deviceUIConfig: DeviceUIConfig? = null,
 )
 ```
 

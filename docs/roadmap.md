@@ -28,12 +28,14 @@
 | R-5 | `Builder.protocolLogging(level, redactor)` | public | No-op (stored, unused) | 2 | [`RadioClient.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) — engine frame-handling instrumentation |
 | R-6 | `Builder.autoSyncTimeOnConnect(...)` | public | **Partial** — Sprint 5 fires a single fire-and-forget `AdminApi.setTime()` after handshake. Future iteration will gate on observed device skew (currently unconditional). | 2 | [`RadioClient.connect`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) |
 | R-7 | `TransportSpec`-driven transport factory lookup | public | Stub (Builder errors at `build()` if no concrete transport supplied) | 2 | [`RadioClient.Builder.build()`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) |
-| R-8 | Exponential-backoff reconnect after `TransportError` | internal | Partial — opt-in `Builder.autoReconnect(...)` ships in Sprint 4; remaining gap is the always-on default and skew-aware tuning. | 3 | [`MeshEngine.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/MeshEngine.kt) `handleReconnectTick` |
+| R-8 | ~~Exponential-backoff reconnect after `TransportError`~~ | ~~internal~~ | **Done** — `Builder.autoReconnect(AutoReconnectConfig())` ships opt-in exponential backoff with jitter + `ConnectionState.Reconnecting`. | — | — |
 | R-9 | ~~Identity-rebind `MeshEvent.ProtocolWarning`~~ | ~~observable~~ | **Done** — engine emits [`MeshEvent.IdentityRebound`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt) before clearing storage; see [`architecture/storage.md`](./architecture/storage.md#consumer-observable-signal-r-9) | — | — |
 | R-10 | Message history persistence in storage | none | Missing — `messages` table dropped in schema v2 (consumer concern) | — (consumer-owned) | [`architecture/storage.md`](./architecture/storage.md#message-history-is-not-stored), `migration_1__2.sqm` |
 | R-11 | MQTT proxy transport (`transport-mqtt-proxy`) | none | Missing — referenced in README + `future/wasm-rpc-roadmap.md`; ships post-1.0 additively | post-1.0 | [`future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md), [`README.md`](../README.md) |
 | R-12 | Wasm/RPC additive artifacts | none | Missing | post-1.0 | [`future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md) |
 | R-13 | ~~Channel/PSK management (read/list/set channels)~~ | ~~depends on R-1~~ | **Done** — Sprint 5. `AdminApi.getChannel / setChannel / listChannels` ship via the same `CommandDispatcher` path. PSK derivation stays in firmware; SDK ferries `Channel` proto messages. | — | — |
+| R-14 | ~~StoreForwardApi~~ | ~~public~~ | **Done** — `client.storeForward` ships `requestHistory`, `requestStats`, `servers` StateFlow, `events` cold Flow. | — | — |
+| R-15 | ~~Presence tracking (WentOffline / CameOnline)~~ | ~~public~~ | **Done** — `Builder.presenceTimeout(Duration)` enables per-node heartbeat-based presence; `NodeChange.WentOffline` / `CameOnline` emitted. | — | — |
 
 ## How to add to this list
 

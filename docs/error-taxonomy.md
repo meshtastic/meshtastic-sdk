@@ -61,6 +61,9 @@ public sealed interface SendFailure {
     public data object DutyCycleLimit : SendFailure             // Routing.DUTY_CYCLE_LIMIT_REACHED
     public data object Disconnected : SendFailure               // transport dropped mid-send
     public data object Cancelled : SendFailure                  // MessageHandle.cancel() pre-Sent
+    public data object IdCollision : SendFailure                // outbound packet id clashed with in-flight
+    public data object AckTimeout : SendFailure                 // ACK never observed within Builder.sendTimeout
+    public data object HandshakeFailed : SendFailure            // send attempted while handshake unwinding
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure
 }
@@ -147,6 +150,9 @@ Timeouts are not configurable in 0.x. If consumers need overrides at 1.x.y, that
 | `ProtocolWarning(message, details)` | Non-fatal protocol anomaly (skipped malformed envelope, dedup-fault recovery). The optional `details` map carries structured context. | Log; surface to dev tooling only. |
 | `IdentityRebound(previousNodeNum, newNodeNum, reason)` | Device reported a different `NodeNum` than the one previously persisted for this transport identity (factory reset, radio swap, hostname re-pointed at a different physical radio). Emitted **before** the SDK clears storage so consumers can snapshot in-memory state if desired. | Optionally surface "your radio was reset" UX; the engine will rebuild `MeshState` from the fresh handshake payload. |
 | `DeviceRebooted(reason)` | Device sent `FromRadio.rebooted = true` — the radio restarted mid-session (crash, admin-triggered reboot, firmware update, or brownout). The engine immediately tears the session down: pending sends fail with `HandshakeFailed` if mid-handshake (or `Disconnected` if post-Ready), handshake state resets, and `ConnectionState` transitions to `Disconnected`. | Surface "device restarted" UX if desired; start a fresh `connect()` cycle. |
+| `StorageDegraded(cause)` | Storage backend failed and transitioned to read-through-only mode (writes become no-ops). | Surface to dev tooling; engine continues operating with in-memory-only state. |
+| `CongestionWarning(freeSlots, totalSlots)` | Device outbound queue is critically full (`free ≤ 1`). | Back off sending; consider showing a "mesh congested" indicator. |
+| `ExternalConfigChange(config)` | Unsolicited admin message from firmware changed a config value (e.g., another client or device UI changed a setting). | Refresh any config-dependent UI state. |
 
 ### Identity rebind
 
