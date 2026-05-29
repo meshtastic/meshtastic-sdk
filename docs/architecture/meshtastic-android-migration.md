@@ -4,6 +4,13 @@ This document outlines the **Clean Break** migration path. Rather than building 
 
 The goal is massive code deletion and direct UI-to-SDK binding.
 
+> **Status — verified against `Meshtastic-Android@jamesarich/remove-aidl-api` (2026-05-29).** Several Phase 1/Phase 3 claims below predate the app's AIDL-removal work and were stale; corrected inline. Key facts:
+>
+> - **Proto is already identical — there is no proto rename.** The app's `core:proto` and the SDK's `proto` both generate the `org.meshtastic.proto.*` package from the same protobufs submodule (`v2.7.23` base) with the same Wire options (`boxOneOfsMinSize=5000`, `makeImmutableCopies=false`, flattened `.decoded` oneofs). All proto-typed code (~1,057 references in the app) is already cross-compatible. The only proto task is **unifying on the published `org.meshtastic:protobufs` KMP artifact ([protobufs#924](https://github.com/meshtastic/protobufs/pull/924))** so both repos pin one version — eliminating submodule drift (app `v2.7.23-25-ge3c8af5` vs SDK `v2.7.23-6-g10a1689`) and deleting both proto modules.
+> - **AIDL, `ServiceBroadcasts`, `ServiceAction`, `MeshActionHandler`, and `MeshRouter` are already deleted** in the app, and `RadioController` is already split into `AdminController`/`MessagingController`/`NodeController`/`QueryController` sub-interfaces. Phase 3's AIDL/broadcast deletions are therefore partly done.
+> - **`core:model` is 37 files / 51 types** (not 70), with **707 import lines across 342 files**. `core:model:NodeInfo` no longer exists (deleted). The model swap is **surgical, not a blanket rename**: ~8 types name-collide with proto messages (relocate their helpers to extension functions on the proto types — `Channel`, `Contact`, `DeviceMetrics`, `EnvironmentMetrics`, `MyNodeInfo`, `NeighborInfo`, `Position`, `RouteDiscovery`); 3 map to SDK types (`ConnectionState` — **different shape**, see Phase 6 — `Node`, `DeviceVersion`); and ~26 are genuinely app-specific and **must be kept or relocated to the app layer** (`DataPacket`, `NodeAddress`/`ContactKey`, `MeshUser`, `MeshLog`, `Message`, `DeviceHardware`, `Network*`, `Mqtt*`, `Capabilities`, `TelemetryType`, `Reaction`, `TAK`, …).
+> - **Version drift to reconcile:** app is *ahead* of the SDK — wire `6.4.0` vs `6.2.0`, kotlin `2.3.21` vs `2.3.20` (SDK pinned for SKIE), ktor `3.5.0` vs `3.4.3`, coroutines `1.11.0` vs `1.11.0-rc02`. protobufs#924 targets the app's versions (wire 6.4.0 / kotlin 2.3.21).
+
 ---
 
 ## 0. Architectural Vision: Direct Binding
@@ -34,12 +41,13 @@ graph TD
 ## Phase 1: Environment & Dependency Alignment
 **Goal:** Prepare the build system to import the SDK and resolve the model clash.
 
-1.  **`libs.versions.toml` Alignment:**
-    *   Align Wire, Coroutines, and KMP versions with the SDK. Current pinned versions: Wire 6.2.0, Coroutines 1.10.2, Kotlin 2.3.21, Koin 4.2.1 — verify these match SDK requirements before bumping.
-    *   Add `:sdk-core`, `:sdk-proto`, `:sdk-transport-ble`, `:sdk-transport-tcp`, `:sdk-transport-serial`, `:sdk-storage-sqldelight`, and `:sdk-testing` modules.
-2.  **Model Swap (`core/model` to Wire):**
-    *   The app has `core:model:NodeInfo`. The SDK uses `org.meshtastic.proto.NodeInfo` (Wire).
-    *   Delete the custom `core/model` protobuf mappings (70 files, ~719 import sites across `app` and `feature` modules — this is the single largest mechanical task in the migration). Perform a surgical package rename across the `app` and `core` modules to use the generated Wire types directly. Keep in mind that Wire generates `snake_case` properties (e.g. `node.user.long_name`).
+1.  **Shared proto artifact + `libs.versions.toml` Alignment:**
+    *   **Adopt the published `org.meshtastic:protobufs` KMP artifact ([protobufs#924](https://github.com/meshtastic/protobufs/pull/924)) in both repos.** It generates the identical `org.meshtastic.proto.*` package with the identical Wire config the app and SDK already use (wire 6.4.0, `boxOneOfsMinSize=5000`, `makeImmutableCopies=false`). Replacing the app's `core:proto` and the SDK's `proto` modules with this dependency is a near drop-in (no source changes — same FQNs) and removes submodule version drift. Do this **first**; it de-risks everything downstream.
+    *   Reconcile remaining versions — the app currently runs *ahead* of the SDK (wire 6.4.0 vs 6.2.0, kotlin 2.3.21 vs 2.3.20, ktor 3.5.0 vs 3.4.3, coroutines 1.11.0 vs 1.11.0-rc02). Note the SDK's kotlin 2.3.20 pin is for **SKIE 0.10.11** — verify SKIE compatibility before bumping to 2.3.21.
+    *   Add `:sdk-core`, `:sdk-transport-ble`, `:sdk-transport-tcp`, `:sdk-transport-serial`, `:sdk-storage-sqldelight`, and `:sdk-testing` modules. (No separate `:sdk-proto` once both consume `org.meshtastic:protobufs`.)
+2.  **Model Swap (`core/model` — surgical, NOT a blanket rename):**
+    *   **Proto types need no change** — the app already uses `org.meshtastic.proto.*` (~1,057 refs) identically to the SDK. `core:model:NodeInfo` was already deleted; do not look for it.
+    *   `core:model` is **37 files / 51 types**. Treat them in three buckets: (a) **~8 proto-name collisions** (`Channel`, `Contact`, `DeviceMetrics`, `EnvironmentMetrics`, `MyNodeInfo`, `NeighborInfo`, `Position`, `RouteDiscovery`) — these are app *wrappers* over proto; relocate their helpers to extension functions on the proto type and drop the wrapper. (b) **3 SDK-provided** (`ConnectionState` — different shape, reconcile per Phase 6 — `Node`→`MeshNode`/`NodeInfo`, `DeviceVersion`). (c) **~26 genuinely app-specific** (`DataPacket`, `NodeAddress`/`ContactKey`, `MeshUser`, `MeshLog`, `Message`, `DeviceHardware`, `Network*`, `Mqtt*`, `Capabilities`, `TelemetryType`, `Reaction`, `TAK`, …) — **keep these**, optionally relocating them out of `core:model` into the app/feature layer. Wire properties are `snake_case` (e.g. `node.user.long_name`).
 
 ---
 
