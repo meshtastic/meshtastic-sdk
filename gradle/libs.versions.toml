@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.3.20"           # pinned for SKIE 0.10.11; Meshtastic-Android is on 2.3.21 — patch-level diff is binary-compatible for consumers, so no bump needed until SKIE confirms 2.3.21
+kotlin                      = "2.3.21"           # matches Meshtastic-Android (SKIE 0.10.12+ supports 2.3.21)
 agp                         = "9.2.1"
 gradle                      = "9.4.1"
 javaVersion                 = "21"
@@ -51,7 +51,7 @@ junit                       = "4.13.2"
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.36.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.11"
+skie                        = "0.10.12"          # adds Kotlin 2.3.21 support
 applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
 dokka                       = "2.2.0"
 
