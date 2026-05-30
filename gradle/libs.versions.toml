@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.3.20"           # pinned for SKIE 0.10.11 compatibility
+kotlin                      = "2.3.21"           # matches Meshtastic-Android (SKIE 0.10.12+ supports 2.3.21)
 agp                         = "9.2.1"
 gradle                      = "9.4.1"
 javaVersion                 = "21"
@@ -11,7 +11,7 @@ androidCompileSdk           = "36"
 androidTargetSdk            = "36"
 
 # --- Coroutines / IO / time ---
-coroutines                  = "1.11.0-rc02"      # pre-release: SharedFlow race fix, R8 stateIn/shareIn GC fix
+coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
 kotlinxIo                   = "0.9.0"
 kotlinxDatetime             = "0.7.1"
 kotlinxSerialization        = "1.11.0"
@@ -19,7 +19,7 @@ atomicfu                    = "0.32.1"
 okio                        = "3.17.0"
 
 # --- Protobuf / Wire ---
-wire                        = "6.2.0"
+wire                        = "6.4.0"            # matches Meshtastic-Android
 protobuf                    = "4.34.1"
 
 # --- Storage ---
@@ -27,7 +27,7 @@ sqldelight                  = "2.3.2"
 
 # --- Transports ---
 kable                       = "0.42.0"
-ktor                        = "3.4.3"
+ktor                        = "3.5.0"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
 # --- TUI (samples/cli) ---
@@ -51,7 +51,7 @@ junit                       = "4.13.2"
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.36.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.11"
+skie                        = "0.10.12"          # adds Kotlin 2.3.21 support
 applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
 dokka                       = "2.2.0"
 
