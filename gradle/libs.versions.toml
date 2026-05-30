@@ -74,7 +74,6 @@ kotlinxIoCore               = { module = "org.jetbrains.kotlinx:kotlinx-io-core"
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
 
-wireRuntime                 = { module = "com.squareup.wire:wire-runtime",                       version.ref = "wire" }
 wireMoshiAdapter            = { module = "com.squareup.wire:wire-moshi-adapter",                 version.ref = "wire" }
 protobufKotlin              = { module = "com.google.protobuf:protobuf-kotlin",                  version.ref = "protobuf" }
 meshtasticProtobufs         = { module = "org.meshtastic:protobufs",                             version.ref = "meshtasticProtobufs" }
