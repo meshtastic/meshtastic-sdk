@@ -8,7 +8,7 @@
 
 | Package | Stability | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
+| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `AdminResultException`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `MeshTopology`, `Clock`, `Constants`, `SessionPasskey` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android), `JvmSerialPorts` (JVM) |
@@ -75,7 +75,10 @@ RadioClient.Builder()
 | `sendText(text: String, channel: ChannelIndex = ChannelIndex(0), to: NodeId = NodeId.BROADCAST): MessageHandle` | handle | same as `send` |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
 | `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
+| `requestNodeInfo(node: NodeId): MessageHandle` *(since 0.2.0)* | handle | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
+
+`requestNodeInfo` sends an empty `NODEINFO_APP` packet with `want_response = true`; the remote node's reply is processed by the engine and surfaces via the [`nodes`](#streams) flow (not via the returned handle, which only tracks send/ACK delivery).
 
 ### Sub-API namespaces
 
@@ -336,6 +339,27 @@ public sealed interface AdminResult<out T> {
 
 `SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified. `RateLimited` indicates the device rejected the call due to rate limiting (`Routing.Error.RATE_LIMIT_EXCEEDED`); callers should back off before retrying.
 
+### `AdminResult` extensions *(since 0.2.0)*
+
+```kotlin
+public inline fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T>
+public inline fun <T> AdminResult<T>.onFailure(action: (AdminResult<T>) -> Unit): AdminResult<T>
+
+/** Returns the Success value or throws an [AdminResultException] describing the failure. */
+public fun <T> AdminResult<T>.getOrThrow(): T
+
+public sealed class AdminResultException(message: String) : Exception(message) {
+    public class SessionKeyExpired : AdminResultException
+    public class Unauthorized : AdminResultException
+    public class Timeout : AdminResultException
+    public class RateLimited : AdminResultException
+    public class NodeUnreachable : AdminResultException
+    public class RoutingFailed(public val error: Routing.Error) : AdminResultException
+}
+```
+
+`onSuccess` / `onFailure` are chainable side-effecting inspectors. `getOrThrow()` is for callers who prefer exception-based handling over sealed-type matching — each non-`Success` variant maps to the corresponding `AdminResultException` subclass (`Failed(routingError)` → `RoutingFailed(error)`).
+
 ## `TelemetryApi` *(Phase 2)*
 
 Each `requestX` sends an empty `Telemetry` packet on `TELEMETRY_APP` with `want_response = true` and waits for the matching reply. `observe(node)` is a cold flow over the engine's inbound `packets` filtered by portnum + origin.
@@ -439,6 +463,49 @@ client.admin.setMqttConfig { copy(enabled = true, address = "mqtt.example.com") 
 client.admin.editSettings {
     setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
     setMqttConfig { copy(enabled = true) }
+}
+```
+
+## Payload accessors & convenience extensions
+
+Extension functions/properties that decode `MeshPacket` payloads by portnum and surface common request flows. Decoders return `null` when the packet's portnum does not match (no exception):
+
+```kotlin
+// Decode an inbound MeshPacket payload by portnum (null on mismatch)
+public fun MeshPacket.asText(): String?                      // TEXT_MESSAGE_APP → UTF-8 body
+public fun MeshPacket.asPosition(): Position?                // POSITION_APP
+public fun MeshPacket.asNodeInfoUser(): User?                // NODEINFO_APP → User
+public fun MeshPacket.asNodeInfo(): NodeInfo?                // NODEINFO_APP → NodeInfo
+public fun MeshPacket.asNeighborInfo(): NeighborInfo?        // NEIGHBORINFO_APP
+
+// Pre-filtered stream of text messages (hot, no replay — inherits RadioClient.packets semantics)
+public val RadioClient.textMessages: Flow<MeshPacket>
+
+// Request the current Position from a node (empty POSITION_APP with want_response = true)
+public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = ChannelIndex(0)): MessageHandle
+```
+
+`textMessages` is `packets` filtered to `decoded.portnum == TEXT_MESSAGE_APP`; decode each with `asText()`, read the sender via `NodeId(packet.from)` and channel via `ChannelIndex(packet.channel)`.
+
+## `MeshTopology` *(since 0.2.0)*
+
+Incremental, **thread-safe** mesh topology graph built from inbound `NeighborInfo` reports (guarded by an internal `Mutex`). The graph is **directed** — if node A reports node B as a neighbor, that is a directed edge A→B; undirected queries consider both directions. Feed it from `RoutingApi.requestNeighborInfo` results or `MeshPacket.asNeighborInfo()`.
+
+```kotlin
+public class MeshTopology {
+    public data class Edge(val from: NodeId, val to: NodeId, val snr: Float, val lastUpdated: Int = 0)
+
+    public suspend fun addNeighborInfo(info: NeighborInfo)
+    public suspend fun removeNode(node: NodeId)
+    public suspend fun clear()
+
+    public suspend fun nodes(): Set<NodeId>
+    public suspend fun allEdges(): List<Edge>
+    public suspend fun edgeCount(): Int
+    public suspend fun getEdge(from: NodeId, to: NodeId): Edge?
+    public suspend fun getNeighbors(node: NodeId): List<Edge>
+    public suspend fun isDirectReach(a: NodeId, b: NodeId): Boolean
+    public suspend fun shortestPath(from: NodeId, to: NodeId): List<NodeId>   // BFS; empty if no path
 }
 ```
 
