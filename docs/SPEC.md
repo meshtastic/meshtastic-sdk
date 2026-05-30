@@ -77,7 +77,7 @@ The protocol reference (handshake, framing, `MeshPacket`, PortNums, admin, encry
 | **Min Android SDK** | 26 |
 | **Compile/Target Android SDK** | 36 (latest stable at time of writing) |
 | **JVM toolchain** | 21 |
-| **Kotlin** | 2.3.20 (pinned in `gradle/libs.versions.toml`) |
+| **Kotlin** | 2.3.21 (pinned in `gradle/libs.versions.toml`) |
 | **Versioning** | SemVer via `axion-release-plugin` (git tags) |
 
 ---
@@ -1261,23 +1261,23 @@ Publishing (Vanniktech + Dokka + ABI validation) is in `PublishingConventionPlug
 
 ```toml
 [versions]
-kotlin                      = "2.3.20"
+kotlin                      = "2.3.21"
 agp                         = "9.2.1"
 gradle                      = "9.4.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
 androidCompileSdk           = "36"
 androidTargetSdk            = "36"
-coroutines                  = "1.11.0-rc02"
+coroutines                  = "1.11.0"
 kotlinxIo                   = "0.9.0"
 kotlinxDatetime             = "0.7.1"
 kotlinxSerialization        = "1.11.0"
 atomicfu                    = "0.32.1"
 okio                        = "3.17.0"
-wire                        = "6.2.0"
+wire                        = "6.4.0"
 sqldelight                  = "2.3.2"
 kable                       = "0.42.0"
-ktor                        = "3.4.3"
+ktor                        = "3.5.0"
 jSerialComm                 = "2.11.4"
 mosaic                      = "0.18.0"
 clikt                       = "5.1.0"
@@ -1288,7 +1288,7 @@ kotest                      = "6.1.11"
 mockk                       = "1.14.9"
 vanniktechMavenPublish      = "0.36.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.11"
+skie                        = "0.10.12"
 dokka                       = "2.2.0"
 ktlint                      = "1.8.0"
 spotless                    = "8.4.0"
