@@ -11,7 +11,6 @@ plugins {
     alias(libs.plugins.androidKotlinMultiplatformLibrary) apply false
     alias(libs.plugins.composeCompiler) apply false
     alias(libs.plugins.composeMultiplatform) apply false
-    alias(libs.plugins.wire) apply false
     alias(libs.plugins.sqldelight) apply false
     alias(libs.plugins.spotless)
     alias(libs.plugins.detekt) apply false
@@ -46,7 +45,6 @@ allprojects {
 }
 
 dependencies {
-    dokka(project(":proto"))
     dokka(project(":core"))
     dokka(project(":transport-ble"))
     dokka(project(":transport-tcp"))
@@ -67,7 +65,6 @@ spotless {
         "**/.gradle/**",
         "**/generated/**",
         "**/node_modules/**",
-        "proto/src/protobufs/**",
         "**/detekt-baseline.xml",
         "**/api/*.api",
         "gradle/wrapper/**",
@@ -128,7 +125,7 @@ subprojects {
 }
 
 val libraryModules =
-    setOf("proto", "core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
+    setOf("core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
 subprojects {
     if (name in libraryModules) {
         apply(plugin = "org.jetbrains.kotlinx.kover")

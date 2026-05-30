@@ -22,7 +22,7 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
-            api(project(":proto"))
+            api(libs.meshtasticProtobufs)
             api(libs.coroutinesCore)
             api(libs.kotlinxIoCore)
             implementation(libs.atomicfu)
@@ -43,15 +43,13 @@ kotlin {
 }
 
 // ---------------------------------------------------------------------------
-// Architecture enforcement (ADR-008): :core must depend on no other module
-// in this build except :proto. Verified at configuration time by walking
-// every Kotlin source-set dependency and rejecting any ProjectDependency
-// whose path is not :proto. Hooked into `check` so CI catches drift.
+// Architecture enforcement (ADR-008): :core must not depend on other in-tree
+// modules. Now that proto types come from the published org.meshtastic:protobufs
+// artifact, :core has zero project dependencies. Verified at configuration time.
 // ---------------------------------------------------------------------------
 val verifyModuleBoundary by tasks.registering {
     group = "verification"
-    description = "Fails if :core declares a project dependency other than :proto (ADR-008)."
-    val allowed = setOf(":proto")
+    description = "Fails if :core declares any project dependency (ADR-008)."
     val violations = mutableListOf<String>()
     configurations
         .matching {
@@ -63,15 +61,14 @@ val verifyModuleBoundary by tasks.registering {
         .configureEach {
             val configName = name
             dependencies.withType(ProjectDependency::class.java).configureEach {
-                if (path !in allowed) {
-                    violations += "configuration=$configName -> $path"
-                }
+                violations += "configuration=$configName -> $path"
             }
         }
     doLast {
         if (violations.isNotEmpty()) {
             throw GradleException(
-                "ADR-008 violation: :core may only depend on :proto. Offending project deps:\n" +
+                "ADR-008 violation: :core must not depend on other in-tree modules. " +
+                    "Offending project deps:\n" +
                     violations.joinToString("\n") { "  - $it" },
             )
         }

@@ -19,8 +19,9 @@ atomicfu                    = "0.32.1"
 okio                        = "3.17.0"
 
 # --- Protobuf / Wire ---
-wire                        = "6.4.0"            # matches Meshtastic-Android
+wire                        = "6.4.0"            # wire-runtime version (transitive via protobufs SDK)
 protobuf                    = "4.34.1"
+meshtasticProtobufs         = "2.7.25-SNAPSHOT"
 
 # --- Storage ---
 sqldelight                  = "2.3.2"
@@ -75,8 +76,8 @@ okio                        = { module = "com.squareup.okio:okio",              
 
 wireRuntime                 = { module = "com.squareup.wire:wire-runtime",                       version.ref = "wire" }
 wireMoshiAdapter            = { module = "com.squareup.wire:wire-moshi-adapter",                 version.ref = "wire" }
-wireGradlePlugin            = { module = "com.squareup.wire:wire-gradle-plugin",                 version.ref = "wire" }
 protobufKotlin              = { module = "com.google.protobuf:protobuf-kotlin",                  version.ref = "protobuf" }
+meshtasticProtobufs         = { module = "org.meshtastic:protobufs",                             version.ref = "meshtasticProtobufs" }
 
 sqldelightRuntime           = { module = "app.cash.sqldelight:runtime",                          version.ref = "sqldelight" }
 sqldelightCoroutinesExt     = { module = "app.cash.sqldelight:coroutines-extensions",            version.ref = "sqldelight" }
@@ -116,7 +117,6 @@ kotlinAndroid               = { id = "org.jetbrains.kotlin.android",            
 kotlinSerialization         = { id = "org.jetbrains.kotlin.plugin.serialization",                version.ref = "kotlin" }
 androidLibrary              = { id = "com.android.library",                                      version.ref = "agp" }
 androidKotlinMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library",           version.ref = "agp" }
-wire                        = { id = "com.squareup.wire",                                        version.ref = "wire" }
 sqldelight                  = { id = "app.cash.sqldelight",                                      version.ref = "sqldelight" }
 vanniktechMavenPublish      = { id = "com.vanniktech.maven.publish",                             version.ref = "vanniktechMavenPublish" }
 androidApplication          = { id = "com.android.application",                                  version.ref = "agp" }

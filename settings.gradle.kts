@@ -22,13 +22,15 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven("https://central.sonatype.com/repository/maven-snapshots/") {
+            mavenContent { snapshotsOnly() }
+        }
     }
 }
 
 rootProject.name = "meshtastic-sdk"
 
 // Phase 1 bootstrap: keep focused module set while enabling convention plugins.
-include(":proto")
 include(":core")
 include(":testing")
 

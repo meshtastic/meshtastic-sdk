@@ -18,7 +18,6 @@ dependencies {
     constraints {
         // Every published artifact in lockstep. Version comes from
         // project.version (axion-release-driven once A3 lands).
-        api("org.meshtastic:sdk-proto:${project.version}")
         api("org.meshtastic:sdk-core:${project.version}")
         api("org.meshtastic:sdk-transport-ble:${project.version}")
         api("org.meshtastic:sdk-transport-tcp:${project.version}")
