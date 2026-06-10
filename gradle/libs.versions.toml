@@ -7,8 +7,8 @@ agp                         = "9.2.1"
 gradle                      = "9.4.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
-androidCompileSdk           = "36"
-androidTargetSdk            = "36"
+androidCompileSdk           = "37"
+androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
 coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
