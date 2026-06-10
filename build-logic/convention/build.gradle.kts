@@ -13,7 +13,6 @@ java {
 dependencies {
     compileOnly(libs.kotlinGradlePlugin)
     compileOnly(libs.agpGradlePlugin)
-    compileOnly(libs.wireGradlePlugin)
     compileOnly(libs.sqldelightGradlePlugin)
     // Convention plugin applies vanniktech maven-publish AND configures its
     // extension, so its API has to be on the runtime classpath, not just
@@ -42,10 +41,6 @@ gradlePlugin {
         register("publishing") {
             id = "meshtastic.publishing"
             implementationClass = "PublishingConventionPlugin"
-        }
-        register("proto") {
-            id = "meshtastic.proto"
-            implementationClass = "ProtoConventionPlugin"
         }
         register("sampleAndroid") {
             id = "meshtastic.sample.android"
