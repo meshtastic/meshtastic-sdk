@@ -9,8 +9,20 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **events:** Inbound MQTT client-proxy, XModem, and file-info frames are now surfaced as typed events — `MeshEvent.MqttProxyMessage`, `MeshEvent.XmodemPacket`, `MeshEvent.FileInfo` — instead of being dropped with a `ProtocolWarning`. Outbound counterparts go through `RadioClient.sendRaw(ToRadio(...))`.
+- **send:** `SendFailure.QueueRejected(res)` — a firmware `QueueStatus.res != 0` (transmit queue full/rejected) now fast-fails the `MessageHandle` (and any pending admin RPC sharing the wire id) instead of waiting out the full ACK timeout.
+- **send:** `RadioClient.sendText(..., replyId)` for threaded replies (`decoded.reply_id` without the emoji flag).
+- **engine:** Mesh packets received while the handshake is still in flight (live traffic interleaved with the config/NodeDB drain, including the seeding window) are now buffered (drop-oldest at 64, observable via `PacketsDropped`) and flushed through the normal packet pipeline at Ready — previously they were silently dropped.
+
 ### Changed
 
+- **remote admin (breaking behavior, correctness):** Remote admin packets are now routed the way modern firmware (2.5+) requires — `pki_encrypted = true` + the target's `public_key` on channel 0 when both nodes have published keys, falling back to a channel named `admin` otherwise, with priority `RELIABLE`. Previously remote admin went out on channel 0 in the clear and was rejected by current firmware.
+- **remote admin:** Session passkeys are now cached **per node** (each node issues its own in its admin responses; every inbound admin response refreshes the issuer's entry). Previously a single shared slot cross-contaminated concurrent admin sessions against different nodes and stamped the *local* node's passkey onto remote targets. The `SessionKeyExpired` single-shot retry now re-seeds against the *target* node.
+- **storage:** Documented that `DeviceStorage.loadNodes()` is never called by the engine (node DB reseeds from the handshake); it exists for hosts (offline node access) and tests.
+- **transport-ble (Android):** `BleTransport(address)` now negotiates the ATT MTU (517) after each link establishment and requests `CONNECTION_PRIORITY_HIGH` for the 30-second handshake window before downgrading to Balanced. Without the MTU request Android stays at the BLE minimum (23) and any ToRadio write over 20 bytes fails.
+- **build:** Kable 0.42.0 → 0.43.0 (aligns with Meshtastic-Android).
 - **build:** Aligned the toolchain with Meshtastic-Android — Kotlin 2.3.21 (SKIE 0.10.12), Wire 6.4.0, Ktor 3.5.0, and stable coroutines 1.11.0 (was 1.11.0-rc02). Validated locally: iOS framework link, jvmTest, and Kotlin ABI check all green.
 - **docs(SPEC.md):** Bumped spec from v2.1 to v2.2 — full post-audit sync aligning spec with shipped implementation. Key areas synchronized: AdminApi expansion (~15 → ~45 methods), `StoreForwardApi`, presence tracking (`WentOffline`/`CameOnline`), `AutoReconnectConfig`, `CongestionWarning`/`ExternalConfigChange`/`StorageDegraded` MeshEvent variants, send DSL, `connectAndAwaitReady()`, `SessionPasskey`, `ConfigBundle.deviceUIConfig`, `SendFailure.IdCollision`/`AckTimeout`/`HandshakeFailed`, `AdminResult` extensions, `ConnectionState` extensions, `MeshtasticException` context fields, convention plugin + version catalog correction (JVM 17→21, Android SDK→36, Kotlin 2.3.20).
 - **docs:** Synchronized `api-reference.md`, `error-taxonomy.md`, `roadmap.md`, `module-graph.md`, `README.md`, `CONTRIBUTING.md` with spec v2.2 changes.
