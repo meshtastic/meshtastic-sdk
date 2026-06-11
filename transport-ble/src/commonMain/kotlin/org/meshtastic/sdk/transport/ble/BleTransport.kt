@@ -96,6 +96,16 @@ public class BleTransport(
     // ADR-012: lifecycle idempotency — only one Error transition per connect cycle.
     private val errorPublished = atomic(false)
 
+    /**
+     * Platform hook invoked once per successful link establishment, after the GATT connection
+     * (and Kable's service discovery) completes and before the warmup read. Platform factories
+     * use it for link tuning — e.g. the Android factory negotiates the ATT MTU and requests a
+     * faster connection interval here. Receives the transport's [CoroutineScope] as receiver
+     * for scheduling follow-ups (e.g. a delayed priority downgrade). Best-effort: failures are
+     * swallowed and never fail the connect.
+     */
+    internal var postConnectHook: suspend CoroutineScope.(Peripheral) -> Unit = {}
+
     override suspend fun connect() {
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
         // Reset per-connect lifecycle flags so reuse-after-disconnect works.
@@ -104,6 +114,14 @@ public class BleTransport(
         _state.value = TransportState.Connecting
         try {
             connectWithRetry()
+
+            try {
+                postConnectHook(scope, peripheral)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // best-effort platform tuning (MTU / connection priority); never fatal.
+            }
 
             stateBridgeJob = peripheral.state
                 .onEach { kableState -> bridgeKableState(kableState) }

@@ -27,7 +27,7 @@ meshtasticProtobufs         = "2.7.25"
 sqldelight                  = "2.3.2"
 
 # --- Transports ---
-kable                       = "0.42.0"
+kable                       = "0.43.0"
 ktor                        = "3.5.0"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
