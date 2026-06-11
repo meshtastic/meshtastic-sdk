@@ -105,6 +105,7 @@ public fun SendFailure.humanMessage(): String = when (this) {
     SendFailure.Cancelled -> "Send was cancelled before transmission."
     SendFailure.IdCollision -> "A send with this id is already in flight; refusing to overwrite it."
     SendFailure.AckTimeout -> "No ACK received within the configured send timeout."
+    is SendFailure.QueueRejected -> "Device transmit queue rejected the packet (res=$res); back off and retry."
     is SendFailure.Other -> routingError.actionableMessage()
     is SendFailure.Unknown -> "Unknown send failure: $message"
 }

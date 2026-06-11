@@ -101,6 +101,11 @@ public interface DeviceStorage : AutoCloseable {
     /**
      * Load all stored nodes.
      *
+     * **The engine never calls this** — the in-session node DB is reseeded from the Stage 2
+     * handshake snapshot on every connect, not hydrated from storage. This accessor exists for
+     * *hosts*: read previously-persisted nodes while disconnected (offline node list) or verify
+     * persistence in tests.
+     *
      * Suspends while the backend reads from disk; cancellable. If the caller's coroutine is
      * cancelled mid-read the implementation must rethrow
      * [kotlin.coroutines.cancellation.CancellationException].

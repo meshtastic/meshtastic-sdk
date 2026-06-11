@@ -170,10 +170,16 @@ internal class MeshEngine(
     // R-9: snapshot of the previously-persisted my_node_num, captured at connect time so
     // we can synchronously detect identity rebinds on Stage 2 commit (before storage is cleared).
     private var previousMyNodeNum: Int? = null
-    private var sessionPasskeyMem: ByteArray? = null
 
-    /** epoch-ms expiry for [sessionPasskeyMem]; 0 means "no valid passkey". */
-    private var sessionPasskeyExpiresAtMs: Long = 0L
+    /**
+     * Per-node admin session passkeys, keyed by the node num that issued them. Each node
+     * (local device and every remote admin target) hands out its **own** passkey in its admin
+     * responses; remote admin writes must echo the *target's* passkey back, so a single shared
+     * slot would cross-contaminate concurrent admin sessions against different nodes.
+     * Entries expire after [SESSION_PASSKEY_TTL]; only the local node's seed passkey is
+     * persisted to storage.
+     */
+    private val sessionPasskeys = mutableMapOf<Int, SessionPasskeyEntry>()
 
     // Node accumulator during Stage 2 draining.
     private val pendingNodes = mutableMapOf<NodeId, NodeInfo>()
@@ -225,6 +231,15 @@ internal class MeshEngine(
      * [SETTLE_BUFFER_CAP].
      */
     private val settleBuffer = ArrayDeque<FromRadio>(SETTLE_BUFFER_CAP)
+
+    /**
+     * `FromRadio.packet` frames (text messages, telemetry, waypoints, …) that arrive while the
+     * handshake is still in flight. Devices forward live mesh traffic interleaved with the
+     * config/NodeDB drain; dropping it loses user-visible messages. Buffered drop-oldest at
+     * [HANDSHAKE_PACKET_BUFFER_CAP] (with a [MeshEvent.PacketsDropped] signal) and flushed
+     * through the normal Ready packet pipeline in [transitionToReady].
+     */
+    private val handshakePacketBuffer = ArrayDeque<MeshPacket>(HANDSHAKE_PACKET_BUFFER_CAP)
 
     /**
      * Per-send ACK timeout jobs. Keyed by the wire packet `id`. Touched only by the
@@ -546,8 +561,8 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Idle
         myNodeNum = 0
         previousMyNodeNum = null
-        sessionPasskeyMem = null
-        sessionPasskeyExpiresAtMs = 0L
+        sessionPasskeys.clear()
+        handshakePacketBuffer.clear()
         pendingNodes.clear()
         pendingConfigs.clear()
         pendingModuleConfigs.clear()
@@ -621,8 +636,8 @@ internal class MeshEngine(
         }
         // Register before sending so a fast device reply can never race the registration.
         dispatcher.register(msg.requestId, msg.kind, msg.deferred)
-        // Outbound: re-attach session passkey for remote-admin if needed, then enqueue.
-        val outboundPacket = augmentForRemoteAdminIfNeeded(msg.packet)
+        // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
+        val outboundPacket = prepareOutboundAdminPacket(msg.packet)
         val encoded = WireCodec.encodeToRadio(ToRadio(packet = outboundPacket))
         outbound.trySend(Frame(ByteString(encoded)))
         // Arm the timeout last so the timer fires even if dispatch path errors above.
@@ -639,33 +654,75 @@ internal class MeshEngine(
     }
 
     /**
-     * Mirror of [sendAdminPacket]'s passkey logic but operating on an already-built [MeshPacket]
-     * (the RPC path supplies the packet pre-encoded with portnum / payload / want_response).
-     * Only the encoded admin payload needs the passkey re-stamp when targeting a remote node.
+     * Prepare an outbound ADMIN_APP packet targeting a **remote** node. One choke point shared
+     * by the RPC path ([handlePostRpc]), the ACK'd-send path ([dispatchSend]), and the
+     * fire-and-forget path ([sendAdminPacket]). Three concerns, mirroring the Android
+     * reference client's remote-admin behaviour:
+     *
+     *  1. **Session passkey** — stamp the *target node's* cached passkey (each node issues its
+     *     own; a passkey from node A is rejected by node B). Missing/expired passkey emits a
+     *     ProtocolWarning and sends anyway — the firmware NAKs with ADMIN_BAD_SESSION_KEY,
+     *     which [AdminApiImpl]'s single-shot reseed-and-retry handles.
+     *  2. **PKC routing** — firmware 2.5+ requires remote admin to be PKI-encrypted when both
+     *     nodes have published keys: `pki_encrypted = true`, `public_key = <target key>`,
+     *     channel 0. Without mutual keys, fall back to a channel named "admin" (legacy
+     *     secondary-channel admin).
+     *  3. **Priority** — remote admin defaults to RELIABLE (matches the reference client).
+     *
+     * Local admin (`to == myNodeNum`) is returned untouched: the PhoneAPI accepts local admin
+     * without a passkey or PKC.
      */
-    private fun augmentForRemoteAdminIfNeeded(packet: MeshPacket): MeshPacket {
+    private fun prepareOutboundAdminPacket(packet: MeshPacket): MeshPacket {
         val decoded = packet.decoded ?: return packet
         if (decoded.portnum != PortNum.ADMIN_APP) return packet
-        if (packet.to == 0 || packet.to == myNodeNum) return packet
-        val now = clock.now().toEpochMilliseconds()
-        val passkey = sessionPasskeyMem
-        if (passkey == null || passkey.isEmpty() || now >= sessionPasskeyExpiresAtMs) {
+        if (packet.to == 0 || packet.to == myNodeNum || packet.to == BROADCAST_ADDR) return packet
+
+        // 1. Session passkey re-stamp (skip when the caller already provided one).
+        var outDecoded = decoded
+        val passkey = validSessionPasskeyFor(packet.to)
+        if (passkey != null) {
+            val originalAdmin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()
+            if (originalAdmin != null && originalAdmin.session_passkey.size == 0) {
+                val stamped = originalAdmin.copy(session_passkey = passkey.toByteString())
+                outDecoded = decoded.copy(payload = AdminMessage.ADAPTER.encode(stamped).toByteString())
+            }
+        } else {
             events.tryEmit(
                 MeshEvent.ProtocolWarning(
                     "admin remote without session passkey",
                     details = mapOf("to" to packet.to),
                 ),
             )
-            return packet
         }
-        val originalAdmin = try {
-            AdminMessage.ADAPTER.decode(decoded.payload)
-        } catch (_: Exception) {
-            return packet
+
+        val priority = if (packet.priority == MeshPacket.Priority.UNSET) {
+            MeshPacket.Priority.RELIABLE
+        } else {
+            packet.priority
         }
-        val stamped = originalAdmin.copy(session_passkey = passkey.toByteString())
-        val newPayload = AdminMessage.ADAPTER.encode(stamped).toByteString()
-        return packet.copy(decoded = decoded.copy(payload = newPayload))
+
+        // Caller already routed the packet itself (custom PKC build) — passkey/priority only.
+        if (packet.pki_encrypted) {
+            return packet.copy(decoded = outDecoded, priority = priority)
+        }
+
+        // 2. PKC when both sides have published keys; legacy "admin" channel otherwise.
+        val targetKey = meshState.nodes[NodeId(packet.to)]?.user?.public_key
+        val ownKey = meshState.nodes[NodeId(myNodeNum)]?.user?.public_key
+        return if (targetKey != null && targetKey.size > 0 && ownKey != null && ownKey.size > 0) {
+            packet.copy(
+                decoded = outDecoded,
+                channel = 0,
+                pki_encrypted = true,
+                public_key = targetKey,
+                priority = priority,
+            )
+        } else {
+            val adminIndex = channelsState.value
+                ?.indexOfFirst { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
+                ?.takeIf { it >= 0 } ?: 0
+            packet.copy(decoded = outDecoded, channel = adminIndex, priority = priority)
+        }
     }
 
     private suspend fun handleConnect(msg: EngineMessage.Connect) {
@@ -705,7 +762,9 @@ internal class MeshEngine(
 
         // restore the persisted session passkey so admin RPCs work immediately, instead
         // of waiting for the next get_owner_request response. Failures are non-fatal — we can
-        // always re-seed via the handshake's get_owner round-trip.
+        // always re-seed via the handshake's get_owner round-trip. The persisted passkey is the
+        // *local* device's seed passkey, so it is keyed under the previously-persisted identity
+        // (remote-node passkeys are ephemeral and never persisted).
         val persisted = try {
             storage?.loadSessionPasskey()
         } catch (e: CancellationException) {
@@ -714,9 +773,11 @@ internal class MeshEngine(
             logger.warn(TAG, e) { "Failed to load persisted session passkey" }
             null
         }
-        sessionPasskeyMem = persisted?.bytes?.toByteArray()
-        // track expiry alongside the bytes so [sendAdminPacket] can skip stale passkeys.
-        sessionPasskeyExpiresAtMs = persisted?.expiresAtEpochMs ?: 0L
+        val restoredOwner = previousMyNodeNum
+        if (persisted != null && restoredOwner != null) {
+            sessionPasskeys[restoredOwner] =
+                SessionPasskeyEntry(persisted.bytes.toByteArray(), persisted.expiresAtEpochMs)
+        }
 
         // hydrate in-memory heartbeat map so subscribers don't see every previously-known
         // node as silent on reconnect. Failures are non-fatal; we just start fresh.
@@ -980,6 +1041,10 @@ internal class MeshEngine(
                 pendingNodes[nodeId] = nodeInfo
             }
 
+            // live mesh traffic interleaved with the Stage 1 config drain — buffer for
+            // delivery through the normal packet pipeline once the session reaches Ready.
+            fromRadio.packet != null -> bufferHandshakePacket(fromRadio.packet!!)
+
             // route auxiliary FromRadio variants (clientNotification,
             // mqttClientProxyMessage, xmodemPacket, deviceuiConfig, fileInfo, queueStatus,
             // log_record) through the shared helper so they're not silently dropped during
@@ -1086,6 +1151,9 @@ internal class MeshEngine(
                 pendingNodes[nodeId] = nodeInfo
             }
 
+            // live mesh traffic interleaved with the Stage 2 NodeDB drain (see Stage 1).
+            fromRadio.packet != null -> bufferHandshakePacket(fromRadio.packet!!)
+
             // shared auxiliary-variant handling for Stage 2 (see Stage 1).
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.Stage2Draining) -> Unit
 
@@ -1110,6 +1178,8 @@ internal class MeshEngine(
                                 16,
                             )} new=0x${myInfo.my_node_num.toString(16)}"
                         }
+                        // passkeys issued under the previous identity are meaningless now.
+                        sessionPasskeys.clear()
                         events.tryEmit(
                             MeshEvent.IdentityRebound(
                                 previousNodeNum = NodeId(prev),
@@ -1214,7 +1284,11 @@ internal class MeshEngine(
     private fun processSeedingEnvelope(fromRadio: org.meshtastic.proto.FromRadio) {
         val packet = fromRadio.packet ?: return
         val decoded = packet.decoded ?: return
-        if (decoded.portnum != PortNum.ADMIN_APP) return
+        if (decoded.portnum != PortNum.ADMIN_APP) {
+            // live mesh traffic during the seeding window — same treatment as Stage 1/2.
+            bufferHandshakePacket(packet)
+            return
+        }
 
         val adminMsg = try {
             AdminMessage.ADAPTER.decode(decoded.payload)
@@ -1223,18 +1297,28 @@ internal class MeshEngine(
         }
 
         if (adminMsg.get_owner_response != null) {
-            latchSessionPasskey(adminMsg)
+            latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg)
             transitionToReady()
+        } else {
+            // unsolicited admin traffic (e.g. external config change) — deliver post-Ready.
+            bufferHandshakePacket(packet)
         }
     }
 
-    private fun latchSessionPasskey(adminMsg: AdminMessage) {
+    /**
+     * Cache the session passkey carried in [adminMsg], keyed by the node that issued it.
+     * Firmware refreshes the passkey in **every** admin response, so any admin packet from
+     * [fromNum] keeps that node's admin session alive. Only the local node's seed passkey is
+     * persisted — remote passkeys are ephemeral by design (4-minute TTL).
+     */
+    private fun latchSessionPasskey(fromNum: Int, adminMsg: AdminMessage) {
         if (adminMsg.session_passkey.size <= 0) return
+        if (fromNum == 0) return
         val bytes = adminMsg.session_passkey.toByteArray()
-        sessionPasskeyMem = bytes
         val expiresAtMs = clock.now().toEpochMilliseconds() + SESSION_PASSKEY_TTL.inWholeMilliseconds
-        sessionPasskeyExpiresAtMs = expiresAtMs
-        logger.debug(TAG) { "Session passkey latched (${bytes.size} bytes)" }
+        sessionPasskeys[fromNum] = SessionPasskeyEntry(bytes, expiresAtMs)
+        logger.debug(TAG) { "Session passkey latched for 0x${fromNum.toString(16)} (${bytes.size} bytes)" }
+        if (fromNum != myNodeNum) return
         engineScope?.launch {
             if (storageDegraded) return@launch
             try {
@@ -1248,6 +1332,28 @@ internal class MeshEngine(
                 )
             }
         }
+    }
+
+    /** Returns the unexpired session passkey for [nodeNum], pruning a stale entry if present. */
+    private fun validSessionPasskeyFor(nodeNum: Int): ByteArray? {
+        val entry = sessionPasskeys[nodeNum] ?: return null
+        if (clock.now().toEpochMilliseconds() >= entry.expiresAtMs) {
+            sessionPasskeys.remove(nodeNum)
+            return null
+        }
+        return entry.bytes
+    }
+
+    /** Buffer a mid-handshake `FromRadio.packet` for delivery once the session reaches Ready. */
+    private fun bufferHandshakePacket(packet: MeshPacket) {
+        if (handshakePacketBuffer.size >= HANDSHAKE_PACKET_BUFFER_CAP) {
+            handshakePacketBuffer.removeFirst()
+            logger.warn(TAG) {
+                "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — dropping oldest"
+            }
+            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
+        }
+        handshakePacketBuffer.addLast(packet)
     }
 
     private fun transitionToReady() {
@@ -1303,6 +1409,17 @@ internal class MeshEngine(
             }
         }
 
+        // Flush mesh packets that arrived mid-handshake through the normal Ready pipeline
+        // (presence, dedup, packets flow, RPC/ACK correlation) before draining queued sends.
+        if (handshakePacketBuffer.isNotEmpty()) {
+            val backlog = handshakePacketBuffer.toList()
+            handshakePacketBuffer.clear()
+            logger.info(TAG) { "Flushing ${backlog.size} packets received during handshake" }
+            for (packet in backlog) {
+                processInboundMeshPacket(packet)
+            }
+        }
+
         // Drain the snapshot: dispatch every send that wasn't cancelled while waiting.
         for (msg in snapshot) {
             if (msg.stateFlow.value == SendState.Queued) {
@@ -1323,55 +1440,7 @@ internal class MeshEngine(
         val queueStatus = fromRadio.queueStatus
 
         when {
-            packet != null -> {
-                logger.verbose(TAG) {
-                    "Rx packet id=${packet.id} from=0x${packet.from.toString(16)} " +
-                        "port=${packet.decoded?.portnum ?: "encrypted"}"
-                }
-                // any frame from a node counts as presence activity.
-                if (packet.from != 0) markNodeHeard(NodeId(packet.from))
-                if (shouldDropDuplicateInboundPacket(packet)) return
-                val decoded = packet.decoded
-                if (decoded == null) {
-                    maybeWarnEncryptedPacketSkipped()
-                    return
-                }
-                if (decoded.portnum == PortNum.UNKNOWN_APP) {
-                    logger.warn(TAG) {
-                        "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}"
-                    }
-                    events.tryEmit(
-                        MeshEvent.ProtocolWarning(
-                            "packet dropped for unknown port",
-                            details = mapOf(
-                                "id" to packet.id,
-                                "from" to packet.from,
-                                "port" to decoded.portnum.name,
-                            ),
-                        ),
-                    )
-                    return
-                }
-                emitPacketOrLog(packet)
-                if (decoded.portnum == PortNum.ADMIN_APP) {
-                    runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }
-                        .getOrNull()
-                        ?.takeIf { it.get_owner_response != null }
-                        ?.let(::latchSessionPasskey)
-                }
-                // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
-                // request matching this packet's request_id. Must run before processRoutingAck
-                // so a route_reply doesn't get mistakenly classified as a generic Acked send.
-                dispatcher.tryComplete(packet)
-                processRoutingAck(packet)
-                // Telemetry → node update: merge device_metrics into the node DB so that
-                // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
-                maybeMergeDeviceMetrics(packet)
-                maybeEmitCongestionWarning(packet)
-                // External config change detection: unsolicited admin messages from firmware
-                // indicating another client modified channels/config on this device.
-                maybeProcessExternalAdminChange(packet)
-            }
+            packet != null -> processInboundMeshPacket(packet)
 
             nodeInfo != null -> {
                 val nodeId = NodeId(nodeInfo.num)
@@ -1398,6 +1467,27 @@ internal class MeshEngine(
                 val packetId = MessageId(queueStatus.mesh_packet_id)
                 if (queueStatus.res == 0) {
                     pendingSends[packetId]?.value = SendState.Sent
+                } else {
+                    // the firmware rejected the packet at its transmit queue (typically
+                    // queue-full). Fast-fail the handle / pending RPC instead of letting the
+                    // caller wait out the full ACK timer for a packet that never left the device.
+                    Routing.Error.fromValue(queueStatus.res)?.let { err ->
+                        dispatcher.tryFailFromRouting(packetId.raw, err)
+                    }
+                    val flow = pendingSends.remove(packetId)
+                    ackTimeoutJobs.remove(packetId)?.cancel()
+                    if (flow != null) {
+                        val current = flow.value
+                        val terminal = current is SendState.Failed ||
+                            current == SendState.Acked ||
+                            current == SendState.Delivered
+                        if (!terminal) {
+                            logger.warn(TAG) {
+                                "Queue rejected id=${packetId.raw} res=${queueStatus.res}"
+                            }
+                            flow.value = SendState.Failed(SendFailure.QueueRejected(queueStatus.res))
+                        }
+                    }
                 }
             }
 
@@ -1408,6 +1498,63 @@ internal class MeshEngine(
             // session-specific bookkeeping in pendingSends).
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.Ready) -> Unit
         }
+    }
+
+    /**
+     * The Ready-stage pipeline for a single inbound [MeshPacket]: presence, dedup, public
+     * `packets` emission, session-passkey latching, RPC/ACK correlation, telemetry merge, and
+     * external-config-change detection. Called for live packets in [routeNormalEnvelope] and
+     * for the mid-handshake backlog flushed in [transitionToReady].
+     */
+    private fun processInboundMeshPacket(packet: MeshPacket) {
+        logger.verbose(TAG) {
+            "Rx packet id=${packet.id} from=0x${packet.from.toString(16)} " +
+                "port=${packet.decoded?.portnum ?: "encrypted"}"
+        }
+        // any frame from a node counts as presence activity.
+        if (packet.from != 0) markNodeHeard(NodeId(packet.from))
+        if (shouldDropDuplicateInboundPacket(packet)) return
+        val decoded = packet.decoded
+        if (decoded == null) {
+            maybeWarnEncryptedPacketSkipped()
+            return
+        }
+        if (decoded.portnum == PortNum.UNKNOWN_APP) {
+            logger.warn(TAG) {
+                "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}"
+            }
+            events.tryEmit(
+                MeshEvent.ProtocolWarning(
+                    "packet dropped for unknown port",
+                    details = mapOf(
+                        "id" to packet.id,
+                        "from" to packet.from,
+                        "port" to decoded.portnum.name,
+                    ),
+                ),
+            )
+            return
+        }
+        emitPacketOrLog(packet)
+        if (decoded.portnum == PortNum.ADMIN_APP) {
+            // every admin response refreshes the responder's session passkey — latch them all
+            // (keyed per node) so remote admin sessions stay alive without re-seeding.
+            runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }
+                .getOrNull()
+                ?.let { latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, it) }
+        }
+        // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
+        // request matching this packet's request_id. Must run before processRoutingAck
+        // so a route_reply doesn't get mistakenly classified as a generic Acked send.
+        dispatcher.tryComplete(packet)
+        processRoutingAck(packet)
+        // Telemetry → node update: merge device_metrics into the node DB so that
+        // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
+        maybeMergeDeviceMetrics(packet)
+        maybeEmitCongestionWarning(packet)
+        // External config change detection: unsolicited admin messages from firmware
+        // indicating another client modified channels/config on this device.
+        maybeProcessExternalAdminChange(packet)
     }
 
     /**
@@ -1449,12 +1596,16 @@ internal class MeshEngine(
         }
 
         fromRadio.mqttClientProxyMessage != null -> {
-            warnUnhandledVariant("mqtt_client_proxy_message", stage)
+            // MQTT client proxy: the device tunnels its MQTT traffic through the host.
+            // Surfaced as a typed event; the host relays to the broker and answers via
+            // RadioClient.sendRaw(ToRadio(mqttClientProxyMessage = …)).
+            events.tryEmit(MeshEvent.MqttProxyMessage(fromRadio.mqttClientProxyMessage!!))
             true
         }
 
         fromRadio.xmodemPacket != null -> {
-            warnUnhandledVariant("xmodem_packet", stage)
+            // XModem file-transfer frame (firmware update / file transfer flows).
+            events.tryEmit(MeshEvent.XmodemPacket(fromRadio.xmodemPacket!!))
             true
         }
 
@@ -1465,7 +1616,7 @@ internal class MeshEngine(
         }
 
         fromRadio.fileInfo != null -> {
-            warnUnhandledVariant("file_info", stage)
+            events.tryEmit(MeshEvent.FileInfo(fromRadio.fileInfo!!))
             true
         }
 
@@ -1830,6 +1981,7 @@ internal class MeshEngine(
         pendingMyInfo = null
         pendingMetadata = null
         settleBuffer.clear()
+        handshakePacketBuffer.clear()
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
         stage2WatchdogJob?.cancel()
@@ -1942,9 +2094,13 @@ internal class MeshEngine(
         // Ensure the wire packet ID is set to the SDK-level MessageId value so that
         // QueueStatus / Routing ACK correlation via pendingSends[MessageId(x)] works.
         val wireId = if (msg.packet.id != 0) msg.packet.id else msg.id.raw
-        val packet = msg.packet.copy(
-            from = if (msg.packet.from == 0 && myNodeNum != 0) myNodeNum else msg.packet.from,
-            id = wireId,
+        // Remote ADMIN_APP packets pick up the target's session passkey + PKC routing here
+        // (no-op for everything else).
+        val packet = prepareOutboundAdminPacket(
+            msg.packet.copy(
+                from = if (msg.packet.from == 0 && myNodeNum != 0) myNodeNum else msg.packet.from,
+                id = wireId,
+            ),
         )
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
@@ -2111,29 +2267,7 @@ internal class MeshEngine(
 
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
         if (myNodeNum == 0) return
-        // attach the cached session passkey when targeting a *remote* node. Local admin
-        // messages (to == myNodeNum) speak directly to the device's PhoneAPI and do not
-        // require the session passkey. If we have no valid passkey for a remote target, emit
-        // a ProtocolWarning and proceed — the firmware will reject the packet, surfacing as a
-        // SendFailure / AckTimeout to the caller.
-        val outbound: AdminMessage = if (to != myNodeNum) {
-            val now = clock.now().toEpochMilliseconds()
-            val passkey = sessionPasskeyMem
-            if (passkey != null && passkey.isNotEmpty() && now < sessionPasskeyExpiresAtMs) {
-                adminMsg.copy(session_passkey = passkey.toByteString())
-            } else {
-                events.tryEmit(
-                    MeshEvent.ProtocolWarning(
-                        "admin remote without session passkey",
-                        details = mapOf("to" to to),
-                    ),
-                )
-                adminMsg
-            }
-        } else {
-            adminMsg
-        }
-        val payload = AdminMessage.ADAPTER.encode(outbound).toByteString()
+        val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
         val packet = MeshPacket(
             to = to,
             from = myNodeNum,
@@ -2143,7 +2277,8 @@ internal class MeshEngine(
                 want_response = wantResponse,
             ),
         )
-        sendToRadio(ToRadio(packet = packet))
+        // Remote targets pick up the session passkey + PKC routing in the shared choke point.
+        sendToRadio(ToRadio(packet = prepareOutboundAdminPacket(packet)))
     }
 
     // ---- C-shared-flow emit helpers ----
@@ -2375,6 +2510,13 @@ internal class MeshEngine(
         // maximum frames buffered during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64
 
+        // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
+        const val HANDSHAKE_PACKET_BUFFER_CAP = 64
+
+        // name of the legacy secondary channel used for remote admin when PKC keys are
+        // unavailable. Matched case-insensitively against ChannelSettings.name.
+        const val ADMIN_CHANNEL_NAME = "admin"
+
         // broadcast destination is the unsigned 0xFFFFFFFF address (Int.toLong → -1
         // after wire round-trip). Used so we don't arm an ACK timer for broadcasts.
         const val BROADCAST_ADDR: Int = -1
@@ -2392,4 +2534,7 @@ internal class MeshEngine(
     }
 
     private data class InboundPacketKey(val from: Int, val to: Int, val channel: Int, val id: Int)
+
+    /** In-memory per-node session passkey with absolute expiry (epoch ms). */
+    private class SessionPasskeyEntry(val bytes: ByteArray, val expiresAtMs: Long)
 }

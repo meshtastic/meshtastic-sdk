@@ -116,6 +116,18 @@ public sealed interface SendFailure {
     public data object AckTimeout : SendFailure
 
     /**
+     * The device rejected the packet at its transmit queue (`QueueStatus.res != 0`), most
+     * commonly because the firmware's bounded in-flight queue (~16 packets) is full.
+     *
+     * Surfaced immediately instead of waiting out the ACK timer. Callers should back off and
+     * retry; bulk senders should pace submissions against this signal.
+     *
+     * @param res the raw `QueueStatus.res` error code reported by the firmware
+     * @since 0.2.0
+     */
+    public data class QueueRejected(val res: Int) : SendFailure
+
+    /**
      * Some other device-reported routing error.
      *
      * @param routingError the wire [Routing.Error] enum value

@@ -273,7 +273,35 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun remoteAdminUsesSeededSessionPasskeyBeforeExpiry() = runTest {
+    fun packetsReceivedMidHandshakeAreDeliveredAfterConnected() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:handshake-packet-buffer"),
+            nowMs = { currentTime },
+            autoCompleteStage2 = false,
+        )
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { client.connect() }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+
+        client.packets.test {
+            // Live mesh traffic interleaved with the Stage 2 drain must not be lost — and
+            // must not be delivered before the session is Ready.
+            transport.injectAlivePacket(packetId = 777)
+            drainCurrent()
+            expectNoEvents()
+
+            transport.injectFromRadio(org.meshtastic.proto.FromRadio(config_complete_id = NONCE_STAGE2))
+            drainCurrent()
+            connectJob.await()
+            assertEquals(ConnectionState.Connected, client.connection.value)
+
+            assertEquals(777, awaitItem().id, "Buffered handshake packet must flush at Ready")
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun remoteAdminUsesPasskeyIssuedByTheTargetNode() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:session-passkey"),
             nowMs = { currentTime },
@@ -293,14 +321,18 @@ class HandshakeAndReconnectTest {
         }
         runCurrent()
 
+        // Session passkeys are per-node: the target has never issued us one, and the *local*
+        // node's seeded passkey must NOT leak onto a remote-bound admin packet.
         val request = transport.outboundPackets().drop(outboundBefore)
             .last { it.to == remoteNode.raw && adminOf(it)?.get_config_request == AdminMessage.ConfigType.LORA_CONFIG }
         val admin = assertNotNull(adminOf(request))
-        assertContentEquals(SEEDED_PASSKEY, admin.session_passkey.toByteArray())
+        assertEquals(0, admin.session_passkey.size, "Local passkey must not be stamped on a remote target")
 
+        // The response carries the remote node's own passkey (firmware refreshes it in every
+        // admin response); the engine latches it keyed by the responder.
         transport.injectAdminResponse(
             requestId = request.id,
-            response = AdminMessage(get_config_response = expected),
+            response = AdminMessage(get_config_response = expected, session_passkey = REMOTE_PASSKEY.toByteString()),
             fromNode = remoteNode.raw,
         )
         runCurrent()
@@ -308,6 +340,24 @@ class HandshakeAndReconnectTest {
         val result = deferred.await()
         assertIs<AdminResult.Success<org.meshtastic.proto.Config>>(result)
         assertEquals(expected, result.value)
+
+        // A follow-up RPC to the same remote node is stamped with the passkey *it* issued.
+        val outboundBeforeSecond = transport.outboundPackets().size
+        val second = backgroundScope.async {
+            client.admin.forNode(remoteNode).getConfig(AdminMessage.ConfigType.LORA_CONFIG)
+        }
+        runCurrent()
+        val secondRequest = transport.outboundPackets().drop(outboundBeforeSecond)
+            .last { it.to == remoteNode.raw && adminOf(it)?.get_config_request == AdminMessage.ConfigType.LORA_CONFIG }
+        assertContentEquals(REMOTE_PASSKEY, adminOf(secondRequest)?.session_passkey?.toByteArray())
+
+        transport.injectAdminResponse(
+            requestId = secondRequest.id,
+            response = AdminMessage(get_config_response = expected),
+            fromNode = remoteNode.raw,
+        )
+        runCurrent()
+        assertIs<AdminResult.Success<org.meshtastic.proto.Config>>(second.await())
     }
 
     @Test
@@ -342,17 +392,27 @@ class HandshakeAndReconnectTest {
         transport.injectRoutingError(firstRemote.id, Routing.Error.ADMIN_BAD_SESSION_KEY, fromNode = remoteNode.raw)
         drainCurrent()
 
-        val outboundAfterRetry = transport.outboundPackets().drop(outboundBefore)
-        val reseed = outboundAfterRetry.firstOrNull {
-            it.to == transport.nodeNum && adminOf(it)?.get_owner_request == true
+        // Re-seed targets the *remote* node — its passkey is the one the retry needs.
+        val reseed = transport.outboundPackets().drop(outboundBefore).firstOrNull {
+            it.to == remoteNode.raw && adminOf(it)?.get_owner_request == true
         }
-        assertNotNull(reseed, "Session expiry must trigger a local get_owner re-seed")
+        assertNotNull(reseed, "Session expiry must trigger a get_owner re-seed against the target node")
 
-        val replay = outboundAfterRetry.last {
+        transport.injectAdminResponse(
+            requestId = reseed.id,
+            response = AdminMessage(
+                get_owner_response = User(id = "!0000beef", long_name = "Remote", short_name = "RN"),
+                session_passkey = REMOTE_PASSKEY.toByteString(),
+            ),
+            fromNode = remoteNode.raw,
+        )
+        drainCurrent()
+
+        val replay = transport.outboundPackets().drop(outboundBefore).last {
             it.to == remoteNode.raw && adminOf(it)?.get_config_request == AdminMessage.ConfigType.LORA_CONFIG
         }
         assertTrue(replay.id != firstRemote.id, "Replay must use a fresh wire id")
-        assertContentEquals(SEEDED_PASSKEY, adminOf(replay)?.session_passkey?.toByteArray())
+        assertContentEquals(REMOTE_PASSKEY, adminOf(replay)?.session_passkey?.toByteArray())
 
         transport.injectAdminResponse(
             requestId = replay.id,
@@ -391,8 +451,22 @@ class HandshakeAndReconnectTest {
         transport.injectRoutingError(firstRemote.id, Routing.Error.ADMIN_BAD_SESSION_KEY, fromNode = remoteNode.raw)
         drainCurrent()
 
+        // Answer the (remote-targeted) re-seed so the single retry can proceed.
+        val reseed = transport.outboundPackets().drop(outboundBefore)
+            .first { it.to == remoteNode.raw && adminOf(it)?.get_owner_request == true }
+        transport.injectAdminResponse(
+            requestId = reseed.id,
+            response = AdminMessage(
+                get_owner_response = User(id = "!0000d00d", long_name = "Remote", short_name = "RN"),
+                session_passkey = REMOTE_PASSKEY.toByteString(),
+            ),
+            fromNode = remoteNode.raw,
+        )
+        drainCurrent()
+
         val replay = transport.outboundPackets().drop(outboundBefore)
             .last { it.to == remoteNode.raw && adminOf(it)?.get_config_request == AdminMessage.ConfigType.LORA_CONFIG }
+        assertTrue(replay.id != firstRemote.id, "Replay must use a fresh wire id")
         transport.injectRoutingError(replay.id, Routing.Error.ADMIN_BAD_SESSION_KEY, fromNode = remoteNode.raw)
         drainCurrent()
 
@@ -400,7 +474,7 @@ class HandshakeAndReconnectTest {
         assertEquals(
             1,
             transport.outboundPackets().drop(outboundBefore).count {
-                it.to == transport.nodeNum && adminOf(it)?.get_owner_request == true
+                it.to == remoteNode.raw && adminOf(it)?.get_owner_request == true
             },
             "Re-authentication must be single-shot",
         )
@@ -752,6 +826,10 @@ class HandshakeAndReconnectTest {
             inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio(node_info = NodeInfo(num = node))))
         }
 
+        fun injectFromRadio(fromRadio: org.meshtastic.proto.FromRadio) {
+            inbound.tryEmit(encodeFromRadioFrame(fromRadio))
+        }
+
         fun injectAdminResponse(requestId: Int, response: AdminMessage, fromNode: Int = nodeNum) {
             val payload = AdminMessage.ADAPTER.encode(response).toByteString()
             val packet = MeshPacket(
@@ -867,5 +945,6 @@ class HandshakeAndReconnectTest {
         const val STAGE2_PROGRESS_TICK_MS = 30_000L
         const val STAGE2_HARD_CAP_MS = 60_000L
         val SEEDED_PASSKEY = byteArrayOf(1, 2, 3, 4)
+        val REMOTE_PASSKEY = byteArrayOf(9, 8, 7, 6)
     }
 }

@@ -150,6 +150,39 @@ public sealed interface MeshEvent {
     public data class MqttDisconnected(val reason: String? = null) : MeshEvent
 
     /**
+     * The device asked the host to relay an MQTT message on its behalf (MQTT client proxy).
+     *
+     * When `ModuleConfig.mqtt.proxy_to_client_enabled` is set, the firmware tunnels its MQTT
+     * traffic through the connected phone/host instead of its own network stack. Inbound frames
+     * surface here; hosts publish them to the broker and feed broker traffic back with
+     * `RadioClient.sendRaw(ToRadio(mqttClientProxyMessage = …))`.
+     *
+     * @property message the wire [MqttClientProxyMessage][org.meshtastic.proto.MqttClientProxyMessage]
+     * @since 0.2.0
+     */
+    public data class MqttProxyMessage(val message: org.meshtastic.proto.MqttClientProxyMessage) : MeshEvent
+
+    /**
+     * An XModem file-transfer frame arrived from the device.
+     *
+     * Used by firmware-update and file-transfer flows. Hosts drive the transfer by replying
+     * with `RadioClient.sendRaw(ToRadio(xmodemPacket = …))`.
+     *
+     * @property packet the wire [XModem][org.meshtastic.proto.XModem] frame
+     * @since 0.2.0
+     */
+    public data class XmodemPacket(val packet: org.meshtastic.proto.XModem) : MeshEvent
+
+    /**
+     * The device announced a file in its on-device filesystem (sent during the handshake or
+     * after file operations).
+     *
+     * @property info the wire [FileInfo][org.meshtastic.proto.FileInfo]
+     * @since 0.2.0
+     */
+    public data class FileInfo(val info: org.meshtastic.proto.FileInfo) : MeshEvent
+
+    /**
      * A transport-level error occurred.
      *
      * @param error the transport exception

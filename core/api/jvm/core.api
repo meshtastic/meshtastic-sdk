@@ -638,6 +638,17 @@ public final class org/meshtastic/sdk/MeshEvent$ExternalConfigChange : org/mesht
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/MeshEvent$FileInfo : org/meshtastic/sdk/MeshEvent {
+	public fun <init> (Lorg/meshtastic/proto/FileInfo;)V
+	public final fun component1 ()Lorg/meshtastic/proto/FileInfo;
+	public final fun copy (Lorg/meshtastic/proto/FileInfo;)Lorg/meshtastic/sdk/MeshEvent$FileInfo;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$FileInfo;Lorg/meshtastic/proto/FileInfo;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$FileInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInfo ()Lorg/meshtastic/proto/FileInfo;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/MeshEvent$IdentityRebound : org/meshtastic/sdk/MeshEvent {
 	public synthetic fun <init> (IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (IILjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -687,6 +698,17 @@ public final class org/meshtastic/sdk/MeshEvent$MqttDisconnected : org/meshtasti
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$MqttDisconnected;Ljava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$MqttDisconnected;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/MeshEvent$MqttProxyMessage : org/meshtastic/sdk/MeshEvent {
+	public fun <init> (Lorg/meshtastic/proto/MqttClientProxyMessage;)V
+	public final fun component1 ()Lorg/meshtastic/proto/MqttClientProxyMessage;
+	public final fun copy (Lorg/meshtastic/proto/MqttClientProxyMessage;)Lorg/meshtastic/sdk/MeshEvent$MqttProxyMessage;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$MqttProxyMessage;Lorg/meshtastic/proto/MqttClientProxyMessage;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$MqttProxyMessage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Lorg/meshtastic/proto/MqttClientProxyMessage;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -775,6 +797,17 @@ public final class org/meshtastic/sdk/MeshEvent$TransportError : org/meshtastic/
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$TransportError;Lorg/meshtastic/sdk/MeshtasticException$Transport;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$TransportError;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getError ()Lorg/meshtastic/sdk/MeshtasticException$Transport;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/MeshEvent$XmodemPacket : org/meshtastic/sdk/MeshEvent {
+	public fun <init> (Lorg/meshtastic/proto/XModem;)V
+	public final fun component1 ()Lorg/meshtastic/proto/XModem;
+	public final fun copy (Lorg/meshtastic/proto/XModem;)Lorg/meshtastic/sdk/MeshEvent$XmodemPacket;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$XmodemPacket;Lorg/meshtastic/proto/XModem;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$XmodemPacket;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPacket ()Lorg/meshtastic/proto/XModem;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1250,9 +1283,9 @@ public final class org/meshtastic/sdk/RadioClient : java/lang/AutoCloseable {
 	public final fun sendReaction (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendReaction-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun sendReaction-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/ChannelIndex;Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun sendText-0mzNYbQ (Ljava/lang/String;II)Lorg/meshtastic/sdk/MessageHandle;
-	public static synthetic fun sendText-0mzNYbQ$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/ChannelIndex;Lorg/meshtastic/sdk/NodeId;I)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun sendText-HaIeDj0 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
+	public static synthetic fun sendText-HaIeDj0$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
 }
 
 public final class org/meshtastic/sdk/RadioClient$Builder {
@@ -1525,6 +1558,17 @@ public final class org/meshtastic/sdk/SendFailure$Other : org/meshtastic/sdk/Sen
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SendFailure$Other;Lorg/meshtastic/proto/Routing$Error;ILjava/lang/Object;)Lorg/meshtastic/sdk/SendFailure$Other;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getRoutingError ()Lorg/meshtastic/proto/Routing$Error;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/SendFailure$QueueRejected : org/meshtastic/sdk/SendFailure {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Lorg/meshtastic/sdk/SendFailure$QueueRejected;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SendFailure$QueueRejected;IILjava/lang/Object;)Lorg/meshtastic/sdk/SendFailure$QueueRejected;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRes ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

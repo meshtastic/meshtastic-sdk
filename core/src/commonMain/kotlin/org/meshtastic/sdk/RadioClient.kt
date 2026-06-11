@@ -349,6 +349,8 @@ public class RadioClient internal constructor(
      * @param text the message text (UTF-8 encoded)
      * @param channel the channel index (default: 0)
      * @param to the destination [NodeId] (default: [NodeId.BROADCAST])
+     * @param replyId the packet ID of the message this text replies to (threaded reply), or `0`
+     *   (default) for a standalone message
      * @return a handle tracking delivery state
      * @throws MeshtasticException.NotConnected if not currently connected
      * @throws MeshtasticException.PayloadTooLarge if the encoded text exceeds the device limit
@@ -358,6 +360,7 @@ public class RadioClient internal constructor(
         text: String,
         channel: ChannelIndex = ChannelIndex(0),
         to: NodeId = NodeId.BROADCAST,
+        replyId: Int = 0,
     ): MessageHandle {
         val payload = text.encodeToByteArray()
         if (payload.size > DATA_PAYLOAD_LEN) {
@@ -370,6 +373,7 @@ public class RadioClient internal constructor(
             decoded = org.meshtastic.proto.Data(
                 portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
                 payload = payload.toByteString(),
+                reply_id = replyId,
             ),
         )
         return send(packet)

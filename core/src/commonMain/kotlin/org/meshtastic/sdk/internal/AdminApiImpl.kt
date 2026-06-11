@@ -479,9 +479,11 @@ internal class AdminApiImpl(
         if (isDeviceManaged()) return AdminResult.Unauthorized
         val first = block()
         if (first !is AdminResult.SessionKeyExpired) return first
-        // Re-seed against the *local* device PhoneAPI, even when this AdminApiImpl is scoped to
-        // a remote node via forNode(dest). Remote getOwner requires a valid session passkey, so
-        // retrying against targetNode would just loop the same expiry failure.
+        // Re-seed against the node this AdminApiImpl is scoped to. Session passkeys are
+        // per-node (each node issues its own), and admin *read* requests don't require one —
+        // so a get_owner_request to the target succeeds and its response carries a fresh
+        // passkey, which the engine latches keyed by the responder. The replayed [block] then
+        // picks it up via the engine's outbound admin choke point.
         reseedSessionPasskey()
         return block()
     }
@@ -489,7 +491,7 @@ internal class AdminApiImpl(
     private suspend fun reseedSessionPasskey(): AdminResult<User> = submitAdminRpc(
         adminMsg = AdminMessage(get_owner_request = true),
         kind = ResponseKind.AdminOwner,
-        to = NodeId(engine.myNodeNumOrNull() ?: 0),
+        to = localNode(),
     )
 
     private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
@@ -581,6 +583,9 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
     SendFailure.Timeout, SendFailure.AckTimeout -> AdminResult.Timeout
 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
+
+    // Firmware transmit queue rejected the packet (queue full) — back off and retry.
+    is SendFailure.QueueRejected -> AdminResult.RateLimited
 
     is SendFailure.Other -> when (reason.routingError) {
         Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
