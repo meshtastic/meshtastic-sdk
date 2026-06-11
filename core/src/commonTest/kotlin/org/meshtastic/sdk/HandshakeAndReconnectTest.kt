@@ -273,6 +273,60 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun stage1RedrainDoesNotDuplicateConfigOrChannels() = runTest {
+        // A want_config_id retry restarts the firmware's config drain from scratch, so the
+        // same config sections / channels can stream twice. The committed bundle must hold
+        // one entry per section/index, with the latest occurrence winning.
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:stage1-redrain"),
+            nowMs = { currentTime },
+            autoCompleteStage1 = false,
+        )
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { client.connect() }
+        runCurrent()
+
+        val channel0 = org.meshtastic.proto.Channel(
+            index = 0,
+            role = org.meshtastic.proto.Channel.Role.PRIMARY,
+            settings = org.meshtastic.proto.ChannelSettings(name = "LongFast"),
+        )
+        transport.injectFromRadio(org.meshtastic.proto.FromRadio(my_info = MyNodeInfo(my_node_num = transport.nodeNum)))
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio(
+                config = org.meshtastic.proto.Config(
+                    lora = org.meshtastic.proto.Config.LoRaConfig(use_preset = true),
+                ),
+            ),
+        )
+        transport.injectFromRadio(org.meshtastic.proto.FromRadio(channel = channel0))
+        // Re-drain: the same section + channel stream again (latest value wins).
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio(
+                config = org.meshtastic.proto.Config(
+                    lora = org.meshtastic.proto.Config.LoRaConfig(use_preset = false),
+                ),
+            ),
+        )
+        transport.injectFromRadio(org.meshtastic.proto.FromRadio(channel = channel0))
+        transport.injectFromRadio(org.meshtastic.proto.FromRadio(config_complete_id = NONCE_STAGE1))
+        drainCurrent()
+
+        // Settle windows (100 ms each) → heartbeat → Stage 2 (auto-completed) → seeding → Ready.
+        repeat(4) {
+            advanceTimeBy(150L)
+            drainCurrent()
+        }
+        connectJob.await()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+
+        val bundle = assertNotNull(client.configBundle.value)
+        assertEquals(1, bundle.configs.size, "Re-drained config sections must not duplicate")
+        assertEquals(false, bundle.configs.single().lora?.use_preset, "Latest occurrence must win")
+        assertEquals(1, client.channels.value?.size, "Re-drained channels must not duplicate")
+    }
+
+    @Test
     fun packetsReceivedMidHandshakeAreDeliveredAfterConnected() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:handshake-packet-buffer"),

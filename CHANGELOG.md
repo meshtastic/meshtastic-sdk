@@ -16,6 +16,11 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **send:** `RadioClient.sendText(..., replyId)` for threaded replies (`decoded.reply_id` without the emoji flag).
 - **engine:** Mesh packets received while the handshake is still in flight (live traffic interleaved with the config/NodeDB drain, including the seeding window) are now buffered (drop-oldest at 64, observable via `PacketsDropped`) and flushed through the normal packet pipeline at Ready — previously they were silently dropped.
 
+### Fixed
+
+- **engine:** A `want_config_id` retry restarts the firmware's config drain from scratch (PhoneAPI resets its read index), which previously duplicated channels / config sections in the committed `ConfigBundle` and `channels` state. Stage 1 accumulators now replace by key (channel index / config section), latest occurrence wins.
+- **engine:** `FromRadio.lockdown_status` (protobufs 2.7.25+) was silently dropped — it now surfaces as a structured `ProtocolWarning` until typed lockdown support lands.
+
 ### Changed
 
 - **remote admin (breaking behavior, correctness):** Remote admin packets are now routed the way modern firmware (2.5+) requires — `pki_encrypted = true` + the target's `public_key` on channel 0 when both nodes have published keys, falling back to a channel named `admin` otherwise, with priority `RELIABLE`. Previously remote admin went out on channel 0 in the clear and was rejected by current firmware.

@@ -1023,16 +1023,31 @@ internal class MeshEngine(
         val deviceUIConf = fromRadio.deviceuiConfig
         val completeId = fromRadio.config_complete_id
 
+        // Accumulators must be idempotent: a `want_config_id` retry (Stage1RetryWantConfig) or a
+        // device-side hiccup restarts the firmware's config drain from scratch (PhoneAPI
+        // handleStartConfig resets its read index), so the same channels/config sections can
+        // stream twice. Replace-by-key instead of append so the committed bundle has no dupes.
         when {
             myInfo != null -> pendingMyInfo = myInfo
 
             metadata != null -> pendingMetadata = metadata
 
-            channel != null -> pendingChannels.add(channel)
+            channel != null -> {
+                pendingChannels.removeAll { it.index == channel.index }
+                pendingChannels.add(channel)
+            }
 
-            config != null -> pendingConfigs.add(config)
+            config != null -> {
+                val merged = mergeConfigs(pendingConfigs, listOf(config))
+                pendingConfigs.clear()
+                pendingConfigs.addAll(merged)
+            }
 
-            modConfig != null -> pendingModuleConfigs.add(modConfig)
+            modConfig != null -> {
+                val merged = mergeModuleConfigs(pendingModuleConfigs, listOf(modConfig))
+                pendingModuleConfigs.clear()
+                pendingModuleConfigs.addAll(merged)
+            }
 
             deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
 
@@ -1617,6 +1632,13 @@ internal class MeshEngine(
 
         fromRadio.fileInfo != null -> {
             events.tryEmit(MeshEvent.FileInfo(fromRadio.fileInfo!!))
+            true
+        }
+
+        // Lockdown (protobufs 2.7.25+, firmware support in flight): surfaced as a structured
+        // warning until a typed event lands alongside AdminMessage.lockdown_auth support.
+        fromRadio.lockdown_status != null -> {
+            warnUnhandledVariant("lockdown_status", stage)
             true
         }
 
