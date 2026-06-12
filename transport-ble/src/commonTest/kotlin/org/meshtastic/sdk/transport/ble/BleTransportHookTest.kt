@@ -128,7 +128,9 @@ class BleTransportHookTest {
  * empty payload (queue drained — satisfies the warmup read), [observe] never emits.
  * Members [BleTransport] never touches throw [UnsupportedOperationException].
  */
-@OptIn(ExperimentalApi::class)
+// ExperimentalUuidApi: on iOS targets Kable's `Identifier` is kotlin.uuid.Uuid (experimental);
+// the override below trips the opt-in only when compiled for those targets.
+@OptIn(ExperimentalApi::class, kotlin.uuid.ExperimentalUuidApi::class)
 private class FakePeripheral : Peripheral {
 
     private val stateFlow = MutableStateFlow<State>(State.Disconnected())
