@@ -57,7 +57,7 @@ The project includes a sample CLI for testing:
 
 ### Engineering Standards
 - **Thread Safety:** Never use `Mutex` or atomics inside the `engine` package; rely on the Actor's single-writer invariant.
-- **Platform Limits:** No `java.*` or `android.*` in `commonMain`. Use `kotlinx-io` for byte payloads and `kotlinx-datetime` for time.
+- **Platform Limits:** No `java.*` or `android.*` in `commonMain`. Use `okio.ByteString` for byte payloads (Wire's runtime type; kotlinx-io is deliberately not a dependency) and `kotlinx-datetime` for time.
 - **Documentation:** Every public symbol MUST have a KDoc. Dokka coverage is a CI gate.
 - **Testing:**
   - Use `testing/` module fakes (`FakeRadioTransport`, `InMemoryStorage`) for unit tests.

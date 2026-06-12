@@ -38,7 +38,7 @@ The SDK is a *client library wrapped around* the protobufs, not a *translation l
 - `MessageHandle` — handle returned from `send()` for tracking lifecycle
 - `NodeChange` — delta events (`Snapshot`, `Added`, `Updated`, `Removed`) wrapping `NodeInfo`
 - Value-class IDs: `NodeId`, `ChannelIndex`, `MessageId` — type-safe wrappers around the `Int`/`UInt32` fields used as IDs, used in *operation signatures* (e.g., `sendText(to: NodeId, …)`), not as replacements for protobuf fields
-- High-level send helpers: `sendText(text, channel, to)`, `requestPosition(node)`, `traceRoute(dest)` — convenience over `send(packet: MeshPacket)`
+- High-level send helpers: `sendText(text, to, channel, replyId)`, `requestPosition(node)`, `traceRoute(dest)` — convenience over `send(packet: MeshPacket)`
 
 ### What the SDK does NOT do
 

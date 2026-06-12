@@ -65,17 +65,17 @@ All emit `TransportState.Error(recoverable: Boolean)` to the engine inbox. The e
    - Outbound writer drains `outbound: Channel<Frame>` and calls `transport.send(frame)` sequentially.
 
 4. **On disconnect**:
-   - Engine's `finally` block calls `transport.close()`.
+   - Engine's `finally` block calls `transport.disconnect()`.
    - SupervisorJob cancellation propagates; frame reader and outbound writer exit.
 
 ### Ownership and cleanup
 
-- The **engine owns** the `RadioTransport` instance and is responsible for `close()` on shutdown.
+- The **engine owns** the `RadioTransport` instance and is responsible for `disconnect()` on shutdown.
 - The **transport owns** any platform-specific resources (BLE GATT connection, TCP socket, serial port file descriptor).
-- On `RadioClient.close()`:
+- On `RadioClient.disconnect()`:
   1. SupervisorJob is cancelled.
   2. Frame reader and outbound writer exit (CancellationException caught and re-thrown).
-  3. Engine's `finally` calls `transport.close()` (must not throw).
+  3. Engine's `finally` calls `transport.disconnect()` (must not throw).
   4. Storage is flushed and closed.
 
 ## Adding a new transport
@@ -88,7 +88,7 @@ All emit `TransportState.Error(recoverable: Boolean)` to the engine inbox. The e
        override val state: StateFlow<TransportState> = /* observe your platform's connection state */
        override val identity: TransportIdentity = /* e.g., url, port, device ID */
        override suspend fun connect() { /* open your resource */ }
-       override suspend fun close() { /* release your resource */ }
+       override suspend fun disconnect() { /* release your resource */ }
        override fun frames(): Flow<Frame> { /* collect inbound frames */ }
        override suspend fun send(frame: Frame) { /* write to wire */ }
    }

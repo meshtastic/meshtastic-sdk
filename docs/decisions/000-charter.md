@@ -50,7 +50,7 @@ MVP: `androidTarget()`, `jvm()`, `iosArm64()`, `iosX64()`, `iosSimulatorArm64()`
 | `meshtastic/firmware` | **Read-only behavior reference.** Ground truth when Apple and Android disagree. | We do not embed firmware code, schemas other than `protobufs`, or build artifacts. |
 | `meshtastic/Meshtastic-Android` | **Cross-validation reference.** We consult its `core/network` for how the canonical Android client implements the protocol. As an org-internal codebase we may also lift idiomatic snippets directly. | We do not depend on it; it does not depend on us (yet). |
 | `meshtastic/Meshtastic-Apple` | **Cross-validation reference**, especially for transport `requiresPeriodicHeartbeat` semantics, accessory framing, and the canonical Swift bridging surface. | Same as above. |
-| `meshtastic/mqtt-client` | **Sibling KMP library.** Establishes the house style we follow (Kotlin version, Wire 6, kotlinx-io, Ktor, axion-release; see ADR-003). | We do not implement broker-side MQTT; consumers depending on broker-side MQTT add `mqtt-client` themselves. |
+| `meshtastic/mqtt-client` | **Sibling KMP library.** Establishes the house style we follow (Kotlin version, Wire 6, kotlinx-io *(byte-string alignment since reversed in 0.2.0 — `okio.ByteString`; see ADR-003 superseded notes)*, Ktor, axion-release; see ADR-003). | We do not implement broker-side MQTT; consumers depending on broker-side MQTT add `mqtt-client` themselves. |
 
 ## Alternatives considered
 

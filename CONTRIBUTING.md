@@ -211,7 +211,7 @@ The engine architecture has hard rules enforced by detekt + Gradle (see [ADR-008
 1. `:core` depends only on `:proto`. Never on a transport or storage implementation. (The `RadioTransport`, `StorageProvider`, and `DeviceStorage` interfaces live inside `:core` itself — see ADR-006.)
 2. No `java.*`, `android.*`, `kotlin.Result<T>` in `commonMain` or public API.
 3. No `Mutex` / `atomicfu` / `synchronized` in the engine package — the actor IS the synchronization primitive (see [ADR-002](docs/decisions/002-architecture.md)).
-4. Public byte payloads use `kotlinx.io.bytestring.ByteString`, not `okio.ByteString`.
+4. Public byte payloads use `okio.ByteString` (Wire's runtime type — already forced into the surface by the generated protos); `kotlinx-io` is deliberately not a dependency. See docs/api-reference.md § API conventions.
 
 If you find these rules in your way, that's a design discussion — open an issue first; don't disable the rule.
 

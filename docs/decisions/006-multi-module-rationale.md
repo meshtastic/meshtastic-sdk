@@ -103,7 +103,7 @@ When the roadmap lands, `:core` adds a `wasmJs` source set containing only RPC-c
 - Only `:transport-rpc` (and optionally `:transport-http`, `:transport-mqtt-proxy`) carry `wasmJs` source sets.
 - `:transport-ble`, `:transport-tcp`, `:transport-serial-*`, and `:storage-sqldelight` will not target `wasmJs`.
 
-Implication for MVP design: even though `wasmJs` is deferred, `:core`'s `commonMain` should avoid APIs that lack a `wasmJs` implementation in `kotlinx-coroutines` / `kotlinx-io` / `kotlinx-datetime`, so the future addition is non-breaking. We pin compatible versions in `libs.versions.toml`.
+Implication for MVP design: even though `wasmJs` is deferred, `:core`'s `commonMain` should avoid APIs that lack a `wasmJs` implementation in `kotlinx-coroutines` / `kotlinx-datetime` / Okio, so the future addition is non-breaking. We pin compatible versions in `libs.versions.toml`.
 
 ### Versioning
 

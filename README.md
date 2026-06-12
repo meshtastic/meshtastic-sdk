@@ -185,7 +185,7 @@ the integration guide.
 | `connect()` throws `MeshtasticException.TransportFailure` on TCP | Host unreachable or firmware TCP API disabled | Verify the radio's IP/hostname and that WiFi/Ethernet is enabled. See [TCP setup](docs/integration-guide.md#tcp). |
 | `connect()` hangs or fails repeatedly on BLE | Device not bonded with the OS | Pair the radio in your OS Bluetooth settings before `connect()`. See [BLE platform requirements](docs/integration-guide.md#ble). |
 | `JvmSerialPorts.open(...)` throws permission denied | Serial device permission not granted | On Linux, add the user to `dialout`. On Android, request USB permission first. See [Serial (USB)](docs/integration-guide.md#serial-usb). |
-| `sendText` returns `SendFailure` immediately on long messages | Payload exceeds the 228-byte text limit | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#7-sending-messages). |
+| `sendText` returns `SendFailure` immediately on long messages | Payload exceeds the SDK-enforced 233-byte payload limit (`DATA_PAYLOAD_LEN`) | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#7-sending-messages). |
 | `connect()` throws `MeshtasticException.HandshakeTimeout` | `want_config_id` reply never arrived from the device | Power-cycle the radio, verify firmware ≥ 2.3, then retry. See [Build a `RadioClient`](docs/integration-guide.md#3-build-a-radioclient). |
 
 ```kotlin
@@ -223,9 +223,9 @@ authoritative dependency graph.
 | Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | Notes                                                                 |
 |----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|-----------------------------------------------------------------------|
 | `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; no platform deps beyond `:proto`.                 |
-| `proto`                    | ✓   | ✓                     | ✓         | ✓             | ✓       | Generated `kotlinx.serialization` proto types.                        |
+| `proto`                    | ✓   | ✓                     | ✓         | ✓             | ✓       | Wire-generated proto types (`org.meshtastic:protobufs`).                        |
 | `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
-| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on `kotlinx-io` sockets.                                        |
+| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on Ktor sockets.                                                |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | iOS targets compile (empty actuals) but no USB-serial API on iOS.     |
 | `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
 | `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |

@@ -46,7 +46,7 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 - `:core` must depend only on `:proto`.
 - Do not add transport/storage implementation dependencies into `:core`.
 - Engine concurrency model is single-writer actor; do not introduce mutex/atomic/synchronized patterns in engine paths (see ADR-002).
-- No `java.*` or `android.*` imports in `commonMain`; use `kotlinx-io` for byte payloads and `kotlinx-datetime` for time.
+- No `java.*` or `android.*` imports in `commonMain`; use `okio.ByteString` for byte payloads (Wire's runtime type; kotlinx-io is deliberately not a dependency) and `kotlinx-datetime` for time.
 - Transport-side locks/atomics (lifecycle/handle ownership only) are allowed but MUST carry an inline `// ADR-012: native-handle ownership` or `// ADR-012: lifecycle idempotency` comment; see `docs/decisions/012-transport-threading.md`.
 
 ## Public API Rules

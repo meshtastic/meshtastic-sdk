@@ -55,6 +55,8 @@ We considered `protobuf-kotlin` (Google's Java/Kotlin codegen) and rejected it f
 | `okio.ByteString` / `okio.Buffer` | transport-internal IO only | Kept for Ktor socket interop where it's idiomatic. Never crosses the public API. |
 | `kotlinx.atomicfu` | engine-internal counters (request_id, heartbeat nonce) | Single-writer guarantee documented at each call site. |
 
+> **Superseded (0.2.0):** The byte-string rows above were reversed in 0.2.0 — `okio.ByteString` is the **single** public byte vocabulary, because Wire's generated protos already expose it on every proto-typed call; `kotlinx-io` was removed entirely and is no longer a dependency of any module. `Frame.bytes` and every public byte-payload field is `okio.ByteString`.
+
 We do not allow `java.util.concurrent`, `java.util.Date`, or `android.os.*` in `commonMain` — this is enforced by detekt's `ForbiddenImport` rules in `config/detekt/detekt.yml` (see ADR-008).
 
 ### Transports (MVP)
@@ -129,6 +131,7 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 - **`protobuf-kotlin` instead of Wire.** Rejected per ADR-001 + worse multiplatform story.
 - **`kotlinx.serialization` for protobuf.** Rejected — the `kotlinx-serialization-protobuf` runtime decodes from a manual `@Serializable` schema; we lose the `meshtastic/protobufs` schema as the source of truth.
 - **Okio for public payloads.** Rejected — diverges from `mqtt-client` and the broader `kotlinx-io` direction. Kept for transport-internal use.
+  > **Superseded (0.2.0):** This rejection was itself reversed — `okio.ByteString` is now the public payload type (Wire's generated protos force it into the surface anyway), and `kotlinx-io` was removed entirely. See the note in "IO, time, and concurrency primitives" above.
 - **Kermit for logging.** Considered. We instead expose a `LogSink` interface and ship `Kermit` only as a sample binding under `:samples`. Production hosts likely already have a logger; we won't dictate.
 - **Koin for DI.** Rejected — SDK does not use DI internally; consumers wire whatever they want.
 - **JReleaser.** Considered for release; `axion-release` matches the org's other libs, prefer consistency.
@@ -139,4 +142,5 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 - **Wire 6 lock.** Bumping major Wire is a breaking change for proto consumers; treated as a SemVer-major event.
 - **No `java.*` in `commonMain` is enforced, not aspirational.** Detekt's `ForbiddenImport` rule fails the build if a `java.util.UUID` import sneaks in.
 - **Two ByteString types in the codebase** (kotlinx-io public, Okio internal). Reviewers must keep public surface kotlinx-io. KGP `checkKotlinAbi` plus detekt's `ForbiddenImport` covers the `:core` public symbols.
+  > **Superseded (0.2.0):** There is now **one** ByteString type — `okio.ByteString` everywhere, public and internal; `kotlinx-io` was removed entirely. The detekt `ForbiddenImport` rules now ban `kotlinx.io.*` imports instead (rule added in 0.2.0).
 - **`wasmJs` is post-1.0.** ADR-006 details the MVP per-target matrix and the future wasm posture.
