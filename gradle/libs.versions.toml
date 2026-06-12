@@ -47,6 +47,8 @@ turbine                     = "1.2.1"
 kotest                      = "6.1.11"
 mockk                       = "1.14.9"
 junit                       = "4.13.2"
+androidxTestRunner          = "1.7.0"
+androidxTestRules           = "1.7.0"
 
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.36.0"
@@ -99,6 +101,8 @@ turbine                     = { module = "app.cash.turbine:turbine",            
 kotestAssertions            = { module = "io.kotest:kotest-assertions-core",                     version.ref = "kotest" }
 mockk                       = { module = "io.mockk:mockk",                                       version.ref = "mockk" }
 junit                       = { module = "junit:junit",                                          version.ref = "junit" }
+androidxTestRunner          = { module = "androidx.test:runner",                              version.ref = "androidxTestRunner" }
+androidxTestRules           = { module = "androidx.test:rules",                               version.ref = "androidxTestRules" }
 
 androidxActivityCompose     = { module = "androidx.activity:activity-compose",                   version.ref = "androidxActivityCompose" }
 lifecycleRuntimeCompose     = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycleCompose" }
