@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import kotlinx.io.readByteArray
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
@@ -70,9 +69,11 @@ import kotlin.time.Duration.Companion.seconds
  * **No host plumbing:** foreground services, permissions, notifications, and WorkManager are the
  * app's responsibility. The SDK owns only the engine.
  *
- * **Resource management:** implements [AutoCloseable], so `client.use { … }` guarantees cleanup
- * even on exception. Prefer `disconnect()` (suspend) over `close()` (blocking) when inside a
- * coroutine.
+ * **Resource management:** call the suspending [disconnect] when done — typically from the same
+ * structured scope that owns the session, e.g. `try { … } finally { client.disconnect() }`.
+ * There is deliberately no blocking `close()`/[AutoCloseable]: a blocking bridge invites ANR on
+ * Android's main thread and deadlock on iOS main, and a radio session has no non-suspending way
+ * to tear down safely.
  *
  * @since 0.1.0
  */
@@ -82,7 +83,7 @@ public class RadioClient internal constructor(
     private val rpcTimeout: Duration,
     private val autoSyncTimeOnConnect: Boolean,
     private val parentContext: kotlin.coroutines.CoroutineContext,
-) : AutoCloseable {
+) {
 
     // ── Observable state ────────────────────────────────────────────────────
 
@@ -274,21 +275,6 @@ public class RadioClient internal constructor(
      */
     public suspend fun disconnect() {
         engine.disconnect()
-    }
-
-    /**
-     * Blocking close for [AutoCloseable] conformance.
-     *
-     * Delegates to [disconnect] via `runBlocking`. Prefer the suspending [disconnect] when
-     * already inside a coroutine — this overload exists so `RadioClient` works with Kotlin's
-     * `use { }` idiom and Java's try-with-resources.
-     *
-     * **Warning:** Do not call from the main/UI thread — `runBlocking` will block the caller
-     * until disconnection completes, which can trigger ANR on Android or deadlock on iOS main.
-     * Use [disconnect] directly from a coroutine scope instead.
-     */
-    override fun close() {
-        runBlocking { disconnect() }
     }
 
     // ── Outbound ────────────────────────────────────────────────────────────

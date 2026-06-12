@@ -1432,7 +1432,7 @@ final class org.meshtastic.sdk/NeighborInfo { // org.meshtastic.sdk/NeighborInfo
     }
 }
 
-final class org.meshtastic.sdk/RadioClient : kotlin/AutoCloseable { // org.meshtastic.sdk/RadioClient|null[0]
+final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|null[0]
     final val admin // org.meshtastic.sdk/RadioClient.admin|{}admin[0]
         final fun <get-admin>(): org.meshtastic.sdk/AdminApi // org.meshtastic.sdk/RadioClient.admin.<get-admin>|<get-admin>(){}[0]
     final val channels // org.meshtastic.sdk/RadioClient.channels|{}channels[0]
@@ -1456,7 +1456,6 @@ final class org.meshtastic.sdk/RadioClient : kotlin/AutoCloseable { // org.mesht
     final val telemetry // org.meshtastic.sdk/RadioClient.telemetry|{}telemetry[0]
         final fun <get-telemetry>(): org.meshtastic.sdk/TelemetryApi // org.meshtastic.sdk/RadioClient.telemetry.<get-telemetry>|<get-telemetry>(){}[0]
 
-    final fun close() // org.meshtastic.sdk/RadioClient.close|close(){}[0]
     final fun requestNodeInfo(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.requestNodeInfo|requestNodeInfo(org.meshtastic.sdk.NodeId){}[0]
     final fun send(org.meshtastic.proto/MeshPacket): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.send|send(org.meshtastic.proto.MeshPacket){}[0]
     final fun sendRaw(org.meshtastic.proto/ToRadio) // org.meshtastic.sdk/RadioClient.sendRaw|sendRaw(org.meshtastic.proto.ToRadio){}[0]
@@ -1982,6 +1981,8 @@ final fun (kotlin/ByteArray).org.meshtastic.sdk/toFromRadio(): org.meshtastic.pr
 final fun (kotlin/ByteArray).org.meshtastic.sdk/toMeshPacket(): org.meshtastic.proto/MeshPacket? // org.meshtastic.sdk/toMeshPacket|toMeshPacket@kotlin.ByteArray(){}[0]
 final fun (kotlin/ByteArray).org.meshtastic.sdk/toToRadio(): org.meshtastic.proto/ToRadio? // org.meshtastic.sdk/toToRadio|toToRadio@kotlin.ByteArray(){}[0]
 final fun (kotlin/Int).org.meshtastic.sdk/firmwareSecondsToInstant(): kotlin.time/Instant? // org.meshtastic.sdk/firmwareSecondsToInstant|firmwareSecondsToInstant@kotlin.Int(){}[0]
+final fun (kotlinx.io.bytestring/ByteString).org.meshtastic.sdk/toOkioByteString(): okio/ByteString // org.meshtastic.sdk/toOkioByteString|toOkioByteString@kotlinx.io.bytestring.ByteString(){}[0]
+final fun (okio/ByteString).org.meshtastic.sdk/toKotlinxByteString(): kotlinx.io.bytestring/ByteString // org.meshtastic.sdk/toKotlinxByteString|toKotlinxByteString@okio.ByteString(){}[0]
 final fun (org.meshtastic.proto/Channel.Companion).org.meshtastic.sdk/default(): org.meshtastic.proto/Channel // org.meshtastic.sdk/default|default@org.meshtastic.proto.Channel.Companion(){}[0]
 final fun (org.meshtastic.proto/ChannelSet).org.meshtastic.sdk/toUrl(): kotlin/String // org.meshtastic.sdk/toUrl|toUrl@org.meshtastic.proto.ChannelSet(){}[0]
 final fun (org.meshtastic.proto/ChannelSettings.Companion).org.meshtastic.sdk/hash(kotlin/String, kotlin/ByteArray): kotlin/Int // org.meshtastic.sdk/hash|hash@org.meshtastic.proto.ChannelSettings.Companion(kotlin.String;kotlin.ByteArray){}[0]

@@ -224,6 +224,11 @@ public final class org/meshtastic/sdk/BatteryStatusKt {
 	public static final fun toBatteryStatus (Lorg/meshtastic/proto/Telemetry;)Lorg/meshtastic/sdk/BatteryStatus;
 }
 
+public final class org/meshtastic/sdk/ByteStringsKt {
+	public static final fun toKotlinxByteString (Lokio/ByteString;)Lkotlinx/io/bytestring/ByteString;
+	public static final fun toOkioByteString (Lkotlinx/io/bytestring/ByteString;)Lokio/ByteString;
+}
+
 public final class org/meshtastic/sdk/ChannelHelpers {
 	public static final field INSTANCE Lorg/meshtastic/sdk/ChannelHelpers;
 	public static final field MAX_NAME_LENGTH I
@@ -1254,10 +1259,9 @@ public final class org/meshtastic/sdk/ProtoBytesKt {
 	public static final fun toToRadio ([B)Lorg/meshtastic/proto/ToRadio;
 }
 
-public final class org/meshtastic/sdk/RadioClient : java/lang/AutoCloseable {
+public final class org/meshtastic/sdk/RadioClient {
 	public static final field Companion Lorg/meshtastic/sdk/RadioClient$Companion;
 	public fun <init> (Lorg/meshtastic/sdk/internal/MeshEngine;Lkotlin/time/Clock;Lkotlin/time/Duration;ZLkotlin/coroutines/CoroutineContext;)V
-	public fun close ()V
 	public final fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getAdmin ()Lorg/meshtastic/sdk/AdminApi;

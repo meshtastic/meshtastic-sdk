@@ -19,6 +19,32 @@
 
 > All public top-level types in `org.meshtastic.sdk` are considered stable for the 0.1.x series.
 
+## API conventions
+
+Deliberate, enforced choices about the shape of the public surface:
+
+- **Proto types are exposed unwrapped** ([ADR-001](./decisions/001-public-api-uses-generated-protobufs.md)).
+  The SDK's ABI therefore tracks the `org.meshtastic:protobufs` artifact; proto bumps are priced
+  into the SemVer table in [`versioning.md`](./versioning.md).
+- **Two byte-string vocabularies, bridged.** Wire-generated proto fields use `okio.ByteString`
+  (Wire's runtime type); SDK-native types (`Frame`, `SessionPasskey`) use
+  `kotlinx.io.bytestring.ByteString`. Use `toKotlinxByteString()` / `toOkioByteString()`
+  (`ByteStrings.kt`) to cross — never round-trip through raw arrays yourself.
+- **No blocking bridges.** Lifecycle is suspend-only (`connect()`/`disconnect()`); there is
+  deliberately no `AutoCloseable`/`close()` on `RadioClient`. Blocking teardown invites ANR on
+  Android main and deadlock on iOS main.
+- **Data classes in the public API are a deliberate trade.** Event/result types are `data` so
+  consumers get structural equality in tests and exhaustive `when` matching. The ABI cost
+  (`copy`/`componentN` lock-in) is mitigated by the pre-1.0 window, the CI-gated Kotlin ABI
+  dumps (every signature change is reviewed), and the SemVer pricing of sealed-subtype
+  additions. When the [Poko](https://github.com/drewhamilton/Poko) compiler plugin supports the
+  current Kotlin version, event/result types migrate to `@Poko` classes (tracked in
+  [`roadmap.md`](./roadmap.md)) — consumers should treat `copy()`/destructuring of SDK types as
+  unstable conveniences, not contract.
+- **Kotlin/Swift first.** No `@JvmOverloads`/`@JvmName` Java-ergonomics annotations; Java
+  callers are not a supported audience. Swift interop is first-class via SKIE + `@Throws`.
+
+
 ### Coordinates and the BOM
 
 Every artifact above is published under the `org.meshtastic` group as

@@ -19,6 +19,14 @@
 
 ## Inventory
 
+> **Tooling deferral:** migrate public event/result `data class`es to
+> [Poko](https://github.com/drewhamilton/Poko) `@Poko` classes (drops `copy`/`componentN`
+> ABI lock-in, keeps `equals`/`hashCode`/`toString`) once Poko supports Kotlin 2.3.21+ —
+> 0.23.1 fails with `NoClassDefFoundError: org/jetbrains/kotlin/extensions/ExtensionPointDescriptor`
+> against the 2.3.x compiler. Until then the data-class policy in
+> [`api-reference.md`](./api-reference.md#api-conventions) applies.
+
+
 | ID | Item | Surface | Status | Phase | Source |
 |---|---|---|---|---|---|
 | R-1 | ~~`RadioClient.admin` (admin RPC)~~ | ~~public~~ | **Done** — Sprint 5 (`AdminApiImpl`, [`AdminApi`](../core/src/commonMain/kotlin/org/meshtastic/sdk/AdminApi.kt)). 16 methods + `editSettings` transactional builder; `SessionKeyExpired` triggers single-shot retry. | — | — |

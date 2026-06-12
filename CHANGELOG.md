@@ -21,6 +21,21 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **engine:** A `want_config_id` retry restarts the firmware's config drain from scratch (PhoneAPI resets its read index), which previously duplicated channels / config sections in the committed `ConfigBundle` and `channels` state. Stage 1 accumulators now replace by key (channel index / config section), latest occurrence wins.
 - **engine:** `FromRadio.lockdown_status` (protobufs 2.7.25+) was silently dropped — it now surfaces as a structured `ProtocolWarning` until typed lockdown support lands.
 
+### Removed
+
+- **`RadioClient.close()` / `AutoCloseable` (breaking):** the blocking `close()` bridge
+  (`runBlocking { disconnect() }`) was an ANR/deadlock trap on Android and iOS main threads.
+  Lifecycle is suspend-only — use `try { … } finally { client.disconnect() }`.
+
+### Added (API conventions)
+
+- `okio.ByteString.toKotlinxByteString()` / `kotlinx.io.bytestring.ByteString.toOkioByteString()`
+  bridge the two byte-string vocabularies in the API surface (Wire proto types vs SDK framing
+  types) without raw-array round-trips.
+- `docs/api-reference.md` gains an **API conventions** section codifying the proto-exposure,
+  byte-string, no-blocking-bridge, data-class, and Kotlin/Swift-first policies (Poko migration
+  for event/result types tracked in the roadmap pending Kotlin 2.3.21 support).
+
 ### Changed
 
 - **remote admin (breaking behavior, correctness):** Remote admin packets are now routed the way modern firmware (2.5+) requires — `pki_encrypted = true` + the target's `public_key` on channel 0 when both nodes have published keys, falling back to a channel named `admin` otherwise, with priority `RELIABLE`. Previously remote admin went out on channel 0 in the clear and was rejected by current firmware.
