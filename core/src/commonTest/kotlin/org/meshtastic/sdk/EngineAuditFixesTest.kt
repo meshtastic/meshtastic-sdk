@@ -21,6 +21,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceUIConfig
@@ -40,7 +41,6 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.io.bytestring.ByteString as KByteString
 
 /**
  * Coverage for the engine/protocol audit fixes (P1-1 … P1-6, P2-2 … P2-5).
@@ -347,7 +347,7 @@ class EngineAuditFixesTest {
             this[3] = (proto.size and 0xFF).toByte()
             proto.copyInto(this, destinationOffset = 4)
         }
-        return Frame(KByteString(frameBytes))
+        return Frame(frameBytes.toByteString())
     }
 
     /**

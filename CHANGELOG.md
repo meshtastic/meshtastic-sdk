@@ -27,11 +27,13 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`runBlocking { disconnect() }`) was an ANR/deadlock trap on Android and iOS main threads.
   Lifecycle is suspend-only — use `try { … } finally { client.disconnect() }`.
 
-### Added (API conventions)
+### Changed (API conventions, breaking)
 
-- `okio.ByteString.toKotlinxByteString()` / `kotlinx.io.bytestring.ByteString.toOkioByteString()`
-  bridge the two byte-string vocabularies in the API surface (Wire proto types vs SDK framing
-  types) without raw-array round-trips.
+- **One byte-string vocabulary.** `Frame`, `SessionPasskey`, and the streaming `send` overload
+  now use `okio.ByteString` — the type Wire-generated proto fields already force into the
+  surface — instead of `kotlinx.io.bytestring.ByteString`. The `send(portnum, payload:
+  kotlinx.io.Buffer)` overload is replaced by `send(portnum, payload: okio.ByteString)`.
+  `kotlinx-io` is no longer a dependency of any published module.
 - `docs/api-reference.md` gains an **API conventions** section codifying the proto-exposure,
   byte-string, no-blocking-bridge, data-class, and Kotlin/Swift-first policies (Poko migration
   for event/result types tracked in the roadmap pending Kotlin 2.3.21 support).

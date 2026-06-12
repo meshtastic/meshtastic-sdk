@@ -17,7 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
-import kotlinx.io.readByteArray
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
@@ -468,42 +467,39 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Convenience: build a [MeshPacket] for the given [portnum] from a [kotlinx.io.Buffer] payload.
+     * Convenience: build a [MeshPacket] for the given [portnum] from an [okio.ByteString] payload.
      *
-     * Identical to the `ByteArray`-accepting [send] overload but reads from a [kotlinx.io.Buffer],
-     * allowing callers to compose payloads with the `kotlinx-io` sink/source API instead of raw
-     * byte arrays. The buffer is consumed (read fully) on invocation.
+     * Identical to the `ByteArray`-accepting [send] overload but takes the byte-string type that
+     * Wire-generated proto fields already use — pass payloads (or slices of received payloads)
+     * straight through without copying into a raw array first.
      *
      * @param portnum the application port number
-     * @param payload a [kotlinx.io.Buffer] containing the wire-encoded payload (≤ [DATA_PAYLOAD_LEN])
+     * @param payload the wire-encoded payload (≤ [DATA_PAYLOAD_LEN])
      * @param to destination [NodeId]; defaults to [NodeId.BROADCAST]
      * @param channel [ChannelIndex] to send on; defaults to channel 0 (primary)
      * @param wantAck request a reliable delivery ACK
      * @param hopLimit explicit hop limit override; `null` keeps the device default
      * @return a [MessageHandle] tracking delivery state
      * @throws MeshtasticException.NotConnected if not currently connected
-     * @throws MeshtasticException.PayloadTooLarge if the buffer content exceeds the device limit
-     * @since 0.1.0
+     * @throws MeshtasticException.PayloadTooLarge if the payload exceeds the device limit
+     * @since 0.2.0
      */
     @Throws(MeshtasticException::class, CancellationException::class)
     public suspend fun send(
         portnum: PortNum,
-        payload: kotlinx.io.Buffer,
+        payload: okio.ByteString,
         to: NodeId = NodeId.BROADCAST,
         channel: ChannelIndex = ChannelIndex(0),
         wantAck: Boolean = false,
         hopLimit: Int? = null,
-    ): MessageHandle {
-        val bytes = payload.readByteArray()
-        return send(
-            portnum = portnum,
-            payload = bytes,
-            to = to,
-            channel = channel,
-            wantAck = wantAck,
-            hopLimit = hopLimit,
-        )
-    }
+    ): MessageHandle = send(
+        portnum = portnum,
+        payload = payload.toByteArray(),
+        to = to,
+        channel = channel,
+        wantAck = wantAck,
+        hopLimit = hopLimit,
+    )
 
     // ── Sub-APIs ────────────────────────────────────────────────────────────
 

@@ -8,7 +8,8 @@
 package org.meshtastic.sdk.transport.tcp
 
 import kotlinx.coroutines.test.runTest
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.WireFraming
@@ -31,7 +32,7 @@ class TcpTransportSendSizeTest {
         val transport = TcpTransport("127.0.0.1", 4403)
         val maxEnvelope = ByteArray(WireFraming.MAX_FRAME_ON_WIRE) // 516 B
         val ex = assertFailsWith<MeshtasticException.Transport> {
-            transport.send(Frame(ByteString(maxEnvelope)))
+            transport.send(Frame(maxEnvelope.toByteString()))
         }
         // Size check must pass; we should reach the "not connected" branch.
         assertEquals("TCP not connected", ex.message)
@@ -42,7 +43,7 @@ class TcpTransportSendSizeTest {
         val transport = TcpTransport("127.0.0.1", 4403)
         val tooBig = ByteArray(WireFraming.MAX_FRAME_ON_WIRE + 1)
         assertFailsWith<IllegalArgumentException> {
-            transport.send(Frame(ByteString(tooBig)))
+            transport.send(Frame(tooBig.toByteString()))
         }
     }
 }

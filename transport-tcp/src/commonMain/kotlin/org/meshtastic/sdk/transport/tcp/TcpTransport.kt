@@ -26,9 +26,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.io.Buffer
-import kotlinx.io.bytestring.ByteString
-import kotlinx.io.readByteArray
+import okio.Buffer
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioTransport
@@ -160,7 +160,7 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
 
                                 payloadLen == 0 -> {
                                     val header = byteArrayOf(START1, START2, 0, 0)
-                                    emit(Frame(ByteString(header)))
+                                    emit(Frame(header.toByteString()))
                                     fsmState = FsmState.SCAN_FOR_START1
                                 }
 
@@ -172,7 +172,7 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
                         }
 
                         FsmState.READ_PAYLOAD -> {
-                            payloadBuf.writeByte(b)
+                            payloadBuf.writeByte(b.toInt())
                             if (--bytesRemaining == 0) {
                                 val payload = payloadBuf.readByteArray()
                                 payloadBuf.clear()
@@ -184,7 +184,7 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
                                     (payloadLen shr 8).toByte(),
                                     (payloadLen and 0xFF).toByte(),
                                 )
-                                emit(Frame(ByteString(header + payload)))
+                                emit(Frame((header + payload).toByteString()))
                             }
                         }
                     }

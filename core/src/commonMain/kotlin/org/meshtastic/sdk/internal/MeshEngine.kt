@@ -25,7 +25,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
@@ -542,7 +542,7 @@ internal class MeshEngine(
             try {
                 withTimeoutOrNull(GOODBYE_TIMEOUT_MS) {
                     val encoded = WireCodec.encodeToRadio(ToRadio(disconnect = true))
-                    transport.send(Frame(ByteString(encoded)))
+                    transport.send(Frame(encoded.toByteString()))
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -639,7 +639,7 @@ internal class MeshEngine(
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
         val encoded = WireCodec.encodeToRadio(ToRadio(packet = outboundPacket))
-        outbound.trySend(Frame(ByteString(encoded)))
+        outbound.trySend(Frame(encoded.toByteString()))
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
         val job = scope.launch {
@@ -826,7 +826,7 @@ internal class MeshEngine(
         // BLE doesn't need this since each GATT write is self-framing.
         if (!transport.identity.raw.startsWith("ble:")) {
             val wakeBytes = byteArrayOf(0x94.toByte(), 0x94.toByte(), 0x94.toByte(), 0x94.toByte())
-            outbound.trySend(Frame(ByteString(wakeBytes)))
+            outbound.trySend(Frame(wakeBytes.toByteString()))
         }
 
         sendToRadio(ToRadio(want_config_id = NONCE_STAGE1))
@@ -1337,7 +1337,7 @@ internal class MeshEngine(
         engineScope?.launch {
             if (storageDegraded) return@launch
             try {
-                storage?.saveSessionPasskey(SessionPasskey(ByteString(bytes), expiresAtMs))
+                storage?.saveSessionPasskey(SessionPasskey(bytes.toByteString(), expiresAtMs))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -2129,7 +2129,7 @@ internal class MeshEngine(
         pendingSends[MessageId(wireId)] = msg.stateFlow
 
         val encoded = WireCodec.encodeToRadio(ToRadio(packet = packet))
-        outbound.trySend(Frame(ByteString(encoded)))
+        outbound.trySend(Frame(encoded.toByteString()))
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
@@ -2277,7 +2277,7 @@ internal class MeshEngine(
     internal fun sendToRadio(msg: ToRadio) {
         try {
             val encoded = WireCodec.encodeToRadio(msg)
-            outbound.trySend(Frame(ByteString(encoded)))
+            outbound.trySend(Frame(encoded.toByteString()))
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
         }

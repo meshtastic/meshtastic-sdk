@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
@@ -32,7 +33,6 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.io.bytestring.ByteString as KByteString
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MeshEngineEdgeCasesTest {
@@ -48,7 +48,7 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectFrame(Frame(KByteString(byteArrayOf(WireFraming.MAGIC_0, WireFraming.MAGIC_1, 0x00))))
+        transport.injectFrame(Frame(byteArrayOf(WireFraming.MAGIC_0, WireFraming.MAGIC_1, 0x00).toByteString()))
         runCurrent()
 
         assertEquals(ConnectionState.Connected, client.connection.value)
@@ -718,7 +718,7 @@ class MeshEngineEdgeCasesTest {
         bytes[2] = (declaredLength shr 8).toByte()
         bytes[3] = (declaredLength and 0xFF).toByte()
         payload.copyInto(bytes, destinationOffset = WireFraming.HEADER_SIZE)
-        return Frame(KByteString(bytes))
+        return Frame(bytes.toByteString())
     }
 
     private fun encodedFromRadio(fromRadio: FromRadio): ByteArray = FromRadio.ADAPTER.encode(fromRadio)

@@ -1246,13 +1246,13 @@ final class org.meshtastic.sdk/DeviceVersion : kotlin/Comparable<org.meshtastic.
 }
 
 final class org.meshtastic.sdk/Frame { // org.meshtastic.sdk/Frame|null[0]
-    constructor <init>(kotlinx.io.bytestring/ByteString) // org.meshtastic.sdk/Frame.<init>|<init>(kotlinx.io.bytestring.ByteString){}[0]
+    constructor <init>(okio/ByteString) // org.meshtastic.sdk/Frame.<init>|<init>(okio.ByteString){}[0]
 
     final val bytes // org.meshtastic.sdk/Frame.bytes|{}bytes[0]
-        final fun <get-bytes>(): kotlinx.io.bytestring/ByteString // org.meshtastic.sdk/Frame.bytes.<get-bytes>|<get-bytes>(){}[0]
+        final fun <get-bytes>(): okio/ByteString // org.meshtastic.sdk/Frame.bytes.<get-bytes>|<get-bytes>(){}[0]
 
-    final fun component1(): kotlinx.io.bytestring/ByteString // org.meshtastic.sdk/Frame.component1|component1(){}[0]
-    final fun copy(kotlinx.io.bytestring/ByteString = ...): org.meshtastic.sdk/Frame // org.meshtastic.sdk/Frame.copy|copy(kotlinx.io.bytestring.ByteString){}[0]
+    final fun component1(): okio/ByteString // org.meshtastic.sdk/Frame.component1|component1(){}[0]
+    final fun copy(okio/ByteString = ...): org.meshtastic.sdk/Frame // org.meshtastic.sdk/Frame.copy|copy(okio.ByteString){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/Frame.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk/Frame.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk/Frame.toString|toString(){}[0]
@@ -1465,7 +1465,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
     final suspend fun disconnect() // org.meshtastic.sdk/RadioClient.disconnect|disconnect(){}[0]
     final suspend fun nodeSnapshot(): kotlin.collections/Map<org.meshtastic.sdk/NodeId, org.meshtastic.proto/NodeInfo> // org.meshtastic.sdk/RadioClient.nodeSnapshot|nodeSnapshot(){}[0]
     final suspend fun send(org.meshtastic.proto/PortNum, kotlin/ByteArray, org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex = ..., kotlin/Boolean = ..., kotlin/Int? = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.send|send(org.meshtastic.proto.PortNum;kotlin.ByteArray;org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;kotlin.Boolean;kotlin.Int?){}[0]
-    final suspend fun send(org.meshtastic.proto/PortNum, kotlinx.io/Buffer, org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex = ..., kotlin/Boolean = ..., kotlin/Int? = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.send|send(org.meshtastic.proto.PortNum;kotlinx.io.Buffer;org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;kotlin.Boolean;kotlin.Int?){}[0]
+    final suspend fun send(org.meshtastic.proto/PortNum, okio/ByteString, org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex = ..., kotlin/Boolean = ..., kotlin/Int? = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.send|send(org.meshtastic.proto.PortNum;okio.ByteString;org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;kotlin.Boolean;kotlin.Int?){}[0]
 
     final class Builder { // org.meshtastic.sdk/RadioClient.Builder|null[0]
         constructor <init>() // org.meshtastic.sdk/RadioClient.Builder.<init>|<init>(){}[0]
@@ -1555,16 +1555,16 @@ final class org.meshtastic.sdk/SendBuilder { // org.meshtastic.sdk/SendBuilder|n
 }
 
 final class org.meshtastic.sdk/SessionPasskey { // org.meshtastic.sdk/SessionPasskey|null[0]
-    constructor <init>(kotlinx.io.bytestring/ByteString, kotlin/Long) // org.meshtastic.sdk/SessionPasskey.<init>|<init>(kotlinx.io.bytestring.ByteString;kotlin.Long){}[0]
+    constructor <init>(okio/ByteString, kotlin/Long) // org.meshtastic.sdk/SessionPasskey.<init>|<init>(okio.ByteString;kotlin.Long){}[0]
 
     final val bytes // org.meshtastic.sdk/SessionPasskey.bytes|{}bytes[0]
-        final fun <get-bytes>(): kotlinx.io.bytestring/ByteString // org.meshtastic.sdk/SessionPasskey.bytes.<get-bytes>|<get-bytes>(){}[0]
+        final fun <get-bytes>(): okio/ByteString // org.meshtastic.sdk/SessionPasskey.bytes.<get-bytes>|<get-bytes>(){}[0]
     final val expiresAtEpochMs // org.meshtastic.sdk/SessionPasskey.expiresAtEpochMs|{}expiresAtEpochMs[0]
         final fun <get-expiresAtEpochMs>(): kotlin/Long // org.meshtastic.sdk/SessionPasskey.expiresAtEpochMs.<get-expiresAtEpochMs>|<get-expiresAtEpochMs>(){}[0]
 
-    final fun component1(): kotlinx.io.bytestring/ByteString // org.meshtastic.sdk/SessionPasskey.component1|component1(){}[0]
+    final fun component1(): okio/ByteString // org.meshtastic.sdk/SessionPasskey.component1|component1(){}[0]
     final fun component2(): kotlin/Long // org.meshtastic.sdk/SessionPasskey.component2|component2(){}[0]
-    final fun copy(kotlinx.io.bytestring/ByteString = ..., kotlin/Long = ...): org.meshtastic.sdk/SessionPasskey // org.meshtastic.sdk/SessionPasskey.copy|copy(kotlinx.io.bytestring.ByteString;kotlin.Long){}[0]
+    final fun copy(okio/ByteString = ..., kotlin/Long = ...): org.meshtastic.sdk/SessionPasskey // org.meshtastic.sdk/SessionPasskey.copy|copy(okio.ByteString;kotlin.Long){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/SessionPasskey.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk/SessionPasskey.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk/SessionPasskey.toString|toString(){}[0]
@@ -1981,8 +1981,6 @@ final fun (kotlin/ByteArray).org.meshtastic.sdk/toFromRadio(): org.meshtastic.pr
 final fun (kotlin/ByteArray).org.meshtastic.sdk/toMeshPacket(): org.meshtastic.proto/MeshPacket? // org.meshtastic.sdk/toMeshPacket|toMeshPacket@kotlin.ByteArray(){}[0]
 final fun (kotlin/ByteArray).org.meshtastic.sdk/toToRadio(): org.meshtastic.proto/ToRadio? // org.meshtastic.sdk/toToRadio|toToRadio@kotlin.ByteArray(){}[0]
 final fun (kotlin/Int).org.meshtastic.sdk/firmwareSecondsToInstant(): kotlin.time/Instant? // org.meshtastic.sdk/firmwareSecondsToInstant|firmwareSecondsToInstant@kotlin.Int(){}[0]
-final fun (kotlinx.io.bytestring/ByteString).org.meshtastic.sdk/toOkioByteString(): okio/ByteString // org.meshtastic.sdk/toOkioByteString|toOkioByteString@kotlinx.io.bytestring.ByteString(){}[0]
-final fun (okio/ByteString).org.meshtastic.sdk/toKotlinxByteString(): kotlinx.io.bytestring/ByteString // org.meshtastic.sdk/toKotlinxByteString|toKotlinxByteString@okio.ByteString(){}[0]
 final fun (org.meshtastic.proto/Channel.Companion).org.meshtastic.sdk/default(): org.meshtastic.proto/Channel // org.meshtastic.sdk/default|default@org.meshtastic.proto.Channel.Companion(){}[0]
 final fun (org.meshtastic.proto/ChannelSet).org.meshtastic.sdk/toUrl(): kotlin/String // org.meshtastic.sdk/toUrl|toUrl@org.meshtastic.proto.ChannelSet(){}[0]
 final fun (org.meshtastic.proto/ChannelSettings.Companion).org.meshtastic.sdk/hash(kotlin/String, kotlin/ByteArray): kotlin/Int // org.meshtastic.sdk/hash|hash@org.meshtastic.proto.ChannelSettings.Companion(kotlin.String;kotlin.ByteArray){}[0]

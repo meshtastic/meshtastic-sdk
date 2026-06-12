@@ -7,8 +7,7 @@
  */
 package org.meshtastic.sdk
 
-import kotlinx.io.Buffer
-import kotlinx.io.readByteArray
+import okio.Buffer
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.ToRadio
 
@@ -167,7 +166,7 @@ public object WireCodec {
                 }
 
                 State.READ_PAYLOAD -> {
-                    buffer.writeByte(b)
+                    buffer.writeByte(b.toInt())
                     bytesRemaining--
 
                     if (bytesRemaining == 0) {

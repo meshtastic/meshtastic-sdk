@@ -16,7 +16,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.ToRadio
@@ -389,7 +390,7 @@ class HandshakeFsmTest {
             this[3] = (proto.size and 0xFF).toByte()
             proto.copyInto(this, destinationOffset = 4)
         }
-        return Frame(ByteString(bytes))
+        return Frame(bytes.toByteString())
     }
 
     private fun decodeToRadioOrNull(frame: Frame): ToRadio? {

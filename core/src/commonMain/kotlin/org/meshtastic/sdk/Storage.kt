@@ -252,4 +252,4 @@ public interface DeviceStorage : AutoCloseable {
  *
  * @since 0.1.0
  */
-public data class SessionPasskey(public val bytes: kotlinx.io.bytestring.ByteString, public val expiresAtEpochMs: Long)
+public data class SessionPasskey(public val bytes: okio.ByteString, public val expiresAtEpochMs: Long)

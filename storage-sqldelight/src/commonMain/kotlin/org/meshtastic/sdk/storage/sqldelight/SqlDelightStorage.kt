@@ -10,6 +10,7 @@ package org.meshtastic.sdk.storage.sqldelight
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
@@ -260,7 +261,7 @@ internal class SqlDelightStorage(
             }
             return@withContext null
         }
-        SessionPasskey(kotlinx.io.bytestring.ByteString(bytes), expiresAtMs)
+        SessionPasskey(bytes.toByteString(), expiresAtMs)
     }
 
     // ── Heartbeat persistence (P1-6) ──────────────────────────────────────────

@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -161,6 +162,6 @@ class StorageResilienceTest {
             this[3] = (proto.size and 0xFF).toByte()
             proto.copyInto(this, destinationOffset = 4)
         }
-        return Frame(kotlinx.io.bytestring.ByteString(bytes))
+        return Frame(bytes.toByteString())
     }
 }

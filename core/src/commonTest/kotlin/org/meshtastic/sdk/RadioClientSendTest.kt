@@ -11,8 +11,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.io.Buffer
-import kotlinx.io.readByteArray
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
@@ -234,7 +232,7 @@ class RadioClientSendTest {
         withConnectedClient { client, transport ->
             val before = transport.outboundPackets().size
             val payload = byteArrayOf(0x0A, 0x0B, 0x0C)
-            val buffer = Buffer().apply { write(payload) }
+            val buffer = payload.toByteString()
 
             val handle = client.send(
                 portnum = PortNum.NODEINFO_APP,
@@ -246,7 +244,6 @@ class RadioClientSendTest {
             )
 
             assertCondition(handle.id.raw != 0, "Expected non-zero message id")
-            assertContentEquals(byteArrayOf(), buffer.readByteArray())
             runCurrent()
 
             val outbound = transport.lastNewOutboundPacket(before)
@@ -264,7 +261,7 @@ class RadioClientSendTest {
     @Test
     fun sendBuffer_notConnectedThrows() = runTest {
         val client = buildClient()
-        val buffer = Buffer().apply { write("hello".encodeToByteArray()) }
+        val buffer = "hello".encodeToByteArray().toByteString()
 
         assertFailsWith<MeshtasticException.NotConnected> {
             client.send(PortNum.TEXT_MESSAGE_APP, buffer)
@@ -274,7 +271,7 @@ class RadioClientSendTest {
     @Test
     fun sendBuffer_payloadTooLargeThrows() = runTest {
         withConnectedClient { client, _ ->
-            val buffer = Buffer().apply { write(ByteArray(DATA_PAYLOAD_LEN + 1)) }
+            val buffer = ByteArray(DATA_PAYLOAD_LEN + 1).toByteString()
 
             assertFailsWith<MeshtasticException.PayloadTooLarge> {
                 client.send(PortNum.TEXT_MESSAGE_APP, buffer)

@@ -20,6 +20,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
@@ -35,7 +36,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.time.Duration.Companion.seconds
-import kotlinx.io.bytestring.ByteString as KByteString
 
 /**
  * P1 engine hardening fixes:
@@ -416,7 +416,7 @@ class P1EngineHardeningTest {
             this[3] = (proto.size and 0xFF).toByte()
             proto.copyInto(this, destinationOffset = 4)
         }
-        return Frame(KByteString(frameBytes))
+        return Frame(frameBytes.toByteString())
     }
 
     /** Transport that connects but never responds — used to drive Stage 1 to its timeout. */

@@ -9,7 +9,7 @@ package org.meshtastic.sdk
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
 
 /**
  * A framed packet ready for transmission or received from the device.

@@ -224,11 +224,6 @@ public final class org/meshtastic/sdk/BatteryStatusKt {
 	public static final fun toBatteryStatus (Lorg/meshtastic/proto/Telemetry;)Lorg/meshtastic/sdk/BatteryStatus;
 }
 
-public final class org/meshtastic/sdk/ByteStringsKt {
-	public static final fun toKotlinxByteString (Lokio/ByteString;)Lkotlinx/io/bytestring/ByteString;
-	public static final fun toOkioByteString (Lkotlinx/io/bytestring/ByteString;)Lokio/ByteString;
-}
-
 public final class org/meshtastic/sdk/ChannelHelpers {
 	public static final field INSTANCE Lorg/meshtastic/sdk/ChannelHelpers;
 	public static final field MAX_NAME_LENGTH I
@@ -534,12 +529,12 @@ public final class org/meshtastic/sdk/FirmwareTimeKt {
 }
 
 public final class org/meshtastic/sdk/Frame {
-	public fun <init> (Lkotlinx/io/bytestring/ByteString;)V
-	public final fun component1 ()Lkotlinx/io/bytestring/ByteString;
-	public final fun copy (Lkotlinx/io/bytestring/ByteString;)Lorg/meshtastic/sdk/Frame;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/Frame;Lkotlinx/io/bytestring/ByteString;ILjava/lang/Object;)Lorg/meshtastic/sdk/Frame;
+	public fun <init> (Lokio/ByteString;)V
+	public final fun component1 ()Lokio/ByteString;
+	public final fun copy (Lokio/ByteString;)Lorg/meshtastic/sdk/Frame;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/Frame;Lokio/ByteString;ILjava/lang/Object;)Lorg/meshtastic/sdk/Frame;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getBytes ()Lkotlinx/io/bytestring/ByteString;
+	public final fun getBytes ()Lokio/ByteString;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1279,9 +1274,9 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun requestNodeInfo (Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun requestNodeInfo-LO_6HKw (I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun send (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;Lkotlinx/io/Buffer;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;Lokio/ByteString;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;Lkotlinx/io/Buffer;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;Lokio/ByteString;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public final fun sendRaw (Lorg/meshtastic/proto/ToRadio;)V
 	public final fun sendReaction (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
@@ -1659,13 +1654,13 @@ public final class org/meshtastic/sdk/SendState$Sent : org/meshtastic/sdk/SendSt
 }
 
 public final class org/meshtastic/sdk/SessionPasskey {
-	public fun <init> (Lkotlinx/io/bytestring/ByteString;J)V
-	public final fun component1 ()Lkotlinx/io/bytestring/ByteString;
+	public fun <init> (Lokio/ByteString;J)V
+	public final fun component1 ()Lokio/ByteString;
 	public final fun component2 ()J
-	public final fun copy (Lkotlinx/io/bytestring/ByteString;J)Lorg/meshtastic/sdk/SessionPasskey;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SessionPasskey;Lkotlinx/io/bytestring/ByteString;JILjava/lang/Object;)Lorg/meshtastic/sdk/SessionPasskey;
+	public final fun copy (Lokio/ByteString;J)Lorg/meshtastic/sdk/SessionPasskey;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SessionPasskey;Lokio/ByteString;JILjava/lang/Object;)Lorg/meshtastic/sdk/SessionPasskey;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getBytes ()Lkotlinx/io/bytestring/ByteString;
+	public final fun getBytes ()Lokio/ByteString;
 	public final fun getExpiresAtEpochMs ()J
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;

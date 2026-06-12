@@ -12,7 +12,6 @@ androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
 coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
-kotlinxIo                   = "0.9.0"
 kotlinxDatetime             = "0.7.1"
 kotlinxSerialization        = "1.11.0"
 atomicfu                    = "0.32.1"
@@ -70,7 +69,6 @@ coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutin
 coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutines" }
 kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
 kotlinxSerializationCore    = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core",     version.ref = "kotlinxSerialization" }
-kotlinxIoCore               = { module = "org.jetbrains.kotlinx:kotlinx-io-core",                version.ref = "kotlinxIo" }
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
 

@@ -18,7 +18,6 @@ kotlin {
             api(project(":core"))
             api(libs.turbine)
             api(libs.coroutinesTest)
-            implementation(libs.kotlinxIoCore)
         }
     }
 }

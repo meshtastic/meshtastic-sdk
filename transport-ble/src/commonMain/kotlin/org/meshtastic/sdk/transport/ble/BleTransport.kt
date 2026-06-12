@@ -31,7 +31,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioTransport
@@ -410,7 +411,7 @@ public class BleTransport(
             out[2] = (payload.size shr 8).toByte()
             out[3] = (payload.size and 0xFF).toByte()
             payload.copyInto(out, destinationOffset = 4)
-            return ByteString(*out)
+            return out.toByteString()
         }
     }
 }

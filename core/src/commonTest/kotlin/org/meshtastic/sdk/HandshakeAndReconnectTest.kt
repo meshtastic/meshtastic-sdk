@@ -21,7 +21,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
@@ -806,7 +806,7 @@ class HandshakeAndReconnectTest {
             this[3] = (proto.size and 0xFF).toByte()
             proto.copyInto(this, destinationOffset = 4)
         }
-        return Frame(ByteString(bytes))
+        return Frame(bytes.toByteString())
     }
 
     private sealed interface ConnectOutcome {
@@ -983,7 +983,7 @@ class HandshakeAndReconnectTest {
                 this[3] = (proto.size and 0xFF).toByte()
                 proto.copyInto(this, destinationOffset = 4)
             }
-            return Frame(ByteString(bytes))
+            return Frame(bytes.toByteString())
         }
 
         private fun decodeAdmin(packet: MeshPacket): AdminMessage? {

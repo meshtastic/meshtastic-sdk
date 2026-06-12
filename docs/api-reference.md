@@ -26,10 +26,10 @@ Deliberate, enforced choices about the shape of the public surface:
 - **Proto types are exposed unwrapped** ([ADR-001](./decisions/001-public-api-uses-generated-protobufs.md)).
   The SDK's ABI therefore tracks the `org.meshtastic:protobufs` artifact; proto bumps are priced
   into the SemVer table in [`versioning.md`](./versioning.md).
-- **Two byte-string vocabularies, bridged.** Wire-generated proto fields use `okio.ByteString`
-  (Wire's runtime type); SDK-native types (`Frame`, `SessionPasskey`) use
-  `kotlinx.io.bytestring.ByteString`. Use `toKotlinxByteString()` / `toOkioByteString()`
-  (`ByteStrings.kt`) to cross — never round-trip through raw arrays yourself.
+- **One byte-string vocabulary: `okio.ByteString`.** Wire-generated proto fields use it
+  (Wire's runtime type), so it is unavoidable in the surface — and therefore SDK-native types
+  (`Frame`, `SessionPasskey`, the `send(portnum, payload)` overload) use it too, rather than
+  introducing a second vocabulary. `kotlinx-io` is deliberately **not** a dependency.
 - **No blocking bridges.** Lifecycle is suspend-only (`connect()`/`disconnect()`); there is
   deliberately no `AutoCloseable`/`close()` on `RadioClient`. Blocking teardown invites ANR on
   Android main and deadlock on iOS main.
