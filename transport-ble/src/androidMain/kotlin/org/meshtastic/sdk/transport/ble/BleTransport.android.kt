@@ -37,8 +37,9 @@ private const val CONNECTION_PRIORITY_BOOST_MS: Long = 30_000L
  *
  * After each successful link establishment the transport negotiates the ATT MTU
  * ([PREFERRED_MTU]) and requests a high connection priority for the handshake window
- * (downgraded to Balanced after [CONNECTION_PRIORITY_BOOST_MS]). Both are best-effort: a
- * failure leaves the OS defaults in place and never fails the connect.
+ * (downgraded to Balanced after [CONNECTION_PRIORITY_BOOST_MS]; the pending downgrade is
+ * cancelled if the session disconnects first). Both are best-effort: a failure leaves the
+ * OS defaults in place and never fails the connect.
  *
  * Example — bonded device (no fresh advertisement, must use `autoConnect`):
  * ```kotlin
@@ -62,6 +63,8 @@ public fun BleTransport(address: String, builderAction: PeripheralBuilder.() -> 
         if (android != null) {
             tryTune { android.requestMtu(PREFERRED_MTU) }
             tryTune { android.requestConnectionPriority(AndroidPeripheral.Priority.High) }
+            // Receiver scope is per-connect-cycle: this delayed downgrade is cancelled at
+            // disconnect(), so a stale timer can never fire into a later session's boost window.
             launch {
                 delay(CONNECTION_PRIORITY_BOOST_MS)
                 tryTune { android.requestConnectionPriority(AndroidPeripheral.Priority.Balanced) }

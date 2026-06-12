@@ -84,6 +84,11 @@ public class BleTransport(
     private var observeJob: Job? = null
     private var coordinator: DrainCoordinator? = null
 
+    // Per-connect-cycle scope handed to [postConnectHook]; cancelled by disconnect()/shutdown()
+    // so stale tuning work (e.g. a delayed connection-priority downgrade) can't leak into the
+    // next session when the transport is reused after disconnect.
+    private var tuningScope: CoroutineScope? = null
+
     private val frameChannel = Channel<Frame>(capacity = 64)
 
     // ADR-012: lifecycle idempotency — idempotent shutdown flag.
@@ -102,9 +107,10 @@ public class BleTransport(
      * Platform hook invoked once per successful link establishment, after the GATT connection
      * (and Kable's service discovery) completes and before the warmup read. Platform factories
      * use it for link tuning — e.g. the Android factory negotiates the ATT MTU and requests a
-     * faster connection interval here. Receives the transport's [CoroutineScope] as receiver
-     * for scheduling follow-ups (e.g. a delayed priority downgrade). Best-effort: failures are
-     * swallowed and never fail the connect.
+     * faster connection interval here. Receives a **per-connect-cycle** [CoroutineScope] as
+     * receiver for scheduling follow-ups (e.g. a delayed priority downgrade). That scope is
+     * cancelled at [disconnect] (and [shutdown]), so anything launched into it must not assume
+     * it outlives the session. Best-effort: failures are swallowed and never fail the connect.
      */
     internal var postConnectHook: suspend CoroutineScope.(Peripheral) -> Unit = {}
 
@@ -117,8 +123,12 @@ public class BleTransport(
         try {
             connectWithRetry()
 
+            // Child of the transport scope (dies with it on shutdown), but independently
+            // cancellable per connect cycle via cancelJobs()/disconnect().
+            val tScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
+            tuningScope = tScope
             try {
-                postConnectHook(scope, peripheral)
+                postConnectHook(tScope, peripheral)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -298,6 +308,8 @@ public class BleTransport(
         drainJob = null
         observeJob = null
         stateBridgeJob = null
+        // tuningScope's SupervisorJob is a child of scope's Job, so scope.cancel() cancels it.
+        tuningScope = null
         coordinator = null
         scope.cancel()
         frameChannel.close()
@@ -311,6 +323,8 @@ public class BleTransport(
         observeJob = null
         stateBridgeJob?.cancel()
         stateBridgeJob = null
+        tuningScope?.cancel()
+        tuningScope = null
         coordinator = null
     }
 
