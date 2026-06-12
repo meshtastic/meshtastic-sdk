@@ -146,15 +146,24 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
      * remote-admin failures (Unauthorized, SessionKeyExpired, NoRoute) surface to getter callers.
      */
     fun tryFailFromRouting(requestId: Int, error: Routing.Error): Boolean {
-        if (requestId == 0) return false
-        val entry = pending[requestId] ?: return false
         // NONE on ROUTING_APP is "ack" — a setter would resolve via MessageHandle, but a pending
         // dispatcher entry expects a response payload. Treat NONE as no-op here so the dispatcher
         // keeps waiting; the actual response packet (if any) will land via tryComplete.
         if (error == Routing.Error.NONE) return false
+        return tryFail(requestId, mapRoutingError(error))
+    }
+
+    /**
+     * Resolve a pending entry with an arbitrary failure [result]. Used for failure surfaces
+     * that are NOT Routing.Error-shaped — e.g. a local `QueueStatus` enqueue rejection in the
+     * firmware's ERRNO namespace.
+     */
+    fun tryFail(requestId: Int, result: AdminResult<Nothing>): Boolean {
+        if (requestId == 0) return false
+        val entry = pending[requestId] ?: return false
         entry.timeoutJob?.cancel()
         pending.remove(requestId)
-        entry.deferred.complete(mapRoutingError(error))
+        entry.deferred.complete(result)
         return true
     }
 

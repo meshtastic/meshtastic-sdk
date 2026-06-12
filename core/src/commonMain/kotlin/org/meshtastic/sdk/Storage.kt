@@ -197,8 +197,11 @@ public interface DeviceStorage : AutoCloseable {
     /**
      * Persist the latched session passkey for this transport identity.
      *
-     * The passkey is reapplied on the next connect so admin RPCs can resume without re-running
-     * `get_owner_request`. Implementations must overwrite any previous passkey atomically.
+     * **The engine no longer calls this** (since 0.2.0): session passkeys are per-node and
+     * in-memory only — the local node's passkey is never required (firmware rewrites phone
+     * packets to `from = 0`, which is passkey-exempt), and remote-node passkeys expire after
+     * ~4 minutes, making persistence useless across process restarts. Retained as a
+     * host-facing capability. Implementations must overwrite any previous passkey atomically.
      */
     @Throws(MeshtasticException.StorageUnavailable::class, kotlin.coroutines.cancellation.CancellationException::class)
     public suspend fun saveSessionPasskey(passkey: SessionPasskey)
@@ -206,6 +209,8 @@ public interface DeviceStorage : AutoCloseable {
     /**
      * Load the persisted session passkey, or `null` if none is stored or the stored entry has
      * expired (per [SessionPasskey.expiresAtEpochMs]).
+     *
+     * **The engine no longer calls this** (since 0.2.0) — see [saveSessionPasskey].
      */
     @Throws(MeshtasticException.StorageUnavailable::class, kotlin.coroutines.cancellation.CancellationException::class)
     public suspend fun loadSessionPasskey(): SessionPasskey?

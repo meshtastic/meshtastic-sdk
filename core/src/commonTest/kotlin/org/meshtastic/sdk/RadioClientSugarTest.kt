@@ -8,9 +8,12 @@
 package org.meshtastic.sdk
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.NodeInfo
@@ -62,6 +65,29 @@ class RadioClientSugarTest {
         }
         runCurrent()
         assertEquals(ConnectionState.Disconnected, client.connection.value, "Teardown must survive exceptions")
+    }
+
+    @Test
+    fun withConnectionDisconnectsWhenCallerIsCancelled() = runTest {
+        val client = buildClient(fakeTransport())
+
+        val job = launch {
+            client.withConnection { awaitCancellation() }
+        }
+        // connect() runs inside the launched job, so the handshake's virtual-time settle
+        // windows (2 x 100 ms) need explicit advancement.
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+
+        job.cancel()
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(
+            ConnectionState.Disconnected,
+            client.connection.value,
+            "NonCancellable teardown must run when the caller is cancelled",
+        )
     }
 
     @Test

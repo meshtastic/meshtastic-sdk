@@ -60,13 +60,13 @@ public enum class NodeField {
  */
 public sealed interface NodeChange {
     /**
-     * All known nodes at subscription time.
+     * All known nodes as a full replacement of any previously folded state.
      *
-     * Emitted exactly once to each new subscriber (never again on the same subscription), before
-     * any live delta. Implemented via single-replay under the actor; subsequent [Added],
-     * [Updated], and [Removed] are guaranteed to apply on top of this snapshot in causal order.
-     *
-     * Late subscribers see this snapshot instead of being stranded without context.
+     * Subscribers receive one as the **first** emission of every subscription (seeded
+     * per-subscription from the engine's current node map via `onSubscription`), and again
+     * live whenever a handshake commits (first connect and every reconnect). Deltas that
+     * follow apply on top in causal order; a delta already reflected in the seeded snapshot
+     * re-applies idempotently.
      */
     public data class Snapshot(val nodes: Map<NodeId, NodeInfo>) : NodeChange
 
@@ -180,7 +180,7 @@ public sealed interface MeshEvent {
      * @property info the wire [FileInfo][org.meshtastic.proto.FileInfo]
      * @since 0.2.0
      */
-    public data class FileInfo(val info: org.meshtastic.proto.FileInfo) : MeshEvent
+    public data class FileInfoReceived(val info: org.meshtastic.proto.FileInfo) : MeshEvent
 
     /**
      * A transport-level error occurred.

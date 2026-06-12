@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
@@ -123,9 +124,14 @@ public class RadioClient internal constructor(
     public val channels: StateFlow<List<org.meshtastic.proto.Channel>?> = engine.channelsState.asStateFlow()
 
     /**
-     * Node-change deltas. Late subscribers receive a [NodeChange.Snapshot] immediately
-     * (single-replay), then live [NodeChange.Added] / [NodeChange.Updated] /
-     * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal order.
+     * Node-change deltas. **Every** subscriber — early or late — first receives a
+     * [NodeChange.Snapshot] of the engine's current node map (seeded per-subscription via
+     * `onSubscription`), then live [NodeChange.Added] / [NodeChange.Updated] /
+     * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal
+     * order. A delta whose change is already reflected in the seeded snapshot re-applies
+     * idempotently. The handshake additionally emits a live [NodeChange.Snapshot] at Stage-2
+     * commit (and after each reconnect), which existing subscribers must treat as a full
+     * replacement.
      *
      * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
      * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
@@ -133,7 +139,8 @@ public class RadioClient internal constructor(
      * flow. If the engine inbox itself fills as a result, drops surface as
      * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
      */
-    public val nodes: Flow<NodeChange> = engine.nodes.hide()
+    public val nodes: Flow<NodeChange> = engine.nodes
+        .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
 
     /**
      * Inbound decoded packets.
@@ -331,11 +338,13 @@ public class RadioClient internal constructor(
      * The returned [MessageHandle] will resolve to [SendOutcome.Success] on ACK, or
      * [SendOutcome.Failure] if the firmware exhausts retransmissions without confirmation.
      *
+     * Parameter order matches [sendReaction] (`to` before `channel`) as of 0.2.0.
+     *
      * @param text the message text (UTF-8 encoded)
-     * @param channel the channel index (default: 0)
      * @param to the destination [NodeId] (default: [NodeId.BROADCAST])
+     * @param channel the channel index (default: 0)
      * @param replyId the packet ID of the message this text replies to (threaded reply), or `0`
-     *   (default) for a standalone message
+     *   (default) for a standalone message (parameter added in 0.2.0)
      * @return a handle tracking delivery state
      * @throws MeshtasticException.NotConnected if not currently connected
      * @throws MeshtasticException.PayloadTooLarge if the encoded text exceeds the device limit
@@ -343,8 +352,8 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class)
     public fun sendText(
         text: String,
-        channel: ChannelIndex = ChannelIndex(0),
         to: NodeId = NodeId.BROADCAST,
+        channel: ChannelIndex = ChannelIndex(0),
         replyId: Int = 0,
     ): MessageHandle {
         val payload = text.encodeToByteArray()

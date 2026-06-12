@@ -116,8 +116,11 @@ internal class MeshEngine(
      */
     val channelsState = MutableStateFlow<List<org.meshtastic.proto.Channel>?>(null)
 
+    // No replay: RadioClient.nodes seeds every subscription with a fresh Snapshot via
+    // onSubscription (see nodeMapSnapshot()). A replay slot would hand late subscribers
+    // whatever delta happened to be emitted last — NOT the Snapshot — leaving them with a
+    // near-empty fold until the next reconnect.
     val nodes = MutableSharedFlow<NodeChange>(
-        replay = 1,
         extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
@@ -612,6 +615,7 @@ internal class MeshEngine(
             is EngineMessage.TransportStateChanged -> handleTransportStateChanged(msg)
             is EngineMessage.Send -> handleSend(msg)
             is EngineMessage.CancelHandle -> handleCancelHandle(msg)
+            is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
             EngineMessage.HeartbeatTick -> handleHeartbeatTick()
             EngineMessage.LivenessTick -> handleLivenessTick()
             EngineMessage.PresenceCheckTick -> handlePresenceCheckTick()
@@ -758,25 +762,6 @@ internal class MeshEngine(
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to load previous identity for rebind detection" }
             null
-        }
-
-        // restore the persisted session passkey so admin RPCs work immediately, instead
-        // of waiting for the next get_owner_request response. Failures are non-fatal — we can
-        // always re-seed via the handshake's get_owner round-trip. The persisted passkey is the
-        // *local* device's seed passkey, so it is keyed under the previously-persisted identity
-        // (remote-node passkeys are ephemeral and never persisted).
-        val persisted = try {
-            storage?.loadSessionPasskey()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.warn(TAG, e) { "Failed to load persisted session passkey" }
-            null
-        }
-        val restoredOwner = previousMyNodeNum
-        if (persisted != null && restoredOwner != null) {
-            sessionPasskeys[restoredOwner] =
-                SessionPasskeyEntry(persisted.bytes.toByteArray(), persisted.expiresAtEpochMs)
         }
 
         // hydrate in-memory heartbeat map so subscribers don't see every previously-known
@@ -1089,11 +1074,14 @@ internal class MeshEngine(
             val pending = settleBuffer.toList()
             settleBuffer.clear()
             handshakeStage = HandshakeStage.Stage1Draining
-            for (env in pending) {
+            for ((index, env) in pending.withIndex()) {
                 processStage1Envelope(env)
                 if (handshakeStage == HandshakeStage.Stage1Settling) {
-                    // A replayed frame re-armed the settle timer — abort this handler and let
-                    // the new HandshakeStage1SettleComplete fire.
+                    // A replayed frame re-armed the settle timer — re-buffer the frames we
+                    // haven't processed yet (they were already removed from settleBuffer)
+                    // so the next HandshakeStage1SettleComplete replays them instead of
+                    // silently dropping them, then abort this handler.
+                    settleBuffer.addAll(pending.subList(index + 1, pending.size))
                     return
                 }
             }
@@ -1223,39 +1211,49 @@ internal class MeshEngine(
                     emitNodeChangeOrLog(NodeChange.Snapshot(pendingNodes.toMap()))
                 }
 
-                // Persist to storage.
-                engineScope?.launch {
-                    if (storageDegraded) return@launch
-                    val s = storage ?: return@launch
-                    try {
-                        if (myInfo != null) {
-                            s.recordOwnNode(NodeId(myInfo.my_node_num), pendingMetadata?.firmware_version ?: "")
+                // Persist to storage. Snapshot every actor-owned collection BEFORE launching:
+                // the async block runs concurrently with the actor, which keeps mutating
+                // pendingNodes / pendingChannels / lastHeartbeatAt (markNodeHeard on every
+                // inbound frame, scheduleReconnect clears) — iterating the live collections
+                // off-actor risks ConcurrentModificationException mis-reported as
+                // StorageDegraded.
+                run {
+                    val nodesSnapshot = pendingNodes.toMap()
+                    val channelsSnapshot = pendingChannels.toList()
+                    val heartbeatSnapshot = nodesSnapshot.keys.associateWith { lastHeartbeatAt[it] }
+                    val firmwareVersion = pendingMetadata?.firmware_version ?: ""
+                    val bundleSnapshot = meshState.configBundle
+                    engineScope?.launch {
+                        if (storageDegraded) return@launch
+                        val s = storage ?: return@launch
+                        try {
+                            if (myInfo != null) {
+                                s.recordOwnNode(NodeId(myInfo.my_node_num), firmwareVersion)
+                            }
+                            for ((nodeId, node) in nodesSnapshot) {
+                                s.saveNode(node)
+                                // every node in the handshake snapshot was just heard, so
+                                // seed their heartbeat row as well.
+                                heartbeatSnapshot[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
+                            }
+                            if (channelsSnapshot.isNotEmpty()) s.saveChannels(channelsSnapshot)
+                            // Populate channelsState from handshake payload; fall back to storage
+                            // for reconnect sessions where the device skips re-sending channels.
+                            channelsState.value = channelsSnapshot.ifEmpty {
+                                s.loadChannels().ifEmpty { null }
+                            }
+                            bundleSnapshot?.let {
+                                s.saveConfig(it)
+                                configBundleState.value = it
+                            }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            reportStorageDegraded(
+                                "persisting handshake snapshot failed: ${e.message ?: e::class.simpleName}",
+                                e,
+                            )
                         }
-                        for ((nodeId, node) in pendingNodes) {
-                            s.saveNode(node)
-                            // every node in the handshake snapshot was just heard, so
-                            // seed their heartbeat row as well.
-                            lastHeartbeatAt[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
-                        }
-                        if (pendingChannels.isNotEmpty()) s.saveChannels(pendingChannels)
-                        // Populate channelsState from handshake payload; fall back to storage
-                        // for reconnect sessions where the device skips re-sending channels.
-                        channelsState.value = if (pendingChannels.isNotEmpty()) {
-                            pendingChannels.toList()
-                        } else {
-                            s.loadChannels().ifEmpty { null }
-                        }
-                        meshState.configBundle?.let {
-                            s.saveConfig(it)
-                            configBundleState.value = it
-                        }
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        reportStorageDegraded(
-                            "persisting handshake snapshot failed: ${e.message ?: e::class.simpleName}",
-                            e,
-                        )
                     }
                 }
 
@@ -1289,7 +1287,18 @@ internal class MeshEngine(
     }
 
     private fun processSeedingEnvelope(fromRadio: org.meshtastic.proto.FromRadio) {
-        val packet = fromRadio.packet ?: return
+        val packet = fromRadio.packet ?: run {
+            // Non-packet variants during the seeding window get the same no-silent-loss
+            // treatment as Stage 1/2: node_info merges into the DB (Stage-2 commit already
+            // happened, so the live path is correct), everything else routes through the
+            // shared auxiliary handler.
+            fromRadio.node_info?.let {
+                processInboundNodeInfo(it)
+                return
+            }
+            handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.SeedingSession)
+            return
+        }
         val decoded = packet.decoded ?: return
         if (decoded.portnum != PortNum.ADMIN_APP) {
             // live mesh traffic during the seeding window — same treatment as Stage 1/2.
@@ -1325,21 +1334,23 @@ internal class MeshEngine(
         val expiresAtMs = clock.now().toEpochMilliseconds() + SESSION_PASSKEY_TTL.inWholeMilliseconds
         sessionPasskeys[fromNum] = SessionPasskeyEntry(bytes, expiresAtMs)
         logger.debug(TAG) { "Session passkey latched for 0x${fromNum.toString(16)} (${bytes.size} bytes)" }
-        if (fromNum != myNodeNum) return
-        engineScope?.launch {
-            if (storageDegraded) return@launch
-            try {
-                storage?.saveSessionPasskey(SessionPasskey(bytes.toByteString(), expiresAtMs))
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                reportStorageDegraded(
-                    "saveSessionPasskey failed: ${e.message ?: e::class.simpleName}",
-                    e,
-                )
-            }
-        }
     }
+
+    /**
+     * Whether this admin message is response-shaped (one of the `get_*_response` oneof arms is
+     * set). Mirrors the firmware's `messageIsResponse` classification — only responses carry a
+     * passkey that the *sender* issued.
+     */
+    private fun AdminMessage.isAdminResponse(): Boolean = get_channel_response != null ||
+        get_owner_response != null ||
+        get_config_response != null ||
+        get_module_config_response != null ||
+        get_canned_message_module_messages_response != null ||
+        get_device_metadata_response != null ||
+        get_ringtone_response != null ||
+        get_device_connection_status_response != null ||
+        get_node_remote_hardware_pins_response != null ||
+        get_ui_config_response != null
 
     /** Returns the unexpired session passkey for [nodeNum], pruning a stale entry if present. */
     private fun validSessionPasskeyFor(nodeNum: Int): ByteArray? {
@@ -1447,21 +1458,7 @@ internal class MeshEngine(
         when {
             packet != null -> processInboundMeshPacket(packet)
 
-            nodeInfo != null -> {
-                val nodeId = NodeId(nodeInfo.num)
-                markNodeHeard(nodeId)
-                val existing = meshState.nodes[nodeId]
-                meshState = meshState.withNodes(meshState.nodes + (nodeId to nodeInfo))
-                if (nodeId == NodeId(myNodeNum)) ownNode.value = nodeInfo
-                if (existing == null) {
-                    emitNodeChangeOrLog(NodeChange.Added(nodeInfo))
-                } else {
-                    val changed = diffNodeFields(existing, nodeInfo)
-                    if (changed.isNotEmpty()) {
-                        emitNodeChangeOrLog(NodeChange.Updated(nodeInfo, changed))
-                    }
-                }
-            }
+            nodeInfo != null -> processInboundNodeInfo(nodeInfo)
 
             queueStatus != null -> {
                 // firmware emits QueueStatus with mesh_packet_id == 0 as a
@@ -1470,15 +1467,29 @@ internal class MeshEngine(
                 // successful send for a dropped packet would corrupt user-visible state. Guard.
                 if (queueStatus.mesh_packet_id == 0) return
                 val packetId = MessageId(queueStatus.mesh_packet_id)
-                if (queueStatus.res == 0) {
+                // `res` is the firmware's enqueue result in the ERRNO namespace
+                // (MeshTypes.h), NOT Routing.Error: 0 = OK, 32 = queue full / unknown,
+                // 33 = no radio interface, 34 = radio disabled, and 35
+                // (ERRNO_SHOULD_RELEASE) means "no error, packet handled without LoRa TX" —
+                // a SUCCESS. Values 1..31 are genuine Routing.Error codes that
+                // Router::send returns directly (e.g. DUTY_CYCLE_LIMIT = 9). The two
+                // namespaces collide at >= 32 (BAD_REQUEST = 32, NOT_AUTHORIZED = 33, …),
+                // so ERRNO values must never be decoded as Routing.Error.
+                if (queueStatus.res == 0 || queueStatus.res == ERRNO_SHOULD_RELEASE) {
                     pendingSends[packetId]?.value = SendState.Sent
                 } else {
-                    // the firmware rejected the packet at its transmit queue (typically
-                    // queue-full). Fast-fail the handle / pending RPC instead of letting the
-                    // caller wait out the full ACK timer for a packet that never left the device.
-                    Routing.Error.fromValue(queueStatus.res)?.let { err ->
-                        dispatcher.tryFailFromRouting(packetId.raw, err)
-                    }
+                    // The firmware rejected the packet at its transmit queue. Fast-fail
+                    // the handle / pending RPC instead of letting the caller wait out the
+                    // full ACK timer for a packet that never left the device.
+                    val rpcResult: AdminResult<Nothing> =
+                        if (queueStatus.res < ERRNO_BASE) {
+                            Routing.Error.fromValue(queueStatus.res)
+                                ?.let(CommandDispatcher::mapRoutingError)
+                                ?: AdminResult.NodeUnreachable
+                        } else {
+                            AdminResult.NodeUnreachable
+                        }
+                    dispatcher.tryFail(packetId.raw, rpcResult)
                     val flow = pendingSends.remove(packetId)
                     ackTimeoutJobs.remove(packetId)?.cancel()
                     if (flow != null) {
@@ -1502,6 +1513,27 @@ internal class MeshEngine(
             // deviceuiConfig / fileInfo are handled here. queueStatus is handled above (it has
             // session-specific bookkeeping in pendingSends).
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.Ready) -> Unit
+        }
+    }
+
+    /**
+     * Merge an unsolicited `FromRadio.node_info` into the node DB and emit the matching
+     * delta. Called for live frames in [routeNormalEnvelope] and for frames that arrive
+     * during the seeding window in [processSeedingEnvelope].
+     */
+    private fun processInboundNodeInfo(nodeInfo: NodeInfo) {
+        val nodeId = NodeId(nodeInfo.num)
+        markNodeHeard(nodeId)
+        val existing = meshState.nodes[nodeId]
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to nodeInfo))
+        if (nodeId == NodeId(myNodeNum)) ownNode.value = nodeInfo
+        if (existing == null) {
+            emitNodeChangeOrLog(NodeChange.Added(nodeInfo))
+        } else {
+            val changed = diffNodeFields(existing, nodeInfo)
+            if (changed.isNotEmpty()) {
+                emitNodeChangeOrLog(NodeChange.Updated(nodeInfo, changed))
+            }
         }
     }
 
@@ -1548,9 +1580,12 @@ internal class MeshEngine(
         } else {
             null
         }
-        if (adminMsg != null) {
-            // every admin response refreshes the responder's session passkey — latch them all
+        if (adminMsg != null && (decoded.request_id != 0 || adminMsg.isAdminResponse())) {
+            // every admin RESPONSE refreshes the responder's session passkey — latch them all
             // (keyed per node) so remote admin sessions stay alive without re-seeding.
+            // Requests are excluded: when a remote node administers US, its request carries
+            // the passkey WE issued to it — latching that under the remote's key would poison
+            // our next RPC to that node with a passkey it never issued.
             latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg)
         }
         // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
@@ -1626,7 +1661,7 @@ internal class MeshEngine(
         }
 
         fromRadio.fileInfo != null -> {
-            events.tryEmit(MeshEvent.FileInfo(fromRadio.fileInfo!!))
+            events.tryEmit(MeshEvent.FileInfoReceived(fromRadio.fileInfo!!))
             true
         }
 
@@ -2104,6 +2139,23 @@ internal class MeshEngine(
         // Ensure the wire packet ID is set to the SDK-level MessageId value so that
         // QueueStatus / Routing ACK correlation via pendingSends[MessageId(x)] works.
         val wireId = if (msg.packet.id != 0) msg.packet.id else msg.id.raw
+        // Guard caller-supplied wire-id collisions at the REAL key. handleSend's guard runs
+        // on the engine-allocated MessageId (always unique); without this check a second
+        // send carrying the same caller-supplied packet.id would silently overwrite the
+        // first handle's pendingSends entry, stranding it un-completable forever (even
+        // cleanup() couldn't reach it).
+        val wireKey = MessageId(wireId)
+        val prior = pendingSends[wireKey]
+        if (prior != null && prior !== msg.stateFlow) {
+            val state = prior.value
+            val terminal = state is SendState.Failed || state == SendState.Acked || state == SendState.Delivered
+            if (!terminal) {
+                logger.warn(TAG) { "Send id=$wireId collides with in-flight wire id; rejecting" }
+                msg.stateFlow.value = SendState.Failed(SendFailure.IdCollision)
+                pendingSends.remove(msg.id)
+                return
+            }
+        }
         // Remote ADMIN_APP packets pick up the target's session passkey + PKC routing here
         // (no-op for everything else).
         val packet = prepareOutboundAdminPacket(
@@ -2114,7 +2166,7 @@ internal class MeshEngine(
         )
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
-        pendingSends[MessageId(wireId)] = msg.stateFlow
+        pendingSends[wireKey] = msg.stateFlow
 
         val encoded = WireCodec.encodeToRadio(ToRadio(packet = packet))
         outbound.trySend(Frame(encoded.toByteString()))
@@ -2262,6 +2314,16 @@ internal class MeshEngine(
         supervisorJobRef.value?.cancel()
     }
 
+    /**
+     * Current node map for seeding per-subscription [NodeChange.Snapshot]s.
+     *
+     * Called from subscriber coroutines (off-actor). Safe without posting to the inbox:
+     * [meshState] is a `var` holding an immutable snapshot object, so this is a benign
+     * stale-by-at-most-one-message read — references are word-atomic and the deltas that
+     * follow on the subscription re-apply idempotently on top of whatever map was read.
+     */
+    internal fun nodeMapSnapshot(): Map<NodeId, NodeInfo> = meshState.nodes
+
     internal fun sendToRadio(msg: ToRadio) {
         try {
             val encoded = WireCodec.encodeToRadio(msg)
@@ -2271,8 +2333,13 @@ internal class MeshEngine(
         }
     }
 
+    /**
+     * Fire-and-forget admin send. Posts to the actor inbox rather than building the packet
+     * inline: [prepareOutboundAdminPacket] reads (and prunes) the actor-owned
+     * [sessionPasskeys] map, so it must never run on the caller's coroutine (ADR-002).
+     */
     internal fun sendAdmin(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
-        sendAdminPacket(adminMsg, wantResponse, to)
+        inbox.trySend(EngineMessage.AdminFireAndForget(adminMsg, wantResponse, to))
     }
 
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
@@ -2530,6 +2597,12 @@ internal class MeshEngine(
         // broadcast destination is the unsigned 0xFFFFFFFF address (Int.toLong → -1
         // after wire round-trip). Used so we don't arm an ACK timer for broadcasts.
         const val BROADCAST_ADDR: Int = -1
+
+        // QueueStatus.res namespace boundaries (firmware MeshTypes.h). Values below
+        // ERRNO_BASE are Routing.Error codes; values at/above it are ERRNO_* enqueue
+        // results. ERRNO_SHOULD_RELEASE explicitly means "no error".
+        const val ERRNO_BASE: Int = 32
+        const val ERRNO_SHOULD_RELEASE: Int = 35
 
         // Firmware regenerates session passkeys every ~150s and they remain valid for ~300s.
         // A 4-minute TTL ensures we don't use a stale passkey on reconnect while still

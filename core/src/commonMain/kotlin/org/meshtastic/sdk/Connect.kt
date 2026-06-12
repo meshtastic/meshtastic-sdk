@@ -35,17 +35,27 @@ import kotlin.time.Duration.Companion.seconds
  * The client is **single-use**: after [withConnection] returns, build a new [RadioClient]
  * for the next session.
  *
+ * @param teardownTimeout upper bound on the guaranteed disconnect (default 10s) — protects the
+ *   caller from a wedged transport teardown while still covering the polite-goodbye flush and
+ *   storage close on every healthy path
  * @return whatever [block] returns
  * @throws MeshtasticException any failure surfaced by [RadioClient.connect]
  * @since 0.2.0
  */
-public suspend fun <T> RadioClient.withConnection(block: suspend RadioClient.() -> T): T {
+public suspend fun <T> RadioClient.withConnection(
+    teardownTimeout: Duration = 10.seconds,
+    block: suspend RadioClient.() -> T,
+): T {
     connect()
     return try {
         block()
     } finally {
         withContext(NonCancellable) {
-            disconnect()
+            // Bound the guaranteed teardown: a hung transport disconnect (e.g. a wedged
+            // Android BLE stack) must not pin the caller uncancellably forever.
+            withTimeoutOrNull(teardownTimeout) {
+                disconnect()
+            }
         }
     }
 }

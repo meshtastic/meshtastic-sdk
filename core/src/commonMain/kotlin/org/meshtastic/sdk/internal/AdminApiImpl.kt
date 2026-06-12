@@ -75,11 +75,17 @@ internal class AdminApiImpl(
     }
 
     /**
-     * Returns `true` if the device is in managed mode, meaning all admin commands from non-zero
-     * `from` addresses are silently dropped by firmware. The SDK always sends with
-     * `from = myNodeNum` (non-zero post-handshake), so all admin commands would be ignored.
+     * Returns `true` when this AdminApi targets the **local** device and that device is in
+     * managed mode. Firmware rewrites every phone packet to `from = 0` (MeshService
+     * `handleToRadio`) and rejects local admin on a managed device via that branch
+     * (AdminModule: `mp.from == 0 && is_managed`). Admin packets addressed to *remote* nodes
+     * are routed into the mesh untouched — the target's own admin-key config authorizes them —
+     * so remote admin must NOT be short-circuited by the local device's managed flag
+     * (managed-fleet deployments administer remote managed nodes from a managed local node).
      */
-    private fun isDeviceManaged(): Boolean {
+    private fun isLocalTargetManaged(): Boolean {
+        val isLocalTarget = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
+        if (!isLocalTarget) return false
         val bundle = engine.configBundleState.value ?: return false
         return bundle.configs.any { config ->
             config.security?.is_managed == true
@@ -256,7 +262,7 @@ internal class AdminApiImpl(
     // ── DFU / file management ───────────────────────────────────────────────
 
     override suspend fun enterDfuMode(): AdminResult<Unit> {
-        if (isDeviceManaged()) return AdminResult.Unauthorized
+        if (isLocalTargetManaged()) return AdminResult.Unauthorized
         return submitAdminFireAndForget(AdminMessage(enter_dfu_mode_request = true))
     }
 
@@ -357,7 +363,7 @@ internal class AdminApiImpl(
     }
 
     override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> {
-        if (isDeviceManaged()) return AdminResult.Unauthorized
+        if (isLocalTargetManaged()) return AdminResult.Unauthorized
         return submitAdminFireAndForget(AdminMessage(set_time_only = unixTime))
     }
 
@@ -476,7 +482,7 @@ internal class AdminApiImpl(
      * so a second `SessionKeyExpired` surfaces to the caller (the device is rejecting our key).
      */
     private suspend fun <T> retryOnSessionExpiry(block: suspend () -> AdminResult<T>): AdminResult<T> {
-        if (isDeviceManaged()) return AdminResult.Unauthorized
+        if (isLocalTargetManaged()) return AdminResult.Unauthorized
         val first = block()
         if (first !is AdminResult.SessionKeyExpired) return first
         // Re-seed against the node this AdminApiImpl is scoped to. Session passkeys are

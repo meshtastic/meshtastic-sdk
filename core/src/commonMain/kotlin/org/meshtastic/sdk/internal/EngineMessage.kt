@@ -93,6 +93,18 @@ internal sealed interface EngineMessage {
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
     data class CancelHandle(val id: MessageId) : EngineMessage
 
+    /**
+     * Fire-and-forget admin message (no RPC correlation, no MessageHandle). Posted by
+     * [MeshEngine.sendAdmin] so that packet preparation — which reads and prunes the
+     * actor-owned per-node session-passkey map — always runs on the engine actor (ADR-002),
+     * never on the caller's coroutine.
+     */
+    data class AdminFireAndForget(
+        val adminMsg: org.meshtastic.proto.AdminMessage,
+        val wantResponse: Boolean,
+        val to: Int,
+    ) : EngineMessage
+
     // ── Timers ─────────────────────────────────────────────────────────────
 
     /** Periodic heartbeat tick (every 30 s per protocol.md §16). */

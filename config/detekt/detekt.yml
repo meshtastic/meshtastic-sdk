@@ -58,6 +58,8 @@ style:
     #    import it either, to keep us honest at the boundary.
     active: true
     forbiddenImports:
+      - 'kotlinx.io.Buffer'                                # one byte vocabulary: okio (api-reference § API conventions)
+      - 'kotlinx.io.bytestring.ByteString'                 # one byte vocabulary: okio
       - 'kotlinx.coroutines.sync.Mutex'                    # ADR-002: single-writer actor; no mutexes
       - 'kotlinx.coroutines.sync.Semaphore'                # ADR-002: single-writer actor; no semaphores
       - 'java.util.concurrent.locks.ReentrantLock'         # ADR-002: single-writer actor; no locks

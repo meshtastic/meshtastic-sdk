@@ -378,7 +378,8 @@ public final class org/meshtastic/sdk/CongestionMetrics$Companion {
 public final class org/meshtastic/sdk/ConnectKt {
 	public static final fun connectAndAwaitReady-8Mi8wO0 (Lorg/meshtastic/sdk/RadioClient;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun connectAndAwaitReady-8Mi8wO0$default (Lorg/meshtastic/sdk/RadioClient;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static final fun withConnection (Lorg/meshtastic/sdk/RadioClient;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static final fun withConnection-dWUq8MI (Lorg/meshtastic/sdk/RadioClient;JLkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun withConnection-dWUq8MI$default (Lorg/meshtastic/sdk/RadioClient;JLkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/ConnectionQuality : java/lang/Enum {
@@ -639,11 +640,11 @@ public final class org/meshtastic/sdk/MeshEvent$ExternalConfigChange : org/mesht
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class org/meshtastic/sdk/MeshEvent$FileInfo : org/meshtastic/sdk/MeshEvent {
+public final class org/meshtastic/sdk/MeshEvent$FileInfoReceived : org/meshtastic/sdk/MeshEvent {
 	public fun <init> (Lorg/meshtastic/proto/FileInfo;)V
 	public final fun component1 ()Lorg/meshtastic/proto/FileInfo;
-	public final fun copy (Lorg/meshtastic/proto/FileInfo;)Lorg/meshtastic/sdk/MeshEvent$FileInfo;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$FileInfo;Lorg/meshtastic/proto/FileInfo;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$FileInfo;
+	public final fun copy (Lorg/meshtastic/proto/FileInfo;)Lorg/meshtastic/sdk/MeshEvent$FileInfoReceived;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$FileInfoReceived;Lorg/meshtastic/proto/FileInfo;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$FileInfoReceived;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getInfo ()Lorg/meshtastic/proto/FileInfo;
 	public fun hashCode ()I
@@ -1281,9 +1282,9 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun sendReaction (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendReaction-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun sendReaction-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/ChannelIndex;Lorg/meshtastic/sdk/NodeId;I)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun sendText-HaIeDj0 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
-	public static synthetic fun sendText-HaIeDj0$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun sendText-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
+	public static synthetic fun sendText-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
 }
 
 public final class org/meshtastic/sdk/RadioClient$Builder {
