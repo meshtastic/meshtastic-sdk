@@ -863,3 +863,21 @@ public interface PayloadRedactor {
  * @since 0.1.0
  */
 public const val DATA_PAYLOAD_LEN: Int = 233
+
+/**
+ * Build a [RadioClient] with Kotlin builder-lambda syntax — sugar over [RadioClient.Builder]:
+ *
+ * ```kotlin
+ * val client = RadioClient {
+ *     transport(TcpTransport(host = "meshtastic.local"))
+ *     storage(SqlDelightStorageProvider(baseDir = dataDir))
+ *     autoReconnect(AutoReconnectConfig(enabled = true))
+ * }
+ * ```
+ *
+ * Swift and step-wise callers should keep using [RadioClient.Builder] directly.
+ *
+ * @since 0.2.0
+ */
+public fun RadioClient(configure: RadioClient.Builder.() -> Unit): RadioClient =
+    RadioClient.Builder().apply(configure).build()

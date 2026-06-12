@@ -378,6 +378,7 @@ public final class org/meshtastic/sdk/CongestionMetrics$Companion {
 public final class org/meshtastic/sdk/ConnectKt {
 	public static final fun connectAndAwaitReady-8Mi8wO0 (Lorg/meshtastic/sdk/RadioClient;JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun connectAndAwaitReady-8Mi8wO0$default (Lorg/meshtastic/sdk/RadioClient;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun withConnection (Lorg/meshtastic/sdk/RadioClient;Lkotlin/jvm/functions/Function2;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/ConnectionQuality : java/lang/Enum {
@@ -1130,6 +1131,11 @@ public final class org/meshtastic/sdk/NodeChange$WentOffline : org/meshtastic/sd
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/NodeChangesKt {
+	public static final fun asNodeMap (Lkotlinx/coroutines/flow/Flow;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun nodeMap (Lorg/meshtastic/sdk/RadioClient;)Lkotlinx/coroutines/flow/Flow;
+}
+
 public final class org/meshtastic/sdk/NodeField : java/lang/Enum {
 	public static final field Battery Lorg/meshtastic/sdk/NodeField;
 	public static final field DeviceInfo Lorg/meshtastic/sdk/NodeField;
@@ -1202,13 +1208,6 @@ public final class org/meshtastic/sdk/NodeStatusKt {
 
 public final class org/meshtastic/sdk/PacketDecodeKt {
 	public static final fun decodeAs (Lorg/meshtastic/proto/MeshPacket;Lcom/squareup/wire/ProtoAdapter;)Lcom/squareup/wire/Message;
-	public static final fun decodeAsAdmin (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/AdminMessage;
-	public static final fun decodeAsNodeInfo (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/NodeInfo;
-	public static final fun decodeAsPosition (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/Position;
-	public static final fun decodeAsRouting (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/Routing;
-	public static final fun decodeAsTelemetry (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/Telemetry;
-	public static final fun decodeAsText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
-	public static final fun decodeAsUser (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/User;
 }
 
 public final class org/meshtastic/sdk/PayloadAccessorsKt {
@@ -1317,6 +1316,7 @@ public final class org/meshtastic/sdk/RadioClient$Companion {
 
 public final class org/meshtastic/sdk/RadioClientKt {
 	public static final field DATA_PAYLOAD_LEN I
+	public static final fun RadioClient (Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/RadioClient;
 }
 
 public final class org/meshtastic/sdk/RadioMetrics {

@@ -16,6 +16,25 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **send:** `RadioClient.sendText(..., replyId)` for threaded replies (`decoded.reply_id` without the emoji flag).
 - **engine:** Mesh packets received while the handshake is still in flight (live traffic interleaved with the config/NodeDB drain, including the seeding window) are now buffered (drop-oldest at 64, observable via `PacketsDropped`) and flushed through the normal packet pipeline at Ready — previously they were silently dropped.
 
+### Added (ergonomics)
+
+- `RadioClient { … }` builder-lambda factory (sugar over `RadioClient.Builder`; Swift callers
+  keep the builder).
+- `RadioClient.withConnection { … }` — connect, run the block, and always disconnect (success,
+  exception, and cancellation; teardown runs under `NonCancellable`). The structured replacement
+  for the removed blocking `use { }` idiom.
+- `Flow<NodeChange>.asNodeMap()` / `RadioClient.nodeMap()` — fold the node delta stream into a
+  live `Map<NodeId, NodeInfo>` (the accumulator every consumer otherwise hand-writes), ready for
+  `stateIn`.
+
+### Removed (API shape)
+
+- The duplicate typed-decoder family in `PacketDecode.kt` (`decodeAsText`, `decodeAsPosition`,
+  `decodeAsUser`, `decodeAsNodeInfo`, `decodeAsTelemetry`, `decodeAsRouting`, `decodeAsAdmin`) —
+  these shadowed the `asText()`/`asPosition()`/… accessors in `PayloadAccessors.kt`. One family
+  remains, plus the generic `MeshPacket.decodeAs(adapter)` escape hatch for portnums without a
+  typed accessor.
+
 ### Fixed
 
 - **engine:** A `want_config_id` retry restarts the firmware's config drain from scratch (PhoneAPI resets its read index), which previously duplicated channels / config sections in the committed `ConfigBundle` and `channels` state. Stage 1 accumulators now replace by key (channel index / config section), latest occurrence wins.

@@ -49,29 +49,29 @@ class ProtoBytesAndDecodeTest {
     }
 
     @Test
-    fun decodeAsText_readsTextPayload() {
+    fun asText_readsTextPayload() {
         val packet = MeshPacket(
             decoded = Data(
                 portnum = PortNum.TEXT_MESSAGE_APP,
                 payload = ByteString.of(*"hello".encodeToByteArray()),
             ),
         )
-        assertEquals("hello", packet.decodeAsText())
+        assertEquals("hello", packet.asText())
     }
 
     @Test
-    fun decodeAsText_returnsNullForWrongPortnum() {
+    fun asText_returnsNullForWrongPortnum() {
         val packet = MeshPacket(
             decoded = Data(
                 portnum = PortNum.POSITION_APP,
                 payload = ByteString.of(*"bytes".encodeToByteArray()),
             ),
         )
-        assertNull(packet.decodeAsText())
+        assertNull(packet.asText())
     }
 
     @Test
-    fun decodeAsPosition_roundTrip() {
+    fun asPosition_roundTrip() {
         val pos = Position(latitude_i = 377749000, longitude_i = -1224194000, altitude = 12)
         val packet = MeshPacket(
             decoded = Data(
@@ -79,13 +79,13 @@ class ProtoBytesAndDecodeTest {
                 payload = ByteString.of(*Position.ADAPTER.encode(pos)),
             ),
         )
-        val decoded = packet.decodeAsPosition()
+        val decoded = packet.asPosition()
         assertNotNull(decoded)
         assertEquals(pos, decoded)
     }
 
     @Test
     fun decodeAs_emptyPayloadReturnsNull() {
-        assertNull(MeshPacket().decodeAsPosition())
+        assertNull(MeshPacket().asPosition())
     }
 }

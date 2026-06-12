@@ -7,7 +7,9 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.sdk.ConfigBundle
 import org.meshtastic.sdk.ConnectionState
@@ -15,6 +17,38 @@ import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioClient
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Run [block] against a connected session, guaranteeing teardown.
+ *
+ * Connects, executes [block], and always disconnects afterwards — on success, on exception,
+ * and on cancellation (the disconnect runs under [NonCancellable] so a cancelled caller still
+ * tears the session down cleanly). This is the structured-concurrency replacement for a
+ * blocking `use { }` idiom, which `RadioClient` deliberately does not offer:
+ *
+ * ```kotlin
+ * val owner = client.withConnection {
+ *     admin.getOwner().getOrThrow()
+ * }
+ * ```
+ *
+ * The client is **single-use**: after [withConnection] returns, build a new [RadioClient]
+ * for the next session.
+ *
+ * @return whatever [block] returns
+ * @throws MeshtasticException any failure surfaced by [RadioClient.connect]
+ * @since 0.2.0
+ */
+public suspend fun <T> RadioClient.withConnection(block: suspend RadioClient.() -> T): T {
+    connect()
+    return try {
+        block()
+    } finally {
+        withContext(NonCancellable) {
+            disconnect()
+        }
+    }
+}
 
 /**
  * Connect and suspend until the handshake settles, returning the resolved [ConfigBundle] (HLP-34).
