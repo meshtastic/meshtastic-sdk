@@ -39,6 +39,7 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportSpec
 import org.meshtastic.sdk.TransportState
+import org.meshtastic.sdk.WireFraming
 import org.meshtastic.sdk.transport.ble.internal.AndroidGattStatus
 import org.meshtastic.sdk.transport.ble.internal.DrainCoordinator
 import org.meshtastic.sdk.transport.ble.internal.classifyGattError
@@ -387,8 +388,8 @@ public class BleTransport(
     }
 
     internal companion object {
-        private const val START1: Byte = 0x94.toByte()
-        private const val START2: Byte = 0xC3.toByte()
+        private const val START1: Byte = WireFraming.MAGIC_0
+        private const val START2: Byte = WireFraming.MAGIC_1
 
         /** Max protobuf size for ToRadio/FromRadio (`mesh.proto MAX_TO_FROM_RADIO_SIZE`). */
         internal const val MAX_TO_FROM_RADIO_SIZE: Int = 512

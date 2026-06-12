@@ -185,8 +185,8 @@ internal class MeshEngine(
     private val pendingNodes = mutableMapOf<NodeId, NodeInfo>()
 
     // Config accumulator during Stage 1 draining.
-    private val pendingConfigs = mutableListOf<org.meshtastic.proto.Config>()
-    private val pendingModuleConfigs = mutableListOf<org.meshtastic.proto.ModuleConfig>()
+    private var pendingConfigs = emptyList<org.meshtastic.proto.Config>()
+    private var pendingModuleConfigs = emptyList<org.meshtastic.proto.ModuleConfig>()
     private val pendingChannels = mutableListOf<org.meshtastic.proto.Channel>()
     private var pendingMyInfo: org.meshtastic.proto.MyNodeInfo? = null
     private var pendingMetadata: org.meshtastic.proto.DeviceMetadata? = null
@@ -564,8 +564,8 @@ internal class MeshEngine(
         sessionPasskeys.clear()
         handshakePacketBuffer.clear()
         pendingNodes.clear()
-        pendingConfigs.clear()
-        pendingModuleConfigs.clear()
+        pendingConfigs = emptyList()
+        pendingModuleConfigs = emptyList()
         pendingChannels.clear()
         pendingMyInfo = null
         pendingMetadata = null
@@ -1037,17 +1037,9 @@ internal class MeshEngine(
                 pendingChannels.add(channel)
             }
 
-            config != null -> {
-                val merged = mergeConfigs(pendingConfigs, listOf(config))
-                pendingConfigs.clear()
-                pendingConfigs.addAll(merged)
-            }
+            config != null -> pendingConfigs = mergeConfigs(pendingConfigs, listOf(config))
 
-            modConfig != null -> {
-                val merged = mergeModuleConfigs(pendingModuleConfigs, listOf(modConfig))
-                pendingModuleConfigs.clear()
-                pendingModuleConfigs.addAll(merged)
-            }
+            modConfig != null -> pendingModuleConfigs = mergeModuleConfigs(pendingModuleConfigs, listOf(modConfig))
 
             deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
 
@@ -1217,8 +1209,8 @@ internal class MeshEngine(
                     val bundle = ConfigBundle(
                         myInfo = myInfo ?: org.meshtastic.proto.MyNodeInfo(),
                         metadata = pendingMetadata ?: org.meshtastic.proto.DeviceMetadata(),
-                        configs = pendingConfigs.toList(),
-                        moduleConfigs = pendingModuleConfigs.toList(),
+                        configs = pendingConfigs,
+                        moduleConfigs = pendingModuleConfigs,
                         deviceUIConfig = pendingDeviceUIConfig,
                     )
                     meshState = meshState.withConfig(bundle)
@@ -1427,11 +1419,9 @@ internal class MeshEngine(
         // Flush mesh packets that arrived mid-handshake through the normal Ready pipeline
         // (presence, dedup, packets flow, RPC/ACK correlation) before draining queued sends.
         if (handshakePacketBuffer.isNotEmpty()) {
-            val backlog = handshakePacketBuffer.toList()
-            handshakePacketBuffer.clear()
-            logger.info(TAG) { "Flushing ${backlog.size} packets received during handshake" }
-            for (packet in backlog) {
-                processInboundMeshPacket(packet)
+            logger.info(TAG) { "Flushing ${handshakePacketBuffer.size} packets received during handshake" }
+            while (handshakePacketBuffer.isNotEmpty()) {
+                processInboundMeshPacket(handshakePacketBuffer.removeFirst())
             }
         }
 
@@ -1551,12 +1541,17 @@ internal class MeshEngine(
             return
         }
         emitPacketOrLog(packet)
-        if (decoded.portnum == PortNum.ADMIN_APP) {
+        // Decode the admin payload once; both the passkey latch and external-change detection
+        // need it, and inbound ADMIN_APP traffic is hot during config syncs.
+        val adminMsg = if (decoded.portnum == PortNum.ADMIN_APP) {
+            runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()
+        } else {
+            null
+        }
+        if (adminMsg != null) {
             // every admin response refreshes the responder's session passkey — latch them all
             // (keyed per node) so remote admin sessions stay alive without re-seeding.
-            runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }
-                .getOrNull()
-                ?.let { latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, it) }
+            latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg)
         }
         // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
         // request matching this packet's request_id. Must run before processRoutingAck
@@ -1569,7 +1564,7 @@ internal class MeshEngine(
         maybeEmitCongestionWarning(packet)
         // External config change detection: unsolicited admin messages from firmware
         // indicating another client modified channels/config on this device.
-        maybeProcessExternalAdminChange(packet)
+        if (adminMsg != null) maybeProcessExternalAdminChange(packet, adminMsg)
     }
 
     /**
@@ -1826,19 +1821,12 @@ internal class MeshEngine(
      * Only processes packets addressed to us (from our own node) with request_id == 0
      * (unsolicited push from firmware, not a response to our own RPC).
      */
-    private fun maybeProcessExternalAdminChange(packet: MeshPacket) {
+    private fun maybeProcessExternalAdminChange(packet: MeshPacket, adminMsg: AdminMessage) {
         val decoded = packet.decoded ?: return
-        if (decoded.portnum != PortNum.ADMIN_APP) return
         // Only consider packets from our own node (firmware pushing changes locally)
         if (packet.from != myNodeNum && packet.from != 0) return
         // Solicited responses have a non-zero request_id matching a pending RPC
         if (decoded.request_id != 0) return
-
-        val adminMsg = try {
-            AdminMessage.ADAPTER.decode(decoded.payload)
-        } catch (_: Exception) {
-            return
-        }
 
         adminMsg.get_channel_response?.let { channel ->
             logger.info(TAG) { "External channel change detected (index=${channel.index})" }
@@ -1997,8 +1985,8 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Idle
         configBundleState.value = null
         pendingNodes.clear()
-        pendingConfigs.clear()
-        pendingModuleConfigs.clear()
+        pendingConfigs = emptyList()
+        pendingModuleConfigs = emptyList()
         pendingChannels.clear()
         pendingMyInfo = null
         pendingMetadata = null

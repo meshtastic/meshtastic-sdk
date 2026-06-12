@@ -16,6 +16,7 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorage
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -153,15 +154,5 @@ class StorageResilienceTest {
         c2.disconnect()
     }
 
-    private fun framed(fromRadio: org.meshtastic.proto.FromRadio): Frame {
-        val proto = org.meshtastic.proto.FromRadio.ADAPTER.encode(fromRadio)
-        val bytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        return Frame(bytes.toByteString())
-    }
+    private fun framed(fromRadio: org.meshtastic.proto.FromRadio): Frame = fromRadio.toFrame()
 }

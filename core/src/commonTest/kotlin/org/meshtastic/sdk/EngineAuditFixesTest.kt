@@ -34,6 +34,7 @@ import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -338,17 +339,7 @@ class EngineAuditFixesTest {
         return encodeFromRadio(FromRadio(packet = packet))
     }
 
-    private fun encodeFromRadio(fromRadio: FromRadio): Frame {
-        val proto = FromRadio.ADAPTER.encode(fromRadio)
-        val frameBytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        return Frame(frameBytes.toByteString())
-    }
+    private fun encodeFromRadio(fromRadio: FromRadio): Frame = fromRadio.toFrame()
 
     /**
      * Transport that responds normally to the two-stage handshake but injects [beforeStage1Complete]

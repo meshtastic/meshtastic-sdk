@@ -34,6 +34,7 @@ import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -797,17 +798,7 @@ class HandshakeAndReconnectTest {
         return runCatching { ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)) }.getOrNull()
     }
 
-    private fun encodeFromRadio(fromRadio: org.meshtastic.proto.FromRadio): Frame {
-        val proto = org.meshtastic.proto.FromRadio.ADAPTER.encode(fromRadio)
-        val bytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        return Frame(bytes.toByteString())
-    }
+    private fun encodeFromRadio(fromRadio: org.meshtastic.proto.FromRadio): Frame = fromRadio.toFrame()
 
     private sealed interface ConnectOutcome {
         data object Success : ConnectOutcome
@@ -974,17 +965,7 @@ class HandshakeAndReconnectTest {
             return runCatching { ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)) }.getOrNull()
         }
 
-        private fun encodeFromRadioFrame(fromRadio: org.meshtastic.proto.FromRadio): Frame {
-            val proto = org.meshtastic.proto.FromRadio.ADAPTER.encode(fromRadio)
-            val bytes = ByteArray(4 + proto.size).apply {
-                this[0] = 0x94.toByte()
-                this[1] = 0xC3.toByte()
-                this[2] = (proto.size shr 8).toByte()
-                this[3] = (proto.size and 0xFF).toByte()
-                proto.copyInto(this, destinationOffset = 4)
-            }
-            return Frame(bytes.toByteString())
-        }
+        private fun encodeFromRadioFrame(fromRadio: org.meshtastic.proto.FromRadio): Frame = fromRadio.toFrame()
 
         private fun decodeAdmin(packet: MeshPacket): AdminMessage? {
             val payload = packet.decoded?.payload ?: return null

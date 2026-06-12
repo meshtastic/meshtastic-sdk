@@ -28,6 +28,7 @@ import org.meshtastic.proto.User
 import org.meshtastic.proto.XModem
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -202,17 +203,7 @@ class AndroidCutoverPrereqsTest {
         }
     }
 
-    private fun frameOf(fromRadio: FromRadio): Frame {
-        val proto = FromRadio.ADAPTER.encode(fromRadio)
-        val bytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        return Frame(bytes.toByteString())
-    }
+    private fun frameOf(fromRadio: FromRadio): Frame = fromRadio.toFrame()
 
     private companion object {
         const val TEST_NODE_NUM: Int = 0x11111111

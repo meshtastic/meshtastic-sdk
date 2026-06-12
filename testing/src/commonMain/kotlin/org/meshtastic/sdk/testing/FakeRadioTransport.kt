@@ -302,14 +302,6 @@ public class FakeRadioTransport(
     }
 
     private fun injectFromRadio(fromRadio: FromRadio) {
-        val proto = FromRadio.ADAPTER.encode(fromRadio)
-        val frameBytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        inboundChannel.trySend(Frame(frameBytes.toByteString()))
+        inboundChannel.trySend(fromRadio.toFrame())
     }
 }

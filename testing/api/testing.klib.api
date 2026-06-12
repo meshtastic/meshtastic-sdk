@@ -68,3 +68,5 @@ final class org.meshtastic.sdk.testing/TestClock : kotlin.time/Clock { // org.me
     final fun now(): kotlin.time/Instant // org.meshtastic.sdk.testing/TestClock.now|now(){}[0]
     final fun set(kotlin.time/Instant) // org.meshtastic.sdk.testing/TestClock.set|set(kotlin.time.Instant){}[0]
 }
+
+final fun (org.meshtastic.proto/FromRadio).org.meshtastic.sdk.testing/toFrame(): org.meshtastic.sdk/Frame // org.meshtastic.sdk.testing/toFrame|toFrame@org.meshtastic.proto.FromRadio(){}[0]
