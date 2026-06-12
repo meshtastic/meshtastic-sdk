@@ -27,7 +27,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
@@ -53,10 +56,12 @@ import kotlin.coroutines.EmptyCoroutineContext
  * BLE transport for Meshtastic radios using JuulLabs Kable.
  *
  * Implements GATT framing: subscribes to `fromnum` notifications, drains `fromradio` until
- * empty on each notification, writes to `toradio` with WriteWithoutResponse.
+ * empty on each notification, writes to `toradio` with acknowledged writes (the
+ * firmware declares write-with-response only).
  *
  * Strips/prepends the 4-byte stream header so the engine stays transport-agnostic.
- * Single-collection [frames]; [shutdown] is idempotent and cannot be undone.
+ * [frames] allows one active collector at a time (re-collectable after disconnect);
+ * [shutdown] is idempotent and cannot be undone.
  *
  * @param peripheral Kable peripheral pointing at the target radio.
  * @param address stable platform-specific address for storage identity keying.
@@ -89,12 +94,15 @@ public class BleTransport(
     // next session when the transport is reused after disconnect.
     private var tuningScope: CoroutineScope? = null
 
-    private val frameChannel = Channel<Frame>(capacity = 64)
+    // Recreated per connect cycle: a completed/cancelled collector leaves the previous
+    // channel unusable (consumeAsFlow cancels it), and reuse-after-disconnect needs a live one.
+    private var frameChannel = Channel<Frame>(capacity = 64)
 
     // ADR-012: lifecycle idempotency — idempotent shutdown flag.
     private val shuttingDown = atomic(false)
 
-    // ADR-012: lifecycle idempotency — enforces single-collection of frames().
+    // ADR-012: lifecycle idempotency — enforces a single ACTIVE collector of frames().
+    // Reset when a collector completes so reuse-after-disconnect can collect again.
     private val framesCollected = atomic(false)
 
     // ADR-012: lifecycle idempotency — while false, bridgeKableState() won't promote to Connected (warmup read pending).
@@ -119,6 +127,11 @@ public class BleTransport(
         // Reset per-connect lifecycle flags so reuse-after-disconnect works.
         warmupComplete.value = false
         errorPublished.value = false
+        // The previous session's collector cancelled its channel on completion; start each
+        // cycle with a fresh one. Safe unconditionally: drain/warmup senders for this cycle
+        // are launched later in connect(), and prior-cycle senders were cancelled by
+        // disconnect().
+        frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
         try {
             connectWithRetry()
@@ -270,7 +283,11 @@ public class BleTransport(
             )
         }
         try {
-            peripheral.write(BleConstants.TORADIO, payload, WriteType.WithoutResponse)
+            // Acknowledged write: firmware exposes `toradio` as CHR_PROPS_WRITE only
+            // (NRF52Bluetooth.cpp:213, NimBLE equivalent) — write-without-response is NOT
+            // in the characteristic's properties and Android/Kable refuses the write
+            // outright. Verified against real radios via MeshtasticBleConformanceTest.
+            peripheral.write(BleConstants.TORADIO, payload, WriteType.WithResponse)
         } catch (e: NotConnectedException) {
             throw MeshtasticException.Transport(
                 "BLE write dropped — peripheral not connected: ${e.message}",
@@ -295,12 +312,14 @@ public class BleTransport(
     }
 
     /** Cold flow over received frames. Single-collection only. */
-    override fun frames(): Flow<Frame> {
+    override fun frames(): Flow<Frame> = flow {
         check(framesCollected.compareAndSet(expect = false, update = true)) {
-            "BleTransport.frames() may only be collected once per instance"
+            "BleTransport.frames() already has an active collector"
         }
-        return frameChannel.consumeAsFlow()
-    }
+        // Resolve frameChannel at collection time (not call time) so a collector started
+        // after reconnect picks up the per-cycle replacement channel.
+        emitAll(frameChannel.consumeAsFlow())
+    }.onCompletion { framesCollected.value = false }
 
     /** Release internal coroutines and frame channel. Idempotent; does not close [Peripheral]. */
     public fun shutdown() {

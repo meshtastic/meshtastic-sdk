@@ -47,6 +47,8 @@ published to Maven Central (0.1.0 was tagged `rc1` only), so these break no exte
 
 ### Added
 
+- **on-device BLE conformance harness:** `:transport-ble:connectedAndroidDeviceTest` runs the cs1–cs6 conformance envelope against a real radio from an Android device — scan by service UUID (bonded-first), production `BleTransport(address)` factory connect, two-stage handshake, read-only admin RPC round-trips, a >MTU-23 write proof, SQLDelight persistence, and same-transport reconnect. Skips (does not fail) when no Meshtastic radio is advertising, so CI never needs hardware. This harness caught every Fixed item below tagged *found on hardware*.
+
 - **events:** Inbound MQTT client-proxy, XModem, and file-info frames are now surfaced as typed events — `MeshEvent.MqttProxyMessage`, `MeshEvent.XmodemPacket`, `MeshEvent.FileInfoReceived` — instead of being dropped with a `ProtocolWarning`. Outbound counterparts go through `RadioClient.sendRaw(ToRadio(...))`.
 - **send:** `SendFailure.QueueRejected(res)` — a firmware `QueueStatus` enqueue rejection now fast-fails the `MessageHandle` (and any pending admin RPC sharing the wire id) instead of waiting out the full ACK timeout.
 - **send:** `RadioClient.sendText(..., replyId)` for threaded replies (`decoded.reply_id` without the emoji flag).
@@ -57,6 +59,12 @@ published to Maven Central (0.1.0 was tagged `rc1` only), so these break no exte
 - **testing:** `FromRadio.toFrame()` — encode a device-side envelope into a wire `Frame` for use with `FakeRadioTransport.injectFrame` (replaces eight per-test-file copies of the framing helper).
 
 ### Fixed
+
+- **transport-ble:** `toradio` writes now use **acknowledged writes** (`WriteType.WithResponse`). Firmware declares the characteristic `CHR_PROPS_WRITE` only — write-without-response is not in its properties, and Android refuses the write outright, making every connect fail on real radios. *Found on hardware.*
+- **engine:** wire packet ids are **randomly seeded per engine instance**. The counter previously started at 1 every session, so a reconnect (or app restart) re-issued the same ids and the firmware's ~10-minute packet-history dedup silently dropped the repeats — every admin RPC in the new session timed out with no response. Matches the reference clients' randomized id seeding. *Found on hardware.*
+- **engine:** the Stage-2 commit now publishes `configBundle` and `channels` to the public flows **synchronously on the actor** before `connect()` resumes. Publication previously ran inside the async storage flush, so on devices with real storage latency `connect()` returned while `configBundle.value` was still `null`. *Found on hardware.*
+- **storage-sqldelight (Android):** WAL is enabled via `SupportSQLiteDatabase.enableWriteAheadLogging()` instead of `execSQL("PRAGMA journal_mode=WAL")` — the PRAGMA returns a result row, which Android's `execSQL` rejects (`SQLiteException: Queries can be performed using SQLiteDatabase query or rawQuery methods only`), failing the second storage activation. *Found on hardware.*
+- **transport-ble:** `frames()` is re-collectable after `disconnect()`, honouring the documented reuse-after-disconnect contract — the frame channel is recreated per connect cycle and the single-collector guard resets when a collector completes. Previously the second session's engine failed with "frames() may only be collected once per instance". *Found on hardware.*
 
 - **remote admin / firmware conformance:** `QueueStatus.res` is decoded in the firmware's **ERRNO namespace**, not `Routing.Error`: `35` (`ERRNO_SHOULD_RELEASE`) is success and now counts as `Sent`; ERRNO rejections (`32` queue-full, `33` no interface, `34` radio disabled) fail pending admin RPCs as `NodeUnreachable`; values `1..31` (genuine `Routing.Error` codes such as `DUTY_CYCLE_LIMIT`) map through the normal routing-error taxonomy. Previously `res = 32` was misread as `BAD_REQUEST`, `33` as `NOT_AUTHORIZED`, and the success code `35` produced a false failure.
 - **remote admin:** session passkeys are only latched from **response-shaped** admin messages. Previously a remote node administering *us* would have its request — carrying the passkey *we* issued — latched under the remote's key, poisoning our next RPC to it.

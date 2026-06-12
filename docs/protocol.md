@@ -150,7 +150,7 @@ BLE uses GATT message boundaries directly. The phone subscribes to a notificatio
 |---|---|---|
 | **Mesh service** | `6BA1B218-15A8-461F-9FA8-5DCAE273EAFD` | — |
 | `fromradio` | `2C55E69E-4993-11ED-B878-0242AC120002` | **READ** — returns one `FromRadio` protobuf per read; empty read means queue drained |
-| `toradio` | `F75C76D2-129E-4DAD-A1DD-7866124401E7` | **WRITE** (with or without response) — phone writes one `ToRadio` protobuf per write. Clients SHOULD prefer WRITE-WITHOUT-RESPONSE when `maximumWriteValueLength(WITHOUT_RESPONSE)` suffices for throughput. |
+| `toradio` | `F75C76D2-129E-4DAD-A1DD-7866124401E7` | **WRITE** (acknowledged) — phone writes one `ToRadio` protobuf per write. Firmware declares `CHR_PROPS_WRITE` only (NRF52Bluetooth.cpp; NimBLE equivalent): write-without-response is NOT in the characteristic properties and strict stacks (Android/Kable) refuse it — verified against real radios. |
 | `fromnum` | `ED9DA18C-A800-4F66-A670-AA7547E34453` | **NOTIFY** + **READ** — 4-byte little-endian counter that increments whenever the device pushes data into the `fromradio` queue |
 | `logradio` (optional, current) | `5A3D6E49-06E6-4423-9944-E9DE8CDF9547` | **NOTIFY** + **READ** — streaming device log lines; informational only. Primary on current firmware. |
 | `logradio` (optional, legacy) | `6C6FD238-78FA-436B-AACF-15C5BE1EF2E2` | **NOTIFY** + **READ** — legacy log characteristic. Kept by firmware for backward compatibility; clients should subscribe to whichever is advertised. |

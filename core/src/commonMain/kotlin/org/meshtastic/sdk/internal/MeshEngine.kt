@@ -282,7 +282,13 @@ internal class MeshEngine(
     // Dispatcher is engine-actor-owned; mutated only inside processMessage. RPC wire ids share
     // the same allocator as user-facing sends so a getConfig can never collide with a sendText.
     private val dispatcher = CommandDispatcher(logger)
-    private val nextWireId = atomic(1)
+
+    // Randomly seeded per engine instance: firmware dedups packets by (sender, id) with a
+    // ~10-minute history window, so a deterministic seed (e.g. always starting at 1) makes
+    // every session re-issue the same wire ids and the radio silently drops the repeats —
+    // RPCs then time out with no response. Matches the reference clients, which both
+    // randomize the starting packet id. Caught on hardware by MeshtasticBleConformanceTest.
+    private val nextWireId = atomic(Random.nextInt())
 
     suspend fun connect() {
         val sup = SupervisorJob(parentContext[Job])
@@ -400,7 +406,14 @@ internal class MeshEngine(
      * `sendText`'s packet id. Wraps at `Int.MAX_VALUE`; the firmware uses fixed32 so we just
      * keep climbing.
      */
-    fun nextMessageId(): MessageId = MessageId(nextWireId.incrementAndGet())
+    fun nextMessageId(): MessageId {
+        // id=0 means "unset" on the wire (firmware would assign its own); skip it so
+        // QueueStatus / Routing ACK correlation always has a real key.
+        while (true) {
+            val id = nextWireId.incrementAndGet()
+            if (id != 0) return MessageId(id)
+        }
+    }
 
     /**
      * Submit a typed RPC and suspend until the response arrives, the timer fires, or the engine
@@ -1206,6 +1219,15 @@ internal class MeshEngine(
                 if (pendingChannels.isNotEmpty()) {
                     meshState = meshState.withChannels(pendingChannels.toList())
                 }
+                // Publish handshake state to the public flows synchronously on the actor:
+                // connect() resumes at Ready, and consumers legitimately read
+                // configBundle/channels immediately after — the async persistence block
+                // below must not gate visibility (real-device storage latency loses that
+                // race; caught by MeshtasticBleConformanceTest).
+                meshState.configBundle?.let { configBundleState.value = it }
+                if (pendingChannels.isNotEmpty()) {
+                    channelsState.value = pendingChannels.toList()
+                }
                 if (pendingNodes.isNotEmpty()) {
                     meshState = meshState.withNodes(pendingNodes.toMap())
                     emitNodeChangeOrLog(NodeChange.Snapshot(pendingNodes.toMap()))
@@ -1236,16 +1258,15 @@ internal class MeshEngine(
                                 // seed their heartbeat row as well.
                                 heartbeatSnapshot[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
                             }
-                            if (channelsSnapshot.isNotEmpty()) s.saveChannels(channelsSnapshot)
-                            // Populate channelsState from handshake payload; fall back to storage
-                            // for reconnect sessions where the device skips re-sending channels.
-                            channelsState.value = channelsSnapshot.ifEmpty {
-                                s.loadChannels().ifEmpty { null }
+                            if (channelsSnapshot.isNotEmpty()) {
+                                s.saveChannels(channelsSnapshot)
+                            } else if (channelsState.value == null) {
+                                // Reconnect sessions where the device skips re-sending
+                                // channels: fall back to the persisted set (storage I/O, so
+                                // it stays in this async block).
+                                channelsState.value = s.loadChannels().ifEmpty { null }
                             }
-                            bundleSnapshot?.let {
-                                s.saveConfig(it)
-                                configBundleState.value = it
-                            }
+                            bundleSnapshot?.let { s.saveConfig(it) }
                         } catch (e: CancellationException) {
                             throw e
                         } catch (e: Exception) {

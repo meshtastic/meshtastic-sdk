@@ -25,9 +25,10 @@ internal actual fun createDriver(dbPath: String): SqlDriver {
         override fun onConfigure(db: SupportSQLiteDatabase) {
             super.onConfigure(db)
             db.setForeignKeyConstraintsEnabled(true)
-            // Android framework defaults to WAL on API 16+; still execute explicitly to
-            // guarantee the setting for any non-default open helper.
-            if (fileBacked) db.execSQL("PRAGMA journal_mode=WAL;")
+            // WAL must go through the framework API: `PRAGMA journal_mode=WAL` returns a
+            // result row, which Android's execSQL rejects ("Queries can be performed using
+            // SQLiteDatabase query or rawQuery methods only") once the mode is already set.
+            if (fileBacked) db.enableWriteAheadLogging()
             db.execSQL("PRAGMA synchronous=NORMAL;")
         }
     }
