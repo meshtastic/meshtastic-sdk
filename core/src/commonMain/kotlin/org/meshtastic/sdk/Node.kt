@@ -188,8 +188,8 @@ public sealed interface MeshEvent {
      * Only ever emitted by firmware compiled with `MESHTASTIC_LOCKDOWN` (storage-encryption /
      * tamper-hardened builds). Such a device sends the variant **immediately after the handshake's
      * `config_complete_id`** — to tell a freshly-connected, possibly-unauthorized client what it
-     * must do — and again in response to every [AdminApi.lockdown] command. Standard (non-hardened)
-     * builds simply never send it.
+     * must do — and again in response to every [AdminApi.lockdown] command. Standard builds either
+     * never send it or report [org.meshtastic.proto.LockdownStatus.State.DISABLED].
      *
      * Use [status] to drive provisioning / unlock UX:
      * - [State.NEEDS_PROVISION][org.meshtastic.proto.LockdownStatus.State.NEEDS_PROVISION] — the
@@ -201,6 +201,8 @@ public sealed interface MeshEvent {
      *   and `valid_until_epoch` describe the issued session token's lifetime.
      * - [State.UNLOCK_FAILED][org.meshtastic.proto.LockdownStatus.State.UNLOCK_FAILED] —
      *   `backoff_seconds` is how long the client must wait before the next passphrase attempt.
+     * - [State.DISABLED][org.meshtastic.proto.LockdownStatus.State.DISABLED] — the feature is off
+     *   on this build (proto ≥ the develop snapshot; older firmware simply omits the variant).
      *
      * This is the SDK's source of truth for lockdown availability: there is no firmware-version
      * capability flag because lockdown is a build-time option, not a version gate.

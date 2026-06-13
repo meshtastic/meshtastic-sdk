@@ -56,6 +56,27 @@ class LockdownStatusEventTest {
         runCatching { client.disconnect() }
     }
 
+    @Test
+    fun lockdownDisabledStateSurfaces() = runTest {
+        // DISABLED is a develop-SNAPSHOT-only enum value; assert the SDK round-trips it.
+        val (transport, client) = connectedClient()
+        val events = mutableListOf<MeshEvent>()
+        val job = backgroundScope.launch { client.events.collect { events.add(it) } }
+        client.connect()
+        runCurrent()
+
+        val status = LockdownStatus(state = LockdownStatus.State.DISABLED)
+        transport.injectFrame(FromRadio(lockdown_status = status).toFrame())
+        runCurrent()
+
+        val event = events.filterIsInstance<MeshEvent.LockdownStatusChanged>().singleOrNull()
+        assertTrue(event != null, "expected a typed LockdownStatusChanged event, got: $events")
+        assertEquals(LockdownStatus.State.DISABLED, event.status.state)
+
+        job.cancel()
+        runCatching { client.disconnect() }
+    }
+
     private fun kotlinx.coroutines.test.TestScope.connectedClient(): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:lockdown"),

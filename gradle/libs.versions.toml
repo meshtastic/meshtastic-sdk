@@ -20,7 +20,11 @@ okio                        = "3.17.0"
 # --- Protobuf / Wire ---
 wire                        = "6.4.0"            # wire-runtime version (transitive via protobufs SDK)
 protobuf                    = "4.34.1"
-meshtasticProtobufs         = "2.7.25"
+# develop-SNAPSHOT: required for the lockdown feature surface (LockdownAuth.max_session_seconds /
+# .disable, LockdownStatus.State.DISABLED) added after 2.7.25. Otherwise a strict superset of
+# 2.7.25 for the client wire contract. REPIN to the next stable release before tagging — a moving
+# SNAPSHOT must not back a published artifact (see CHANGELOG, RELEASING.md).
+meshtasticProtobufs         = "develop-SNAPSHOT"
 
 # --- Storage ---
 sqldelight                  = "2.3.2"
