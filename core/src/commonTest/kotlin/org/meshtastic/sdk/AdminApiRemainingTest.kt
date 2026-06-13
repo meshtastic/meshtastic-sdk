@@ -107,11 +107,15 @@ class AdminApiRemainingTest {
     }
 
     @Test
-    fun lockdownProvisionSendsPassphraseFields() = runTest {
+    fun lockdownProvisionSendsPassphraseAndDevelopFields() = runTest {
+        // Exercises develop-SNAPSHOT-only fields (max_session_seconds, disable) alongside the
+        // passphrase, proving the SDK compiles and round-trips the full LockdownAuth surface.
         val auth = LockdownAuth(
             passphrase = "hunter2".encodeToByteArray().toByteString(),
             boots_remaining = 10,
             valid_until_epoch = 1_900_000_000,
+            max_session_seconds = 3600,
+            disable = false,
         )
         assertFireAndForgetSuccess(
             call = { it.lockdown(auth) },
