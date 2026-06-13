@@ -22,6 +22,7 @@ public abstract interface class org/meshtastic/sdk/AdminApi {
 	public abstract fun getUIConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun keyVerification (Lorg/meshtastic/proto/KeyVerificationAdmin;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun listChannels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun lockdown (Lorg/meshtastic/proto/LockdownAuth;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun nodeDbReset (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun otaRequest (Lorg/meshtastic/proto/AdminMessage$OTAEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun reboot-VtjQ1oo (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -680,6 +681,17 @@ public final class org/meshtastic/sdk/MeshEvent$KeyVerification : org/meshtastic
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$KeyVerification;Lorg/meshtastic/sdk/KeyVerificationPrompt;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$KeyVerification;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getPrompt ()Lorg/meshtastic/sdk/KeyVerificationPrompt;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/MeshEvent$LockdownStatusChanged : org/meshtastic/sdk/MeshEvent {
+	public fun <init> (Lorg/meshtastic/proto/LockdownStatus;)V
+	public final fun component1 ()Lorg/meshtastic/proto/LockdownStatus;
+	public final fun copy (Lorg/meshtastic/proto/LockdownStatus;)Lorg/meshtastic/sdk/MeshEvent$LockdownStatusChanged;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$LockdownStatusChanged;Lorg/meshtastic/proto/LockdownStatus;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$LockdownStatusChanged;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getStatus ()Lorg/meshtastic/proto/LockdownStatus;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

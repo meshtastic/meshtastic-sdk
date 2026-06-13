@@ -83,9 +83,9 @@ turn:
 | `arch-consistency` | `./gradlew :core:verifyModuleBoundary detekt` | ADR-008 enforcement: `:core` deps + ForbiddenImport rules |
 | `full-check` | `./gradlew check` | Full gate (PR-gated) — runs every applicable task as a safety net |
 
-All jobs check out submodules (`submodules: recursive`) because protobufs
-are vendored. All jobs use `gradle/actions/setup-gradle` (build cache
-shared across jobs).
+Protobuf types resolve from the published `org.meshtastic:protobufs` Maven
+artifact, so no submodule checkout is needed. All jobs use
+`gradle/actions/setup-gradle` (build cache shared across jobs).
 
 ### Caching
 
@@ -156,8 +156,7 @@ plugin layers an `androidTarget` (single-variant via
 
 | Module | JVM | Android | iOS¹ | Notes |
 |---|:-:|:-:|:-:|---|
-| `:proto` | ✅ | ✅ | ✅ | Wire-generated. `-Werror` relaxed (see [`proto/build.gradle.kts`](../proto/build.gradle.kts)). |
-| `:core` | ✅ | ✅ | ✅ | Engine + interfaces. ADR-008 enforces `:proto`-only deps. |
+| `:core` | ✅ | ✅ | ✅ | Engine + interfaces; re-exports the `org.meshtastic:protobufs` types via `api`. ADR-008 enforces no in-tree project deps. |
 | `:storage-sqldelight` | ✅ (Sqlite JDBC) | ✅ (Android driver) | ✅ (Native driver, `appleMain`) | Per-target driver factory; PRAGMA `journal_mode=WAL` + `synchronous=NORMAL` set in [`SqlDelightStorageProvider.apple.kt`](../storage-sqldelight/src/appleMain/kotlin/org/meshtastic/kmp/storage/sqldelight/SqlDelightStorageProvider.apple.kt) (matched by JVM/Android driver factories). |
 | `:transport-tcp` | ✅ | ✅ | ✅ | Pure ktor-network. |
 | `:transport-ble` | ✅ (macOS / Windows / Linux via Kable JVM) | ✅ | ✅ | Kable backends per platform. |
@@ -239,12 +238,12 @@ procedure.
 
 ## Renovate
 
-Dependency updates (Gradle, GitHub Actions, **proto submodule**) are
-managed by Renovate; config at [`../renovate.json`](../renovate.json).
-The `git-submodules` manager opens periodic PRs for
-`proto/src/protobufs` — review the API diff carefully because new
-`oneof` arms break consumer exhaustive `when` and constitute a MINOR
-bump per [`versioning.md`](./versioning.md).
+Dependency updates (Gradle — including **`org.meshtastic:protobufs`** — and
+GitHub Actions) are managed by Renovate; config at
+[`../renovate.json`](../renovate.json). The `gradle` manager opens PRs for new
+`org.meshtastic:protobufs` versions — review the API diff carefully because new
+`oneof` arms break consumer exhaustive `when` and constitute a MINOR bump per
+[`versioning.md`](./versioning.md).
 
 ## Roadmap
 
@@ -275,5 +274,5 @@ own workflow file when implemented:
   `checkKotlinAbi` + the manual release workflow.
 - [`manual-tests.md`](./manual-tests.md) — what CI cannot test (real
   hardware paths).
-- [`../renovate.json`](../renovate.json) — dependency + submodule
-  updater config.
+- [`../renovate.json`](../renovate.json) — dependency updater config
+  (Gradle artifacts incl. `org.meshtastic:protobufs`, GitHub Actions).

@@ -183,6 +183,34 @@ public sealed interface MeshEvent {
     public data class FileInfoReceived(val info: org.meshtastic.proto.FileInfo) : MeshEvent
 
     /**
+     * The connected device reported its hardened-build lockdown state.
+     *
+     * Only ever emitted by firmware compiled with `MESHTASTIC_LOCKDOWN` (storage-encryption /
+     * tamper-hardened builds). Such a device sends the variant **immediately after the handshake's
+     * `config_complete_id`** — to tell a freshly-connected, possibly-unauthorized client what it
+     * must do — and again in response to every [AdminApi.lockdown] command. Standard (non-hardened)
+     * builds simply never send it.
+     *
+     * Use [status] to drive provisioning / unlock UX:
+     * - [State.NEEDS_PROVISION][org.meshtastic.proto.LockdownStatus.State.NEEDS_PROVISION] — the
+     *   device has no boot token; send an [AdminApi.lockdown] with a passphrase to provision it.
+     * - [State.LOCKED][org.meshtastic.proto.LockdownStatus.State.LOCKED] — storage is locked;
+     *   `lock_reason` carries a machine-readable cause. Prompt for the passphrase and call
+     *   [AdminApi.lockdown]. Treat unknown `lock_reason` values as "locked, ask for passphrase".
+     * - [State.UNLOCKED][org.meshtastic.proto.LockdownStatus.State.UNLOCKED] — `boots_remaining`
+     *   and `valid_until_epoch` describe the issued session token's lifetime.
+     * - [State.UNLOCK_FAILED][org.meshtastic.proto.LockdownStatus.State.UNLOCK_FAILED] —
+     *   `backoff_seconds` is how long the client must wait before the next passphrase attempt.
+     *
+     * This is the SDK's source of truth for lockdown availability: there is no firmware-version
+     * capability flag because lockdown is a build-time option, not a version gate.
+     *
+     * @property status the wire [LockdownStatus][org.meshtastic.proto.LockdownStatus]
+     * @since 0.3.0
+     */
+    public data class LockdownStatusChanged(val status: org.meshtastic.proto.LockdownStatus) : MeshEvent
+
+    /**
      * A transport-level error occurred.
      *
      * @param error the transport exception

@@ -53,7 +53,7 @@ A faithful Kotlin client of the Meshtastic device PhoneAPI (the host-side wire p
 10. **Pre-1.0:** breaking changes allowed; require `updateKotlinAbi` + CHANGELOG entry. **1.0+:** binary-compatibility-validator hard-gates.
 
 ### Authoritative protocol sources
-- **Schema:** [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — vendored as `proto/src/protobufs` git submodule.
+- **Schema:** [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — consumed as the published `org.meshtastic:protobufs` Maven artifact (pinned in `gradle/libs.versions.toml`), not vendored.
 - **Behavior reference:** [`meshtastic/firmware`](https://github.com/meshtastic/firmware) (read-only).
 - **`Meshtastic-Android`** — port what's useful (codec, handshake FSM, BLE handler, encryption helpers) into `commonMain` / `androidMain` as appropriate.
 - **Real device** — required from Phase 2 onward.
@@ -548,6 +548,9 @@ public interface AdminApi {
     public suspend fun addContact(contact: SharedContact): AdminResult<Unit>
     public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
 
+    // ── Lockdown (hardened MESHTASTIC_LOCKDOWN builds; local-only, fire-and-forget) ──
+    public suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit>
+
     // ── OTA / Sensor / Simulator ──
     public suspend fun rebootOta(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit>
@@ -853,8 +856,8 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 | Tool | Purpose |
 |---|---|
 | Gradle 9.x + Kotlin DSL + version catalog (`gradle/libs.versions.toml`) | Build (Gradle 9.4.1) |
-| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
-| Kotlin `explicitApi("strict")` on all `:sdk-*` modules **except `:proto`** (Wire-generated; modifier doesn't apply meaningfully to codegen) |
+| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
+| Kotlin `explicitApi("strict")` on all `:sdk-*` modules (proto types are an external artifact, not an in-tree module) |
 | `org.jetbrains.kotlin.multiplatform` + `com.android.kotlin.multiplatform.library` | New Android KMP library plugin — what MQTTastic uses |
 | Spotless + ktlint + `licenseHeaderFile` | Formatting + GPL-3.0 header enforcement (copy `config/spotless/copyright.kt` from MQTTastic) |
 | Detekt (config from MQTTastic `config/detekt/detekt.yml`) | Static analysis |
@@ -917,7 +920,7 @@ The Meshtastic org already publishes official KMP libraries under `org.meshtasti
   - `AGENTS.md` + `CLAUDE.md` + `.github/copilot-instructions.md` (redirect pattern)
   - `docker/` if relevant for CI integration testing
 - [ ] `.gitignore`. `.editorconfig`.
-- [ ] Submodule: `proto/src/protobufs` → `meshtastic/protobufs` `main`.
+- [ ] ~~Submodule: `proto/src/protobufs` → `meshtastic/protobufs` `main`.~~ **Superseded by [ADR-015](decisions/015-consume-published-protobufs-artifact.md):** the schema is consumed as the published `org.meshtastic:protobufs` artifact, not vendored as a submodule.
 - [ ] Gradle wrapper (9.x). `settings.gradle.kts` with `pluginManagement` + `dependencyResolutionManagement` (copy from MQTTastic, add multi-module includes).
 - [ ] Add to version catalog the SDK-specific deps not present in MQTTastic: `wire`, `sqldelight`, `kable`, `usb-serial-for-android`, `jSerialComm`, `mokkery`, `turbine`, `kotest`, `power-assert`, `axion-release`.
 - [ ] `build-logic/convention/` plugins: `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android`. Library plugin encodes the MQTTastic `applyDefaultHierarchyTemplate()` + custom intermediate-source-set pattern.
@@ -932,7 +935,7 @@ The Meshtastic org already publishes official KMP libraries under `org.meshtasti
 
 ### Phase 1 — Codec + engine skeleton
 
-- [ ] `proto/` — Wire 6 generates DTOs into private package from `proto/src/protobufs`. All targets.
+- [ ] ~~`proto/` — Wire 6 generates DTOs into private package from `proto/src/protobufs`. All targets.~~ **Superseded by [ADR-015](decisions/015-consume-published-protobufs-artifact.md):** there is no `:proto` module; `:core` depends on the published `org.meshtastic:protobufs` artifact via `api(libs.meshtasticProtobufs)`.
 - [ ] ~~`proto-raw/` — Re-export generated package as a public escape-hatch artifact.~~ **Dropped per ADR-001:** `:proto` itself is the public artifact; no separate escape-hatch needed.
 - [ ] `core/` — Value classes (`NodeId`, `ChannelIndex`, `MessageId`, `TransportIdentity`), sealed `MeshtasticException`, `Frame`, `RadioTransport` interface, `StorageProvider`/`DeviceStorage` interfaces, `LogSink`.
 - [ ] `core/` — `WireCodec`: framing encode/decode, resync (per v1 §8.2: scan for `0x94 0xC3`, length ≤ 512, drop garbage). Property tests for round-trip on every `ToRadio`/`FromRadio` variant. **Fuzz tests** on random byte streams to validate resync robustness.
@@ -1078,7 +1081,7 @@ From Phase 2: a dedicated radio either attached to a runner (TCP-over-WiFi night
 ## 9. References
 
 ### 9.1 Authoritative protocol
-- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — schema (vendored)
+- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — schema (published `org.meshtastic:protobufs` artifact)
 - [`meshtastic/firmware`](https://github.com/meshtastic/firmware) — behavior reference
 - [Meshtastic dev docs — Client API](https://meshtastic.org/docs/development/device/client-api/)
 - [Meshtastic dev docs — Mesh Algorithm](https://meshtastic.org/docs/overview/mesh-algo/)

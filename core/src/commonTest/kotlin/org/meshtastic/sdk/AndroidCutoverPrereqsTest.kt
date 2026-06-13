@@ -97,12 +97,13 @@ class AndroidCutoverPrereqsTest {
                 runCurrent()
                 assertEquals(MeshEvent.FileInfoReceived(fileInfo), awaitItem())
 
-                // lockdown_status (protobufs 2.7.25+) is not yet typed — but it must not be
-                // silently dropped either.
-                transport.injectFrame(frameOf(FromRadio(lockdown_status = org.meshtastic.proto.LockdownStatus())))
+                // lockdown_status (hardened MESHTASTIC_LOCKDOWN builds) surfaces as a typed event.
+                val lockdown = org.meshtastic.proto.LockdownStatus(
+                    state = org.meshtastic.proto.LockdownStatus.State.LOCKED,
+                )
+                transport.injectFrame(frameOf(FromRadio(lockdown_status = lockdown)))
                 runCurrent()
-                val warning = assertIs<MeshEvent.ProtocolWarning>(awaitItem())
-                assertEquals("lockdown_status", warning.details["variant"])
+                assertEquals(MeshEvent.LockdownStatusChanged(lockdown), awaitItem())
 
                 cancelAndIgnoreRemainingEvents()
             }

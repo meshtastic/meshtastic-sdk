@@ -6,7 +6,7 @@
 | **Date** | 2026-04-19 |
 | **Deciders** | Maintainers |
 | **Supersedes** | — |
-| **Related** | [ADR-001](001-public-api-uses-generated-protobufs.md), [ADR-009](009-cli-architecture.md) |
+| **Related** | [ADR-001](001-public-api-uses-generated-protobufs.md), [ADR-009](009-cli-architecture.md), [ADR-015](015-consume-published-protobufs-artifact.md) |
 
 ## Context
 
@@ -75,7 +75,7 @@ or CLI-defined object fits. Records are newline-delimited
 - Agents and CI eval scripts get a deterministic, schema-validated
   output stream.
 - New protobuf fields show up automatically in JSON output the next time
-  the submodule updates.
+  the `org.meshtastic:protobufs` artifact is bumped.
 - `jq` queries against CLI output become tests:
   `cli probe ... | jq -e '.payload.config_complete_id'`.
 

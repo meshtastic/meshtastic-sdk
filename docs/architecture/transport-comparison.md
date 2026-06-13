@@ -53,7 +53,7 @@ Per-target Android / FGS detail: [`android-platform-constraints.md`](./android-p
 The `RadioTransport` contract is small and stable. To add a new transport (LoRa proxy,
 WebSocket bridge, mock):
 
-1. Create a new module (e.g. `:transport-foo`); depend only on `:core` and `:proto`.
+1. Create a new module (e.g. `:transport-foo`); depend only on `:core` (which re-exports the wire types).
 2. Implement `RadioTransport` honoring [ADR-012](../decisions/012-transport-threading.md):
    never block the engine's coroutine context; funnel inbound bytes through a single
    `Flow<Frame>`; expose a `StateFlow<TransportState>` that walks

@@ -1,12 +1,14 @@
 # ADR 001 — Public API uses Wire-generated protobuf types directly
 
-**Status:** Accepted
+**Status:** Accepted (proto *sourcing* superseded by [ADR-015](015-consume-published-protobufs-artifact.md); the decision below stands)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../protocol.md`](../protocol.md), `meshtastic/protobufs` submodule, [Square Wire docs](https://square.github.io/wire/)
+**Related:** [`../protocol.md`](../protocol.md), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [Square Wire docs](https://square.github.io/wire/)
 
 ---
+
+> **Note (2026-06-13):** the in-tree, public `:proto` module and the `proto/src/protobufs` git submodule described below were replaced by the published `org.meshtastic:protobufs` Maven artifact — see [ADR-015](015-consume-published-protobufs-artifact.md). This ADR's decision is unaffected: Wire-generated types remain **the** SDK public data model; only their provenance moved from in-tree codegen to a published dependency. Read "`:proto` module" / "`api(project(":proto"))`" below as "the `org.meshtastic:protobufs` artifact" / "`api(libs.meshtasticProtobufs)`".
 
 ## Context
 

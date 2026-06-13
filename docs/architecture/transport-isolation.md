@@ -23,7 +23,7 @@ The `RadioTransport` interface is defined in `:core`, but concrete transport imp
 
 3. **Pluggable at build time.** Custom transport implementations (e.g., `transport-mqtt-proxy`, or a proprietary `transport-lora`) can be swapped in without modifying `:core`.
 
-4. **Cleaner dependency trees.** `:core` has exactly two dependencies: `:proto` (wire types) and `kotlinx-coroutines` (actor concurrency). Each transport brings only its own heavy lifting (Kable for BLE, Ktor for TCP, jSerialComm/usb-serial for serial).
+4. **Cleaner dependency trees.** `:core` has exactly two dependencies: the `org.meshtastic:protobufs` artifact (wire types) and `kotlinx-coroutines` (actor concurrency). Each transport brings only its own heavy lifting (Kable for BLE, Ktor for TCP, jSerialComm/usb-serial for serial).
 
 ## Per-transport implementation patterns
 
@@ -81,7 +81,7 @@ All emit `TransportState.Error(recoverable: Boolean)` to the engine inbox. The e
 ## Adding a new transport
 
 1. Create a new module `:transport-newname` in the root.
-2. Depend on `:core` (for `RadioTransport`, `Frame`, `TransportState`, `TransportIdentity`) and `:proto` (for wire types).
+2. Depend on `:core` (for `RadioTransport`, `Frame`, `TransportState`, `TransportIdentity`; the wire types arrive transitively through `:core`).
 3. Implement `RadioTransport`:
    ```kotlin
    class NewTransport : RadioTransport {

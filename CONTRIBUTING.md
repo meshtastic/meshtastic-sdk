@@ -47,20 +47,17 @@ git push --force-with-lease
 | Gradle | 8.4+ (bundled; see `gradle/wrapper/gradle-wrapper.properties`) |
 | Android SDK | API 36 platform (only needed for Android targets); set `ANDROID_HOME` |
 | Xcode | 15+ with iOS 14+ SDK (only needed for iOS targets, mac only) |
-| Git | Any modern version with submodule support |
+| Git | Any modern version |
 
-Clone with submodules:
+Clone:
 
 ```bash
-git clone --recurse-submodules git@github.com:meshtastic/meshtastic-sdk.git
+git clone git@github.com:meshtastic/meshtastic-sdk.git
 cd meshtastic-sdk
 ```
 
-If you already cloned without submodules:
-
-```bash
-git submodule update --init --recursive
-```
+There are no submodules — protobuf types come from the published `org.meshtastic:protobufs`
+Maven artifact, resolved by Gradle (pinned in `gradle/libs.versions.toml`).
 
 ## Build requirements
 
@@ -96,17 +93,17 @@ sdk install java 21-tem   # sdkman
 brew install openjdk@21   # macOS
 ```
 
-### Protocol submodule
+### Protocol types
 
-The `proto/` directory is a git submodule pointing to the canonical Meshtastic protobufs. If you see strange `MeshPacket`, `FromRadio`, etc. type resolution errors, verify the submodule state:
+Protobuf types come from the published `org.meshtastic:protobufs` Maven artifact (there is no
+`proto/` submodule). If you see strange `MeshPacket`, `FromRadio`, etc. type-resolution errors,
+verify the pinned version resolves:
 
 ```bash
-git submodule status
-# Should show something like: " 1a2b3c4d5e6f proto/src/protobufs (v1.2.3)"
-
-# If detached or missing:
-git submodule update --init --recursive
+./gradlew :core:dependencies --configuration jvmCompileClasspath | grep protobufs
 ```
+
+The version is pinned in `gradle/libs.versions.toml` (`meshtasticProtobufs`).
 
 ## Build & test
 
@@ -120,7 +117,7 @@ git submodule update --init --recursive
 | Lint | `./gradlew detekt spotlessCheck` |
 | Format | `./gradlew spotlessApply` |
 | Architecture rules | `./gradlew detekt :core:verifyModuleBoundary` (matrix in [`docs/architecture/enforcement.md`](docs/architecture/enforcement.md), rationale in [ADR-008](docs/decisions/008-architecture-enforcement.md)) |
-| Docs preview | `./gradlew dokkaHtmlMultiModule` (output: `build/dokka/htmlMultiModule`) |
+| Docs preview | `./gradlew dokkaGenerate` (Dokka V2; per-module HTML under `*/build/dokka/html`) |
 
 Pre-commit hook (opt-in):
 
@@ -136,7 +133,7 @@ pushing.
 
 ## Public API changes (`checkKotlinAbi` vs `updateKotlinAbi`)
 
-The `:core`, `:proto`, `:transport-*`, `:storage-sqldelight`, `:testing`,
+The `:core`, `:transport-*`, `:storage-sqldelight`, `:testing`,
 and `:bom` modules are publishable artifacts; their public Kotlin
 surface is captured in `<module>/api/<module>.klib.api` (and
 `<module>/api/jvm/<module>.api` for JVM). The Kotlin Gradle Plugin's
@@ -208,7 +205,7 @@ they always start at the latest schema.
 
 The engine architecture has hard rules enforced by detekt + Gradle (see [ADR-008](docs/decisions/008-architecture-enforcement.md)):
 
-1. `:core` depends only on `:proto`. Never on a transport or storage implementation. (The `RadioTransport`, `StorageProvider`, and `DeviceStorage` interfaces live inside `:core` itself — see ADR-006.)
+1. `:core` declares no in-tree project dependencies — its only proto dependency is the published `org.meshtastic:protobufs` artifact (re-exported via `api`). Never depend on a transport or storage implementation. (The `RadioTransport`, `StorageProvider`, and `DeviceStorage` interfaces live inside `:core` itself — see ADR-006 and ADR-015.)
 2. No `java.*`, `android.*`, `kotlin.Result<T>` in `commonMain` or public API.
 3. No `Mutex` / `atomicfu` / `synchronized` in the engine package — the actor IS the synchronization primitive (see [ADR-002](docs/decisions/002-architecture.md)).
 4. Public byte payloads use `okio.ByteString` (Wire's runtime type — already forced into the surface by the generated protos); `kotlinx-io` is deliberately not a dependency. See docs/api-reference.md § API conventions.
@@ -261,22 +258,19 @@ If your change involves wire-level behavior (handshake, framing, ACK semantics, 
 3. Update [`docs/protocol.md`](docs/protocol.md) — the wire spec is the source of truth.
 4. Add a manual-test entry in [`docs/manual-tests.md`](docs/manual-tests.md) if the change can only be validated against a real device.
 
-## Bumping the proto submodule
+## Bumping the proto artifact
 
-Routine bumps happen automatically via Renovate's `git-submodules` manager
-(see `renovate.json`). Manually:
+Routine bumps happen automatically via Renovate's `gradle` manager
+(see `renovate.json`), which proposes new `org.meshtastic:protobufs` versions. Manually:
 
 ```bash
-cd proto/src/protobufs
-git fetch origin master
-git checkout origin/master
-cd ../../..
+# edit gradle/libs.versions.toml: meshtasticProtobufs = "<new version>"
 ./gradlew updateKotlinAbi
-git add proto/src/protobufs api/
-git commit -s -m "chore(proto): bump submodule (<prev>..<new>)"
+git add gradle/libs.versions.toml core/api/
+git commit -s -m "chore(proto): bump org.meshtastic:protobufs to <new version>"
 ```
 
-Review the generated API diff carefully — new `oneof` arms break exhaustive `when` for consumers. SemVer impact per [`docs/versioning.md`](docs/versioning.md).
+Review the regenerated ABI diff carefully — new `oneof` arms break exhaustive `when` for consumers. SemVer impact per [`docs/versioning.md`](docs/versioning.md).
 
 ## Reusing code from sibling Meshtastic-org projects
 

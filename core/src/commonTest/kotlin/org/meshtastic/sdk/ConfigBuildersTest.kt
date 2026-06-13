@@ -449,6 +449,8 @@ private class CapturingAdminApi : AdminApi {
 
     override suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit> = unused()
 
+    override suspend fun lockdown(auth: org.meshtastic.proto.LockdownAuth): AdminResult<Unit> = unused()
+
     override suspend fun rebootOta(after: Duration): AdminResult<Unit> = unused()
 
     override suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit> = unused()

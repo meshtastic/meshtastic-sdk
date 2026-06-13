@@ -36,7 +36,7 @@ The SDK follows a strictly defined architecture documented in `docs/SPEC.md`:
 - **Run Tests:** `./gradlew allTests`
 - **Linting:** `./gradlew spotlessCheck` / `./gradlew spotlessApply`
 - **Static Analysis:** `./gradlew detekt`
-- **API Documentation:** `./gradlew dokkaHtml` (output in `build/dokka/html`)
+- **API Documentation:** `./gradlew dokkaGenerate` (Dokka V2; output in `core/build/dokka/html`. The legacy `dokkaHtml` task is removed and errors under V2 mode.)
 - **ABI Management:** `./gradlew checkKotlinAbi` (validate) or `./gradlew updateKotlinAbi` (after intentional API changes)
 
 ### Sample CLI
@@ -68,6 +68,6 @@ The project includes a sample CLI for testing:
 - `docs/SPEC.md`: The authoritative implementation plan and architecture bible.
 - `docs/protocol.md`: The wire-level protocol reference (PhoneAPI).
 - `core/`: The main SDK engine and public facade.
-- `proto/`: Vendored Meshtastic protobufs and generated Kotlin DTOs.
+- Protobuf types: the published `org.meshtastic:protobufs` Maven artifact (no vendored `proto/` dir or submodule); pinned in `gradle/libs.versions.toml`.
 - `build-logic/`: Custom Gradle convention plugins for KMP, Android, and Publishing.
 - `gradle/libs.versions.toml`: The single source of truth for all dependencies and versions.

@@ -1,12 +1,14 @@
 # ADR 006 — Multi-module rationale
 
-**Status:** Accepted
+**Status:** Accepted (the `:proto` module was superseded by [ADR-015](015-consume-published-protobufs-artifact.md); the rest of the layout stands)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §2, ADR-000 (charter), ADR-001 (proto types), ADR-002 (architecture), ADR-007 (iOS distribution), [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (single-module precedent)
+**Related:** [`../SPEC.md`](../SPEC.md) §2, ADR-000 (charter), ADR-001 (proto types), ADR-002 (architecture), ADR-007 (iOS distribution), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (single-module precedent)
 
 ---
+
+> **Note (2026-06-13):** there is no longer an in-tree `:proto` module or `proto/src/protobufs` submodule. Protobuf types come from the published `org.meshtastic:protobufs` artifact, which `:core` re-exports via `api(libs.meshtasticProtobufs)` — see [ADR-015](015-consume-published-protobufs-artifact.md). Throughout this ADR, read the `:proto` module (and its dependency edges, per-target row, and "bump the proto submodule") as **that external artifact**; the multi-module rationale below is otherwise current. The live module graph is [`../architecture/module-graph.md`](../architecture/module-graph.md).
 
 ## Context
 

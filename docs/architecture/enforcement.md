@@ -12,8 +12,8 @@ home — do not duplicate the same rule across tools.
 
 | Invariant | Source of truth | Enforced by | Where to look |
 | --- | --- | --- | --- |
-| `:core` depends only on `:proto` | [ADR-002](../decisions/002-architecture.md), [`module-graph.md`](module-graph.md) | Gradle task: `:core:verifyModuleBoundary` (wired into `check`) | [`core/build.gradle.kts`](../../core/build.gradle.kts) |
-| No transport / storage code in `:core` | [ADR-002](../decisions/002-architecture.md) | Same `:core:verifyModuleBoundary` task — any non-`:proto` project dep fails the build | [`core/build.gradle.kts`](../../core/build.gradle.kts) |
+| `:core` declares no in-tree project dependencies (proto types come from the `org.meshtastic:protobufs` artifact) | [ADR-002](../decisions/002-architecture.md), [ADR-015](../decisions/015-consume-published-protobufs-artifact.md), [`module-graph.md`](module-graph.md) | Gradle task: `:core:verifyModuleBoundary` (wired into `check`) | [`core/build.gradle.kts`](../../core/build.gradle.kts) |
+| No transport / storage code in `:core` | [ADR-002](../decisions/002-architecture.md) | Same `:core:verifyModuleBoundary` task — any project dependency fails the build | [`core/build.gradle.kts`](../../core/build.gradle.kts) |
 | Engine paths use no shared-state primitives (`Mutex`, `Semaphore`, `ReentrantLock`) | [ADR-002](../decisions/002-architecture.md) — single-writer actor | detekt `ForbiddenImport` rule (`style.ForbiddenImport`) | [`config/detekt/detekt.yml`](../../config/detekt/detekt.yml) |
 | `kotlin.Result` is never used (public or internal) | [ADR-005](../decisions/005-api-shape.md) | detekt `ForbiddenImport` rule + Binary Compatibility Validator catches public-API leaks | [`config/detekt/detekt.yml`](../../config/detekt/detekt.yml), `api/*.api` |
 | Public API surface is reviewed and stable | [ADR-005](../decisions/005-api-shape.md), [`docs/versioning.md`](../versioning.md) | Kotlinx Binary Compatibility Validator (`./gradlew checkKotlinAbi`) | `api/jvm/*.api`, `api/android/*.api` per module |

@@ -148,6 +148,7 @@ abstract interface org.meshtastic.sdk/AdminApi { // org.meshtastic.sdk/AdminApi|
     abstract suspend fun getUIConfig(): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/DeviceUIConfig> // org.meshtastic.sdk/AdminApi.getUIConfig|getUIConfig(){}[0]
     abstract suspend fun keyVerification(org.meshtastic.proto/KeyVerificationAdmin): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.keyVerification|keyVerification(org.meshtastic.proto.KeyVerificationAdmin){}[0]
     abstract suspend fun listChannels(): org.meshtastic.sdk/AdminResult<kotlin.collections/List<org.meshtastic.proto/Channel>> // org.meshtastic.sdk/AdminApi.listChannels|listChannels(){}[0]
+    abstract suspend fun lockdown(org.meshtastic.proto/LockdownAuth): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.lockdown|lockdown(org.meshtastic.proto.LockdownAuth){}[0]
     abstract suspend fun nodeDbReset(): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.nodeDbReset|nodeDbReset(){}[0]
     abstract suspend fun otaRequest(org.meshtastic.proto/AdminMessage.OTAEvent): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.otaRequest|otaRequest(org.meshtastic.proto.AdminMessage.OTAEvent){}[0]
     abstract suspend fun reboot(kotlin.time/Duration = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.reboot|reboot(kotlin.time.Duration){}[0]
@@ -479,6 +480,19 @@ sealed interface org.meshtastic.sdk/MeshEvent { // org.meshtastic.sdk/MeshEvent|
         final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/MeshEvent.KeyVerification.equals|equals(kotlin.Any?){}[0]
         final fun hashCode(): kotlin/Int // org.meshtastic.sdk/MeshEvent.KeyVerification.hashCode|hashCode(){}[0]
         final fun toString(): kotlin/String // org.meshtastic.sdk/MeshEvent.KeyVerification.toString|toString(){}[0]
+    }
+
+    final class LockdownStatusChanged : org.meshtastic.sdk/MeshEvent { // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged|null[0]
+        constructor <init>(org.meshtastic.proto/LockdownStatus) // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.<init>|<init>(org.meshtastic.proto.LockdownStatus){}[0]
+
+        final val status // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.status|{}status[0]
+            final fun <get-status>(): org.meshtastic.proto/LockdownStatus // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.status.<get-status>|<get-status>(){}[0]
+
+        final fun component1(): org.meshtastic.proto/LockdownStatus // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.component1|component1(){}[0]
+        final fun copy(org.meshtastic.proto/LockdownStatus = ...): org.meshtastic.sdk/MeshEvent.LockdownStatusChanged // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.copy|copy(org.meshtastic.proto.LockdownStatus){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/MeshEvent.LockdownStatusChanged.toString|toString(){}[0]
     }
 
     final class MqttDisconnected : org.meshtastic.sdk/MeshEvent { // org.meshtastic.sdk/MeshEvent.MqttDisconnected|null[0]

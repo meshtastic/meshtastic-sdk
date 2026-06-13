@@ -63,7 +63,7 @@ dependencies {
 }
 ```
 
-Snapshots are rebuilt on every commit; pin to a specific commit by checking out a Git submodule for reproducibility.
+Snapshot artifacts are mutable — rebuilt on every commit to `main`. For reproducible builds, depend on a released version (e.g. `org.meshtastic:sdk-core:0.1.0`) rather than a `-SNAPSHOT`.
 
 Roadmap (post-1.0, non-breaking adds): `transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server`, `wasmJs` browser support — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 
@@ -222,8 +222,7 @@ authoritative dependency graph.
 
 | Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | Notes                                                                 |
 |----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|-----------------------------------------------------------------------|
-| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; no platform deps beyond `:proto`.                 |
-| `proto`                    | ✓   | ✓                     | ✓         | ✓             | ✓       | Wire-generated proto types (`org.meshtastic:protobufs`).                        |
+| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
 | `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
 | `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on Ktor sockets.                                                |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | iOS targets compile (empty actuals) but no USB-serial API on iOS.     |
@@ -255,7 +254,7 @@ authoritative dependency graph.
 ## Building from source
 
 ```bash
-git clone --recurse-submodules git@github.com:meshtastic/meshtastic-sdk.git
+git clone git@github.com:meshtastic/meshtastic-sdk.git
 cd meshtastic-sdk
 ./gradlew check                      # build + test + lint + checkKotlinAbi + detekt + :core:verifyModuleBoundary
 ```
@@ -296,6 +295,6 @@ GPL-3.0-only. See [`LICENSE`](LICENSE) and [`docs/decisions/004-licensing.md`](d
 ## Related Meshtastic projects
 
 - [`meshtastic/firmware`](https://github.com/meshtastic/firmware) — device-side reference (read-only behavior anchor here).
-- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — wire schema (vendored here as a submodule).
+- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — wire schema; consumed as the published `org.meshtastic:protobufs` artifact.
 - [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple) — flagship apps; cross-validation references.
 - [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) — sibling KMP library for direct MQTT broker use.

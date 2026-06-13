@@ -4,9 +4,11 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads (Meshtastic org)
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md), [`../protocol.md`](../protocol.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client), [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple)
+**Related:** [`../SPEC.md`](../SPEC.md), [`../protocol.md`](../protocol.md), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client), [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple)
 
 ---
+
+> **Note (2026-06-13):** the `meshtastic/protobufs` git submodule referenced below was replaced by the published `org.meshtastic:protobufs` Maven artifact — see [ADR-015](015-consume-published-protobufs-artifact.md). The charter is otherwise unchanged: protobufs are still consumed unmodified, and bumping that dependency is still the only way new fields land.
 
 ## Context
 

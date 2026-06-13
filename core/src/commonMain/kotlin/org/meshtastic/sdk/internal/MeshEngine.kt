@@ -1686,10 +1686,12 @@ internal class MeshEngine(
             true
         }
 
-        // Lockdown (protobufs 2.7.25+, firmware support in flight): surfaced as a structured
-        // warning until a typed event lands alongside AdminMessage.lockdown_auth support.
+        // Lockdown state report from hardened (MESHTASTIC_LOCKDOWN) firmware builds. Sent right
+        // after config_complete_id (so it can arrive mid-handshake) and after every
+        // AdminApi.lockdown command. Surfaced as a typed event so hosts can drive provisioning /
+        // unlock UX without inspecting raw FromRadio variants.
         fromRadio.lockdown_status != null -> {
-            warnUnhandledVariant("lockdown_status", stage)
+            events.tryEmit(MeshEvent.LockdownStatusChanged(fromRadio.lockdown_status!!))
             true
         }
 

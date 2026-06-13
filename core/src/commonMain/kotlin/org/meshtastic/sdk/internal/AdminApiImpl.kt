@@ -20,6 +20,7 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.KeyVerificationAdmin
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
@@ -313,6 +314,23 @@ internal class AdminApiImpl(
 
     override suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage(key_verification = verification))
+    }
+
+    // ── Lockdown (hardened builds) ──────────────────────────────────────────
+
+    override suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit> {
+        // Local-only: firmware (PhoneAPI::handleLockdownAuthInline) consumes lockdown_auth inline
+        // on the direct phone link and wipes the passphrase before it can reach the mesh. A
+        // remote-targeting instance must NOT send it — that would leak a passphrase onto the mesh
+        // where no inline handler exists. Managed-mode is intentionally NOT consulted: lockdown is
+        // a pre-auth security primitive, independent of admin authorization.
+        if (targetNode != null && targetNode.raw != engine.myNodeNumOrNull()) {
+            return AdminResult.Unauthorized
+        }
+        val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
+        // Fire-and-forget: the device answers with a fresh FromRadio.lockdown_status
+        // (MeshEvent.LockdownStatusChanged), not a routing ACK.
+        return submitAdminFireAndForget(AdminMessage(lockdown_auth = auth), to = NodeId(local))
     }
 
     // ── OTA updates ─────────────────────────────────────────────────────────

@@ -4,9 +4,11 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §5, ADR-000 (charter), ADR-001 (proto choice), [`../versioning.md`](../versioning.md) (SemVer, ABI, release policy — authoritative source), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (sibling KMP library)
+**Related:** [`../SPEC.md`](../SPEC.md) §5, ADR-000 (charter), ADR-001 (proto choice), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../versioning.md`](../versioning.md) (SemVer, ABI, release policy — authoritative source), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (sibling KMP library)
 
 ---
+
+> **Note (2026-06-13):** the SDK no longer runs Wire codegen locally or vendors `proto/src/protobufs` as a submodule (see the `wire-gradle-plugin` row below). Protobuf types now come from the published `org.meshtastic:protobufs` artifact — Wire is still the upstream codegen, just run upstream. See [ADR-015](015-consume-published-protobufs-artifact.md).
 
 ## Context
 
