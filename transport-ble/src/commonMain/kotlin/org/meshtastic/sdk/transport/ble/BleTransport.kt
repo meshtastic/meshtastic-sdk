@@ -27,17 +27,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportSpec
 import org.meshtastic.sdk.TransportState
+import org.meshtastic.sdk.WireFraming
 import org.meshtastic.sdk.transport.ble.internal.AndroidGattStatus
 import org.meshtastic.sdk.transport.ble.internal.DrainCoordinator
 import org.meshtastic.sdk.transport.ble.internal.classifyGattError
@@ -51,10 +56,12 @@ import kotlin.coroutines.EmptyCoroutineContext
  * BLE transport for Meshtastic radios using JuulLabs Kable.
  *
  * Implements GATT framing: subscribes to `fromnum` notifications, drains `fromradio` until
- * empty on each notification, writes to `toradio` with WriteWithoutResponse.
+ * empty on each notification, writes to `toradio` with acknowledged writes (the
+ * firmware declares write-with-response only).
  *
  * Strips/prepends the 4-byte stream header so the engine stays transport-agnostic.
- * Single-collection [frames]; [shutdown] is idempotent and cannot be undone.
+ * [frames] allows one active collector at a time (re-collectable after disconnect);
+ * [shutdown] is idempotent and cannot be undone.
  *
  * @param peripheral Kable peripheral pointing at the target radio.
  * @param address stable platform-specific address for storage identity keying.
@@ -82,12 +89,20 @@ public class BleTransport(
     private var observeJob: Job? = null
     private var coordinator: DrainCoordinator? = null
 
-    private val frameChannel = Channel<Frame>(capacity = 64)
+    // Per-connect-cycle scope handed to [postConnectHook]; cancelled by disconnect()/shutdown()
+    // so stale tuning work (e.g. a delayed connection-priority downgrade) can't leak into the
+    // next session when the transport is reused after disconnect.
+    private var tuningScope: CoroutineScope? = null
+
+    // Recreated per connect cycle: a completed/cancelled collector leaves the previous
+    // channel unusable (consumeAsFlow cancels it), and reuse-after-disconnect needs a live one.
+    private var frameChannel = Channel<Frame>(capacity = 64)
 
     // ADR-012: lifecycle idempotency — idempotent shutdown flag.
     private val shuttingDown = atomic(false)
 
-    // ADR-012: lifecycle idempotency — enforces single-collection of frames().
+    // ADR-012: lifecycle idempotency — enforces a single ACTIVE collector of frames().
+    // Reset when a collector completes so reuse-after-disconnect can collect again.
     private val framesCollected = atomic(false)
 
     // ADR-012: lifecycle idempotency — while false, bridgeKableState() won't promote to Connected (warmup read pending).
@@ -96,14 +111,42 @@ public class BleTransport(
     // ADR-012: lifecycle idempotency — only one Error transition per connect cycle.
     private val errorPublished = atomic(false)
 
+    /**
+     * Platform hook invoked once per successful link establishment, after the GATT connection
+     * (and Kable's service discovery) completes and before the warmup read. Platform factories
+     * use it for link tuning — e.g. the Android factory negotiates the ATT MTU and requests a
+     * faster connection interval here. Receives a **per-connect-cycle** [CoroutineScope] as
+     * receiver for scheduling follow-ups (e.g. a delayed priority downgrade). That scope is
+     * cancelled at [disconnect] (and [shutdown]), so anything launched into it must not assume
+     * it outlives the session. Best-effort: failures are swallowed and never fail the connect.
+     */
+    internal var postConnectHook: suspend CoroutineScope.(Peripheral) -> Unit = {}
+
     override suspend fun connect() {
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
         // Reset per-connect lifecycle flags so reuse-after-disconnect works.
         warmupComplete.value = false
         errorPublished.value = false
+        // The previous session's collector cancelled its channel on completion; start each
+        // cycle with a fresh one. Safe unconditionally: drain/warmup senders for this cycle
+        // are launched later in connect(), and prior-cycle senders were cancelled by
+        // disconnect().
+        frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
         try {
             connectWithRetry()
+
+            // Child of the transport scope (dies with it on shutdown), but independently
+            // cancellable per connect cycle via cancelJobs()/disconnect().
+            val tScope = CoroutineScope(scope.coroutineContext + SupervisorJob(scope.coroutineContext[Job]))
+            tuningScope = tScope
+            try {
+                postConnectHook(tScope, peripheral)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // best-effort platform tuning (MTU / connection priority); never fatal.
+            }
 
             stateBridgeJob = peripheral.state
                 .onEach { kableState -> bridgeKableState(kableState) }
@@ -240,7 +283,11 @@ public class BleTransport(
             )
         }
         try {
-            peripheral.write(BleConstants.TORADIO, payload, WriteType.WithoutResponse)
+            // Acknowledged write: firmware exposes `toradio` as CHR_PROPS_WRITE only
+            // (NRF52Bluetooth.cpp:213, NimBLE equivalent) — write-without-response is NOT
+            // in the characteristic's properties and Android/Kable refuses the write
+            // outright. Verified against real radios via MeshtasticBleConformanceTest.
+            peripheral.write(BleConstants.TORADIO, payload, WriteType.WithResponse)
         } catch (e: NotConnectedException) {
             throw MeshtasticException.Transport(
                 "BLE write dropped — peripheral not connected: ${e.message}",
@@ -265,12 +312,14 @@ public class BleTransport(
     }
 
     /** Cold flow over received frames. Single-collection only. */
-    override fun frames(): Flow<Frame> {
+    override fun frames(): Flow<Frame> = flow {
         check(framesCollected.compareAndSet(expect = false, update = true)) {
-            "BleTransport.frames() may only be collected once per instance"
+            "BleTransport.frames() already has an active collector"
         }
-        return frameChannel.consumeAsFlow()
-    }
+        // Resolve frameChannel at collection time (not call time) so a collector started
+        // after reconnect picks up the per-cycle replacement channel.
+        emitAll(frameChannel.consumeAsFlow())
+    }.onCompletion { framesCollected.value = false }
 
     /** Release internal coroutines and frame channel. Idempotent; does not close [Peripheral]. */
     public fun shutdown() {
@@ -278,6 +327,8 @@ public class BleTransport(
         drainJob = null
         observeJob = null
         stateBridgeJob = null
+        // tuningScope's SupervisorJob is a child of scope's Job, so scope.cancel() cancels it.
+        tuningScope = null
         coordinator = null
         scope.cancel()
         frameChannel.close()
@@ -291,6 +342,8 @@ public class BleTransport(
         observeJob = null
         stateBridgeJob?.cancel()
         stateBridgeJob = null
+        tuningScope?.cancel()
+        tuningScope = null
         coordinator = null
     }
 
@@ -368,8 +421,8 @@ public class BleTransport(
     }
 
     internal companion object {
-        private const val START1: Byte = 0x94.toByte()
-        private const val START2: Byte = 0xC3.toByte()
+        private const val START1: Byte = WireFraming.MAGIC_0
+        private const val START2: Byte = WireFraming.MAGIC_1
 
         /** Max protobuf size for ToRadio/FromRadio (`mesh.proto MAX_TO_FROM_RADIO_SIZE`). */
         internal const val MAX_TO_FROM_RADIO_SIZE: Int = 512
@@ -392,7 +445,7 @@ public class BleTransport(
             out[2] = (payload.size shr 8).toByte()
             out[3] = (payload.size and 0xFF).toByte()
             payload.copyInto(out, destinationOffset = 4)
-            return ByteString(*out)
+            return out.toByteString()
         }
     }
 }

@@ -1,12 +1,14 @@
 # ADR 006 — Multi-module rationale
 
-**Status:** Accepted
+**Status:** Accepted (the `:proto` module was superseded by [ADR-015](015-consume-published-protobufs-artifact.md); the rest of the layout stands)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §2, ADR-000 (charter), ADR-001 (proto types), ADR-002 (architecture), ADR-007 (iOS distribution), [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (single-module precedent)
+**Related:** [`../SPEC.md`](../SPEC.md) §2, ADR-000 (charter), ADR-001 (proto types), ADR-002 (architecture), ADR-007 (iOS distribution), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (single-module precedent)
 
 ---
+
+> **Note (2026-06-13):** there is no longer an in-tree `:proto` module or `proto/src/protobufs` submodule. Protobuf types come from the published `org.meshtastic:protobufs` artifact, which `:core` re-exports via `api(libs.meshtasticProtobufs)` — see [ADR-015](015-consume-published-protobufs-artifact.md). Throughout this ADR, read the `:proto` module (and its dependency edges, per-target row, and "bump the proto submodule") as **that external artifact**; the multi-module rationale below is otherwise current. The live module graph is [`../architecture/module-graph.md`](../architecture/module-graph.md).
 
 ## Context
 
@@ -103,7 +105,7 @@ When the roadmap lands, `:core` adds a `wasmJs` source set containing only RPC-c
 - Only `:transport-rpc` (and optionally `:transport-http`, `:transport-mqtt-proxy`) carry `wasmJs` source sets.
 - `:transport-ble`, `:transport-tcp`, `:transport-serial-*`, and `:storage-sqldelight` will not target `wasmJs`.
 
-Implication for MVP design: even though `wasmJs` is deferred, `:core`'s `commonMain` should avoid APIs that lack a `wasmJs` implementation in `kotlinx-coroutines` / `kotlinx-io` / `kotlinx-datetime`, so the future addition is non-breaking. We pin compatible versions in `libs.versions.toml`.
+Implication for MVP design: even though `wasmJs` is deferred, `:core`'s `commonMain` should avoid APIs that lack a `wasmJs` implementation in `kotlinx-coroutines` / `kotlinx-datetime` / Okio, so the future addition is non-breaking. We pin compatible versions in `libs.versions.toml`.
 
 ### Versioning
 

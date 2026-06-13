@@ -253,7 +253,6 @@ If/when we wire Kover, the targets we'd start from:
 | Module | Line coverage aim | Notes |
 |---|---|---|
 | `:core` | ≥ 85 % | Pure logic; the engine + codec live here. Hot reconnect paths still under-covered today. |
-| `:proto` | n/a | Wire-generated code; not measured. |
 | `:storage-sqldelight` | ≥ 70 % | SQL is exercised but identity-rebind & migration paths are thin. |
 | `:transport-tcp` | ≥ 70 % | Reader loop + heartbeat. |
 | `:transport-ble` | ≥ 60 % | Bonded by Kable mocking limits; weighted toward `commonMain` helpers. |

@@ -13,19 +13,18 @@
   "rangeStrategy": "bump",
   "configMigration": true,
   "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] },
-  "git-submodules": {
-    "enabled": true,
-    "schedule": ["before 6am on monday"],
-    "commitMessageTopic": "proto submodule",
-    "prBodyNotes": [
-      "Bumps the vendored `meshtastic/protobufs` submodule. Review the generated API diff carefully — new `oneof` arms break exhaustive `when` for consumers; see `docs/versioning.md`."
-    ]
-  },
   "packageRules": [
     {
       "matchManagers": ["gradle", "gradle-wrapper"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": false
+    },
+    {
+      "matchPackageNames": ["org.meshtastic:protobufs"],
+      "automerge": false,
+      "prBodyNotes": [
+        "Bumps the `org.meshtastic:protobufs` artifact (the wire schema). Review the regenerated API diff carefully — new `oneof` arms break exhaustive `when` for consumers; run `./gradlew updateKotlinAbi`. See `docs/versioning.md`."
+      ]
     },
     {
       "matchPackagePatterns": ["^org\\.jetbrains\\.kotlin"],

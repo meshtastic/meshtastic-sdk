@@ -20,9 +20,9 @@ Use links above as source of truth; do not restate their contents in PR descript
 - JDK 21.
 - Android SDK API 35 for Android targets (`ANDROID_HOME` set).
 - Xcode 15+ for iOS targets.
-- Clone with submodules (`--recurse-submodules`) because protobuf definitions are vendored.
+- No submodules to init — protobuf types come from the published `org.meshtastic:protobufs` Maven artifact, pinned in `gradle/libs.versions.toml` (`meshtasticProtobufs`).
 
-If protocol/generated symbols look wrong, verify submodule state under `proto/src/protobufs`.
+If protocol/generated symbols look wrong, verify the `meshtasticProtobufs` pin resolves (`./gradlew :core:dependencies --configuration jvmCompileClasspath | grep protobufs`).
 
 ## Commands Agents Should Run
 
@@ -43,10 +43,10 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 ## Hard Architectural Rules
 
 - Respect module boundaries from `docs/architecture/module-graph.md`.
-- `:core` must depend only on `:proto`.
+- `:core` must declare no in-tree project dependencies; its only proto dependency is the published `org.meshtastic:protobufs` artifact (re-exported via `api`).
 - Do not add transport/storage implementation dependencies into `:core`.
 - Engine concurrency model is single-writer actor; do not introduce mutex/atomic/synchronized patterns in engine paths (see ADR-002).
-- No `java.*` or `android.*` imports in `commonMain`; use `kotlinx-io` for byte payloads and `kotlinx-datetime` for time.
+- No `java.*` or `android.*` imports in `commonMain`; use `okio.ByteString` for byte payloads (Wire's runtime type; kotlinx-io is deliberately not a dependency) and `kotlinx-datetime` for time.
 - Transport-side locks/atomics (lifecycle/handle ownership only) are allowed but MUST carry an inline `// ADR-012: native-handle ownership` or `// ADR-012: lifecycle idempotency` comment; see `docs/decisions/012-transport-threading.md`.
 
 ## Public API Rules
@@ -54,7 +54,7 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 - Follow API shape rules in ADR-005.
 - Do not introduce `kotlin.Result<T>` in public API.
 - If public API changes are intentional, include regenerated `api/*.api` files from `updateKotlinAbi`.
-- Every public symbol MUST have a KDoc comment; Dokka coverage is a CI gate (`./gradlew dokkaHtml`).
+- Every public symbol MUST have a KDoc comment; Dokka coverage is a CI gate (`./gradlew dokkaGenerate` — Dokka V2; the legacy `dokkaHtml` task is removed and errors under V2 mode).
 
 ## Workflow Expectations
 
@@ -113,7 +113,7 @@ Slim by design. The full inventory:
 
 ## Common Pitfalls
 
-- Forgetting submodules leads to proto/codegen failures.
+- The `org.meshtastic:protobufs` pin in `gradle/libs.versions.toml` is the proto contract; a stale pin (or a moving `-SNAPSHOT`) is the usual cause of missing or renamed generated symbols.
 - Running `checkKotlinAbi` without `updateKotlinAbi` after intentional public API edits causes CI failure.
 - Cross-platform changes should consider target matrix constraints documented in `docs/architecture/module-graph.md`.
 - `Dispatchers.IO` from `commonMain` fails on Native/iOS ("it is internal"); use `expect/actual` per-platform dispatchers instead (see `storage-sqldelight/src/{jvm,android,apple}Main/.../StorageDispatcher.*.kt`).

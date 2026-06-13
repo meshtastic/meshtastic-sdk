@@ -7,9 +7,8 @@
  */
 package org.meshtastic.sdk.transport.serial.internal
 
-import kotlinx.io.Buffer
-import kotlinx.io.bytestring.ByteString
-import kotlinx.io.readByteArray
+import okio.Buffer
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.WireFraming
 
@@ -56,7 +55,7 @@ internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                     }
 
                     payloadLen == 0 -> {
-                        onFrame(Frame(ByteString(byteArrayOf(START1, START2, 0, 0))))
+                        onFrame(Frame(byteArrayOf(START1, START2, 0, 0).toByteString()))
                         state = State.SCAN_FOR_START1
                     }
 
@@ -68,7 +67,7 @@ internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
             }
 
             State.READ_PAYLOAD -> {
-                payloadBuf.writeByte(byte)
+                payloadBuf.writeByte(byte.toInt())
                 if (--bytesRemaining == 0) {
                     val payload = payloadBuf.readByteArray()
                     payloadBuf.clear()
@@ -78,7 +77,7 @@ internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                         (payloadLen shr 8).toByte(),
                         (payloadLen and 0xFF).toByte(),
                     )
-                    onFrame(Frame(ByteString(header + payload)))
+                    onFrame(Frame((header + payload).toByteString()))
                     state = State.SCAN_FOR_START1
                 }
             }

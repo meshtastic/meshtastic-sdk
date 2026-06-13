@@ -46,19 +46,18 @@ Deferring lets the local engine settle to 1.0 first, then the RPC adapter layers
 
 | Module | Targets | Depends on | Published |
 |---|---|---|---|
-| `:rpc` | all incl. `wasmJs` | `:proto` | yes |
-| `:transport-rpc` | all incl. `wasmJs` | `:rpc`, `:proto` (NOT `:core`) | yes |
+| `:rpc` | all incl. `wasmJs` | `org.meshtastic:protobufs` | yes |
+| `:transport-rpc` | all incl. `wasmJs` | `:rpc`, `org.meshtastic:protobufs` (NOT `:core`) | yes |
 | `:host-rpc-server` | jvm, android | `:core`, `:rpc` | yes |
 | `:samples/wasm-app` | `wasmJs` | `:core`, `:transport-rpc` | no (sample) |
 | `:samples/host-rpc-server` | jvm | `:host-rpc-server` | no (sample) |
 
-Existing modules grow a `wasmJs` source set only where they have no platform binding to native libs (`:proto`, `:core`'s public surface where reachable). `:transport-ble`, `:transport-tcp`, `:transport-serial-*`, `:storage-sqldelight` do NOT add `wasmJs` — there's no mature browser equivalent.
+Existing modules grow a `wasmJs` source set only where they have no platform binding to native libs (`:core`'s public surface where reachable; the `org.meshtastic:protobufs` types are already KMP). `:transport-ble`, `:transport-tcp`, `:transport-serial-*`, `:storage-sqldelight` do NOT add `wasmJs` — there's no mature browser equivalent.
 
 ### Per-target compile matrix (post-roadmap)
 
 | Module | android | jvm | iosArm64 | iosX64 | iosSimulatorArm64 | wasmJs |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| `:proto` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `:core` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `:rpc` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `:transport-rpc` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |

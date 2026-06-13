@@ -13,7 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
@@ -301,14 +302,6 @@ public class FakeRadioTransport(
     }
 
     private fun injectFromRadio(fromRadio: FromRadio) {
-        val proto = FromRadio.ADAPTER.encode(fromRadio)
-        val frameBytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        inboundChannel.trySend(Frame(ByteString(frameBytes)))
+        inboundChannel.trySend(fromRadio.toFrame())
     }
 }

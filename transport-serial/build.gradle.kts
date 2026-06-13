@@ -33,7 +33,6 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))
-            implementation(libs.kotlinxIoCore)
         }
         val jvmAndroidMain = getByName("jvmAndroidMain") {
             dependencies {

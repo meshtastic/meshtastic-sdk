@@ -68,7 +68,7 @@ Roadmap transports (`transport-mqtt-proxy`, `transport-rpc`, `transport-http`) c
 
 - Wrap their `StorageProvider` with platform-native encrypted storage:
   - Android: `EncryptedSharedPreferences` / `EncryptedFile` (Jetpack Security).
-  - iOS: Keychain-backed file or `NSFileProtectionComplete` flags via `kotlinx-io` file backend.
+  - iOS: Keychain-backed key material or `NSFileProtectionComplete` flags on the SQLDelight database file.
   - JVM desktop: OS keystore + a KEK that decrypts the SQLDelight DB at startup.
 - Or, in headless server contexts, run on a filesystem with full-disk encryption.
 

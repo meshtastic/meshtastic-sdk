@@ -12,6 +12,15 @@ plugins {
 }
 
 kotlin {
+    // Real-hardware conformance tests (androidDeviceTest) — run on demand against an
+    // advertising Meshtastic radio via `:transport-ble:connectedAndroidTest`. They
+    // assume-skip when no radio is in range, so device-less runs never fail.
+    extensions.configure<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
+        withDeviceTest {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
+    }
+
     sourceSets.all {
     }
 
@@ -24,6 +33,12 @@ kotlin {
         commonTest.dependencies {
             implementation(libs.kotlinTest)
             implementation(libs.coroutinesTest)
+        }
+        getByName("androidDeviceTest").dependencies {
+            implementation(libs.junit)
+            implementation(libs.androidxTestRunner)
+            implementation(libs.androidxTestRules)
+            implementation(project(":storage-sqldelight"))
         }
     }
 }

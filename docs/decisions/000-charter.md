@@ -4,9 +4,11 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads (Meshtastic org)
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md), [`../protocol.md`](../protocol.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client), [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple)
+**Related:** [`../SPEC.md`](../SPEC.md), [`../protocol.md`](../protocol.md), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client), [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple)
 
 ---
+
+> **Note (2026-06-13):** the `meshtastic/protobufs` git submodule referenced below was replaced by the published `org.meshtastic:protobufs` Maven artifact — see [ADR-015](015-consume-published-protobufs-artifact.md). The charter is otherwise unchanged: protobufs are still consumed unmodified, and bumping that dependency is still the only way new fields land.
 
 ## Context
 
@@ -50,7 +52,7 @@ MVP: `androidTarget()`, `jvm()`, `iosArm64()`, `iosX64()`, `iosSimulatorArm64()`
 | `meshtastic/firmware` | **Read-only behavior reference.** Ground truth when Apple and Android disagree. | We do not embed firmware code, schemas other than `protobufs`, or build artifacts. |
 | `meshtastic/Meshtastic-Android` | **Cross-validation reference.** We consult its `core/network` for how the canonical Android client implements the protocol. As an org-internal codebase we may also lift idiomatic snippets directly. | We do not depend on it; it does not depend on us (yet). |
 | `meshtastic/Meshtastic-Apple` | **Cross-validation reference**, especially for transport `requiresPeriodicHeartbeat` semantics, accessory framing, and the canonical Swift bridging surface. | Same as above. |
-| `meshtastic/mqtt-client` | **Sibling KMP library.** Establishes the house style we follow (Kotlin version, Wire 6, kotlinx-io, Ktor, axion-release; see ADR-003). | We do not implement broker-side MQTT; consumers depending on broker-side MQTT add `mqtt-client` themselves. |
+| `meshtastic/mqtt-client` | **Sibling KMP library.** Establishes the house style we follow (Kotlin version, Wire 6, kotlinx-io *(byte-string alignment since reversed in 0.2.0 — `okio.ByteString`; see ADR-003 superseded notes)*, Ktor, axion-release; see ADR-003). | We do not implement broker-side MQTT; consumers depending on broker-side MQTT add `mqtt-client` themselves. |
 
 ## Alternatives considered
 

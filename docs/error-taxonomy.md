@@ -64,6 +64,7 @@ public sealed interface SendFailure {
     public data object IdCollision : SendFailure                // outbound packet id clashed with in-flight
     public data object AckTimeout : SendFailure                 // ACK never observed within Builder.sendTimeout
     public data object HandshakeFailed : SendFailure            // send attempted while handshake unwinding
+    public data class QueueRejected(val res: Int) : SendFailure // QueueStatus.res != 0 (and != 35) — firmware transmit queue rejected the packet before transmission
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure
 }
@@ -95,6 +96,10 @@ The Wire-generated `Routing.Error` enum (from `meshtastic/protobufs:mesh.proto`)
 | (any new value the proto schema adds) | `Other(value)` — forward-compatible without a code change |
 
 `SendFailure.Unknown` is reserved for engine-internal anomalies (encoded `MeshPacket` with no decoded payload, etc.) and should never appear in production.
+
+### `QueueStatus` → `SendFailure.QueueRejected` mapping
+
+`QueueStatus`-driven failures are different from `Routing.Error` NAKs: a non-zero `QueueStatus.res` means the **local** device's transmit queue rejected the packet before it was ever transmitted, and the value lives in the firmware's ERRNO namespace, not the `Routing.Error` enum. In that namespace `32` = unknown/queue full, `33` = no interfaces, `34` = radio disabled, and `35` (`ERRNO_SHOULD_RELEASE`) actually means **success** — the SDK treats `res == 35` as `Sent`, not a failure. Values `1..31` overlap with genuine `Routing.Error` codes (e.g. `DUTY_CYCLE_LIMIT` = 9). The SDK surfaces any rejecting `res` (`!= 0` and `!= 35`) as `SendFailure.QueueRejected(res)`. For in-flight **admin RPCs**, ERRNO rejections (`32..34`) map to `AdminResult.NodeUnreachable`, while `1..31` flow through the normal `Routing.Error` → `AdminResult` mapping below.
 
 ## `AdminResult.Error`
 

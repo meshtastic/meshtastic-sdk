@@ -16,12 +16,14 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -380,17 +382,7 @@ class HandshakeFsmTest {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private fun encodeFromRadio(fromRadio: FromRadio): Frame {
-        val proto = FromRadio.ADAPTER.encode(fromRadio)
-        val bytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        return Frame(ByteString(bytes))
-    }
+    private fun encodeFromRadio(fromRadio: FromRadio): Frame = fromRadio.toFrame()
 
     private fun decodeToRadioOrNull(frame: Frame): ToRadio? {
         val bytes = frame.bytes.toByteArray()

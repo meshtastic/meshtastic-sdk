@@ -14,7 +14,7 @@ and [ADR-012](../decisions/012-transport-threading.md) for the threading contrac
 | Backing library | Ktor `ktor-network` | JuulLabs Kable (`kable-core`) | jSerialComm |
 | Typical use case | Dev / testing, LAN-attached routers, gateways, JVM samples | Phone ↔ handheld radio (the default consumer path) | USB-tethered desktop debugging, Android USB-OTG, headless setups |
 | Latency | Lowest (native sockets) | Highest — GATT round-trips, optional bonding | Low (raw byte stream) |
-| Throughput | Highest — TCP MSS / network-bound | Lowest — ATT MTU, write-without-response cadence | High — 115 200 baud (≈ 11 KB/s) |
+| Throughput | Highest — TCP MSS / network-bound | Lowest — ATT MTU, acknowledged-write cadence | High — 115 200 baud (≈ 11 KB/s) |
 | Requires hardware | None (just a routable host) | BLE radio on host **and** device | USB host port + USB-serial bridge IC |
 | Multiple devices per host | Yes — one `RadioClient` per `(host, port)` | Yes — one `RadioClient` per peripheral | Yes — one `RadioClient` per port |
 | Bonding / pairing | None | Yes — surfaced as [`TransportState.Bonding`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) on first encrypted read | None |
@@ -53,7 +53,7 @@ Per-target Android / FGS detail: [`android-platform-constraints.md`](./android-p
 The `RadioTransport` contract is small and stable. To add a new transport (LoRa proxy,
 WebSocket bridge, mock):
 
-1. Create a new module (e.g. `:transport-foo`); depend only on `:core` and `:proto`.
+1. Create a new module (e.g. `:transport-foo`); depend only on `:core` (which re-exports the wire types).
 2. Implement `RadioTransport` honoring [ADR-012](../decisions/012-transport-threading.md):
    never block the engine's coroutine context; funnel inbound bytes through a single
    `Flow<Frame>`; expose a `StateFlow<TransportState>` that walks

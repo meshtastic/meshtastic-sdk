@@ -63,7 +63,7 @@ dependencies {
 }
 ```
 
-Snapshots are rebuilt on every commit; pin to a specific commit by checking out a Git submodule for reproducibility.
+Snapshot artifacts are mutable — rebuilt on every commit to `main`. For reproducible builds, depend on a released version (e.g. `org.meshtastic:sdk-core:0.1.0`) rather than a `-SNAPSHOT`.
 
 Roadmap (post-1.0, non-breaking adds): `transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server`, `wasmJs` browser support — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 
@@ -185,7 +185,7 @@ the integration guide.
 | `connect()` throws `MeshtasticException.TransportFailure` on TCP | Host unreachable or firmware TCP API disabled | Verify the radio's IP/hostname and that WiFi/Ethernet is enabled. See [TCP setup](docs/integration-guide.md#tcp). |
 | `connect()` hangs or fails repeatedly on BLE | Device not bonded with the OS | Pair the radio in your OS Bluetooth settings before `connect()`. See [BLE platform requirements](docs/integration-guide.md#ble). |
 | `JvmSerialPorts.open(...)` throws permission denied | Serial device permission not granted | On Linux, add the user to `dialout`. On Android, request USB permission first. See [Serial (USB)](docs/integration-guide.md#serial-usb). |
-| `sendText` returns `SendFailure` immediately on long messages | Payload exceeds the 228-byte text limit | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#7-sending-messages). |
+| `sendText` returns `SendFailure` immediately on long messages | Payload exceeds the SDK-enforced 233-byte payload limit (`DATA_PAYLOAD_LEN`) | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#7-sending-messages). |
 | `connect()` throws `MeshtasticException.HandshakeTimeout` | `want_config_id` reply never arrived from the device | Power-cycle the radio, verify firmware ≥ 2.3, then retry. See [Build a `RadioClient`](docs/integration-guide.md#3-build-a-radioclient). |
 
 ```kotlin
@@ -222,10 +222,9 @@ authoritative dependency graph.
 
 | Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | Notes                                                                 |
 |----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|-----------------------------------------------------------------------|
-| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; no platform deps beyond `:proto`.                 |
-| `proto`                    | ✓   | ✓                     | ✓         | ✓             | ✓       | Generated `kotlinx.serialization` proto types.                        |
+| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
 | `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
-| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on `kotlinx-io` sockets.                                        |
+| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on Ktor sockets.                                                |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | iOS targets compile (empty actuals) but no USB-serial API on iOS.     |
 | `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
 | `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |
@@ -255,7 +254,7 @@ authoritative dependency graph.
 ## Building from source
 
 ```bash
-git clone --recurse-submodules git@github.com:meshtastic/meshtastic-sdk.git
+git clone git@github.com:meshtastic/meshtastic-sdk.git
 cd meshtastic-sdk
 ./gradlew check                      # build + test + lint + checkKotlinAbi + detekt + :core:verifyModuleBoundary
 ```
@@ -296,6 +295,6 @@ GPL-3.0-only. See [`LICENSE`](LICENSE) and [`docs/decisions/004-licensing.md`](d
 ## Related Meshtastic projects
 
 - [`meshtastic/firmware`](https://github.com/meshtastic/firmware) — device-side reference (read-only behavior anchor here).
-- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — wire schema (vendored here as a submodule).
+- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — wire schema; consumed as the published `org.meshtastic:protobufs` artifact.
 - [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple) — flagship apps; cross-validation references.
 - [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) — sibling KMP library for direct MQTT broker use.

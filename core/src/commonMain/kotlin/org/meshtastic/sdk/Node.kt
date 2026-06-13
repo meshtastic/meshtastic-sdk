@@ -60,13 +60,13 @@ public enum class NodeField {
  */
 public sealed interface NodeChange {
     /**
-     * All known nodes at subscription time.
+     * All known nodes as a full replacement of any previously folded state.
      *
-     * Emitted exactly once to each new subscriber (never again on the same subscription), before
-     * any live delta. Implemented via single-replay under the actor; subsequent [Added],
-     * [Updated], and [Removed] are guaranteed to apply on top of this snapshot in causal order.
-     *
-     * Late subscribers see this snapshot instead of being stranded without context.
+     * Subscribers receive one as the **first** emission of every subscription (seeded
+     * per-subscription from the engine's current node map via `onSubscription`), and again
+     * live whenever a handshake commits (first connect and every reconnect). Deltas that
+     * follow apply on top in causal order; a delta already reflected in the seeded snapshot
+     * re-applies idempotently.
      */
     public data class Snapshot(val nodes: Map<NodeId, NodeInfo>) : NodeChange
 
@@ -148,6 +148,67 @@ public sealed interface MeshEvent {
      * @property reason human-readable disconnect reason, if available
      */
     public data class MqttDisconnected(val reason: String? = null) : MeshEvent
+
+    /**
+     * The device asked the host to relay an MQTT message on its behalf (MQTT client proxy).
+     *
+     * When `ModuleConfig.mqtt.proxy_to_client_enabled` is set, the firmware tunnels its MQTT
+     * traffic through the connected phone/host instead of its own network stack. Inbound frames
+     * surface here; hosts publish them to the broker and feed broker traffic back with
+     * `RadioClient.sendRaw(ToRadio(mqttClientProxyMessage = …))`.
+     *
+     * @property message the wire [MqttClientProxyMessage][org.meshtastic.proto.MqttClientProxyMessage]
+     * @since 0.2.0
+     */
+    public data class MqttProxyMessage(val message: org.meshtastic.proto.MqttClientProxyMessage) : MeshEvent
+
+    /**
+     * An XModem file-transfer frame arrived from the device.
+     *
+     * Used by firmware-update and file-transfer flows. Hosts drive the transfer by replying
+     * with `RadioClient.sendRaw(ToRadio(xmodemPacket = …))`.
+     *
+     * @property packet the wire [XModem][org.meshtastic.proto.XModem] frame
+     * @since 0.2.0
+     */
+    public data class XmodemPacket(val packet: org.meshtastic.proto.XModem) : MeshEvent
+
+    /**
+     * The device announced a file in its on-device filesystem (sent during the handshake or
+     * after file operations).
+     *
+     * @property info the wire [FileInfo][org.meshtastic.proto.FileInfo]
+     * @since 0.2.0
+     */
+    public data class FileInfoReceived(val info: org.meshtastic.proto.FileInfo) : MeshEvent
+
+    /**
+     * The connected device reported its hardened-build lockdown state.
+     *
+     * Only ever emitted by firmware compiled with `MESHTASTIC_LOCKDOWN` (storage-encryption /
+     * tamper-hardened builds). Such a device sends the variant **immediately after the handshake's
+     * `config_complete_id`** — to tell a freshly-connected, possibly-unauthorized client what it
+     * must do — and again in response to every [AdminApi.lockdown] command. Standard (non-hardened)
+     * builds simply never send it.
+     *
+     * Use [status] to drive provisioning / unlock UX:
+     * - [State.NEEDS_PROVISION][org.meshtastic.proto.LockdownStatus.State.NEEDS_PROVISION] — the
+     *   device has no boot token; send an [AdminApi.lockdown] with a passphrase to provision it.
+     * - [State.LOCKED][org.meshtastic.proto.LockdownStatus.State.LOCKED] — storage is locked;
+     *   `lock_reason` carries a machine-readable cause. Prompt for the passphrase and call
+     *   [AdminApi.lockdown]. Treat unknown `lock_reason` values as "locked, ask for passphrase".
+     * - [State.UNLOCKED][org.meshtastic.proto.LockdownStatus.State.UNLOCKED] — `boots_remaining`
+     *   and `valid_until_epoch` describe the issued session token's lifetime.
+     * - [State.UNLOCK_FAILED][org.meshtastic.proto.LockdownStatus.State.UNLOCK_FAILED] —
+     *   `backoff_seconds` is how long the client must wait before the next passphrase attempt.
+     *
+     * This is the SDK's source of truth for lockdown availability: there is no firmware-version
+     * capability flag because lockdown is a build-time option, not a version gate.
+     *
+     * @property status the wire [LockdownStatus][org.meshtastic.proto.LockdownStatus]
+     * @since 0.3.0
+     */
+    public data class LockdownStatusChanged(val status: org.meshtastic.proto.LockdownStatus) : MeshEvent
 
     /**
      * A transport-level error occurred.

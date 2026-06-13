@@ -16,9 +16,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
-import kotlinx.io.readByteArray
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
@@ -70,9 +69,11 @@ import kotlin.time.Duration.Companion.seconds
  * **No host plumbing:** foreground services, permissions, notifications, and WorkManager are the
  * app's responsibility. The SDK owns only the engine.
  *
- * **Resource management:** implements [AutoCloseable], so `client.use { … }` guarantees cleanup
- * even on exception. Prefer `disconnect()` (suspend) over `close()` (blocking) when inside a
- * coroutine.
+ * **Resource management:** call the suspending [disconnect] when done — typically from the same
+ * structured scope that owns the session, e.g. `try { … } finally { client.disconnect() }`.
+ * There is deliberately no blocking `close()`/[AutoCloseable]: a blocking bridge invites ANR on
+ * Android's main thread and deadlock on iOS main, and a radio session has no non-suspending way
+ * to tear down safely.
  *
  * @since 0.1.0
  */
@@ -82,7 +83,7 @@ public class RadioClient internal constructor(
     private val rpcTimeout: Duration,
     private val autoSyncTimeOnConnect: Boolean,
     private val parentContext: kotlin.coroutines.CoroutineContext,
-) : AutoCloseable {
+) {
 
     // ── Observable state ────────────────────────────────────────────────────
 
@@ -123,9 +124,14 @@ public class RadioClient internal constructor(
     public val channels: StateFlow<List<org.meshtastic.proto.Channel>?> = engine.channelsState.asStateFlow()
 
     /**
-     * Node-change deltas. Late subscribers receive a [NodeChange.Snapshot] immediately
-     * (single-replay), then live [NodeChange.Added] / [NodeChange.Updated] /
-     * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal order.
+     * Node-change deltas. **Every** subscriber — early or late — first receives a
+     * [NodeChange.Snapshot] of the engine's current node map (seeded per-subscription via
+     * `onSubscription`), then live [NodeChange.Added] / [NodeChange.Updated] /
+     * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal
+     * order. A delta whose change is already reflected in the seeded snapshot re-applies
+     * idempotently. The handshake additionally emits a live [NodeChange.Snapshot] at Stage-2
+     * commit (and after each reconnect), which existing subscribers must treat as a full
+     * replacement.
      *
      * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
      * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
@@ -133,7 +139,8 @@ public class RadioClient internal constructor(
      * flow. If the engine inbox itself fills as a result, drops surface as
      * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
      */
-    public val nodes: Flow<NodeChange> = engine.nodes.hide()
+    public val nodes: Flow<NodeChange> = engine.nodes
+        .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
 
     /**
      * Inbound decoded packets.
@@ -276,21 +283,6 @@ public class RadioClient internal constructor(
         engine.disconnect()
     }
 
-    /**
-     * Blocking close for [AutoCloseable] conformance.
-     *
-     * Delegates to [disconnect] via `runBlocking`. Prefer the suspending [disconnect] when
-     * already inside a coroutine — this overload exists so `RadioClient` works with Kotlin's
-     * `use { }` idiom and Java's try-with-resources.
-     *
-     * **Warning:** Do not call from the main/UI thread — `runBlocking` will block the caller
-     * until disconnection completes, which can trigger ANR on Android or deadlock on iOS main.
-     * Use [disconnect] directly from a coroutine scope instead.
-     */
-    override fun close() {
-        runBlocking { disconnect() }
-    }
-
     // ── Outbound ────────────────────────────────────────────────────────────
 
     /**
@@ -346,9 +338,13 @@ public class RadioClient internal constructor(
      * The returned [MessageHandle] will resolve to [SendOutcome.Success] on ACK, or
      * [SendOutcome.Failure] if the firmware exhausts retransmissions without confirmation.
      *
+     * Parameter order matches [sendReaction] (`to` before `channel`) as of 0.2.0.
+     *
      * @param text the message text (UTF-8 encoded)
-     * @param channel the channel index (default: 0)
      * @param to the destination [NodeId] (default: [NodeId.BROADCAST])
+     * @param channel the channel index (default: 0)
+     * @param replyId the packet ID of the message this text replies to (threaded reply), or `0`
+     *   (default) for a standalone message (parameter added in 0.2.0)
      * @return a handle tracking delivery state
      * @throws MeshtasticException.NotConnected if not currently connected
      * @throws MeshtasticException.PayloadTooLarge if the encoded text exceeds the device limit
@@ -356,8 +352,9 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class)
     public fun sendText(
         text: String,
-        channel: ChannelIndex = ChannelIndex(0),
         to: NodeId = NodeId.BROADCAST,
+        channel: ChannelIndex = ChannelIndex(0),
+        replyId: Int = 0,
     ): MessageHandle {
         val payload = text.encodeToByteArray()
         if (payload.size > DATA_PAYLOAD_LEN) {
@@ -370,6 +367,7 @@ public class RadioClient internal constructor(
             decoded = org.meshtastic.proto.Data(
                 portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
                 payload = payload.toByteString(),
+                reply_id = replyId,
             ),
         )
         return send(packet)
@@ -478,42 +476,39 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Convenience: build a [MeshPacket] for the given [portnum] from a [kotlinx.io.Buffer] payload.
+     * Convenience: build a [MeshPacket] for the given [portnum] from an [okio.ByteString] payload.
      *
-     * Identical to the `ByteArray`-accepting [send] overload but reads from a [kotlinx.io.Buffer],
-     * allowing callers to compose payloads with the `kotlinx-io` sink/source API instead of raw
-     * byte arrays. The buffer is consumed (read fully) on invocation.
+     * Identical to the `ByteArray`-accepting [send] overload but takes the byte-string type that
+     * Wire-generated proto fields already use — pass payloads (or slices of received payloads)
+     * straight through without copying into a raw array first.
      *
      * @param portnum the application port number
-     * @param payload a [kotlinx.io.Buffer] containing the wire-encoded payload (≤ [DATA_PAYLOAD_LEN])
+     * @param payload the wire-encoded payload (≤ [DATA_PAYLOAD_LEN])
      * @param to destination [NodeId]; defaults to [NodeId.BROADCAST]
      * @param channel [ChannelIndex] to send on; defaults to channel 0 (primary)
      * @param wantAck request a reliable delivery ACK
      * @param hopLimit explicit hop limit override; `null` keeps the device default
      * @return a [MessageHandle] tracking delivery state
      * @throws MeshtasticException.NotConnected if not currently connected
-     * @throws MeshtasticException.PayloadTooLarge if the buffer content exceeds the device limit
-     * @since 0.1.0
+     * @throws MeshtasticException.PayloadTooLarge if the payload exceeds the device limit
+     * @since 0.2.0
      */
     @Throws(MeshtasticException::class, CancellationException::class)
     public suspend fun send(
         portnum: PortNum,
-        payload: kotlinx.io.Buffer,
+        payload: okio.ByteString,
         to: NodeId = NodeId.BROADCAST,
         channel: ChannelIndex = ChannelIndex(0),
         wantAck: Boolean = false,
         hopLimit: Int? = null,
-    ): MessageHandle {
-        val bytes = payload.readByteArray()
-        return send(
-            portnum = portnum,
-            payload = bytes,
-            to = to,
-            channel = channel,
-            wantAck = wantAck,
-            hopLimit = hopLimit,
-        )
-    }
+    ): MessageHandle = send(
+        portnum = portnum,
+        payload = payload.toByteArray(),
+        to = to,
+        channel = channel,
+        wantAck = wantAck,
+        hopLimit = hopLimit,
+    )
 
     // ── Sub-APIs ────────────────────────────────────────────────────────────
 
@@ -877,3 +872,21 @@ public interface PayloadRedactor {
  * @since 0.1.0
  */
 public const val DATA_PAYLOAD_LEN: Int = 233
+
+/**
+ * Build a [RadioClient] with Kotlin builder-lambda syntax — sugar over [RadioClient.Builder]:
+ *
+ * ```kotlin
+ * val client = RadioClient {
+ *     transport(TcpTransport(host = "meshtastic.local"))
+ *     storage(SqlDelightStorageProvider(baseDir = dataDir))
+ *     autoReconnect(AutoReconnectConfig(enabled = true))
+ * }
+ * ```
+ *
+ * Swift and step-wise callers should keep using [RadioClient.Builder] directly.
+ *
+ * @since 0.2.0
+ */
+public fun RadioClient(configure: RadioClient.Builder.() -> Unit): RadioClient =
+    RadioClient.Builder().apply(configure).build()

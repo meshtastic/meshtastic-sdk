@@ -51,7 +51,7 @@
 - [ ] CHK015 All affected modules compile for: `jvm`, `androidTarget`, `iosArm64`, `iosX64`, `iosSimulatorArm64`
 - [ ] CHK016 Platform-specific code uses `expect/actual` — not conditional compilation
 - [ ] CHK017 `Dispatchers.IO` not used from `commonMain` (use per-platform `expect/actual` dispatchers)
-- [ ] CHK018 Byte payloads use `kotlinx.io.bytestring.ByteString`, not `okio.ByteString`
+- [ ] CHK018 Byte payloads use `okio.ByteString` (kotlinx-io is not a dependency)
 
 ## Testing
 

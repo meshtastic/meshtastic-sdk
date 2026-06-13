@@ -6,9 +6,11 @@
 | **Date** | 2026-04-19 |
 | **Deciders** | maintainers |
 | **Supersedes** | (none) |
-| **Related** | [ADR-002](./002-architecture.md), [ADR-005](./005-api-shape.md), [ADR-006](./006-multi-module-rationale.md), [`docs/architecture/module-graph.md`](../architecture/module-graph.md) |
+| **Related** | [ADR-002](./002-architecture.md), [ADR-005](./005-api-shape.md), [ADR-006](./006-multi-module-rationale.md), [ADR-015](./015-consume-published-protobufs-artifact.md), [`docs/architecture/module-graph.md`](../architecture/module-graph.md) |
 
 ## Context
+
+> **Note (2026-06-13):** "`:core` depends only on `:proto`" below now reads as "`:core` declares **no** in-tree project dependencies" — proto types come from the published `org.meshtastic:protobufs` artifact, not an in-tree `:proto` module (see [ADR-015](./015-consume-published-protobufs-artifact.md)). `:core:verifyModuleBoundary` accordingly fails on *any* project dependency. The enforcement decision (detekt + Gradle, not Konsist) is unchanged.
 
 The audit flagged that AGENTS.md, CONTRIBUTING.md, and the ADR template all
 reference `./gradlew :core:konsistTest` and "Konsist rule" follow-ups, but

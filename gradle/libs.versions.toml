@@ -12,7 +12,6 @@ androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
 coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
-kotlinxIo                   = "0.9.0"
 kotlinxDatetime             = "0.7.1"
 kotlinxSerialization        = "1.11.0"
 atomicfu                    = "0.32.1"
@@ -27,7 +26,7 @@ meshtasticProtobufs         = "2.7.25"
 sqldelight                  = "2.3.2"
 
 # --- Transports ---
-kable                       = "0.42.0"
+kable                       = "0.43.0"
 ktor                        = "3.5.0"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
@@ -48,6 +47,8 @@ turbine                     = "1.2.1"
 kotest                      = "6.1.11"
 mockk                       = "1.14.9"
 junit                       = "4.13.2"
+androidxTestRunner          = "1.7.0"
+androidxTestRules           = "1.7.0"
 
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.36.0"
@@ -70,7 +71,6 @@ coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutin
 coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutines" }
 kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
 kotlinxSerializationCore    = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core",     version.ref = "kotlinxSerialization" }
-kotlinxIoCore               = { module = "org.jetbrains.kotlinx:kotlinx-io-core",                version.ref = "kotlinxIo" }
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
 
@@ -101,6 +101,8 @@ turbine                     = { module = "app.cash.turbine:turbine",            
 kotestAssertions            = { module = "io.kotest:kotest-assertions-core",                     version.ref = "kotest" }
 mockk                       = { module = "io.mockk:mockk",                                       version.ref = "mockk" }
 junit                       = { module = "junit:junit",                                          version.ref = "junit" }
+androidxTestRunner          = { module = "androidx.test:runner",                              version.ref = "androidxTestRunner" }
+androidxTestRules           = { module = "androidx.test:rules",                               version.ref = "androidxTestRules" }
 
 androidxActivityCompose     = { module = "androidx.activity:activity-compose",                   version.ref = "androidxActivityCompose" }
 lifecycleRuntimeCompose     = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidxLifecycleCompose" }

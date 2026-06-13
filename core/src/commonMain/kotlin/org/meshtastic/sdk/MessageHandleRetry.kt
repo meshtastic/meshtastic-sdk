@@ -82,6 +82,7 @@ private fun SendFailure.isRetryable(): Boolean = when (this) {
     SendFailure.Timeout,
     SendFailure.DutyCycleLimit,
     SendFailure.AckTimeout,
+    is SendFailure.QueueRejected,
     is SendFailure.Other,
     is SendFailure.Unknown,
     -> true

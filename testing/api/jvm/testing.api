@@ -33,6 +33,10 @@ public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtasti
 	public static synthetic fun simulateError$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;Ljava/lang/Throwable;ZILjava/lang/Object;)V
 }
 
+public final class org/meshtastic/sdk/testing/FramesKt {
+	public static final fun toFrame (Lorg/meshtastic/proto/FromRadio;)Lorg/meshtastic/sdk/Frame;
+}
+
 public final class org/meshtastic/sdk/testing/InMemoryStorage : org/meshtastic/sdk/DeviceStorage {
 	public fun <init> ()V
 	public fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

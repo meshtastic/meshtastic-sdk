@@ -20,6 +20,7 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.KeyVerificationAdmin
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
@@ -75,11 +76,17 @@ internal class AdminApiImpl(
     }
 
     /**
-     * Returns `true` if the device is in managed mode, meaning all admin commands from non-zero
-     * `from` addresses are silently dropped by firmware. The SDK always sends with
-     * `from = myNodeNum` (non-zero post-handshake), so all admin commands would be ignored.
+     * Returns `true` when this AdminApi targets the **local** device and that device is in
+     * managed mode. Firmware rewrites every phone packet to `from = 0` (MeshService
+     * `handleToRadio`) and rejects local admin on a managed device via that branch
+     * (AdminModule: `mp.from == 0 && is_managed`). Admin packets addressed to *remote* nodes
+     * are routed into the mesh untouched — the target's own admin-key config authorizes them —
+     * so remote admin must NOT be short-circuited by the local device's managed flag
+     * (managed-fleet deployments administer remote managed nodes from a managed local node).
      */
-    private fun isDeviceManaged(): Boolean {
+    private fun isLocalTargetManaged(): Boolean {
+        val isLocalTarget = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
+        if (!isLocalTarget) return false
         val bundle = engine.configBundleState.value ?: return false
         return bundle.configs.any { config ->
             config.security?.is_managed == true
@@ -256,7 +263,7 @@ internal class AdminApiImpl(
     // ── DFU / file management ───────────────────────────────────────────────
 
     override suspend fun enterDfuMode(): AdminResult<Unit> {
-        if (isDeviceManaged()) return AdminResult.Unauthorized
+        if (isLocalTargetManaged()) return AdminResult.Unauthorized
         return submitAdminFireAndForget(AdminMessage(enter_dfu_mode_request = true))
     }
 
@@ -309,6 +316,23 @@ internal class AdminApiImpl(
         submitAdminAck(AdminMessage(key_verification = verification))
     }
 
+    // ── Lockdown (hardened builds) ──────────────────────────────────────────
+
+    override suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit> {
+        // Local-only: firmware (PhoneAPI::handleLockdownAuthInline) consumes lockdown_auth inline
+        // on the direct phone link and wipes the passphrase before it can reach the mesh. A
+        // remote-targeting instance must NOT send it — that would leak a passphrase onto the mesh
+        // where no inline handler exists. Managed-mode is intentionally NOT consulted: lockdown is
+        // a pre-auth security primitive, independent of admin authorization.
+        if (targetNode != null && targetNode.raw != engine.myNodeNumOrNull()) {
+            return AdminResult.Unauthorized
+        }
+        val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
+        // Fire-and-forget: the device answers with a fresh FromRadio.lockdown_status
+        // (MeshEvent.LockdownStatusChanged), not a routing ACK.
+        return submitAdminFireAndForget(AdminMessage(lockdown_auth = auth), to = NodeId(local))
+    }
+
     // ── OTA updates ─────────────────────────────────────────────────────────
 
     override suspend fun rebootOta(after: Duration): AdminResult<Unit> = retryOnSessionExpiry {
@@ -357,7 +381,7 @@ internal class AdminApiImpl(
     }
 
     override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> {
-        if (isDeviceManaged()) return AdminResult.Unauthorized
+        if (isLocalTargetManaged()) return AdminResult.Unauthorized
         return submitAdminFireAndForget(AdminMessage(set_time_only = unixTime))
     }
 
@@ -476,12 +500,14 @@ internal class AdminApiImpl(
      * so a second `SessionKeyExpired` surfaces to the caller (the device is rejecting our key).
      */
     private suspend fun <T> retryOnSessionExpiry(block: suspend () -> AdminResult<T>): AdminResult<T> {
-        if (isDeviceManaged()) return AdminResult.Unauthorized
+        if (isLocalTargetManaged()) return AdminResult.Unauthorized
         val first = block()
         if (first !is AdminResult.SessionKeyExpired) return first
-        // Re-seed against the *local* device PhoneAPI, even when this AdminApiImpl is scoped to
-        // a remote node via forNode(dest). Remote getOwner requires a valid session passkey, so
-        // retrying against targetNode would just loop the same expiry failure.
+        // Re-seed against the node this AdminApiImpl is scoped to. Session passkeys are
+        // per-node (each node issues its own), and admin *read* requests don't require one —
+        // so a get_owner_request to the target succeeds and its response carries a fresh
+        // passkey, which the engine latches keyed by the responder. The replayed [block] then
+        // picks it up via the engine's outbound admin choke point.
         reseedSessionPasskey()
         return block()
     }
@@ -489,7 +515,7 @@ internal class AdminApiImpl(
     private suspend fun reseedSessionPasskey(): AdminResult<User> = submitAdminRpc(
         adminMsg = AdminMessage(get_owner_request = true),
         kind = ResponseKind.AdminOwner,
-        to = NodeId(engine.myNodeNumOrNull() ?: 0),
+        to = localNode(),
     )
 
     private fun localNode(): NodeId = targetNode ?: NodeId(engine.myNodeNumOrNull() ?: 0)
@@ -581,6 +607,9 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
     SendFailure.Timeout, SendFailure.AckTimeout -> AdminResult.Timeout
 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
+
+    // Firmware transmit queue rejected the packet (queue full) — back off and retry.
+    is SendFailure.QueueRejected -> AdminResult.RateLimited
 
     is SendFailure.Other -> when (reason.routingError) {
         Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired

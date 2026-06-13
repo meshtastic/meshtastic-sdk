@@ -24,7 +24,7 @@ The Meshtastic firmware exposes a single primary service with three characterist
 |---|---|---|
 | Mesh service (scan filter) | `6ba1b218-15a8-461f-9fa8-5dcae273eafd` | — |
 | `fromradio` | `2c55e69e-4993-11ed-b878-0242ac120002` | READ — one full `FromRadio` per read; empty buffer means drained |
-| `toradio` | `f75c76d2-129e-4dad-a1dd-7866124401e7` | WRITE-WITHOUT-RESPONSE — one full `ToRadio` per write |
+| `toradio` | `f75c76d2-129e-4dad-a1dd-7866124401e7` | WRITE (acknowledged) — one full `ToRadio` per write; firmware declares `CHR_PROPS_WRITE` only |
 | `fromnum` | `ed9da18c-a800-4f66-a670-aa7547e34453` | NOTIFY+READ — 4-byte LE wake counter; treat as a wake signal only and always drain `fromradio` to empty |
 
 GATT message boundaries replace the stream framer (`0x94 0xC3 LEN_HI LEN_LO`) used by TCP/serial:

@@ -14,6 +14,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
@@ -33,6 +34,7 @@ import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -1158,17 +1160,7 @@ class AdminApiImplComprehensiveTest {
     private fun handshakeFrames(vararg fromRadio: org.meshtastic.proto.FromRadio): List<Frame> =
         fromRadio.map(::fromRadioFrame)
 
-    private fun fromRadioFrame(fromRadio: org.meshtastic.proto.FromRadio): Frame {
-        val proto = org.meshtastic.proto.FromRadio.ADAPTER.encode(fromRadio)
-        val bytes = ByteArray(4 + proto.size).apply {
-            this[0] = 0x94.toByte()
-            this[1] = 0xC3.toByte()
-            this[2] = (proto.size shr 8).toByte()
-            this[3] = (proto.size and 0xFF).toByte()
-            proto.copyInto(this, destinationOffset = 4)
-        }
-        return Frame(kotlinx.io.bytestring.ByteString(bytes))
-    }
+    private fun fromRadioFrame(fromRadio: org.meshtastic.proto.FromRadio): Frame = fromRadio.toFrame()
 
     private suspend fun TestScope.assertAckedOperation(
         storageProvider: StorageProvider = InMemoryStorageProvider(),
@@ -1265,6 +1257,6 @@ class AdminApiImplComprehensiveTest {
             this[3] = (proto.size and 0xFF).toByte()
             proto.copyInto(this, destinationOffset = 4)
         }
-        return Frame(kotlinx.io.bytestring.ByteString(bytes))
+        return Frame(bytes.toByteString())
     }
 }

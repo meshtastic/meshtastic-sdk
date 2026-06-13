@@ -7,7 +7,9 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.sdk.ConfigBundle
 import org.meshtastic.sdk.ConnectionState
@@ -15,6 +17,48 @@ import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioClient
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
+
+/**
+ * Run [block] against a connected session, guaranteeing teardown.
+ *
+ * Connects, executes [block], and always disconnects afterwards — on success, on exception,
+ * and on cancellation (the disconnect runs under [NonCancellable] so a cancelled caller still
+ * tears the session down cleanly). This is the structured-concurrency replacement for a
+ * blocking `use { }` idiom, which `RadioClient` deliberately does not offer:
+ *
+ * ```kotlin
+ * val owner = client.withConnection {
+ *     admin.getOwner().getOrThrow()
+ * }
+ * ```
+ *
+ * The client is **single-use**: after [withConnection] returns, build a new [RadioClient]
+ * for the next session.
+ *
+ * @param teardownTimeout upper bound on the guaranteed disconnect (default 10s) — protects the
+ *   caller from a wedged transport teardown while still covering the polite-goodbye flush and
+ *   storage close on every healthy path
+ * @return whatever [block] returns
+ * @throws MeshtasticException any failure surfaced by [RadioClient.connect]
+ * @since 0.2.0
+ */
+public suspend fun <T> RadioClient.withConnection(
+    teardownTimeout: Duration = 10.seconds,
+    block: suspend RadioClient.() -> T,
+): T {
+    connect()
+    return try {
+        block()
+    } finally {
+        withContext(NonCancellable) {
+            // Bound the guaranteed teardown: a hung transport disconnect (e.g. a wedged
+            // Android BLE stack) must not pin the caller uncancellably forever.
+            withTimeoutOrNull(teardownTimeout) {
+                disconnect()
+            }
+        }
+    }
+}
 
 /**
  * Connect and suspend until the handshake settles, returning the resolved [ConfigBundle] (HLP-34).

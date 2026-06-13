@@ -36,7 +36,7 @@ graph TD
 
 1.  **`libs.versions.toml` Alignment:**
     *   Align Wire, Coroutines, and KMP versions with the SDK. Current pinned versions: Wire 6.2.0, Coroutines 1.10.2, Kotlin 2.3.21, Koin 4.2.1 — verify these match SDK requirements before bumping.
-    *   Add `:sdk-core`, `:sdk-proto`, `:sdk-transport-ble`, `:sdk-transport-tcp`, `:sdk-transport-serial`, `:sdk-storage-sqldelight`, and `:sdk-testing` modules.
+    *   Add `:sdk-core` (which re-exports the `org.meshtastic.proto.*` types via the `org.meshtastic:protobufs` artifact), `:sdk-transport-ble`, `:sdk-transport-tcp`, `:sdk-transport-serial`, `:sdk-storage-sqldelight`, and `:sdk-testing` modules.
 2.  **Model Swap (`core/model` to Wire):**
     *   The app has `core:model:NodeInfo`. The SDK uses `org.meshtastic.proto.NodeInfo` (Wire).
     *   Delete the custom `core/model` protobuf mappings (70 files, ~719 import sites across `app` and `feature` modules — this is the single largest mechanical task in the migration). Perform a surgical package rename across the `app` and `core` modules to use the generated Wire types directly. Keep in mind that Wire generates `snake_case` properties (e.g. `node.user.long_name`).

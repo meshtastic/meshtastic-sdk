@@ -33,7 +33,7 @@ public object BleConstants {
         Uuid.parse("2c55e69e-4993-11ed-b878-0242ac120002")
 
     /**
-     * `toradio` — WRITE-WITHOUT-RESPONSE characteristic. Each write carries one full
+     * `toradio` — WRITE (acknowledged) characteristic. Each write carries one full
      * `ToRadio` protobuf payload (no `0x94 0xC3` framing — BLE uses GATT message
      * boundaries directly).
      */

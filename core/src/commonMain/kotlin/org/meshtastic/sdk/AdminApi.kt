@@ -15,6 +15,7 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.KeyVerificationAdmin
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.Position
@@ -46,7 +47,9 @@ public interface AdminApi {
      * All calls on the returned instance route admin messages to the specified remote node
      * over the mesh. Note: `editSettings`, `batch`, `getDeviceConnectionStatus`, and lifecycle
      * commands (`reboot`, `shutdown`, `factoryReset`, `nodeDbReset`) work identically — the
-     * firmware handles admin-over-mesh transparently.
+     * firmware handles admin-over-mesh transparently. The sole exception is [lockdown], which is
+     * local-only (the firmware consumes its passphrase inline on the phone link); calling it on a
+     * remote-targeting instance returns [AdminResult.Unauthorized].
      *
      * ```kotlin
      * val remoteAdmin = client.admin.forNode(NodeId(0x12345678.toInt()))
@@ -227,6 +230,36 @@ public interface AdminApi {
 
     /** Initiate or respond to a key verification exchange. */
     public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
+
+    // ── Lockdown (hardened builds) ──────────────────────────────────────────
+
+    /**
+     * Provision, unlock, or lock the device's storage lockdown
+     * (`MESHTASTIC_LOCKDOWN` hardened firmware builds only).
+     *
+     * The device reports its current state via [MeshEvent.LockdownStatusChanged] — observe that to
+     * decide which [LockdownAuth] to send and to learn the outcome:
+     * - **Provision / unlock:** set [LockdownAuth.passphrase] (1–32 bytes). On success the device
+     *   issues a session token bounded by [LockdownAuth.boots_remaining] (boot-count TTL, `0` =
+     *   firmware default) and [LockdownAuth.valid_until_epoch] (absolute wall-clock expiry, `0` =
+     *   no time limit).
+     * - **Lock now:** set [LockdownAuth.lock_now] = `true` (ignores the passphrase) to immediately
+     *   revoke admin authorization and reboot into the locked state.
+     *
+     * **Local device only.** The firmware consumes `lockdown_auth` inline on the direct phone link
+     * (BLE/serial/TCP) and wipes the passphrase from memory before it can reach the mesh/admin
+     * routing layer. Calling this on a [forNode]-scoped instance therefore returns
+     * [AdminResult.Unauthorized] rather than leaking a passphrase onto the mesh.
+     *
+     * **Fire-and-forget.** [AdminResult.Success] means the request was queued onto the local link,
+     * not that the device accepted the passphrase — the device answers with a fresh
+     * [MeshEvent.LockdownStatusChanged] rather than a routing ACK. Returns
+     * [AdminResult.NodeUnreachable] if no session has been established yet.
+     *
+     * @param auth the lockdown command parameters
+     * @since 0.3.0
+     */
+    public suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit>
 
     // ── OTA updates ─────────────────────────────────────────────────────────
 

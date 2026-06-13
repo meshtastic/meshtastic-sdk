@@ -151,12 +151,15 @@ does not have to match.
 - `RadioClient.connect()` suspends until the engine reaches
   `ConnectionState.Connected`. **Cancelling the caller scope after
   connect returns does not disconnect the radio** — call
-  `client.close()` for that. `close()` is idempotent and suspends
-  until cleanup completes.
-- A closed `RadioClient` is **not reusable**. Build a new one via the
-  `Builder`.
+  `client.disconnect()` for that. `disconnect()` is idempotent and
+  suspends until cleanup completes. There is deliberately no blocking
+  `close()`/`AutoCloseable` — a blocking bridge invites ANR on
+  Android's main thread; tear down from a coroutine, e.g.
+  `try { … } finally { client.disconnect() }`.
+- A disconnected `RadioClient` is **not reusable**. Build a new one via
+  the `Builder`.
 - Heartbeats are owned by the engine, not by your collector. Cancelling
-  a flow collection does not stop heartbeats; only `close()` does.
+  a flow collection does not stop heartbeats; only `disconnect()` does.
 - `connect()` itself is cancellable; cancellation during connect is
   fully unwound (including any in-flight transport handshake).
 

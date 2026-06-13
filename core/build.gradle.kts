@@ -24,9 +24,8 @@ kotlin {
         commonMain.dependencies {
             api(libs.meshtasticProtobufs)
             api(libs.coroutinesCore)
-            api(libs.kotlinxIoCore)
             implementation(libs.atomicfu)
-            implementation(libs.okio)
+            api(libs.okio)
         }
         commonTest.dependencies {
             implementation(libs.kotlinTest)
@@ -34,7 +33,6 @@ kotlin {
             implementation(libs.kotestAssertions)
             implementation(libs.coroutinesTest)
             implementation(project(":testing"))
-            implementation(libs.okio)
         }
         androidMain.dependencies {
             implementation(libs.coroutinesAndroid)

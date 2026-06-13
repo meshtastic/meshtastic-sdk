@@ -1,4 +1,4 @@
-# `meshtastic-sdk` — Implementation Plan (v2.2, post-audit)
+# `meshtastic-sdk` — Implementation Plan (v2.3, post-audit)
 
 > **Mission.** A drop-in Kotlin Multiplatform SDK that lets any Android / iOS / JVM-desktop app talk to a Meshtastic radio through a clean, modern Kotlin API.
 >
@@ -39,7 +39,7 @@ A faithful Kotlin client of the Meshtastic device PhoneAPI (the host-side wire p
 
 ### Hard rules
 1. **License: GPL-3.0**, consistent across repo, README, ADRs, and POMs. (Note: this is the same license as `Meshtastic-Android`, which constrains downstream adopters to GPL-compatible terms — accepted trade-off given the project's existing GPL ecosystem.)
-2. **No `java.*` or `android.*` in `commonMain`.** Use `kotlinx-io.bytestring` for public byte payloads (Okio is acceptable transport-internally); `kotlinx.coroutines.sync.Mutex` is allowed only outside the engine package (see rule 5 / [ADR-002](./decisions/002-architecture.md)); use atomicfu for atomics and kotlinx-datetime for time.
+2. **No `java.*` or `android.*` in `commonMain`.** Use `okio.ByteString` for public byte payloads — it is Wire's runtime type and the single byte vocabulary; `kotlinx-io` is deliberately not a dependency (reversed in 0.2.0; see §11); `kotlinx.coroutines.sync.Mutex` is allowed only outside the engine package (see rule 5 / [ADR-002](./decisions/002-architecture.md)); use atomicfu for atomics and kotlinx-datetime for time.
 3. **No `kotlin.Result<T>` in any public API** (poor Swift bridging).
 4. **Public API uses three response shapes deliberately:**
    - `suspend fun` *throwing* sealed `MeshtasticException` — for fatal/programmer errors and transport unreachable
@@ -53,7 +53,7 @@ A faithful Kotlin client of the Meshtastic device PhoneAPI (the host-side wire p
 10. **Pre-1.0:** breaking changes allowed; require `updateKotlinAbi` + CHANGELOG entry. **1.0+:** binary-compatibility-validator hard-gates.
 
 ### Authoritative protocol sources
-- **Schema:** [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — vendored as `proto/src/protobufs` git submodule.
+- **Schema:** [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — consumed as the published `org.meshtastic:protobufs` Maven artifact (pinned in `gradle/libs.versions.toml`), not vendored.
 - **Behavior reference:** [`meshtastic/firmware`](https://github.com/meshtastic/firmware) (read-only).
 - **`Meshtastic-Android`** — port what's useful (codec, handshake FSM, BLE handler, encryption helpers) into `commonMain` / `androidMain` as appropriate.
 - **Real device** — required from Phase 2 onward.
@@ -155,7 +155,7 @@ MQTTastic has 2 transports (TCP, WS) over a single Ktor dependency, with no plat
 > **ADR-001:** the SDK exposes Wire-generated protobuf types directly. Anywhere the API below references a protocol payload (`MeshPacket`, `NodeInfo`, `Config`, `User`, `Channel`, `Position`, `Telemetry`, `AdminMessage`, `PortNum`, etc.), that is the **Wire-generated type from `org.meshtastic.proto.*`**, not a hand-rolled mirror. The SDK curates only what does not exist in the proto schema (lifecycle, transport, IDs, send tracking).
 
 ```kotlin
-public class RadioClient internal constructor(/* ... */) : AutoCloseable {
+public class RadioClient internal constructor(/* ... */) {
 
     public val connection: StateFlow<ConnectionState>
 
@@ -196,8 +196,12 @@ public class RadioClient internal constructor(/* ... */) : AutoCloseable {
     /** Idempotent; never throws. */
     public suspend fun disconnect()
 
-    /** Blocking close for AutoCloseable / use {} conformance. Delegates to disconnect via runBlocking. */
-    override fun close()
+    // Lifecycle is suspend-only: there is deliberately NO AutoCloseable/close() blocking bridge
+    // (blocking teardown invites ANR on Android main / deadlock on iOS main). For scoped use, the
+    // `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds,
+    // block: suspend RadioClient.() -> T): T` extension connects, runs the block, and always
+    // disconnects (success, exception, or cancellation; teardown bounded by the timeout under
+    // NonCancellable).
 
     /**
      * Enqueue an outbound packet. Returns immediately with a handle whose [MessageHandle.state]
@@ -209,8 +213,8 @@ public class RadioClient internal constructor(/* ... */) : AutoCloseable {
     @Throws(MeshtasticException::class)
     public fun send(packet: MeshPacket): MessageHandle
 
-    /** Convenience: wraps text in TEXT_MESSAGE_APP. */
-    public fun sendText(text: String, channel: ChannelIndex = ChannelIndex(0), to: NodeId = NodeId.BROADCAST): MessageHandle
+    /** Convenience: wraps text in TEXT_MESSAGE_APP. Parameter order aligned with sendReaction. */
+    public fun sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0): MessageHandle
 
     /** Convenience: send an emoji reaction to an existing message. */
     public fun sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle
@@ -218,8 +222,8 @@ public class RadioClient internal constructor(/* ... */) : AutoCloseable {
     /** Typed send overload: build Data(portnum, payload) and call send(). */
     public suspend fun send(portnum: PortNum, payload: ByteArray, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), wantAck: Boolean = false, hopLimit: Int? = null): MessageHandle
 
-    /** Buffer payload overload (consumes the kotlinx.io.Buffer). */
-    public suspend fun send(portnum: PortNum, payload: kotlinx.io.Buffer, ...): MessageHandle
+    /** ByteString payload overload (okio.ByteString — the single public byte vocabulary). */
+    public suspend fun send(portnum: PortNum, payload: okio.ByteString, ...): MessageHandle
 
     /** Low-level escape hatch: send a raw ToRadio frame directly. */
     public fun sendRaw(frame: ToRadio)
@@ -329,6 +333,7 @@ public sealed interface SendFailure {
     public data object Cancelled : SendFailure                         // MessageHandle.cancel() called pre-Sent
     public data object IdCollision : SendFailure                       // duplicate packet id rejected
     public data object AckTimeout : SendFailure                        // per-send ACK timeout (unicast want_ack only)
+    public data class QueueRejected(val res: Int) : SendFailure        // QueueStatus.res != 0 (and != 35) — firmware transmit queue rejected the packet before transmission; res is the firmware ERRNO namespace (32=queue full, 33=no interfaces, 34=disabled; 35 means success), 1..31 are genuine Routing.Error codes
     public data class Other(val routingError: Routing.Error) : SendFailure   // Wire enum from :proto
     public data class Unknown(val message: String) : SendFailure
 }
@@ -361,6 +366,12 @@ public sealed interface MeshEvent {
     public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
     /** External client modified channels/config on this device (unsolicited admin push). */
     public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
+    /** Device-as-MQTT-proxy side-channel traffic (FromRadio.mqttClientProxyMessage). */
+    public data class MqttProxyMessage(val message: MqttClientProxyMessage) : MeshEvent
+    /** Raw XModem file-transfer packet from the device. */
+    public data class XmodemPacket(val packet: XModem) : MeshEvent
+    /** File advertisement from the device. Named FileInfoReceived (not FileInfo) to avoid clashing with the proto type. */
+    public data class FileInfoReceived(val info: org.meshtastic.proto.FileInfo) : MeshEvent
 }
 
 public enum class DroppedFlow { Packets, Events }
@@ -369,8 +380,10 @@ public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 public sealed interface NodeChange {
     /**
      * First emission to every new subscriber; never emitted again on the same subscription.
-     * Implemented by replaying the engine's current `Map<NodeId, NodeInfo>` on `collect()` (single-replay),
-     * then stitching live deltas.
+     * Implemented per-subscription via `onSubscription`: each collector is seeded with a Snapshot
+     * built from the engine's current `Map<NodeId, NodeInfo>` (the engine's backing SharedFlow has
+     * `replay = 0`), then stitched with live deltas. The handshake additionally emits a live
+     * Snapshot to all subscribers at Stage-2 commit.
      */
     public data class Snapshot(val nodes: Map<NodeId, NodeInfo>) : NodeChange
     public data class Added(val node: NodeInfo) : NodeChange
@@ -535,6 +548,9 @@ public interface AdminApi {
     public suspend fun addContact(contact: SharedContact): AdminResult<Unit>
     public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
 
+    // ── Lockdown (hardened MESHTASTIC_LOCKDOWN builds; local-only, fire-and-forget) ──
+    public suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit>
+
     // ── OTA / Sensor / Simulator ──
     public suspend fun rebootOta(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun otaRequest(event: AdminMessage.OTAEvent): AdminResult<Unit>
@@ -645,7 +661,11 @@ public interface DeviceStorage : AutoCloseable {
     public suspend fun clear()
     override fun close()
 
-    /** Persist / load the session passkey for admin RPC resumption across sessions. */
+    /**
+     * Host-facing persist / load of a session passkey. Since 0.2.0 the engine no longer calls
+     * these — admin session passkeys are per-node, have a 4-minute TTL, and are held in memory
+     * only. Like `loadNodes`, these remain on the interface for host use.
+     */
     public suspend fun saveSessionPasskey(passkey: SessionPasskey)
     public suspend fun loadSessionPasskey(): SessionPasskey?
 
@@ -663,9 +683,9 @@ public data class ConfigBundle(
     public val deviceUIConfig: DeviceUIConfig? = null,
 )
 
-/** Persisted session passkey with absolute expiry. */
+/** Session passkey with absolute expiry. */
 public data class SessionPasskey(
-    public val bytes: kotlinx.io.bytestring.ByteString,
+    public val bytes: okio.ByteString,
     public val expiresAtEpochMs: Long,
 )
 ```
@@ -701,7 +721,7 @@ public sealed interface TransportState {
     public data class Error(val cause: Throwable, val recoverable: Boolean) : TransportState
 }
 
-public class Frame(public val bytes: ByteString)                     // kotlinx.io.bytestring.ByteString (matches §5.4 + MQTTastic-Client-KMP)
+public data class Frame(public val bytes: ByteString)                // okio.ByteString — the single public byte vocabulary (see §11 v2.3)
 ```
 
 ### 3.5 Send DSL
@@ -817,7 +837,7 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 - **One transport-observer coroutine** collects `transport.state` and posts `EngineMessage.TransportStateChanged` to the inbox for disconnect/error detection.
 - **Timer coroutines** (heartbeat, liveness, presence check, reconnect backoff) post tick messages into the inbox; all mutations happen on the engine coroutine — timers never mutate state directly.
 - Public `Flow`s are backed by engine-owned writable shared state. Per-flow buffering policy:
-  - `nodes: Flow<NodeChange>` — replay snapshot once on subscribe, then `extraBufferCapacity = 256` with `SUSPEND` overflow (deltas MUST NOT drop; the snapshot is the consistency anchor).
+  - `nodes: Flow<NodeChange>` — each subscription is seeded with a `NodeChange.Snapshot` of the engine's current node map via `onSubscription` (the engine's backing SharedFlow has `replay = 0`), then `extraBufferCapacity = 256` with `SUSPEND` overflow (deltas MUST NOT drop; the snapshot is the consistency anchor). The handshake still emits a live Snapshot at Stage-2 commit.
   - `packets: Flow<MeshPacket>` — `extraBufferCapacity = 128` with `SUSPEND` overflow (chat/text loss is unacceptable). Slow consumers backpressure the engine; if the engine inbox fills, the engine emits `MeshEvent.PacketsDropped(Packets, count)` and drops the *oldest engine-side queued frame* rather than blocking the transport reader. This converts silent loss into an observable event.
   - `events: Flow<MeshEvent>` — `extraBufferCapacity = 64`, `DROP_OLDEST` (events are advisory; never block the engine on observability). Drop bursts surface as `PacketsDropped(Events, n)` on the next event after pressure clears.
   - `connectionState`, `ownNode`, `configBundleState`, `channelsState` — `MutableStateFlow` (conflate, never drop).
@@ -836,8 +856,8 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 | Tool | Purpose |
 |---|---|
 | Gradle 9.x + Kotlin DSL + version catalog (`gradle/libs.versions.toml`) | Build (Gradle 9.4.1) |
-| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
-| Kotlin `explicitApi("strict")` on all `:sdk-*` modules **except `:proto`** (Wire-generated; modifier doesn't apply meaningfully to codegen) |
+| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
+| Kotlin `explicitApi("strict")` on all `:sdk-*` modules (proto types are an external artifact, not an in-tree module) |
 | `org.jetbrains.kotlin.multiplatform` + `com.android.kotlin.multiplatform.library` | New Android KMP library plugin — what MQTTastic uses |
 | Spotless + ktlint + `licenseHeaderFile` | Formatting + GPL-3.0 header enforcement (copy `config/spotless/copyright.kt` from MQTTastic) |
 | Detekt (config from MQTTastic `config/detekt/detekt.yml`) | Static analysis |
@@ -869,7 +889,7 @@ Module Graph Assert (graph complexity grows), Dependency Analysis Plugin (leaky 
 
 ### 5.4 Reject
 
-- ~~`kotlinx-io` — Okio is sufficient; don't ship two IO abstractions~~ **REVERSED:** MQTTastic-Client-KMP uses `kotlinx-io-bytestring` for payloads. Align — use `kotlinx-io` for bytes/buffers in commonMain to match the org's house style. Okio remains acceptable for transport-internal IO where it's already idiomatic (Ktor sockets), but public payload types are `kotlinx.io.bytestring.ByteString`.
+- ~~`kotlinx-io` — Okio is sufficient; don't ship two IO abstractions~~ **REVERSED:** MQTTastic-Client-KMP uses `kotlinx-io-bytestring` for payloads. Align — use `kotlinx-io` for bytes/buffers in commonMain to match the org's house style. Okio remains acceptable for transport-internal IO where it's already idiomatic (Ktor sockets), but public payload types are `kotlinx.io.bytestring.ByteString`. **REVERSED AGAIN (0.2.0):** Wire protos force `okio.ByteString` into the public surface for every proto-typed call (both this SDK and Meshtastic-Android consume the same protobufs artifact); a second vocabulary bought nothing — okio standardized, kotlinx-io removed.
 - In-memory `StorageProvider` as default — violates §4.3 invariant 4
 - `kotlin.Result<T>` in any public API — Swift doesn't bridge it
 
@@ -900,7 +920,7 @@ The Meshtastic org already publishes official KMP libraries under `org.meshtasti
   - `AGENTS.md` + `CLAUDE.md` + `.github/copilot-instructions.md` (redirect pattern)
   - `docker/` if relevant for CI integration testing
 - [ ] `.gitignore`. `.editorconfig`.
-- [ ] Submodule: `proto/src/protobufs` → `meshtastic/protobufs` `main`.
+- [ ] ~~Submodule: `proto/src/protobufs` → `meshtastic/protobufs` `main`.~~ **Superseded by [ADR-015](decisions/015-consume-published-protobufs-artifact.md):** the schema is consumed as the published `org.meshtastic:protobufs` artifact, not vendored as a submodule.
 - [ ] Gradle wrapper (9.x). `settings.gradle.kts` with `pluginManagement` + `dependencyResolutionManagement` (copy from MQTTastic, add multi-module includes).
 - [ ] Add to version catalog the SDK-specific deps not present in MQTTastic: `wire`, `sqldelight`, `kable`, `usb-serial-for-android`, `jSerialComm`, `mokkery`, `turbine`, `kotest`, `power-assert`, `axion-release`.
 - [ ] `build-logic/convention/` plugins: `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android`. Library plugin encodes the MQTTastic `applyDefaultHierarchyTemplate()` + custom intermediate-source-set pattern.
@@ -915,7 +935,7 @@ The Meshtastic org already publishes official KMP libraries under `org.meshtasti
 
 ### Phase 1 — Codec + engine skeleton
 
-- [ ] `proto/` — Wire 6 generates DTOs into private package from `proto/src/protobufs`. All targets.
+- [ ] ~~`proto/` — Wire 6 generates DTOs into private package from `proto/src/protobufs`. All targets.~~ **Superseded by [ADR-015](decisions/015-consume-published-protobufs-artifact.md):** there is no `:proto` module; `:core` depends on the published `org.meshtastic:protobufs` artifact via `api(libs.meshtasticProtobufs)`.
 - [ ] ~~`proto-raw/` — Re-export generated package as a public escape-hatch artifact.~~ **Dropped per ADR-001:** `:proto` itself is the public artifact; no separate escape-hatch needed.
 - [ ] `core/` — Value classes (`NodeId`, `ChannelIndex`, `MessageId`, `TransportIdentity`), sealed `MeshtasticException`, `Frame`, `RadioTransport` interface, `StorageProvider`/`DeviceStorage` interfaces, `LogSink`.
 - [ ] `core/` — `WireCodec`: framing encode/decode, resync (per v1 §8.2: scan for `0x94 0xC3`, length ≤ 512, drop garbage). Property tests for round-trip on every `ToRadio`/`FromRadio` variant. **Fuzz tests** on random byte streams to validate resync robustness.
@@ -1061,7 +1081,7 @@ From Phase 2: a dedicated radio either attached to a runner (TCP-over-WiFi night
 ## 9. References
 
 ### 9.1 Authoritative protocol
-- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — schema (vendored)
+- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — schema (published `org.meshtastic:protobufs` artifact)
 - [`meshtastic/firmware`](https://github.com/meshtastic/firmware) — behavior reference
 - [Meshtastic dev docs — Client API](https://meshtastic.org/docs/development/device/client-api/)
 - [Meshtastic dev docs — Mesh Algorithm](https://meshtastic.org/docs/overview/mesh-algo/)
@@ -1100,6 +1120,10 @@ After each phase:
 ---
 
 ## 11. What Changed From v1 (for reviewers)
+
+### v2.3 (2026-06-11) — 0.2.0 API-state sync
+
+Synchronizes the spec with the 0.2.0 surface: `okio.ByteString` is the single public byte vocabulary (`kotlinx-io` removed — Wire protos force `okio.ByteString` into the public surface for every proto-typed call, and both this SDK and Meshtastic-Android consume the same protobufs artifact, so a second vocabulary bought nothing); lifecycle is suspend-only (no `AutoCloseable`/`close()`; `withConnection { }` helper added); `sendText(text, to, channel, replyId)` parameter order; new `MeshEvent` variants (`MqttProxyMessage`, `XmodemPacket`, `FileInfoReceived`) and `SendFailure.QueueRejected`; `nodes` snapshots seeded per-subscription via `onSubscription` (engine flow `replay = 0`); `DeviceStorage` passkey methods are host-facing only.
 
 ### v2.2 (2026-05-10) — Post-audit sync
 
@@ -1142,7 +1166,7 @@ The Meshtastic org shipped [`MQTTastic-Client-KMP`](https://github.com/meshtasti
 | Phase −1 governance as blocker | Resolved; ADR + cross-link issue only | Org already accepts KMP libs |
 | Phase 0 build-logic from scratch | **Forked verbatim from MQTTastic** (Spotless config, Detekt config, CI workflows, AGENTS.md pattern, Develocity, foojay, vanniktech `publishToMavenCentral()`) | Don't re-derive solved problems |
 | Spotless + ktfmt | Spotless + **ktlint** + `licenseHeaderFile` | Match MQTTastic |
-| `kotlinx-io` rejected | `kotlinx-io-bytestring` adopted for payloads | Match MQTTastic house style |
+| `kotlinx-io` rejected | `kotlinx-io-bytestring` adopted for payloads | Match MQTTastic house style. **Reversed in 0.2.0 (see v2.3 above):** Wire protos force `okio.ByteString` into the public surface for every proto-typed call (both this SDK and Meshtastic-Android consume the same protobufs artifact); a second vocabulary bought nothing — okio standardized, kotlinx-io removed |
 | BCV gate from Phase 5 | BCV gate from Phase 0 (`checkKotlinAbi` + initial `updateKotlinAbi`) | MQTTastic enforces day-1; cheap to do same |
 | Kover not specified | Kover with `minBound(80)` from Phase 0 | Match MQTTastic |
 | Arch-test framework "adopt only when justified" | detekt `ForbiddenImport` + `:core:verifyModuleBoundary` from Phase 0 (an arch-test library was evaluated and dropped — see [ADR-008](decisions/008-architecture-enforcement.md)) | MQTTastic ships an arch-test library; we get the same invariants from tools we already run |

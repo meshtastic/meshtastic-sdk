@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
@@ -157,7 +158,7 @@ class P0ReliabilityTest {
         assertEquals(null, storage.loadSessionPasskey())
 
         // Save a passkey with a future expiry; load returns it.
-        val bytes = kotlinx.io.bytestring.ByteString(byteArrayOf(1, 2, 3, 4))
+        val bytes = byteArrayOf(1, 2, 3, 4).toByteString()
         storage.saveSessionPasskey(SessionPasskey(bytes, expiresAtEpochMs = Long.MAX_VALUE))
         val loaded = storage.loadSessionPasskey()
         assertEquals(SessionPasskey(bytes, Long.MAX_VALUE), loaded)

@@ -15,10 +15,12 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.KeyVerificationAdmin
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
@@ -93,6 +95,49 @@ class AdminApiRemainingTest {
             call = { it.addContact(contact) },
             requestMatches = { it.add_contact == contact },
         )
+    }
+
+    @Test
+    fun lockdownLockNowSendsFireAndForgetToLocalNode() = runTest {
+        val auth = LockdownAuth(lock_now = true)
+        assertFireAndForgetSuccess(
+            call = { it.lockdown(auth) },
+            requestMatches = { it.lockdown_auth == auth },
+        )
+    }
+
+    @Test
+    fun lockdownProvisionSendsPassphraseFields() = runTest {
+        val auth = LockdownAuth(
+            passphrase = "hunter2".encodeToByteArray().toByteString(),
+            boots_remaining = 10,
+            valid_until_epoch = 1_900_000_000,
+        )
+        assertFireAndForgetSuccess(
+            call = { it.lockdown(auth) },
+            requestMatches = { it.lockdown_auth == auth },
+        )
+    }
+
+    @Test
+    fun lockdownRejectsRemoteTargeting() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val remote = client.admin.forNode(NodeId(0x22222222))
+            val result = remote.lockdown(LockdownAuth(lock_now = true))
+            runCurrent()
+
+            assertEquals(AdminResult.Unauthorized, result)
+            // The passphrase must never reach the wire when targeting a remote node.
+            val sentLockdown = transport.outboundPackets().drop(outboundBefore)
+                .any { adminOf(it)?.lockdown_auth != null }
+            assertFalse(sentLockdown, "lockdown_auth must not be sent to a remote node")
+        } finally {
+            runCatching { client.disconnect() }
+        }
     }
 
     @Test

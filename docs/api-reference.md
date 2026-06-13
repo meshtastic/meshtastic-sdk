@@ -19,6 +19,33 @@
 
 > All public top-level types in `org.meshtastic.sdk` are considered stable for the 0.1.x series.
 
+## API conventions
+
+Deliberate, enforced choices about the shape of the public surface:
+
+- **Proto types are exposed unwrapped** ([ADR-001](./decisions/001-public-api-uses-generated-protobufs.md)).
+  The SDK's ABI therefore tracks the `org.meshtastic:protobufs` artifact; proto bumps are priced
+  into the SemVer table in [`versioning.md`](./versioning.md).
+- **One byte-string vocabulary: `okio.ByteString`.** Wire-generated proto fields use it
+  (Wire's runtime type), so it is unavoidable in the surface — and therefore SDK-native types
+  (`Frame`, `SessionPasskey`, the `send(portnum, payload)` overload) use it too, rather than
+  introducing a second vocabulary. `kotlinx-io` is deliberately **not** a dependency.
+- **No blocking bridges.** Lifecycle is suspend-only (`connect()`/`disconnect()`); there is
+  deliberately no `AutoCloseable`/`close()` on `RadioClient`. Blocking teardown invites ANR on
+  Android main and deadlock on iOS main. For scoped use, the `withConnection(teardownTimeout) { … }`
+  extension (see [Lifecycle](#lifecycle)) is the structured replacement for `use { }`.
+- **Data classes in the public API are a deliberate trade.** Event/result types are `data` so
+  consumers get structural equality in tests and exhaustive `when` matching. The ABI cost
+  (`copy`/`componentN` lock-in) is mitigated by the pre-1.0 window, the CI-gated Kotlin ABI
+  dumps (every signature change is reviewed), and the SemVer pricing of sealed-subtype
+  additions. When the [Poko](https://github.com/drewhamilton/Poko) compiler plugin supports the
+  current Kotlin version, event/result types migrate to `@Poko` classes (tracked in
+  [`roadmap.md`](./roadmap.md)) — consumers should treat `copy()`/destructuring of SDK types as
+  unstable conveniences, not contract.
+- **Kotlin/Swift first.** No `@JvmOverloads`/`@JvmName` Java-ergonomics annotations; Java
+  callers are not a supported audience. Swift interop is first-class via SKIE + `@Throws`.
+
+
 ### Coordinates and the BOM
 
 Every artifact above is published under the `org.meshtastic` group as
@@ -53,7 +80,19 @@ RadioClient.Builder()
 
 `Builder.transport(spec: TransportSpec)` is also available for spec-driven setups, but you must additionally provide a concrete `RadioTransport` — see `samples/cli` for a `TransportSpec → RadioTransport` opener pattern.
 
-#### `AutoReconnectConfig` *(since 0.2.0)*
+Kotlin callers can use the `RadioClient { … }` builder-lambda factory instead *(since 0.2.0)*:
+
+```kotlin
+val client = RadioClient {
+    transport(TcpTransport(host = "meshtastic.local", port = 4403))
+    storage(SqlDelightStorageProvider(baseDir = "/var/data"))
+    logger(MyLogSink)
+}
+```
+
+`Builder` remains available for Swift and other step-wise callers.
+
+#### `AutoReconnectConfig` *(since 0.1.0)*
 
 ```kotlin
 public data class AutoReconnectConfig(
@@ -74,6 +113,7 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `connect()` | `Unit` (suspends until `Connected`) | `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`, `FirmwareTooOld`), `CancellationException` | **Not** idempotent — calling `connect()` while already `Connected` throws `AlreadyConnected` (deliberate; silent no-op hides reconnect-loop bugs). |
 | `connectAndAwaitReady()` | `Unit` (suspends until `Connected` with session passkey seeded) | same as `connect()` | Convenience wrapper: calls `connect()`, then awaits the post-handshake admin session passkey seed. Prefer this unless you need to observe handshake progress. |
 | `disconnect()` | `Unit` | never | Idempotent. Cancels supervisor; resolves all open `MessageHandle`s to `Failed(Disconnected)`. |
+| `withConnection(teardownTimeout: Duration = 10.seconds) { … }` *(extension, since 0.2.0)* | `T` (the block's result) | rethrows from `connect()` / block | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T`. Connects, runs `block`, and **always** disconnects — on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. The structured replacement for the deliberately absent `close()`/`use { }`. |
 | `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
 | `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
@@ -83,16 +123,25 @@ When enabled, the engine automatically reconnects on transport drops, transition
 
 | Member | Backing | Buffer / overflow |
 |---|---|---|
-| `nodes: Flow<NodeChange>` | custom snapshot+delta | 256 / `SUSPEND` |
+| `nodes: Flow<NodeChange>` | snapshot+delta over `MutableSharedFlow(replay=0)` | 256 / `SUSPEND` |
+| `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
 | `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
 | `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
+
+`nodes` seeds **each** subscription with a `NodeChange.Snapshot` of the engine's current node
+map (via `onSubscription`) before deltas — late subscribers never miss the baseline even though
+the engine's backing `SharedFlow` has `replay = 0`. The handshake additionally emits a live
+`Snapshot` to all subscribers at Stage-2 commit. `nodeMap()` *(since 0.2.0)* folds `nodes` into
+a flow of the full `Map<NodeId, NodeInfo>`; the underlying
+`Flow<NodeChange>.asNodeMap()` extension is also public for transforming an existing
+`nodes` collection.
 
 ### Outbound
 
 | Member | Returns | Throws |
 |---|---|---|
 | `send(packet: MeshPacket): MessageHandle` | handle (state already `Queued`) | `NotConnected`, `PayloadTooLarge` |
-| `sendText(text: String, channel: ChannelIndex = ChannelIndex(0), to: NodeId = NodeId.BROADCAST): MessageHandle` | handle | same as `send` |
+| `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0): MessageHandle` | handle | same as `send` |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
 | `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
 | `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
@@ -182,6 +231,9 @@ public sealed interface MeshEvent {
     public data class DeviceRebooted(val rebootCount: Int) : MeshEvent
     public data class CongestionWarning(val freeSlots: Int, val totalSlots: Int) : MeshEvent
     public data class ExternalConfigChange(val config: Config) : MeshEvent
+    public data class MqttProxyMessage(val message: MqttClientProxyMessage) : MeshEvent
+    public data class XmodemPacket(val packet: XModem) : MeshEvent
+    public data class FileInfoReceived(val info: org.meshtastic.proto.FileInfo) : MeshEvent
     public sealed interface SecurityWarning : MeshEvent {
         public data class DuplicatedPublicKey(val nodeId: NodeId) : SecurityWarning
         public data class LowEntropyKey(val nodeId: NodeId) : SecurityWarning
@@ -190,7 +242,7 @@ public sealed interface MeshEvent {
 public enum class DroppedFlow { Packets, Events }
 ```
 
-`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for the engine clearing storage after a NodeNum change (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads.
+`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for the engine clearing storage after a NodeNum change (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads. *(since 0.2.0)* `MqttProxyMessage` carries the device's `mqttClientProxyMessage` traffic for hosts implementing the device-as-MQTT-proxy side channel; `XmodemPacket` carries raw `XModem` file-transfer packets; `FileInfoReceived` carries an `org.meshtastic.proto.FileInfo` advertisement (the variant is named `FileInfoReceived` — not `FileInfo` — to avoid clashing with the proto type). *(since 0.3.0)* `LockdownStatusChanged` carries the device's `LockdownStatus` report from hardened (`MESHTASTIC_LOCKDOWN`) firmware builds — sent right after `config_complete_id` and after each `AdminApi.lockdown` command — and is the source of truth for lockdown availability (no firmware-version capability flag — lockdown is a build-time firmware option).
 
 ## `NodeChange`
 
@@ -581,7 +633,7 @@ public sealed interface TransportState {
     public data class Error(val cause: Throwable, val recoverable: Boolean) : TransportState
 }
 
-public class Frame(public val bytes: kotlinx.io.bytestring.ByteString)
+public data class Frame(public val bytes: okio.ByteString)
 ```
 
 ## Logging

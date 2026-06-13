@@ -8,7 +8,8 @@
 package org.meshtastic.sdk.transport.serial.internal
 
 import kotlinx.coroutines.channels.Channel
-import kotlinx.io.bytestring.ByteString
+import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,7 +23,7 @@ import kotlin.test.assertTrue
  */
 class FrameChannelPublisherTest {
 
-    private fun frame(b: Byte): Frame = Frame(ByteString(b))
+    private fun frame(b: Byte): Frame = Frame(byteArrayOf(b).toByteString())
 
     @Test
     fun successfulPublishDoesNotIncrementDropCount() {

@@ -150,7 +150,7 @@ BLE uses GATT message boundaries directly. The phone subscribes to a notificatio
 |---|---|---|
 | **Mesh service** | `6BA1B218-15A8-461F-9FA8-5DCAE273EAFD` | — |
 | `fromradio` | `2C55E69E-4993-11ED-B878-0242AC120002` | **READ** — returns one `FromRadio` protobuf per read; empty read means queue drained |
-| `toradio` | `F75C76D2-129E-4DAD-A1DD-7866124401E7` | **WRITE** (with or without response) — phone writes one `ToRadio` protobuf per write. Clients SHOULD prefer WRITE-WITHOUT-RESPONSE when `maximumWriteValueLength(WITHOUT_RESPONSE)` suffices for throughput. |
+| `toradio` | `F75C76D2-129E-4DAD-A1DD-7866124401E7` | **WRITE** (acknowledged) — phone writes one `ToRadio` protobuf per write. Firmware declares `CHR_PROPS_WRITE` only (NRF52Bluetooth.cpp; NimBLE equivalent): write-without-response is NOT in the characteristic properties and strict stacks (Android/Kable) refuse it — verified against real radios. |
 | `fromnum` | `ED9DA18C-A800-4F66-A670-AA7547E34453` | **NOTIFY** + **READ** — 4-byte little-endian counter that increments whenever the device pushes data into the `fromradio` queue |
 | `logradio` (optional, current) | `5A3D6E49-06E6-4423-9944-E9DE8CDF9547` | **NOTIFY** + **READ** — streaming device log lines; informational only. Primary on current firmware. |
 | `logradio` (optional, legacy) | `6C6FD238-78FA-436B-AACF-15C5BE1EF2E2` | **NOTIFY** + **READ** — legacy log characteristic. Kept by firmware for backward compatibility; clients should subscribe to whichever is advertised. |
@@ -771,58 +771,73 @@ See §16 for the heartbeat policy by transport.
 
 Device administration (changing configs, rebooting, factory-reset, key management) goes through `PortNum.ADMIN_APP` carrying an `AdminMessage` payload.
 
+> **Field numbers below are authoritative** — verified against `meshtastic/protobufs@develop`
+> (and the published `org.meshtastic:protobufs` artifact). Always reconcile against `admin.proto`
+> before relying on a tag value; this table is a reading aid, not the schema.
+
 ```protobuf
 message AdminMessage {
-  bytes session_passkey = 101;  // Required for state-changing requests
   oneof payload_variant {
-    bool   get_channel_request                = 1;   // uint32: channel index + 1 (1-based, proto3 zero-value omission)
-    Channel get_channel_response              = 2;
-    bool   get_owner_request                  = 3;
-    User   get_owner_response                 = 4;
-    AdminMessageConfigType get_config_request = 5;
-    Config get_config_response                = 6;
-    AdminMessageModuleConfigType get_module_config_request = 7;
-    ModuleConfig get_module_config_response   = 8;
-    bool   get_canned_message_module_messages_request = 10;
-    string get_canned_message_module_messages_response = 11;
-    bool   get_device_metadata_request        = 12;
-    DeviceMetadata get_device_metadata_response = 13;
-    string get_ringtone_request               = 14;
-    string get_ringtone_response              = 15;
-    bool   get_device_connection_status_request = 16;
+    uint32 get_channel_request                            = 1;  // channel index + 1 (1-based; proto3 zero-value omission)
+    Channel get_channel_response                          = 2;
+    bool get_owner_request                                = 3;
+    User get_owner_response                               = 4;
+    ConfigType get_config_request                         = 5;
+    Config get_config_response                            = 6;
+    ModuleConfigType get_module_config_request            = 7;
+    ModuleConfig get_module_config_response               = 8;
+    bool get_canned_message_module_messages_request       = 10;
+    string get_canned_message_module_messages_response    = 11;
+    bool get_device_metadata_request                      = 12;
+    DeviceMetadata get_device_metadata_response           = 13;  // carries the session passkey
+    bool get_ringtone_request                             = 14;
+    string get_ringtone_response                          = 15;
+    bool get_device_connection_status_request             = 16;
     DeviceConnectionStatus get_device_connection_status_response = 17;
-    HamParameters set_ham_mode                = 18;
-    NodeRemoteHardwarePinsResponse get_node_remote_hardware_pins_response = 19;
-    bool   get_node_remote_hardware_pins_request = 20;
-    bool   begin_edit_settings                = 64;
-    bool   commit_edit_settings               = 65;
-    fixed32 reboot_ota_seconds                = 95;
-    bool   exit_simulator                     = 96;
-    int32  reboot_seconds                     = 97;
-    int32  shutdown_seconds                   = 98;
-    int32  factory_reset_config               = 99;
-    bool   nodedb_reset                       = 100;
-    Position set_fixed_position               = 102;
-    bool    remove_fixed_position             = 103;
-    fixed32 set_time_only                     = 104;
-    User    set_owner                         = 32;
-    Channel set_channel                       = 33;
-    Config  set_config                        = 34;
-    ModuleConfig set_module_config            = 35;
-    string  set_canned_message_module_messages = 36;
-    string  set_ringtone_message              = 37;
-    fixed32 remove_by_nodenum                 = 38;
-    fixed32 set_favorite_node                 = 39;
-    fixed32 remove_favorite_node              = 40;
-    Position set_fixed_position_legacy        = 41;  // (deprecated)
-    bool    enter_dfu_mode_request            = 92;
-    string  delete_file_request               = 93;
-    BackupLocation backup_preferences         = 94;
-    bool    factory_reset_device              = 105;
-    fixed32 set_ignored_node                  = 106;
-    fixed32 remove_ignored_node               = 107;
-    // ... (full enum is large; consult admin.proto)
+    HamParameters set_ham_mode                            = 18;
+    bool get_node_remote_hardware_pins_request            = 19;
+    NodeRemoteHardwarePinsResponse get_node_remote_hardware_pins_response = 20;
+    bool enter_dfu_mode_request                           = 21;
+    string delete_file_request                            = 22;
+    uint32 set_scale                                      = 23;
+    BackupLocation backup_preferences                     = 24;
+    BackupLocation restore_preferences                    = 25;
+    BackupLocation remove_backup_preferences              = 26;
+    InputEvent send_input_event                           = 27;
+    User set_owner                                        = 32;
+    Channel set_channel                                   = 33;
+    Config set_config                                     = 34;
+    ModuleConfig set_module_config                        = 35;
+    string set_canned_message_module_messages             = 36;
+    string set_ringtone_message                           = 37;
+    uint32 remove_by_nodenum                              = 38;
+    uint32 set_favorite_node                              = 39;
+    uint32 remove_favorite_node                           = 40;
+    Position set_fixed_position                           = 41;
+    bool remove_fixed_position                            = 42;
+    fixed32 set_time_only                                 = 43;
+    bool get_ui_config_request                            = 44;
+    DeviceUIConfig get_ui_config_response                 = 45;
+    DeviceUIConfig store_ui_config                        = 46;
+    uint32 set_ignored_node                               = 47;
+    uint32 remove_ignored_node                            = 48;
+    uint32 toggle_muted_node                              = 49;
+    bool begin_edit_settings                              = 64;
+    bool commit_edit_settings                             = 65;
+    SharedContact add_contact                             = 66;
+    KeyVerificationAdmin key_verification                 = 67;
+    int32 factory_reset_device                            = 94;
+    int32 reboot_ota_seconds                              = 95;  // deprecated; use ota_request
+    bool exit_simulator                                   = 96;
+    int32 reboot_seconds                                  = 97;
+    int32 shutdown_seconds                                = 98;
+    int32 factory_reset_config                            = 99;
+    bool nodedb_reset                                     = 100;
+    OTAEvent ota_request                                  = 102;
+    SensorConfig sensor_config                            = 103;
+    LockdownAuth lockdown_auth                            = 104;  // hardened MESHTASTIC_LOCKDOWN builds; local-only
   }
+  bytes session_passkey = 101;  // required for state-changing requests
 }
 ```
 
@@ -855,6 +870,36 @@ The SDK detects this condition from the config bundle received during handshake 
 ### Admin channel routing
 
 By convention, admin messages travel on the **admin channel** (a dedicated channel role). If the device has no admin channel configured, admin messages travel on the primary channel.
+
+### Storage lockdown (hardened builds)
+
+Firmware compiled with `MESHTASTIC_LOCKDOWN` encrypts on-flash storage and gates it behind a
+passphrase. Two protocol surfaces drive it:
+
+- **Outbound — `AdminMessage.lockdown_auth = 104` (`LockdownAuth`).** Unlike every other admin
+  payload, this is **local-only and never routed over the mesh**: the firmware intercepts it
+  inline in `PhoneAPI` (`handleLockdownAuthInline`), acts on it, and **wipes the passphrase from
+  the packet buffer** before any admin/PKC routing runs. `LockdownAuth` fields: `passphrase`
+  (1–32 bytes; empty when `lock_now`), `boots_remaining` and `valid_until_epoch` (token TTLs,
+  `0` = firmware default / no limit), `max_session_seconds`, `lock_now` (revoke + reboot into
+  locked state, ignores passphrase), and `disable` (turn the feature off). `max_session_seconds`
+  and `disable` were added after firmware `2.7.25` — they require the develop-snapshot proto.
+- **Inbound — `FromRadio.lockdown_status` (`LockdownStatus`).** Sent **immediately after
+  `config_complete_id`** (so it can arrive mid-handshake) to tell a freshly-connected,
+  possibly-unauthorized client what to do, and again after every `lockdown_auth` command.
+  `state` ∈ {`STATE_UNSPECIFIED`, `NEEDS_PROVISION`, `LOCKED`, `UNLOCKED`, `UNLOCK_FAILED`,
+  `DISABLED`}; `lock_reason` is a machine-readable cause for `LOCKED` (treat unknown values as
+  "locked, ask for passphrase"); `backoff_seconds` is the wait after `UNLOCK_FAILED`. `DISABLED`
+  was added after `2.7.25`.
+
+Host SDK:
+- Surfaces inbound status as `MeshEvent.LockdownStatusChanged` (a recognized variant, **not** a
+  `ProtocolWarning`). This is the source of truth for lockdown availability — there is no
+  firmware-version capability flag because lockdown is a build-time option, not a version gate.
+- Exposes the outbound command as `AdminApi.lockdown(LockdownAuth)`: local-only (a
+  `forNode(...)`-scoped call returns `Unauthorized` rather than leaking a passphrase onto the
+  mesh) and fire-and-forget (success = queued onto the local link; the real outcome arrives as a
+  fresh `LockdownStatusChanged`).
 
 ---
 

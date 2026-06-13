@@ -8,6 +8,7 @@
 package org.meshtastic.sdk
 
 import okio.ByteString
+import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
@@ -49,29 +50,29 @@ class ProtoBytesAndDecodeTest {
     }
 
     @Test
-    fun decodeAsText_readsTextPayload() {
+    fun asText_readsTextPayload() {
         val packet = MeshPacket(
             decoded = Data(
                 portnum = PortNum.TEXT_MESSAGE_APP,
                 payload = ByteString.of(*"hello".encodeToByteArray()),
             ),
         )
-        assertEquals("hello", packet.decodeAsText())
+        assertEquals("hello", packet.asText())
     }
 
     @Test
-    fun decodeAsText_returnsNullForWrongPortnum() {
+    fun asText_returnsNullForWrongPortnum() {
         val packet = MeshPacket(
             decoded = Data(
                 portnum = PortNum.POSITION_APP,
                 payload = ByteString.of(*"bytes".encodeToByteArray()),
             ),
         )
-        assertNull(packet.decodeAsText())
+        assertNull(packet.asText())
     }
 
     @Test
-    fun decodeAsPosition_roundTrip() {
+    fun asPosition_roundTrip() {
         val pos = Position(latitude_i = 377749000, longitude_i = -1224194000, altitude = 12)
         val packet = MeshPacket(
             decoded = Data(
@@ -79,13 +80,36 @@ class ProtoBytesAndDecodeTest {
                 payload = ByteString.of(*Position.ADAPTER.encode(pos)),
             ),
         )
-        val decoded = packet.decodeAsPosition()
+        val decoded = packet.asPosition()
         assertNotNull(decoded)
         assertEquals(pos, decoded)
     }
 
     @Test
-    fun decodeAs_emptyPayloadReturnsNull() {
-        assertNull(MeshPacket().decodeAsPosition())
+    fun asPosition_missingDecodedReturnsNull() {
+        assertNull(MeshPacket().asPosition())
+    }
+
+    @Test
+    fun decodeAs_ignoresPortnumAndSwallowsCorruptBytes() {
+        val position = Position(latitude_i = 450000000, longitude_i = -930000000)
+        // decodeAs is the documented escape hatch: NO portnum guard (Paxcount/StoreAndForward
+        // consumers decode payloads carried under arbitrary ports).
+        val mismatchedPort = MeshPacket(
+            decoded = Data(
+                portnum = PortNum.TEXT_MESSAGE_APP,
+                payload = Position.ADAPTER.encode(position).toByteString(),
+            ),
+        )
+        assertEquals(position, mismatchedPort.decodeAs(Position.ADAPTER))
+
+        val corrupt = MeshPacket(
+            decoded = Data(
+                portnum = PortNum.POSITION_APP,
+                payload = byteArrayOf(-1, -1, -1).toByteString(),
+            ),
+        )
+        assertNull(corrupt.decodeAs(Position.ADAPTER))
+        assertNull(MeshPacket().decodeAs(Position.ADAPTER))
     }
 }
