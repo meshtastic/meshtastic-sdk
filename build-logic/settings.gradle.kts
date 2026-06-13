@@ -26,5 +26,8 @@ dependencyResolutionManagement {
 rootProject.name = "build-logic"
 include(":convention")
 
-// Shared Develocity and Build Cache configuration
+// Build Cache configuration (HTTP remote cache + local)
+apply(from = "../gradle/build-cache.settings.gradle")
+
+// Build Scans (Develocity)
 apply(from = "../gradle/develocity.settings.gradle")
