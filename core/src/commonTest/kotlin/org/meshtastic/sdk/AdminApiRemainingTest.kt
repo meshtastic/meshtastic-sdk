@@ -120,11 +120,13 @@ class AdminApiRemainingTest {
     }
 
     @Test
-    fun lockdownProvisionSendsPassphraseFields() = runTest {
+    fun lockdownProvisionSendsPassphraseAndSessionFields() = runTest {
         val auth = LockdownAuth.Builder().also { wb ->
             wb.passphrase = "hunter2".encodeToByteArray().toByteString()
             wb.boots_remaining = 10
             wb.valid_until_epoch = 1_900_000_000
+            wb.max_session_seconds = 3600
+            wb.disable = false
         }.build()
         assertFireAndForgetSuccess(
             call = { it.lockdown(auth) },
