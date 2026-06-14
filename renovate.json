@@ -27,28 +27,40 @@
       ]
     },
     {
-      "matchPackagePatterns": ["^org\\.jetbrains\\.kotlin"],
-      "groupName": "kotlin"
+      "groupName": "kotlin",
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.kotlin/"
+      ]
     },
     {
-      "matchPackagePatterns": ["^io\\.ktor"],
-      "groupName": "ktor"
+      "groupName": "ktor",
+      "matchPackageNames": [
+        "/^io\\.ktor/"
+      ]
     },
     {
-      "matchPackagePatterns": ["^app\\.cash\\.sqldelight"],
-      "groupName": "sqldelight"
+      "groupName": "sqldelight",
+      "matchPackageNames": [
+        "/^app\\.cash\\.sqldelight/"
+      ]
     },
     {
-      "matchPackagePatterns": ["^com\\.juul\\.kable"],
-      "groupName": "kable"
+      "groupName": "kable",
+      "matchPackageNames": [
+        "/^com\\.juul\\.kable/"
+      ]
     },
     {
-      "matchPackagePatterns": ["^com\\.squareup\\.wire"],
-      "groupName": "wire"
+      "groupName": "wire",
+      "matchPackageNames": [
+        "/^com\\.squareup\\.wire/"
+      ]
     },
     {
-      "matchPackagePatterns": ["^org\\.jetbrains\\.kotlinx"],
-      "groupName": "kotlinx"
+      "groupName": "kotlinx",
+      "matchPackageNames": [
+        "/^org\\.jetbrains\\.kotlinx/"
+      ]
     }
   ],
   "vulnerabilityAlerts": { "enabled": true, "labels": ["security"] }
