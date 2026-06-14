@@ -59,7 +59,7 @@ dokka                       = "2.2.0"
 
 # --- Static analysis & tooling ---
 ktlint                      = "1.8.0"
-spotless                    = "8.4.0"
+spotless                    = "8.6.0"
 detekt                      = "2.0.0-alpha.3"
 detektComposeRules          = "0.5.8"
 axionRelease                = "1.21.1"
