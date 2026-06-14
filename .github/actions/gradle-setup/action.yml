@@ -18,7 +18,7 @@ runs:
       run: mkdir -p ~/.gradle && cp .github/ci-gradle.properties ~/.gradle/gradle.properties
 
     - name: Validate Gradle Wrapper
-      uses: gradle/actions/wrapper-validation@ac638b010cf58a27ee6c972d7336334ccaf61c96 # v4.4.1
+      uses: gradle/actions/wrapper-validation@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
 
     - name: Set up JDK ${{ inputs.java_version }}
       uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
@@ -27,7 +27,7 @@ runs:
         distribution: temurin
 
     - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@ac638b010cf58a27ee6c972d7336334ccaf61c96 # v4.4.1
+      uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4.4.4
       with:
         cache-read-only: ${{ inputs.cache_read_only }}
         cache-encryption-key: ${{ inputs.gradle_encryption_key }}
