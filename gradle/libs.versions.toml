@@ -4,7 +4,7 @@
 # --- Kotlin & build ---
 kotlin                      = "2.3.21"           # matches Meshtastic-Android (SKIE 0.10.12+ supports 2.3.21)
 agp                         = "9.2.1"
-gradle                      = "9.4.1"
+gradle                      = "9.5.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
 androidCompileSdk           = "37"
@@ -12,21 +12,19 @@ androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
 coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
-kotlinxDatetime             = "0.7.1"
-kotlinxSerialization        = "1.11.0"
-atomicfu                    = "0.32.1"
+kotlinxDatetime             = "0.8.0"
+atomicfu                    = "0.33.0"
 okio                        = "3.17.0"
 
 # --- Protobuf / Wire ---
 wire                        = "6.4.0"            # wire-runtime version (transitive via protobufs SDK)
-protobuf                    = "4.34.1"
 meshtasticProtobufs         = "2.7.25"
 
 # --- Storage ---
 sqldelight                  = "2.3.2"
 
 # --- Transports ---
-kable                       = "0.43.0"
+kable                       = "0.43.1"
 ktor                        = "3.5.0"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
@@ -35,7 +33,7 @@ mosaic                      = "0.18.0"
 clikt                       = "5.1.0"
 
 # --- Compose Multiplatform (samples/parity-app) ---
-composeMultiplatform        = "1.10.3"
+composeMultiplatform        = "1.11.1"
 androidxActivityCompose     = "1.13.0"
 androidxLifecycleCompose    = "2.10.0"
 
@@ -45,7 +43,6 @@ kermit                      = "2.1.0"
 # --- Testing ---
 turbine                     = "1.2.1"
 kotest                      = "6.1.11"
-mockk                       = "1.14.9"
 junit                       = "4.13.2"
 androidxTestRunner          = "1.7.0"
 androidxTestRules           = "1.7.0"
@@ -59,10 +56,10 @@ dokka                       = "2.2.0"
 
 # --- Static analysis & tooling ---
 ktlint                      = "1.8.0"
-spotless                    = "8.4.0"
+spotless                    = "8.6.0"
 detekt                      = "2.0.0-alpha.3"
-detektComposeRules          = "0.5.8"
-axionRelease                = "1.21.1"
+detektComposeRules          = "0.6.1"
+axionRelease                = "1.21.2"
 kover                       = "0.9.8"
 
 [libraries]
@@ -70,12 +67,10 @@ coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutin
 coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android",     version.ref = "coroutines" }
 coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutines" }
 kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
-kotlinxSerializationCore    = { module = "org.jetbrains.kotlinx:kotlinx-serialization-core",     version.ref = "kotlinxSerialization" }
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
 
 wireMoshiAdapter            = { module = "com.squareup.wire:wire-moshi-adapter",                 version.ref = "wire" }
-protobufKotlin              = { module = "com.google.protobuf:protobuf-kotlin",                  version.ref = "protobuf" }
 meshtasticProtobufs         = { module = "org.meshtastic:protobufs",                             version.ref = "meshtasticProtobufs" }
 
 sqldelightRuntime           = { module = "app.cash.sqldelight:runtime",                          version.ref = "sqldelight" }
@@ -87,7 +82,6 @@ sqldelightGradlePlugin      = { module = "app.cash.sqldelight:gradle-plugin",   
 
 kable                       = { module = "com.juul.kable:kable-core",                            version.ref = "kable" }
 ktorNetwork                 = { module = "io.ktor:ktor-network",                                 version.ref = "ktor" }
-ktorNetworkTls              = { module = "io.ktor:ktor-network-tls",                             version.ref = "ktor" }
 jSerialComm                 = { module = "com.fazecast:jSerialComm",                             version.ref = "jSerialComm" }
 
 mosaicRuntime               = { module = "com.jakewharton.mosaic:mosaic-runtime",                 version.ref = "mosaic" }
@@ -99,7 +93,6 @@ kermit                      = { module = "co.touchlab:kermit",                  
 kotlinTest                  = { module = "org.jetbrains.kotlin:kotlin-test",                     version.ref = "kotlin" }
 turbine                     = { module = "app.cash.turbine:turbine",                             version.ref = "turbine" }
 kotestAssertions            = { module = "io.kotest:kotest-assertions-core",                     version.ref = "kotest" }
-mockk                       = { module = "io.mockk:mockk",                                       version.ref = "mockk" }
 junit                       = { module = "junit:junit",                                          version.ref = "junit" }
 androidxTestRunner          = { module = "androidx.test:runner",                              version.ref = "androidxTestRunner" }
 androidxTestRules           = { module = "androidx.test:rules",                               version.ref = "androidxTestRules" }
@@ -115,7 +108,6 @@ detektComposeRules          = { module = "io.nlopez.compose.rules:detekt",      
 [plugins]
 kotlinMultiplatform         = { id = "org.jetbrains.kotlin.multiplatform",                       version.ref = "kotlin" }
 kotlinAndroid               = { id = "org.jetbrains.kotlin.android",                             version.ref = "kotlin" }
-kotlinSerialization         = { id = "org.jetbrains.kotlin.plugin.serialization",                version.ref = "kotlin" }
 androidLibrary              = { id = "com.android.library",                                      version.ref = "agp" }
 androidKotlinMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library",           version.ref = "agp" }
 sqldelight                  = { id = "app.cash.sqldelight",                                      version.ref = "sqldelight" }
@@ -132,7 +124,3 @@ spotless                    = { id = "com.diffplug.spotless",                   
 detekt                      = { id = "dev.detekt",                                               version.ref = "detekt" }
 axionRelease                = { id = "pl.allegro.tech.build.axion-release",                      version.ref = "axionRelease" }
 kover                       = { id = "org.jetbrains.kotlinx.kover",                              version.ref = "kover" }
-
-[bundles]
-sqldelightDrivers           = ["sqldelightAndroidDriver", "sqldelightSqliteDriver", "sqldelightNativeDriver"]
-testCommon                  = ["kotlinTest", "turbine", "kotestAssertions"]

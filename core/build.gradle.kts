@@ -5,7 +5,6 @@ plugins {
     id("meshtastic.android.library")
     id("meshtastic.publishing")
     id("meshtastic.ios.framework")
-    alias(libs.plugins.kotlinSerialization)
 }
 
 kotlin {
