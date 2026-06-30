@@ -40,7 +40,11 @@ kotlin {
         }
     }
 
-    listOf(iosX64(), iosArm64(), iosSimulatorArm64()).forEach { target ->
+    // No iosX64: Compose Multiplatform 1.11.x dropped Apple x86_64 support (the
+    // iosX64/macosX64 klib variants are no longer published — Kotlin deprecated those
+    // targets too), so only the arm64 device + Apple Silicon simulator targets remain.
+    // CI's `test-ios` job builds/tests iosSimulatorArm64 only, so this is a no-op there.
+    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
         target.binaries.framework {
             baseName = "ComposeApp"
             isStatic = true
