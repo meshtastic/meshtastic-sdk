@@ -1067,11 +1067,20 @@ internal class MeshEngine(
                 }
             }
 
-            // a `config_complete_id` that matches neither the Stage 1 nor
-            // Stage 2 nonce is a protocol violation — previously we silently dropped it.
-            completeId != 0 -> failHandshakeWithProtocol(
+            // A *set* config_complete_id matching neither nonce is a protocol
+            // violation. (config_complete_id is nullable; `null != 0` is true in
+            // Kotlin, so the null check is required or unrecognized frames fatal here.)
+            completeId != null && completeId != 0 -> failHandshakeWithProtocol(
                 "Stage 1 config_complete_id mismatch: expected=$NONCE_STAGE1 got=$completeId",
             )
+
+            // Unrecognized FromRadio during the config drain — most commonly the device's
+            // serial debug console interleaving plain-text log lines with the protobuf frame
+            // stream (which can resync the framer onto a spurious boundary), or a
+            // newer-firmware FromRadio variant this build doesn't model. Tolerate it instead
+            // of aborting: the real config_complete_id still arrives. Mirrors the reference
+            // Python client, which skips bytes it can't frame/parse.
+            else -> logger.debug(TAG) { "Stage 1: ignoring unrecognized FromRadio" }
         }
     }
 
@@ -1299,11 +1308,13 @@ internal class MeshEngine(
                 }
             }
 
-            // see Stage 1 comment above — mismatched completion nonce is
-            // a protocol violation, not a silently-droppable frame.
-            completeId != 0 -> failHandshakeWithProtocol(
+            // see Stage 1 comment above — only a *set* mismatching completion nonce is a
+            // protocol violation; a null/unrecognized FromRadio is tolerated.
+            completeId != null && completeId != 0 -> failHandshakeWithProtocol(
                 "Stage 2 config_complete_id mismatch: expected=$NONCE_STAGE2 got=$completeId",
             )
+
+            else -> logger.debug(TAG) { "Stage 2: ignoring unrecognized FromRadio" }
         }
     }
 

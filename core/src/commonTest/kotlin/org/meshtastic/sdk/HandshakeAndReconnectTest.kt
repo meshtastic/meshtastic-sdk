@@ -328,6 +328,40 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun unrecognizedFromRadioDuringStage1IsToleratedNotFatal() = runTest {
+        // A device's serial debug console interleaves plain-text log lines with the protobuf
+        // frame stream, which can resync the framer onto a spurious boundary and surface a
+        // FromRadio whose payload_variant is unset (also the case for a newer-firmware variant
+        // this build doesn't model). Such a frame must NOT abort the handshake — the real
+        // config_complete_id still arrives. Regression: config_complete_id is nullable and
+        // `null != 0` is true in Kotlin, so an unset id used to fatal as a "mismatch".
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:stage1-unrecognized"),
+            nowMs = { currentTime },
+            autoCompleteStage1 = false,
+        )
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { client.connect() }
+        runCurrent()
+
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio(my_info = MyNodeInfo(my_node_num = transport.nodeNum)),
+        )
+        // An empty FromRadio — every oneof arm unset (the unrecognized / misframed case).
+        transport.injectFromRadio(org.meshtastic.proto.FromRadio())
+        transport.injectFromRadio(org.meshtastic.proto.FromRadio(config_complete_id = NONCE_STAGE1))
+        drainCurrent()
+
+        // Settle → Stage 2 (auto-completed) → seeding → Ready.
+        repeat(4) {
+            advanceTimeBy(150L)
+            drainCurrent()
+        }
+        connectJob.await()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
     fun packetsReceivedMidHandshakeAreDeliveredAfterConnected() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:handshake-packet-buffer"),
