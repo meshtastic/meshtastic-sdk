@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.4.0"           # matches Meshtastic-Android (SKIE 0.10.12+ supports 2.3.21)
+kotlin                      = "2.3.21"         # SKIE 0.10.12 supports up to 2.3.21 (build-logic ABI DSL + SKIE both break on 2.4.0)
 agp                         = "9.2.1"
 gradle                      = "9.5.1"
 javaVersion                 = "21"
