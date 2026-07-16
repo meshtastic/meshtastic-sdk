@@ -123,7 +123,6 @@ Retry counts and backoff strategies for NextHopRouter / ReliableRouter are **not
 | `TH` | Thailand | 920–925 MHz |
 | `LORA_24` | 2.4 GHz (experimental/emerging) | 2400–2483.5 MHz |
 | `UA_433` | Ukraine | 433–435 MHz |
-| `UA_868` | Ukraine | 863–870 MHz |
 | `MY_433` | Malaysia | 433–435 MHz |
 | `MY_919` | Malaysia | 919–923 MHz |
 | `SG_923` | Singapore | 923–925 MHz |
@@ -435,7 +434,7 @@ Device emits heartbeats every 30 seconds. On BLE, wait ~200 ms after sending a c
 - `device.tzdef`: POSIX TZ Database string (e.g., `PST8PDT,M3.2.0,M11.1.0` for LA).
 
 #### LoRa Config
-- `lora.region`: UNSET, US, EU_433, EU_868, CN, JP, ANZ, ANZ_433, KR, TW, RU, IN, NZ_865, TH, LORA_24, UA_433, UA_868, MY_433, MY_919, SG_923, KZ_433, KZ_863, BR_902, NP_865, PH_868, PH_915.
+- `lora.region`: UNSET, US, EU_433, EU_868, CN, JP, ANZ, ANZ_433, KR, TW, RU, IN, NZ_865, TH, LORA_24, UA_433, MY_433, MY_919, SG_923, KZ_433, KZ_863, BR_902, NP_865, PH_868, PH_915.
 - `lora.modem_preset`: LONG_FAST (default), LONG_SLOW, LONG_MODERATE, MEDIUM_FAST, MEDIUM_SLOW, SHORT_FAST, SHORT_SLOW, SHORT_TURBO, VERY_LONG_SLOW.
 - `lora.use_preset`: Boolean (true = use preset; false = use custom BW/SF/CR).
 - `lora.bandwidth`: 31, 62, 125, 250, 500 (mapped to kHz).

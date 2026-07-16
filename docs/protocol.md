@@ -1109,7 +1109,6 @@ Each `ChannelSettings` carries:
 | `TH` | Thailand | 920–925 MHz | |
 | `LORA_24` | (worldwide ISM 2.4 GHz) | 2400–2483.5 MHz | Experimental; SX1280 hardware |
 | `UA_433` | Ukraine | 433–435 MHz | |
-| `UA_868` | Ukraine | 863–870 MHz | |
 | `MY_433` | Malaysia | 433–435 MHz | |
 | `MY_919` | Malaysia | 919–923 MHz | |
 | `SG_923` | Singapore | 923–925 MHz | |
