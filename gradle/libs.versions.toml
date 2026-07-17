@@ -42,7 +42,7 @@ kermit                      = "2.1.0"
 
 # --- Testing ---
 turbine                     = "1.2.1"
-kotest                      = "6.1.11"
+kotest                      = "6.2.2"
 junit                       = "4.13.2"
 androidxTestRunner          = "1.7.0"
 androidxTestRules           = "1.7.0"
