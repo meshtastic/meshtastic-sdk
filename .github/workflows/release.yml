@@ -84,8 +84,32 @@ jobs:
       - name: Run gate
         run: ./gradlew check
 
+      - name: Check Maven Central state
+        # Probe whether this version is already on Maven Central. If it is,
+        # the publish step below skips — Sonatype rejects re-uploads with
+        # "component already exists", which would otherwise turn a re-run
+        # after a partial failure (workflow died after a successful publish)
+        # into a hard failure. All sdk-* artifacts publish together in one
+        # Central Portal deployment, so sdk-core's POM is an accurate proxy
+        # for the whole release.
+        id: mc_check
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          # `|| true`: a transient probe failure must not kill the run —
+          # treating it as "not published" just means we attempt the
+          # publish, which is today's behavior.
+          HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://repo1.maven.org/maven2/org/meshtastic/sdk-core/$VERSION/sdk-core-$VERSION.pom" || true)
+          echo "Maven Central POM probe for sdk-core $VERSION: HTTP $HTTP"
+          if [ "$HTTP" = "200" ]; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION is already on Maven Central — publish step will skip (idempotent re-run)."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to Maven Central
-        if: ${{ inputs.dry_run != true }}
+        if: ${{ inputs.dry_run != true && steps.mc_check.outputs.already_published == 'false' }}
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}

@@ -114,6 +114,20 @@ The workflow:
 Snapshot releases publish automatically on every push to `main` — no
 manual step needed.
 
+### Re-running after a partial failure
+
+The publish step is idempotent. Before uploading, the workflow probes
+`repo1.maven.org` for this version's `sdk-core` POM and skips the upload
+when it is already there (Sonatype rejects re-uploads with "component
+already exists"). If a run dies mid-workflow — runner outage, GitHub
+incident — a plain re-run of the same workflow is safe, whatever state
+the previous run reached.
+
+One caveat: Sonatype → `repo1.maven.org` sync takes roughly 10–25
+minutes. A re-run started inside that window can still attempt the
+upload and fail on "component already exists"; wait for the sync (check
+`https://repo1.maven.org/maven2/org/meshtastic/sdk-core/`), then re-run.
+
 ## After the release
 
 1. **Create the GitHub release**: `gh release create vX.Y.Z --notes-file
