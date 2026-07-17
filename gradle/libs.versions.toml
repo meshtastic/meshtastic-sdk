@@ -60,7 +60,7 @@ spotless                    = "8.8.0"
 detekt                      = "2.0.0-alpha.5"
 detektComposeRules          = "0.6.3"
 axionRelease                = "1.21.2"
-kover                       = "0.9.8"
+kover                       = "0.9.9"
 
 [libraries]
 coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",        version.ref = "coroutines" }
