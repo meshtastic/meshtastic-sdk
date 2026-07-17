@@ -35,7 +35,7 @@ clikt                       = "5.1.0"
 # --- Compose Multiplatform (samples/parity-app) ---
 composeMultiplatform        = "1.11.1"
 androidxActivityCompose     = "1.13.0"
-androidxLifecycleCompose    = "2.10.0"
+androidxLifecycleCompose    = "2.11.0"
 
 # --- Logging ---
 kermit                      = "2.1.0"
