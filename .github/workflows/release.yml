@@ -70,6 +70,31 @@ jobs:
           submodules: recursive
           fetch-depth: 0  # axion-release reads tags
 
+      # The release job cross-compiles every Kotlin/Native target; without
+      # this cache each release run re-downloads the konan toolchain and
+      # rebuilds dependency klibs from scratch (the CI test jobs have had
+      # this cache all along — v0.1.0's first attempt ran >1h cold).
+      - name: Cache Konan
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml','gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            konan-${{ runner.os }}-
+
+      # Cap build memory below the macOS runner's budget. The project
+      # gradle.properties asks for -Xmx4g and full parallelism, which — plus
+      # the Kotlin daemon and konan compilers — swap-thrashes the runner.
+      # GRADLE_USER_HOME properties take precedence over the project's.
+      - name: Cap Gradle memory for the runner
+        run: |
+          mkdir -p ~/.gradle
+          {
+            echo "org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+            echo "org.gradle.workers.max=2"
+            echo "kotlin.daemon.jvmargs=-Xmx2g"
+          } >> ~/.gradle/gradle.properties
+
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'true'
@@ -85,11 +110,24 @@ jobs:
             exit 1
           fi
 
+      # Samples are excluded: they are CI-gated on every PR and are not
+      # published, and their RELEASE-mode iOS framework links run the
+      # Kotlin/Native devirtualization pass, which OOMs the 7GB macOS
+      # runner (v0.1.0 attempt 2 died there). -x also drops tasks
+      # reachable only through the excluded ones (the link tasks).
       - name: Build all artifacts
-        run: ./gradlew assemble
+        run: >
+          ./gradlew assemble
+          -x :samples:cli:assemble
+          -x :samples:parity-app:assemble
+          -x :samples:parity-android-app:assemble
 
       - name: Run gate
-        run: ./gradlew check
+        run: >
+          ./gradlew check
+          -x :samples:cli:check
+          -x :samples:parity-app:check
+          -x :samples:parity-android-app:check
 
       - name: Check Maven Central state
         # Probe whether this version is already on Maven Central. If it is,
