@@ -9,10 +9,24 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+### Changed
+
+### Removed
+
+### Fixed
+
+## [0.1.0] — 2026-07-16
+
+First published release (Maven Central). Everything under [0.1.0-rc1] below is included; the
+sections here cover the rc cycle — changes between `v0.1.0-rc1` and `v0.1.0`.
+
 ### Breaking
 
-Pre-1.0 policy: breaking changes ship in a MINOR bump (0.2.0). Nothing below has ever been
-published to Maven Central (0.1.0 was tagged `rc1` only), so these break no external consumer.
+Breaking relative to the unpublished `v0.1.0-rc1` tag only. Pre-1.0 policy would put breaking
+changes in a MINOR bump (see `docs/versioning.md`), but nothing has ever been published to
+Maven Central, so these break no external consumer and ship in 0.1.0.
 
 - **`RadioClient.close()` / `AutoCloseable` removed** — the blocking bridge
   (`runBlocking { disconnect() }`) was an ANR/deadlock trap on Android and iOS main threads.
@@ -94,9 +108,10 @@ published to Maven Central (0.1.0 was tagged `rc1` only), so these break no exte
 - **docs(SPEC.md):** Bumped spec from v2.1 to v2.2 — full post-audit sync aligning spec with shipped implementation. Key areas synchronized: AdminApi expansion (~15 → ~45 methods), `StoreForwardApi`, presence tracking (`WentOffline`/`CameOnline`), `AutoReconnectConfig`, `CongestionWarning`/`ExternalConfigChange`/`StorageDegraded` MeshEvent variants, send DSL, `connectAndAwaitReady()`, `SessionPasskey`, `ConfigBundle.deviceUIConfig`, `SendFailure.IdCollision`/`AckTimeout`/`HandshakeFailed`, `AdminResult` extensions, `ConnectionState` extensions, `MeshtasticException` context fields, convention plugin + version catalog correction (JVM 17→21, Android SDK→36, Kotlin 2.3.20).
 - **docs:** Synchronized `api-reference.md`, `error-taxonomy.md`, `roadmap.md`, `module-graph.md`, `README.md`, `CONTRIBUTING.md` with spec v2.2 changes.
 
-## [0.1.0] — 2026-05-01
+## [0.1.0-rc1] — 2026-05-01
 
-Initial release of the Meshtastic Kotlin Multiplatform SDK.
+Initial release candidate of the Meshtastic Kotlin Multiplatform SDK (internal team-share;
+never published to Maven Central).
 
 ### Highlights
 

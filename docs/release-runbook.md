@@ -83,10 +83,11 @@ git commit -s -m "docs(changelog): prepare vX.Y.Z release notes"
 
 ## Tag and push
 
-axion-release derives the version from the most recent annotated tag:
+axion-release derives the version from the most recent annotated tag. Tags
+are signed (the Release workflow header documents the same convention):
 
 ```bash
-git tag -a vX.Y.Z -m "vX.Y.Z"
+git tag -s vX.Y.Z -m "vX.Y.Z"
 git push origin main --tags
 ```
 
@@ -95,24 +96,54 @@ suffix) on the tagged commit.
 
 ## Publish
 
-Stable releases publish via the manual `release` workflow in
-[`.github/workflows/`](../.github/workflows/) — trigger it via
-`gh workflow run release.yml -f version=X.Y.Z` or the GitHub Actions UI.
+Pushing a stable `vX.Y.Z` tag triggers the `release` workflow in
+[`.github/workflows/release.yml`](../.github/workflows/release.yml)
+automatically. `workflow_dispatch` remains as a manual fallback and
+dry-run path — `gh workflow run release.yml -f version=X.Y.Z
+[-f dry_run=true]` or the GitHub Actions UI.
 
-> **Currently disabled.** All workflows are suffixed `.yml.disabled` for
-> the internal 0.1.0 team-share; until they're re-enabled, run the
-> publish steps locally (`./gradlew publish`) per the workflow's
-> intended sequence below.
+### Release candidates
+
+The tag-push trigger matches **stable tags only** — pushing a `vX.Y.Z-rcN`
+tag does not start the workflow. This is deliberate: Maven Central is
+immutable, so pre-release publishes should be an explicit act, not a tag
+side-effect. (`v0.1.0-rc1` was pushed expecting auto-publish and silently
+did nothing; the exclusion is now documented rather than accidental.)
+
+To publish an rc, push the tag and dispatch the workflow with the rc
+version:
+
+```bash
+gh workflow run release.yml -f version=X.Y.Z-rcN
+```
+
+The workflow's "Verify version matches tag" step confirms axion resolves
+the rc tag to `X.Y.Z-rcN`; if it does not, the run fails before anything
+is published.
 
 The workflow:
 
-1. Re-runs `./gradlew check`.
-2. Runs `./gradlew publishAggregationToCentralPortal` (per
-   [`docs/ci-cd.md`](ci-cd.md)).
-3. Promotes the staged release on Sonatype Central Portal.
+1. Builds all artifacts (`./gradlew assemble`) and re-runs `./gradlew check`.
+2. Runs `./gradlew publishAndReleaseToMavenCentral` (per
+   [`docs/ci-cd.md`](ci-cd.md)), which publishes and promotes the release
+   on Sonatype Central Portal.
 
 Snapshot releases publish automatically on every push to `main` — no
 manual step needed.
+
+### Re-running after a partial failure
+
+The publish step is idempotent. Before uploading, the workflow probes
+`repo1.maven.org` for this version's `sdk-core` POM and skips the upload
+when it is already there (Sonatype rejects re-uploads with "component
+already exists"). If a run dies mid-workflow — runner outage, GitHub
+incident — a plain re-run of the same workflow is safe, whatever state
+the previous run reached.
+
+One caveat: Sonatype → `repo1.maven.org` sync takes roughly 10–25
+minutes. A re-run started inside that window can still attempt the
+upload and fail on "component already exists"; wait for the sync (check
+`https://repo1.maven.org/maven2/org/meshtastic/sdk-core/`), then re-run.
 
 ## After the release
 

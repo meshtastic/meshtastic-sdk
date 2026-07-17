@@ -2,8 +2,8 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.3.21"         # SKIE 0.10.12 supports up to 2.3.21 (build-logic ABI DSL + SKIE both break on 2.4.0)
-agp                         = "9.2.1"
+kotlin                      = "2.4.10"         # SKIE 0.10.12 supports up to 2.3.21 (build-logic ABI DSL + SKIE both break on 2.4.0)
+agp                         = "9.3.0"
 gradle                      = "9.5.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
@@ -17,15 +17,15 @@ atomicfu                    = "0.33.0"
 okio                        = "3.17.0"
 
 # --- Protobuf / Wire ---
-wire                        = "6.4.0"            # wire-runtime version (transitive via protobufs SDK)
+wire                        = "6.4.5"            # wire-runtime version (transitive via protobufs SDK)
 meshtasticProtobufs         = "2.7.25"
 
 # --- Storage ---
 sqldelight                  = "2.3.2"
 
 # --- Transports ---
-kable                       = "0.43.1"
-ktor                        = "3.5.0"            # matches Meshtastic-Android
+kable                       = "0.44.1"           # 0.43.1 bumped to Kotlin 2.4.0, breaking klib ABI compat with our 2.3.21 pin (SKIE 0.10.12 ceiling)
+ktor                        = "3.5.1"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
 # --- TUI (samples/cli) ---
@@ -35,30 +35,30 @@ clikt                       = "5.1.0"
 # --- Compose Multiplatform (samples/parity-app) ---
 composeMultiplatform        = "1.11.1"
 androidxActivityCompose     = "1.13.0"
-androidxLifecycleCompose    = "2.10.0"
+androidxLifecycleCompose    = "2.11.0"
 
 # --- Logging ---
 kermit                      = "2.1.0"
 
 # --- Testing ---
 turbine                     = "1.2.1"
-kotest                      = "6.1.11"
+kotest                      = "6.2.2"
 junit                       = "4.13.2"
 androidxTestRunner          = "1.7.0"
 androidxTestRules           = "1.7.0"
 
 # --- Publishing / iOS distribution ---
-vanniktechMavenPublish      = "0.36.0"
+vanniktechMavenPublish      = "0.37.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.12"          # adds Kotlin 2.3.21 support
+skie                        = "0.10.13"          # adds Kotlin 2.3.21 support
 applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
 dokka                       = "2.2.0"
 
 # --- Static analysis & tooling ---
 ktlint                      = "1.8.0"
-spotless                    = "8.6.0"
-detekt                      = "2.0.0-alpha.4"
-detektComposeRules          = "0.6.1"
+spotless                    = "8.8.0"
+detekt                      = "2.0.0-alpha.5"
+detektComposeRules          = "0.6.3"
 axionRelease                = "1.21.2"
 kover                       = "0.9.8"
 
