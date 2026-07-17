@@ -10,7 +10,7 @@ package org.meshtastic.sdk.transport.ble
 import com.juul.kable.Characteristic
 import com.juul.kable.Descriptor
 import com.juul.kable.DiscoveredService
-import com.juul.kable.ExperimentalApi
+import com.juul.kable.ExperimentalKableApi
 import com.juul.kable.Identifier
 import com.juul.kable.Peripheral
 import com.juul.kable.State
@@ -130,7 +130,7 @@ class BleTransportHookTest {
  */
 // ExperimentalUuidApi: on iOS targets Kable's `Identifier` is kotlin.uuid.Uuid (experimental);
 // the override below trips the opt-in only when compiled for those targets.
-@OptIn(ExperimentalApi::class, kotlin.uuid.ExperimentalUuidApi::class)
+@OptIn(ExperimentalKableApi::class, kotlin.uuid.ExperimentalUuidApi::class)
 private class FakePeripheral : Peripheral {
 
     private val stateFlow = MutableStateFlow<State>(State.Disconnected())

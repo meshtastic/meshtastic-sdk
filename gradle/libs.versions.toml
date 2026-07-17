@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.4.10"         # SKIE 0.10.12 supports up to 2.3.21 (build-logic ABI DSL + SKIE both break on 2.4.0)
+kotlin                      = "2.4.0"          # SKIE 0.10.13 ceiling — it rejects 2.4.10 outright; bump both together when SKIE releases support
 agp                         = "9.3.0"
 gradle                      = "9.5.1"
 javaVersion                 = "21"
