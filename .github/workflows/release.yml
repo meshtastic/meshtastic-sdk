@@ -77,7 +77,9 @@ jobs:
 
       - name: Verify version matches tag
         run: |
-          actual=$(./gradlew -q currentVersion)
+          # axion's currentVersion prints "Project version: X.Y.Z" (plus a
+          # blank line under -q); extract the bare version before comparing.
+          actual=$(./gradlew -q currentVersion | sed -n 's/^Project version: //p' | tail -1)
           if [[ "$actual" != "${{ steps.ver.outputs.version }}" ]]; then
             echo "::error::Tag v${{ steps.ver.outputs.version }} resolves to '$actual' (expected ${{ steps.ver.outputs.version }})"
             exit 1
