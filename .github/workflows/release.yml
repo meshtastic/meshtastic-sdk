@@ -3,8 +3,10 @@ name: Release
 # Release pipeline. See docs/release-runbook.md.
 #
 # Triggers:
-#   - Tag push (vX.Y.Z) — automatic publish.
-#   - workflow_dispatch — manual fallback / dry-run support.
+#   - Tag push (vX.Y.Z, stable only) — automatic publish.
+#   - workflow_dispatch — manual fallback, dry-runs, and pre-release tags
+#     (vX.Y.Z-rcN). Pre-release tags deliberately do NOT auto-publish; see
+#     docs/release-runbook.md §Release candidates.
 #
 # Pre-flight (done before tagging):
 #   - main is green
@@ -14,11 +16,14 @@ name: Release
 on:
   push:
     tags:
+      # Stable tags only. A vX.Y.Z-rcN tag does NOT match and will not publish —
+      # publish rcs via workflow_dispatch instead (v0.1.0-rc1 once silently
+      # did nothing because of this pattern; the exclusion is now intentional).
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 0.1.0). Must match a pushed tag vX.Y.Z.'
+        description: 'Release version (e.g. 0.1.0 or 0.1.0-rc2). Must match a pushed tag vX.Y.Z or vX.Y.Z-rcN.'
         required: true
         type: string
       dry_run:
