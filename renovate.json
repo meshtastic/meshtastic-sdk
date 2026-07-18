@@ -33,6 +33,11 @@
       ]
     },
     {
+      "description": "Hold Kotlin at the SKIE ceiling. SKIE 0.10.13 (latest) hard-rejects Kotlin > 2.4.0 at configuration time, killing every job (v0.1.0 prep: the 2.4.10 bump broke all of main). Raise this bound and the SKIE version together when SKIE releases support — check https://github.com/touchlab/SKIE/releases.",
+      "matchPackageNames": ["/^org\\.jetbrains\\.kotlin[.:]/"],
+      "allowedVersions": "<=2.4.0"
+    },
+    {
       "groupName": "ktor",
       "matchPackageNames": [
         "/^io\\.ktor/"
