@@ -54,14 +54,14 @@ and a new patch tag is cut.
    git push origin main
    git push origin vX.Y.Z
    ```
-6. **Publish.** All workflows are currently disabled (`.yml.disabled`)
-   for the internal 0.1.0 team-share, so publish manually:
+6. **Publish.** Pushing the `vX.Y.Z` tag (step 5) triggers
+   [`.github/workflows/release.yml`](.github/workflows/release.yml), which
+   publishes and releases all artifacts to Maven Central via
+   `publishAndReleaseToMavenCentral`. To publish manually (e.g. from a
+   local machine with credentials configured):
    ```sh
-   ./gradlew publish
+   ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
    ```
-   Once `.github/workflows/release.yml` is re-enabled before the public
-   push, pushing the tag will trigger
-   `publishAllPublicationsToInternalRepository` automatically.
 
 ## Hotfixes
 

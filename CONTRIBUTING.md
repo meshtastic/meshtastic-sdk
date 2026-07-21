@@ -8,7 +8,7 @@ This project follows the [Meshtastic Code of Conduct](https://meshtastic.org/doc
 
 ## Developer Certificate of Origin (DCO)
 
-We use the [Developer Certificate of Origin](https://developercertificate.org/), not a CLA. By signing off, you certify that you wrote the patch (or are authorized to submit it) and that you grant it under the project's license (GPL-3.0-only).
+We use the [Developer Certificate of Origin](https://developercertificate.org/), not a CLA. By signing off, you certify that you wrote the patch (or are authorized to submit it) and that you grant it under the project's license (GPL-3.0-or-later).
 
 Sign every commit with `-s` / `--signoff`:
 
@@ -278,7 +278,7 @@ Per [ADR-004](docs/decisions/004-licensing.md), this SDK lives inside the `mesht
 
 1. Add a second copyright line in the file header crediting the source repo + author.
 2. Note the origin in the commit message: `Origin: Meshtastic-Android/.../HeartbeatSender.kt @ <commit-sha>`.
-3. Keep the SPDX `GPL-3.0-only` line.
+3. Keep the SPDX `GPL-3.0-or-later` line.
 
 Code from outside the org follows ordinary GPL-compatibility rules.
 

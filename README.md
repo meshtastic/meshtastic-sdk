@@ -4,7 +4,7 @@
 > One library. Connects to Meshtastic devices over BLE, TCP, or USB-serial from Android, JVM, and iOS.
 > Wasm/browser is on the roadmap — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 
-[![License: GPL-3.0-only](https://img.shields.io/badge/License-GPL_3.0-blue.svg)](LICENSE)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/sdk-core)](https://central.sonatype.com/artifact/org.meshtastic/sdk-core)
 [![CI](https://github.com/meshtastic/meshtastic-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/meshtastic/meshtastic-sdk/actions/workflows/ci.yml)
 [![API Docs](https://img.shields.io/badge/docs-Dokka-blue)](https://meshtastic.github.io/meshtastic-sdk/)
@@ -36,7 +36,7 @@ dependencies {
 }
 ```
 
-> **Heads up:** `0.1.0` is **not yet on Maven Central** — the first release tag has not been cut. Until then, use the snapshot repository below.
+> Released versions are published to Maven Central. For bleeding-edge builds from `main`, use the snapshot repository below.
 
 Available transport modules: `transport-ble`, `transport-tcp`, `transport-serial` (single multiplatform module covering JVM and Android).
 Available storage modules: `storage-sqldelight`. Or roll your own `StorageProvider`.
@@ -290,7 +290,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full flow.
 
 ## License
 
-GPL-3.0-only. See [`LICENSE`](LICENSE) and [`docs/decisions/004-licensing.md`](docs/decisions/004-licensing.md).
+GPL-3.0-or-later. See [`LICENSE`](LICENSE) and [`docs/decisions/004-licensing.md`](docs/decisions/004-licensing.md).
 
 ## Related Meshtastic projects
 
