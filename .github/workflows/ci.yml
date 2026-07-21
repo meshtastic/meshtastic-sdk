@@ -181,6 +181,39 @@ jobs:
       - name: Run full check (gate)
         run: ./gradlew check
 
+  coverage:
+    name: Coverage (Kover -> Codecov)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Determine cache mode
+        id: cache_config
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "cache_read_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+
+      - name: Generate coverage report (Kover XML)
+        run: ./gradlew koverXmlReport
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          files: build/reports/kover/report.xml
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
   publish-snapshot:
     name: Publish snapshot to Sonatype Central
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
