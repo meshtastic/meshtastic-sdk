@@ -54,12 +54,15 @@ buildCache {
                 }
             }
 
-            allowInsecureProtocol = true
-            allowUntrustedServer = true
+            // HTTPS + valid TLS enforced (no allowInsecureProtocol / no
+            // allowUntrustedServer): the cache server must present a trusted cert.
 
-            // Keep push enabled if credentials are provided.
-            // This naturally disables push for fork PRs which don't have access to secrets.
-            push = (cacheUsername && cachePassword)
+            // Write to the cache only from trusted events (local dev, push,
+            // merge_group) with credentials — never from pull_request runs — so
+            // unmerged code can't poison the cache. Fork PRs lack credentials too.
+            def eventName = System.getenv("GITHUB_EVENT_NAME")
+            def trustedForPush = eventName == null || eventName == "push" || eventName == "merge_group"
+            push = (cacheUsername && cachePassword && trustedForPush)
 
             enabled = true
         } else {
