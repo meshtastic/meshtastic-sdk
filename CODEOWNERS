@@ -18,7 +18,7 @@
 /build.gradle.kts                                       @meshtastic/sdk-maintainers @meshtastic/build-infra
 
 # Protocol surface — needs protocol expertise
-/proto/                                                 @meshtastic/sdk-maintainers @meshtastic/protocol
+# (proto types come from the published org.meshtastic:protobufs artifact — no in-tree module; see ADR-015)
 /docs/protocol.md                                       @meshtastic/protocol
 /docs/glossary.md                                       @meshtastic/protocol
 
@@ -37,7 +37,7 @@
 /storage-sqldelight/                                    @meshtastic/sdk-maintainers @meshtastic/storage
 
 # iOS distribution
-/samples/ios-app/                                       @meshtastic/sdk-maintainers @meshtastic/ios
+/samples/parity-app/iosApp/                             @meshtastic/sdk-maintainers @meshtastic/ios
 /docs/decisions/007-ios-distribution.md                 @meshtastic/sdk-maintainers @meshtastic/ios
 
 # Security-sensitive areas — require security review
