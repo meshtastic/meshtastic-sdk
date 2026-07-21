@@ -19,7 +19,6 @@ gradlew.bat  text eol=crlf
 gradle/wrapper/gradle-wrapper.jar binary
 
 # Generated / vendored sources should not skew GitHub language stats
-proto/src/protobufs/**           linguist-vendored
 **/build/generated/**            linguist-generated
 docs/scaffold/**                 linguist-documentation
 

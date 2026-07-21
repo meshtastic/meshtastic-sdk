@@ -11,6 +11,13 @@ on:
       - '.github/**'
       - '.githooks/**'
 
+concurrency:
+  group: tooling-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   tooling-check:
     runs-on: ubuntu-latest
