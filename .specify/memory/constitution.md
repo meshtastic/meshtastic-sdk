@@ -155,7 +155,7 @@ breakage and communicates intent clearly.
   level is supported; the SDK fails the dependency resolution at
   build time for lower targets.
 - **iOS**: iOS 14+ runtime.
-- **License**: GPL-3.0-only. All contributions MUST be
+- **License**: GPL-3.0-or-later. All contributions MUST be
   compatible.
 
 ## Development Workflow

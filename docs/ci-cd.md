@@ -1,11 +1,11 @@
 # CI / CD
 
-> **Workflow enablement status (pre-1.0):** The PR/CI gates
-> (`ci.yml`, `tooling-check.yml`, `dependency-review.yml`, `docs.yml`)
-> are **enabled** and run on every PR / push to `main`. The supply-chain
-> and scheduled workflows (`release.yml`, `codeql.yml`, `scorecard.yml`)
-> still ship with a `.yml.disabled` suffix and will be re-enabled before
-> the public 1.0 push. Local equivalents in
+> **Workflow enablement status:** The PR/CI gates
+> (`ci.yml`, `tooling-check.yml`, `dependency-review.yml`, `docs.yml`) and
+> the tag-triggered release workflow (`release.yml`) are **enabled**;
+> `release.yml` has published to Maven Central (starting with `v0.1.0`).
+> Only the supply-chain scans (`codeql.yml`, `scorecard.yml`) still ship
+> with a `.yml.disabled` suffix, pending enablement. Local equivalents in
 > [`release-runbook.md`](release-runbook.md) and `./gradlew check` remain
 > the source of truth.
 
