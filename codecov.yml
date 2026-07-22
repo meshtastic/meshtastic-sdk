@@ -2,8 +2,8 @@
 #
 # Coverage is measured by Kover on the JVM target only (Kover instruments
 # JVM/Android bytecode; Native/iOS execution is not counted). Reports are
-# currently INFORMATIONAL (non-blocking) — a koverVerify threshold gate
-# will be added once a baseline is established. See docs/ci-cd.md.
+# the project status GATES on regression (target: auto, ±1% tolerance); the
+# patch status stays advisory to avoid blocking small PRs. See docs/ci-cd.md.
 coverage:
   precision: 2
   round: down
@@ -11,10 +11,12 @@ coverage:
   status:
     project:
       default:
-        informational: true
+        target: auto         # gate: fail if overall coverage regresses
+        threshold: 1%        # tolerate ≤1% dips (rounding, flaky lines)
+        informational: false
     patch:
       default:
-        informational: true
+        informational: true  # advisory only — don't block small PRs on patch noise
 
 comment:
   layout: "reach, diff, flags, components"
