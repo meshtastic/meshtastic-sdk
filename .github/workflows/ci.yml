@@ -75,8 +75,8 @@ jobs:
           cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
 
-      - name: Build Android
-        run: ./gradlew :core:compileAndroidMain :core:assembleAndroidMain
+      - name: Test Android (host unit tests) and assemble
+        run: ./gradlew :core:testAndroidHostTest :core:assembleAndroidMain
 
   test-ios:
     runs-on: macos-latest
