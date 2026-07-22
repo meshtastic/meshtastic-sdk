@@ -1,0 +1,56 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday 06:00 UTC
+    - cron: '0 6 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          # java-kotlin is disabled until the CodeQL CLI supports Kotlin 2.4.10.
+          # CodeQL CLI 2.26.1 (shipped by codeql-action v4.37.2) rejects it
+          # ("Kotlin version 2.4.10 is too recent"), so the analysis autobuild
+          # fails and no analysis runs. Support (ceiling 2.4.20) is merged
+          # upstream and ships in a later CLI release that codeql-action picks up
+          # automatically -- once a CodeQL CLI newer than 2.26.1 is out, uncomment
+          # to re-enable and verify the Analyze (java-kotlin) job goes green.
+          # - language: java-kotlin
+          #   build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@26dfab68fffc1cbc36c56970c32f0e53cf1fcc01 # v4.37.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@26dfab68fffc1cbc36c56970c32f0e53cf1fcc01 # v4.37.2
+        with:
+          category: '/language:${{ matrix.language }}'
