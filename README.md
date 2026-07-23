@@ -7,6 +7,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/sdk-core)](https://central.sonatype.com/artifact/org.meshtastic/sdk-core)
 [![CI](https://github.com/meshtastic/meshtastic-sdk/actions/workflows/ci.yml/badge.svg)](https://github.com/meshtastic/meshtastic-sdk/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/meshtastic/meshtastic-sdk/branch/main/graph/badge.svg)](https://codecov.io/gh/meshtastic/meshtastic-sdk)
 [![API Docs](https://img.shields.io/badge/docs-Dokka-blue)](https://meshtastic.github.io/meshtastic-sdk/)
 
 📚 **[API Reference (Dokka)](https://meshtastic.github.io/meshtastic-sdk/)** — published from `main`.
