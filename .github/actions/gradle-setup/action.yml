@@ -10,6 +10,9 @@ inputs:
   gradle_encryption_key:
     description: 'Encryption key for Gradle remote cache'
     required: false
+  develocity_access_key:
+    description: 'Access key for the OSS Community Develocity Instance (Build Scan publishing and remote cache writes)'
+    required: false
 runs:
   using: composite
   steps:
@@ -33,3 +36,4 @@ runs:
         cache-encryption-key: ${{ inputs.gradle_encryption_key }}
         cache-cleanup: on-success
         add-job-summary: always
+        develocity-access-key: ${{ inputs.develocity_access_key }}

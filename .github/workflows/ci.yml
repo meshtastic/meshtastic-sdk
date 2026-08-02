@@ -14,11 +14,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
-  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
-  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
-
 jobs:
   test-jvm:
     runs-on: ubuntu-latest
@@ -46,6 +41,7 @@ jobs:
           java_version: ${{ matrix.java-version }}
           cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Build and test (JVM)
         run: ./gradlew jvmTest
@@ -74,6 +70,7 @@ jobs:
         with:
           cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Test Android (host unit tests) and assemble
         run: ./gradlew :core:testAndroidHostTest :core:assembleAndroidMain
@@ -111,6 +108,7 @@ jobs:
         with:
           cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Build & test iOS (${{ matrix.ios-target }})
         run: ./gradlew :core:${{ matrix.ios-target }}Test
@@ -139,6 +137,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Check public API compatibility
         run: ./gradlew checkKotlinAbi
@@ -153,6 +152,7 @@ jobs:
       - uses: ./.github/actions/gradle-setup
         with:
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Verify architecture rules (ADR-008)
         run: ./gradlew :core:verifyModuleBoundary detekt
@@ -178,6 +178,7 @@ jobs:
         with:
           cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Run full check (gate)
         run: ./gradlew check
@@ -204,6 +205,7 @@ jobs:
         with:
           cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Generate coverage report (Kover XML)
         run: ./gradlew koverXmlReport
@@ -232,6 +234,7 @@ jobs:
         with:
           cache_read_only: 'true'
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Check publishing secrets
         id: secrets
