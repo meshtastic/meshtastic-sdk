@@ -69,6 +69,14 @@ spotless {
         "gradle/wrapper/**",
         "**/*.iml",
         ".idea/**",
+        // Local tooling directories, not sources. `.direnv/` holds nix-direnv's
+        // flake inputs, which are read-only /nix/store paths — spotless copying
+        // them into build/spotless-clean fails the task outright with
+        // AccessDeniedException, so `./gradlew check` cannot run at all in a
+        // Nix/direnv checkout. `.claude/` holds git worktrees, which drag in a
+        // second copy of the tree (and its own .direnv).
+        ".direnv/**",
+        ".claude/**",
     )
 
     kotlin {
