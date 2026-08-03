@@ -7,7 +7,7 @@
 
 plugins {
     id("com.gradle.develocity") version "4.5.0"
-    id("com.gradle.common-custom-user-data-gradle-plugin") version "2.7.0"
+    id("com.gradle.common-custom-user-data-gradle-plugin") version "2.8.0"
 }
 
 dependencyResolutionManagement {
@@ -26,8 +26,5 @@ dependencyResolutionManagement {
 rootProject.name = "build-logic"
 include(":convention")
 
-// Build Cache configuration (HTTP remote cache + local)
-apply(from = "../gradle/build-cache.settings.gradle")
-
-// Build Scans (Develocity)
+// Build Scans + remote Build Cache (Develocity OSS Community instance)
 apply(from = "../gradle/develocity.settings.gradle")

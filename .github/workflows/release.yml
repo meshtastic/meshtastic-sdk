@@ -39,11 +39,6 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  GRADLE_CACHE_URL: ${{ secrets.GRADLE_CACHE_URL }}
-  GRADLE_CACHE_USERNAME: ${{ secrets.GRADLE_CACHE_USERNAME }}
-  GRADLE_CACHE_PASSWORD: ${{ secrets.GRADLE_CACHE_PASSWORD }}
-
 jobs:
   publish:
     name: Publish ${{ inputs.version || github.ref_name }}
@@ -99,6 +94,7 @@ jobs:
         with:
           cache_read_only: 'true'
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
       - name: Verify version matches tag
         run: |
