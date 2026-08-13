@@ -337,7 +337,7 @@ class ConfigBuildersTest {
         assertEquals(expectedResult, admin.setDetectionSensorConfig { copy(enabled = true) })
         assertEquals(expectedResult, admin.setPaxcounterConfig { copy(enabled = true) })
         assertEquals(expectedResult, admin.setStatusMessageConfig { copy(node_status = "ready") })
-        assertEquals(expectedResult, admin.setTrafficManagementConfig { copy(enabled = true) })
+        assertEquals(expectedResult, admin.setTrafficManagementConfig { copy(position_min_interval_secs = 60) })
 
         assertEquals(
             listOf(
@@ -355,7 +355,10 @@ class ConfigBuildersTest {
                 ModuleConfig(detection_sensor = ModuleConfig.DetectionSensorConfig().copy(enabled = true)),
                 ModuleConfig(paxcounter = ModuleConfig.PaxcounterConfig().copy(enabled = true)),
                 ModuleConfig(statusmessage = ModuleConfig.StatusMessageConfig().copy(node_status = "ready")),
-                ModuleConfig(traffic_management = ModuleConfig.TrafficManagementConfig().copy(enabled = true)),
+                ModuleConfig(
+                    traffic_management =
+                    ModuleConfig.TrafficManagementConfig().copy(position_min_interval_secs = 60),
+                ),
             ),
             admin.moduleConfigs,
         )
