@@ -14,7 +14,7 @@ androidTargetSdk            = "37"
 coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
 atomicfu                    = "0.33.0"
-okio                        = "3.17.0"
+okio                        = "3.18.1"
 
 # --- Protobuf / Wire ---
 wire                        = "6.4.5"            # wire-runtime version (transitive via protobufs SDK)
