@@ -3,7 +3,7 @@
 [versions]
 # --- Kotlin & build ---
 kotlin                      = "2.4.0"          # SKIE 0.10.13 ceiling — it rejects 2.4.10 outright; bump both together when SKIE releases support
-agp                         = "9.3.0"
+agp                         = "9.3.1"
 gradle                      = "9.5.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
