@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.4.0"          # SKIE 0.10.13 ceiling — it rejects 2.4.10 outright; bump both together when SKIE releases support
+kotlin                      = "2.4.10"
 agp                         = "9.3.1"
 gradle                      = "9.5.1"
 javaVersion                 = "21"
@@ -50,7 +50,7 @@ androidxTestRules           = "1.7.0"
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.37.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.13"          # adds Kotlin 2.3.21 support
+skie                        = "0.10.14"          # adds Kotlin 2.4.10 support
 applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
 dokka                       = "2.2.0"
 
