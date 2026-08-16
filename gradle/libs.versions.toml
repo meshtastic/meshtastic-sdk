@@ -24,7 +24,7 @@ meshtasticProtobufs         = "2.7.26"
 sqldelight                  = "2.3.2"
 
 # --- Transports ---
-kable                       = "0.44.1"           # 0.43.1 bumped to Kotlin 2.4.0, breaking klib ABI compat with our 2.3.21 pin (SKIE 0.10.12 ceiling)
+kable                       = "0.44.3"           # 0.43.1 bumped to Kotlin 2.4.0, breaking klib ABI compat with our 2.3.21 pin (SKIE 0.10.12 ceiling)
 ktor                        = "3.5.2"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
