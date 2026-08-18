@@ -4,7 +4,6 @@
 # --- Kotlin & build ---
 kotlin                      = "2.4.10"
 agp                         = "9.3.1"
-gradle                      = "9.5.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
 androidCompileSdk           = "37"
@@ -24,7 +23,7 @@ meshtasticProtobufs         = "2.7.26"
 sqldelight                  = "2.3.2"
 
 # --- Transports ---
-kable                       = "0.44.3"           # 0.43.1 bumped to Kotlin 2.4.0, breaking klib ABI compat with our 2.3.21 pin (SKIE 0.10.12 ceiling)
+kable                       = "0.44.3"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
 ktor                        = "3.5.2"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 
