@@ -17,6 +17,28 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+## [0.1.1] — 2026-08-18
+
+Dependency-refresh release; no public API change (`checkKotlinAbi` clean, `api/*.api`
+untouched since 0.1.0).
+
+### Changed
+
+- Kotlin 2.4.0 → 2.4.10 and SKIE 0.10.13 → 0.10.14 (adds Kotlin 2.4.10 support plus SKIE's
+  Gradle configuration-cache / isolated-projects fixes).
+- `org.meshtastic:protobufs` 2.7.25 → 2.7.26.
+- Ktor 3.5.1 → 3.5.2, Okio 3.17.0 → 3.18.1, Kable 0.44.1 → 0.44.3.
+
+### Release verification
+
+The pre-release conformance sweep ran against a **simulated TCP radio** (the meshtastic-mcp
+replay device at `127.0.0.1:4403`) — no bench radio was available, and the SDK currently has
+no published consumers. cs1/cs3/cs5 pass; cs2 (broadcast terminal state) and cs6 (instant
+reconnect) fail **identically with the released v0.1.0 CLI against the same simulator**, so
+both are simulator limitations (no routing-ACK emission; single-client teardown race), not
+candidate regressions. cs4/cs7 skipped (no peer node). Full gate (`check`, `checkKotlinAbi`,
+`publishToMavenLocal`, tooling guardrails) green on the release commit.
+
 ## [0.1.0] — 2026-07-16
 
 First published release (Maven Central). Everything under [0.1.0-rc1] below is included; the
