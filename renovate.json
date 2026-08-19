@@ -1,20 +1,15 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Extends the org-wide policy for published KMP libraries (automerge baseline, 3-day soak, kotlin-toolchain and first-party holds — see meshtastic/.github:kmp-library.json for rationale). Local rules below keep this repo stricter than the preset: every Gradle update is human-reviewed because this SDK is consumed by the apple and android apps. packageRules apply in order and the last match wins, so these rules override the preset's.",
   "extends": [
-    "config:recommended",
-    ":dependencyDashboard",
-    ":semanticCommits",
+    "local>meshtastic/.github:kmp-library",
     ":timezone(UTC)"
   ],
-  "labels": ["dependencies"],
-  "schedule": ["before 6am on monday"],
-  "prHourlyLimit": 4,
-  "prConcurrentLimit": 10,
   "rangeStrategy": "bump",
-  "configMigration": true,
   "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] },
   "packageRules": [
     {
+      "description": "Hold all non-major Gradle updates for review — overrides the preset's automerge baseline. Delete this rule to adopt the preset's baseline (automerge minor/patch/digest after the soak).",
       "matchManagers": ["gradle", "gradle-wrapper"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": false
@@ -24,23 +19,6 @@
       "automerge": false,
       "prBodyNotes": [
         "Bumps the `org.meshtastic:protobufs` artifact (the wire schema). Review the regenerated API diff carefully — new `oneof` arms break exhaustive `when` for consumers; run `./gradlew updateKotlinAbi`. See `docs/versioning.md`."
-      ]
-    },
-    {
-      "groupName": "kotlin",
-      "matchPackageNames": [
-        "/^org\\.jetbrains\\.kotlin/"
-      ]
-    },
-    {
-      "description": "Hold Kotlin at the SKIE ceiling. SKIE 0.10.13 (latest) hard-rejects Kotlin > 2.4.0 at configuration time, killing every job (v0.1.0 prep: the 2.4.10 bump broke all of main). Raise this bound and the SKIE version together when SKIE releases support — check https://github.com/touchlab/SKIE/releases.",
-      "matchPackageNames": ["/^org\\.jetbrains\\.kotlin[.:]/"],
-      "allowedVersions": "<=2.4.0"
-    },
-    {
-      "groupName": "ktor",
-      "matchPackageNames": [
-        "/^io\\.ktor/"
       ]
     },
     {
@@ -60,13 +38,6 @@
       "matchPackageNames": [
         "/^com\\.squareup\\.wire/"
       ]
-    },
-    {
-      "groupName": "kotlinx",
-      "matchPackageNames": [
-        "/^org\\.jetbrains\\.kotlinx/"
-      ]
     }
-  ],
-  "vulnerabilityAlerts": { "enabled": true, "labels": ["security"] }
+  ]
 }
