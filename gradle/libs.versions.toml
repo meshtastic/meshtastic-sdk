@@ -16,7 +16,7 @@ atomicfu                    = "0.33.0"
 okio                        = "3.18.1"
 
 # --- Protobuf / Wire ---
-wire                        = "6.4.5"            # wire-runtime version (transitive via protobufs SDK)
+wire                        = "6.4.7"            # wire-runtime version (transitive via protobufs SDK)
 meshtasticProtobufs         = "2.7.26"
 
 # --- Storage ---
