@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.transport.ble
 
+import com.juul.kable.GattRequestRejectedException
 import com.juul.kable.GattStatusException
 import com.juul.kable.NotConnectedException
 import com.juul.kable.Peripheral
@@ -14,6 +15,7 @@ import com.juul.kable.State
 import com.juul.kable.WriteType
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -80,8 +82,13 @@ public class BleTransport(
     override val state: StateFlow<TransportState> = _state.asStateFlow()
 
     // Child SupervisorJob inherits caller's context; siblings fail independently.
+    //
+    // The handler is required, not defensive: SupervisorJob stops a failing child cancelling its
+    // siblings, but does not make an unhandled exception non-fatal. Without it, anything escaping a
+    // child reaches the platform default handler, which on Android kills the consuming app.
     private val scope = CoroutineScope(
-        SupervisorJob(parent = parentContext[Job]) + (parentContext.minusKey(Job)) + Dispatchers.Default,
+        SupervisorJob(parent = parentContext[Job]) + (parentContext.minusKey(Job)) + Dispatchers.Default +
+            CoroutineExceptionHandler { _, cause -> publishScopeFailure(cause) },
     )
 
     private var drainJob: Job? = null
@@ -157,6 +164,11 @@ public class BleTransport(
                     try {
                         peripheral.read(BleConstants.FROMRADIO)
                     } catch (_: NotConnectedException) {
+                        null
+                    } catch (_: GattRequestRejectedException) {
+                        // Android rejects a GATT op when one is outstanding or the link is going
+                        // away: routine as a peer drops, not fatal. Ending the drain lets
+                        // publishDrainTerminatedError() report a recoverable error.
                         null
                     }
                 },
@@ -236,6 +248,16 @@ public class BleTransport(
                 throw e
             }
         }
+    }
+
+    /** Report a failure that escaped a child coroutine as a recoverable error. Idempotent. */
+    private fun publishScopeFailure(cause: Throwable) {
+        if (shuttingDown.value) return
+        if (!errorPublished.compareAndSet(expect = false, update = true)) return
+        _state.value = TransportState.Error(
+            cause = MeshtasticException.Transport("BLE transport failure: ${cause.message}", cause),
+            recoverable = true,
+        )
     }
 
     /**
