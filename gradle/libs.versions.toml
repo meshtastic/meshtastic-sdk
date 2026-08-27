@@ -57,7 +57,7 @@ dokka                       = "2.2.0"
 ktlint                      = "1.8.0"
 spotless                    = "8.10.0"
 detekt                      = "2.0.0-alpha.5"
-detektComposeRules          = "0.6.3"
+detektComposeRules          = "0.6.4"
 axionRelease                = "1.21.3"
 kover                       = "0.9.9"
 
