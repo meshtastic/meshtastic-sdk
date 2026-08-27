@@ -115,6 +115,9 @@ public class BleTransport(
     // ADR-012: lifecycle idempotency — while false, bridgeKableState() won't promote to Connected (warmup read pending).
     private val warmupComplete = atomic(false)
 
+    /** Last GATT rejection seen by the drain, so the terminated-error names the real cause. */
+    private val lastDrainFailure = atomic<Throwable?>(null)
+
     // ADR-012: lifecycle idempotency — only one Error transition per connect cycle.
     private val errorPublished = atomic(false)
 
@@ -133,6 +136,7 @@ public class BleTransport(
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
         // Reset per-connect lifecycle flags so reuse-after-disconnect works.
         warmupComplete.value = false
+        lastDrainFailure.value = null
         errorPublished.value = false
         // The previous session's collector cancelled its channel on completion; start each
         // cycle with a fresh one. Safe unconditionally: drain/warmup senders for this cycle
@@ -165,10 +169,12 @@ public class BleTransport(
                         peripheral.read(BleConstants.FROMRADIO)
                     } catch (_: NotConnectedException) {
                         null
-                    } catch (_: GattRequestRejectedException) {
-                        // Android rejects a GATT op when one is outstanding or the link is going
-                        // away: routine as a peer drops, not fatal. Ending the drain lets
-                        // publishDrainTerminatedError() report a recoverable error.
+                    } catch (e: GattRequestRejectedException) {
+                        // Android rejects a GATT op when one is outstanding, the state is invalid,
+                        // or the link is going away: routine, not fatal. Ending the drain lets
+                        // publishDrainTerminatedError() report a recoverable error. Keep the cause
+                        // so that error names what happened rather than assuming link loss.
+                        lastDrainFailure.value = e
                         null
                     }
                 },
@@ -208,6 +214,12 @@ public class BleTransport(
 
             if (shuttingDown.value) {
                 throw CancellationException("BleTransport shut down during connect")
+            }
+            // A supervised child (state bridge, observe, drain) may have failed while we were
+            // connecting and already published Error. Publishing Connected over it would report a
+            // healthy link with a dead child, so fail the connect instead.
+            if (errorPublished.value) {
+                throw MeshtasticException.Transport("BLE transport child failed during connect")
             }
             _state.value = TransportState.Connected
         } catch (e: CancellationException) {
@@ -271,9 +283,12 @@ public class BleTransport(
             current is TransportState.Bonding ||
             current is TransportState.Connecting
         ) {
+            val cause = lastDrainFailure.getAndSet(null)
             _state.value = TransportState.Error(
                 cause = MeshtasticException.Transport(
-                    "BLE drain terminated: peripheral not connected",
+                    cause?.let { "BLE drain terminated: ${it::class.simpleName}: ${it.message}" }
+                        ?: "BLE drain terminated: peripheral not connected",
+                    cause,
                 ),
                 recoverable = true,
             )
