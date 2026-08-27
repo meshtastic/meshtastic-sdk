@@ -296,9 +296,10 @@ public class BleTransport(
     }
 
     override suspend fun disconnect() {
-        _state.value = TransportState.Disconnected
-        // Pre-arm error guard so in-flight drain treats this as normal teardown.
+        // Arm the error guard before publishing Disconnected, not after: a child failing in the
+        // window between the two would otherwise overwrite Disconnected with Error.
         errorPublished.value = true
+        _state.value = TransportState.Disconnected
         warmupComplete.value = false
         cancelJobs()
         try {
