@@ -11,6 +11,12 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `RadioClient.Builder.skipNodeDb()` — opt into a config-only connect that
+  stops the handshake after Stage 1 and never issues the `want_config_id = 69421` NodeDB request.
+  Cuts the bulk of BLE connect latency on large meshes for config editors, provisioning tools and
+  CLI one-shots. Config bundle, channels, own node, admin RPCs and send/receive are unaffected;
+  peers are only known once heard live. See `docs/api-reference.md` → "Config-only connect".
+
 ### Changed
 
 ### Removed
