@@ -19,6 +19,17 @@ Failure causes (`MeshtasticException.HandshakeTimeout`, transport drop, etc.) re
 
 > Note: prior revisions of this doc listed standalone `TransportConnecting`, `Stage1Sending`, `Stage1Settled`, `InterStageHeartbeat`, `Stage2Sending`, and `Failed` states. Those are conceptual milestones inside `MeshEngine` (you can grep `MeshEngine.kt` for `connectionState.value = ConnectionState.Configuring(...)`) — they are not separate `HandshakeStage` enum values.
 
+### Config-only sessions (`RadioClient.Builder.skipNodeDb` / `configOnly`)
+
+When the consumer opts into a config-only connect, the engine still runs Stage 1 and the settle
+heartbeat, then **commits the Stage 1 snapshot and jumps straight to `SeedingSession`** — the
+`want_config_id = 69421` request is never posted, so `Stage2Draining` (and therefore
+`ConfigPhase.Stage2`) never occurs. This is protocol-legal: the firmware moves to
+`STATE_SEND_PACKETS` as soon as it emits `config_complete_id = 69420`, so normal traffic flows
+without Stage 2 (`protocol.md` §6). The session's node map then holds only the device's own
+`NodeInfo` (streamed in Stage 1 as `STATE_SEND_OWN_NODEINFO`); peers appear only as they are heard
+live. Everything else — config bundle, channels, session passkey, send/receive — is unchanged.
+
 ## Transitions
 
 ```mermaid
@@ -32,6 +43,7 @@ stateDiagram-v2
     Stage1Draining --> Idle: HandshakeTimeout(Stage1Draining) /\ntransport drop
 
     Stage1Settling --> Stage2Draining: settle window elapsed →\nHeartbeat(nonce=++n) flushed →\nToRadio(want_config_id=69421) flushed
+    Stage1Settling --> SeedingSession: skipNodeDb / configOnly →\nStage 1 snapshot committed,\nStage 2 never requested
     Stage1Settling --> Idle: HandshakeTimeout(Stage1Settling) /\ntransport drop
 
     Stage2Draining --> Stage2Draining: FromRadio.node_info\n(own then peers)

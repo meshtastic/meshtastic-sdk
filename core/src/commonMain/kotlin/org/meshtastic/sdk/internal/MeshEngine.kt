@@ -96,6 +96,12 @@ internal class MeshEngine(
     private val sendTimeout: Duration = 30.seconds,
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
+    /**
+     * When `true`, the handshake stops after Stage 1 (config, module config, channels) and the
+     * `want_config_id = NONCE_STAGE2` NodeDB request is never sent. See
+     * `RadioClient.Builder.skipNodeDb`.
+     */
+    private val skipNodeDb: Boolean = false,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -1121,6 +1127,17 @@ internal class MeshEngine(
     }
 
     private fun handleHeartbeatSettleComplete() {
+        // Config-only session (RadioClient.Builder.skipNodeDb): Stage 1 already carried
+        // my_info, metadata, config, module_config, channels and the device's own NodeInfo, and
+        // the firmware moved to STATE_SEND_PACKETS when it emitted config_complete_id=69420
+        // (protocol.md §6). Committing here — instead of posting want_config_id=69421 — skips the
+        // NodeDB stream entirely, which is the bulk of handshake time on BLE.
+        if (skipNodeDb) {
+            logger.info(TAG) { "Config-only handshake — skipping Stage 2 NodeDB request" }
+            commitHandshakeSnapshotAndSeed(stageLabel = "Stage 1 (config-only)")
+            return
+        }
+
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f)
         sendToRadio(ToRadio(want_config_id = NONCE_STAGE2))
         handshakeStage = HandshakeStage.Stage2Draining
@@ -1174,139 +1191,7 @@ internal class MeshEngine(
             // shared auxiliary-variant handling for Stage 2 (see Stage 1).
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.Stage2Draining) -> Unit
 
-            completeId == NONCE_STAGE2 -> {
-                logger.info(TAG) { "Stage 2 complete; seeding session passkey" }
-                handshakeStage = HandshakeStage.SeedingSession
-                // leaving Stage2Draining — cancel the sliding watchdog so it doesn't
-                // post a stale HandshakeTimeout message after we've already advanced.
-                stage2WatchdogJob?.cancel()
-                stage2WatchdogJob = null
-
-                // Commit accumulated handshake state.
-                val myInfo = pendingMyInfo
-                if (myInfo != null) {
-                    // R-9: detect identity rebind synchronously on the actor, BEFORE we mutate
-                    // any consumer-observable state (NodeChange.Snapshot below) and BEFORE the
-                    // async storage.recordOwnNode → clear() runs.
-                    val prev = previousMyNodeNum
-                    if (prev != null && prev != myInfo.my_node_num) {
-                        logger.warn(TAG) {
-                            "Identity rebind detected — previous=0x${prev.toString(
-                                16,
-                            )} new=0x${myInfo.my_node_num.toString(16)}"
-                        }
-                        // passkeys issued under the previous identity are meaningless now.
-                        sessionPasskeys.clear()
-                        events.tryEmit(
-                            MeshEvent.IdentityRebound(
-                                previousNodeNum = NodeId(prev),
-                                newNodeNum = NodeId(myInfo.my_node_num),
-                                // populate reason so host UX can choose
-                                // copy. Without the firmware specifically signalling "factory
-                                // reset", we report "identity_mismatch" — the NodeNum changed
-                                // under an identity that the host persisted.
-                                reason = "identity_mismatch",
-                            ),
-                        )
-                    }
-                    previousMyNodeNum = myInfo.my_node_num.takeIf { it != 0 }
-
-                    myNodeNum = myInfo.my_node_num
-                    meshState = meshState.withMyInfo(myInfo)
-                    ownNode.value = pendingNodes[NodeId(myNodeNum)]
-                }
-                if (pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty()) {
-                    val bundle = ConfigBundle(
-                        myInfo = myInfo ?: org.meshtastic.proto.MyNodeInfo(),
-                        metadata = pendingMetadata ?: org.meshtastic.proto.DeviceMetadata(),
-                        configs = pendingConfigs,
-                        moduleConfigs = pendingModuleConfigs,
-                        deviceUIConfig = pendingDeviceUIConfig,
-                    )
-                    meshState = meshState.withConfig(bundle)
-                }
-                if (pendingChannels.isNotEmpty()) {
-                    meshState = meshState.withChannels(pendingChannels.toList())
-                }
-                // Publish handshake state to the public flows synchronously on the actor:
-                // connect() resumes at Ready, and consumers legitimately read
-                // configBundle/channels immediately after — the async persistence block
-                // below must not gate visibility (real-device storage latency loses that
-                // race; caught by MeshtasticBleConformanceTest).
-                meshState.configBundle?.let { configBundleState.value = it }
-                if (pendingChannels.isNotEmpty()) {
-                    channelsState.value = pendingChannels.toList()
-                }
-                if (pendingNodes.isNotEmpty()) {
-                    meshState = meshState.withNodes(pendingNodes.toMap())
-                    emitNodeChangeOrLog(NodeChange.Snapshot(pendingNodes.toMap()))
-                }
-
-                // Persist to storage. Snapshot every actor-owned collection BEFORE launching:
-                // the async block runs concurrently with the actor, which keeps mutating
-                // pendingNodes / pendingChannels / lastHeartbeatAt (markNodeHeard on every
-                // inbound frame, scheduleReconnect clears) — iterating the live collections
-                // off-actor risks ConcurrentModificationException mis-reported as
-                // StorageDegraded.
-                run {
-                    val nodesSnapshot = pendingNodes.toMap()
-                    val channelsSnapshot = pendingChannels.toList()
-                    val heartbeatSnapshot = nodesSnapshot.keys.associateWith { lastHeartbeatAt[it] }
-                    val firmwareVersion = pendingMetadata?.firmware_version ?: ""
-                    val bundleSnapshot = meshState.configBundle
-                    engineScope?.launch {
-                        if (storageDegraded) return@launch
-                        val s = storage ?: return@launch
-                        try {
-                            if (myInfo != null) {
-                                s.recordOwnNode(NodeId(myInfo.my_node_num), firmwareVersion)
-                            }
-                            for ((nodeId, node) in nodesSnapshot) {
-                                s.saveNode(node)
-                                // every node in the handshake snapshot was just heard, so
-                                // seed their heartbeat row as well.
-                                heartbeatSnapshot[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
-                            }
-                            if (channelsSnapshot.isNotEmpty()) {
-                                s.saveChannels(channelsSnapshot)
-                            } else if (channelsState.value == null) {
-                                // Reconnect sessions where the device skips re-sending
-                                // channels: fall back to the persisted set (storage I/O, so
-                                // it stays in this async block).
-                                channelsState.value = s.loadChannels().ifEmpty { null }
-                            }
-                            bundleSnapshot?.let { s.saveConfig(it) }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            reportStorageDegraded(
-                                "persisting handshake snapshot failed: ${e.message ?: e::class.simpleName}",
-                                e,
-                            )
-                        }
-                    }
-                }
-
-                // mark every pending node as heard now (before the async block above flushes).
-                run {
-                    val now = clock.now().toEpochMilliseconds()
-                    for ((nodeId, _) in pendingNodes) {
-                        lastHeartbeatAt[nodeId] = now
-                    }
-                }
-
-                // Send get_owner_request to seed the session passkey.
-                if (myNodeNum != 0) {
-                    sendAdminPacket(AdminMessage(get_owner_request = true), wantResponse = true)
-                    engineScope?.launch {
-                        delay(SEED_TIMEOUT_MS)
-                        inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession))
-                    }
-                } else {
-                    // No myInfo: skip seeding and go Ready.
-                    transitionToReady()
-                }
-            }
+            completeId == NONCE_STAGE2 -> commitHandshakeSnapshotAndSeed(stageLabel = "Stage 2")
 
             // see Stage 1 comment above — only a *set* mismatching completion nonce is a
             // protocol violation; a null/unrecognized FromRadio is tolerated.
@@ -1315,6 +1200,149 @@ internal class MeshEngine(
             )
 
             else -> logger.debug(TAG) { "Stage 2: ignoring unrecognized FromRadio" }
+        }
+    }
+
+    /**
+     * Commit the accumulated handshake snapshot (own node, config bundle, channels, node DB),
+     * persist it, and issue the `get_owner_request` that seeds the admin session passkey.
+     *
+     * Shared by the two terminal handshake paths: the normal Stage 2 `config_complete_id`
+     * arrival, and the config-only path where [skipNodeDb] short-circuits Stage 2 entirely.
+     * [stageLabel] names the stage that just finished, for logging only.
+     */
+    private fun commitHandshakeSnapshotAndSeed(stageLabel: String) {
+        logger.info(TAG) { "$stageLabel complete; seeding session passkey" }
+        handshakeStage = HandshakeStage.SeedingSession
+        // leaving Stage2Draining — cancel the sliding watchdog so it doesn't
+        // post a stale HandshakeTimeout message after we've already advanced. No-op on the
+        // config-only path, which never armed it.
+        stage2WatchdogJob?.cancel()
+        stage2WatchdogJob = null
+
+        // Commit accumulated handshake state.
+        val myInfo = pendingMyInfo
+        if (myInfo != null) {
+            // R-9: detect identity rebind synchronously on the actor, BEFORE we mutate
+            // any consumer-observable state (NodeChange.Snapshot below) and BEFORE the
+            // async storage.recordOwnNode → clear() runs.
+            val prev = previousMyNodeNum
+            if (prev != null && prev != myInfo.my_node_num) {
+                logger.warn(TAG) {
+                    "Identity rebind detected — previous=0x${prev.toString(
+                        16,
+                    )} new=0x${myInfo.my_node_num.toString(16)}"
+                }
+                // passkeys issued under the previous identity are meaningless now.
+                sessionPasskeys.clear()
+                events.tryEmit(
+                    MeshEvent.IdentityRebound(
+                        previousNodeNum = NodeId(prev),
+                        newNodeNum = NodeId(myInfo.my_node_num),
+                        // populate reason so host UX can choose
+                        // copy. Without the firmware specifically signalling "factory
+                        // reset", we report "identity_mismatch" — the NodeNum changed
+                        // under an identity that the host persisted.
+                        reason = "identity_mismatch",
+                    ),
+                )
+            }
+            previousMyNodeNum = myInfo.my_node_num.takeIf { it != 0 }
+
+            myNodeNum = myInfo.my_node_num
+            meshState = meshState.withMyInfo(myInfo)
+            ownNode.value = pendingNodes[NodeId(myNodeNum)]
+        }
+        if (pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty()) {
+            val bundle = ConfigBundle(
+                myInfo = myInfo ?: org.meshtastic.proto.MyNodeInfo(),
+                metadata = pendingMetadata ?: org.meshtastic.proto.DeviceMetadata(),
+                configs = pendingConfigs,
+                moduleConfigs = pendingModuleConfigs,
+                deviceUIConfig = pendingDeviceUIConfig,
+            )
+            meshState = meshState.withConfig(bundle)
+        }
+        if (pendingChannels.isNotEmpty()) {
+            meshState = meshState.withChannels(pendingChannels.toList())
+        }
+        // Publish handshake state to the public flows synchronously on the actor:
+        // connect() resumes at Ready, and consumers legitimately read
+        // configBundle/channels immediately after — the async persistence block
+        // below must not gate visibility (real-device storage latency loses that
+        // race; caught by MeshtasticBleConformanceTest).
+        meshState.configBundle?.let { configBundleState.value = it }
+        if (pendingChannels.isNotEmpty()) {
+            channelsState.value = pendingChannels.toList()
+        }
+        if (pendingNodes.isNotEmpty()) {
+            meshState = meshState.withNodes(pendingNodes.toMap())
+            emitNodeChangeOrLog(NodeChange.Snapshot(pendingNodes.toMap()))
+        }
+
+        // Persist to storage. Snapshot every actor-owned collection BEFORE launching:
+        // the async block runs concurrently with the actor, which keeps mutating
+        // pendingNodes / pendingChannels / lastHeartbeatAt (markNodeHeard on every
+        // inbound frame, scheduleReconnect clears) — iterating the live collections
+        // off-actor risks ConcurrentModificationException mis-reported as
+        // StorageDegraded.
+        run {
+            val nodesSnapshot = pendingNodes.toMap()
+            val channelsSnapshot = pendingChannels.toList()
+            val heartbeatSnapshot = nodesSnapshot.keys.associateWith { lastHeartbeatAt[it] }
+            val firmwareVersion = pendingMetadata?.firmware_version ?: ""
+            val bundleSnapshot = meshState.configBundle
+            engineScope?.launch {
+                if (storageDegraded) return@launch
+                val s = storage ?: return@launch
+                try {
+                    if (myInfo != null) {
+                        s.recordOwnNode(NodeId(myInfo.my_node_num), firmwareVersion)
+                    }
+                    for ((nodeId, node) in nodesSnapshot) {
+                        s.saveNode(node)
+                        // every node in the handshake snapshot was just heard, so
+                        // seed their heartbeat row as well.
+                        heartbeatSnapshot[nodeId]?.let { ts -> s.saveHeartbeat(nodeId, ts) }
+                    }
+                    if (channelsSnapshot.isNotEmpty()) {
+                        s.saveChannels(channelsSnapshot)
+                    } else if (channelsState.value == null) {
+                        // Reconnect sessions where the device skips re-sending
+                        // channels: fall back to the persisted set (storage I/O, so
+                        // it stays in this async block).
+                        channelsState.value = s.loadChannels().ifEmpty { null }
+                    }
+                    bundleSnapshot?.let { s.saveConfig(it) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    reportStorageDegraded(
+                        "persisting handshake snapshot failed: ${e.message ?: e::class.simpleName}",
+                        e,
+                    )
+                }
+            }
+        }
+
+        // mark every pending node as heard now (before the async block above flushes).
+        run {
+            val now = clock.now().toEpochMilliseconds()
+            for ((nodeId, _) in pendingNodes) {
+                lastHeartbeatAt[nodeId] = now
+            }
+        }
+
+        // Send get_owner_request to seed the session passkey.
+        if (myNodeNum != 0) {
+            sendAdminPacket(AdminMessage(get_owner_request = true), wantResponse = true)
+            engineScope?.launch {
+                delay(SEED_TIMEOUT_MS)
+                inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession))
+            }
+        } else {
+            // No myInfo: skip seeding and go Ready.
+            transitionToReady()
         }
     }
 

@@ -129,9 +129,10 @@ public class RadioClient internal constructor(
      * `onSubscription`), then live [NodeChange.Added] / [NodeChange.Updated] /
      * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal
      * order. A delta whose change is already reflected in the seeded snapshot re-applies
-     * idempotently. The handshake additionally emits a live [NodeChange.Snapshot] at Stage-2
+     * idempotently. The handshake additionally emits a live [NodeChange.Snapshot] at handshake
      * commit (and after each reconnect), which existing subscribers must treat as a full
-     * replacement.
+     * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
+     * arrive as [NodeChange.Added] once they are heard.
      *
      * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
      * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
@@ -613,6 +614,7 @@ public class RadioClient internal constructor(
         private var rpcTimeout: Duration = 30.seconds
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
+        private var skipNodeDb: Boolean = false
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -801,6 +803,62 @@ public class RadioClient internal constructor(
         }
 
         /**
+         * Skip the NodeDB download during the handshake ("config-only" connect).
+         *
+         * The handshake normally runs in two stages (see `docs/protocol.md` §6): Stage 1 streams
+         * `my_info`, `metadata`, device/module config, channels and the device's own `NodeInfo`;
+         * Stage 2 streams the whole node database. On a large mesh over BLE, Stage 2 dominates
+         * connect time — hundreds of `NodeInfo` envelopes, each a separate GATT read.
+         *
+         * With this flag set, the engine stops after Stage 1: `want_config_id = 69421` is never
+         * sent, and the session goes straight to seeding the admin session passkey and then
+         * [ConnectionState.Connected]. Everything that does not depend on the node database keeps
+         * working — [RadioClient.configBundle], [RadioClient.channels], [RadioClient.ownNode],
+         * [RadioClient.admin], [RadioClient.send] / [RadioClient.sendText], [RadioClient.packets]
+         * and [RadioClient.events] are all unaffected.
+         *
+         * **What you give up:**
+         * - [RadioClient.nodes] emits a [NodeChange.Snapshot] containing only the local node;
+         *   peers appear only as they are heard live (`NODEINFO_APP` packets, position/telemetry
+         *   traffic).
+         * - [RadioClient.nodeSnapshot] likewise starts out holding only the local node.
+         * - Persisted node rows from earlier sessions are left untouched, but they are **not**
+         *   loaded into the session's in-memory node map.
+         * - Presence ([NodeChange.WentOffline] / [NodeChange.CameOnline]) only covers nodes the
+         *   session has actually heard from.
+         *
+         * Use it for config editors, provisioning tools, CLI one-shots and any flow that only
+         * touches [RadioClient.admin] — anything that wants a fast, cheap connect and does not
+         * render a node list. Leave it off (the default) for chat and map UIs.
+         *
+         * ```kotlin
+         * val client = RadioClient.Builder()
+         *     .transport(bleTransport)
+         *     .storage(InMemoryStorageProvider())
+         *     .skipNodeDb()
+         *     .build()
+         * ```
+         *
+         * @param skip `true` to skip Stage 2; `false` restores the default two-stage handshake.
+         * @since 0.3.0
+         */
+        public fun skipNodeDb(skip: Boolean = true): Builder = apply { skipNodeDb = skip }
+
+        /**
+         * Alias for [skipNodeDb] — reads better at call sites that describe the *intent*
+         * ("connect for configuration only") rather than the mechanism.
+         *
+         * ```kotlin
+         * RadioClient.Builder().transport(t).storage(s).configOnly().build()
+         * ```
+         *
+         * @param enabled `true` to skip the NodeDB download; `false` restores the default
+         *   two-stage handshake.
+         * @since 0.3.0
+         */
+        public fun configOnly(enabled: Boolean = true): Builder = skipNodeDb(enabled)
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -820,6 +878,7 @@ public class RadioClient internal constructor(
                 sendTimeout = sendTimeout,
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
+                skipNodeDb = skipNodeDb,
             )
 
             return RadioClient(

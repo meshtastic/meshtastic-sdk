@@ -1489,6 +1489,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun autoSyncTimeOnConnect(kotlin/Boolean): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.autoSyncTimeOnConnect|autoSyncTimeOnConnect(kotlin.Boolean){}[0]
         final fun build(): org.meshtastic.sdk/RadioClient // org.meshtastic.sdk/RadioClient.Builder.build|build(){}[0]
         final fun clock(kotlin.time/Clock): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.clock|clock(kotlin.time.Clock){}[0]
+        final fun configOnly(kotlin/Boolean = ...): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.configOnly|configOnly(kotlin.Boolean){}[0]
         final fun coroutineContext(kotlin.coroutines/CoroutineContext): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.coroutineContext|coroutineContext(kotlin.coroutines.CoroutineContext){}[0]
         final fun disableBleHeartbeat(): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.disableBleHeartbeat|disableBleHeartbeat(){}[0]
         final fun logger(org.meshtastic.sdk/LogSink): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.logger|logger(org.meshtastic.sdk.LogSink){}[0]
@@ -1496,6 +1497,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun protocolLogging(org.meshtastic.sdk/LogLevel, org.meshtastic.sdk/PayloadRedactor = ...): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.protocolLogging|protocolLogging(org.meshtastic.sdk.LogLevel;org.meshtastic.sdk.PayloadRedactor){}[0]
         final fun rpcTimeout(kotlin.time/Duration): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.rpcTimeout|rpcTimeout(kotlin.time.Duration){}[0]
         final fun sendTimeout(kotlin.time/Duration): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.sendTimeout|sendTimeout(kotlin.time.Duration){}[0]
+        final fun skipNodeDb(kotlin/Boolean = ...): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.skipNodeDb|skipNodeDb(kotlin.Boolean){}[0]
         final fun storage(org.meshtastic.sdk/StorageProvider): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.storage|storage(org.meshtastic.sdk.StorageProvider){}[0]
         final fun transport(org.meshtastic.sdk/RadioTransport): org.meshtastic.sdk/RadioClient.Builder // org.meshtastic.sdk/RadioClient.Builder.transport|transport(org.meshtastic.sdk.RadioTransport){}[0]
     }
