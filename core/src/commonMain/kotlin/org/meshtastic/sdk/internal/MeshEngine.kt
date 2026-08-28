@@ -96,6 +96,7 @@ internal class MeshEngine(
     private val sendTimeout: Duration = 30.seconds,
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
+    private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -1121,6 +1122,13 @@ internal class MeshEngine(
     }
 
     private fun handleHeartbeatSettleComplete() {
+        // Config-only: finish after Stage 1 via a synthetic Stage-2 completion; no NodeDB request (§6).
+        if (skipNodeDb) {
+            handshakeStage = HandshakeStage.Stage2Draining
+            processStage2Envelope(org.meshtastic.proto.FromRadio(config_complete_id = NONCE_STAGE2))
+            logger.info(TAG) { "Handshake ended after Stage 1 (config-only; NodeDB skipped)" }
+            return
+        }
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f)
         sendToRadio(ToRadio(want_config_id = NONCE_STAGE2))
         handshakeStage = HandshakeStage.Stage2Draining

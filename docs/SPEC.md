@@ -256,6 +256,7 @@ public class RadioClient internal constructor(/* ... */) {
             jitter: Double = 0.2,
         ): Builder
         public fun autoReconnect(config: AutoReconnectConfig): Builder
+        public fun skipNodeDb(skip: Boolean = true): Builder             // default: false — stop the handshake after Stage 1
         public fun build(): RadioClient
     }
 }

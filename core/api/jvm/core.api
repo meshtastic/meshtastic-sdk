@@ -1320,6 +1320,8 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public final fun rpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun skipNodeDb (Z)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public static synthetic fun skipNodeDb$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun storage (Lorg/meshtastic/sdk/StorageProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun transport (Lorg/meshtastic/sdk/RadioTransport;)Lorg/meshtastic/sdk/RadioClient$Builder;
 }
