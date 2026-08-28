@@ -42,9 +42,17 @@ permissions:
 jobs:
   publish:
     name: Publish ${{ inputs.version || github.ref_name }}
-    runs-on: macos-latest
+    # Linux publishes every target. Kotlin/Native cross-compiles the Apple klibs
+    # from any host, and nothing in the publish path needs Xcode — SKIE and the
+    # iOS framework only exist in the framework-link path, which Maven publishing
+    # never enters. Verified on 2.4.10: a Linux `publishToMavenLocal` emits the
+    # same 37 artifacts Maven Central holds, Apple klibs included.
+    # What Linux cannot do is *run* the iOS tests; the guard below covers that.
+    runs-on: ubuntu-latest
     permissions:
       contents: read
+      # the "Require green CI" step reads check-runs for the released commit
+      checks: read
     steps:
       - name: Resolve version
         id: ver
@@ -81,20 +89,33 @@ jobs:
       # gradle.properties asks for -Xmx4g and full parallelism, which — plus
       # the Kotlin daemon and konan compilers — swap-thrashes the runner.
       # GRADLE_USER_HOME properties take precedence over the project's.
-      - name: Cap Gradle memory for the runner
-        run: |
-          mkdir -p ~/.gradle
-          {
-            echo "org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
-            echo "org.gradle.workers.max=2"
-            echo "kotlin.daemon.jvmargs=-Xmx2g"
-          } >> ~/.gradle/gradle.properties
-
       - uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'true'
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+
+      # CI runs on push/pull_request/merge_group — never on tags — and this
+      # workflow can be dispatched against any ref, so the iOS tests (macOS-only,
+      # and the one thing this runner cannot do) are only guaranteed if the commit
+      # being released already passed them.
+      - name: Require green CI on the commit being released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          JOB="test-ios (iosSimulatorArm64)"
+          for _ in $(seq 1 60); do
+            CONC=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+              --jq ".check_runs[] | select(.name == \"$JOB\") | .conclusion" | head -1)
+            case "$CONC" in
+              success) echo "✓ $JOB passed on $SHA"; exit 0 ;;
+              null|"")  echo "waiting for '$JOB' on $SHA…"; sleep 30 ;;
+              *) echo "::error::'$JOB' concluded '$CONC' on $SHA — not releasing"; exit 1 ;;
+            esac
+          done
+          echo "::error::timed out waiting for '$JOB' on $SHA"
+          exit 1
 
       - name: Verify version matches tag
         run: |
