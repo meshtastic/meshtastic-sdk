@@ -103,14 +103,22 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           SHA=$(git rev-parse HEAD)
           JOB="test-ios (iosSimulatorArm64)"
           for _ in $(seq 1 60); do
-            CONC=$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" \
-              --jq ".check_runs[] | select(.name == \"$JOB\") | .conclusion" | head -1)
+            # -f filters server-side: the unfiltered check-runs list is paginated,
+            # so a client-side match can miss the job entirely and wait forever.
+            if ! CONC=$(gh api -X GET \
+              "repos/${{ github.repository }}/commits/$SHA/check-runs" \
+              -f check_name="$JOB" --jq '.check_runs[0].conclusion // ""'); then
+              echo "::warning::check-runs query failed; retrying"
+              sleep 30
+              continue
+            fi
             case "$CONC" in
               success) echo "✓ $JOB passed on $SHA"; exit 0 ;;
-              null|"")  echo "waiting for '$JOB' on $SHA…"; sleep 30 ;;
+              "") echo "waiting for '$JOB' on $SHA…"; sleep 30 ;;
               *) echo "::error::'$JOB' concluded '$CONC' on $SHA — not releasing"; exit 1 ;;
             esac
           done
