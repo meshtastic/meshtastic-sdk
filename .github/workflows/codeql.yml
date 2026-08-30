@@ -31,15 +31,11 @@ jobs:
         include:
           - language: actions
             build-mode: none
-          # java-kotlin is disabled until the CodeQL CLI supports Kotlin 2.4.10.
-          # CodeQL CLI 2.26.1 (shipped by codeql-action v4.37.2) rejects it
-          # ("Kotlin version 2.4.10 is too recent"), so the analysis autobuild
-          # fails and no analysis runs. Support (ceiling 2.4.20) is merged
-          # upstream and ships in a later CLI release that codeql-action picks up
-          # automatically -- once a CodeQL CLI newer than 2.26.1 is out, uncomment
-          # to re-enable and verify the Analyze (java-kotlin) job goes green.
-          # - language: java-kotlin
-          #   build-mode: none
+          # Re-enabled: the pinned codeql-action v4.37.8 ships CodeQL CLI 2.26.3,
+          # past the 2.26.1 that rejected Kotlin 2.4.10 as "too recent". The
+          # upstream ceiling is 2.4.20, so this stays green until Kotlin 2.4.20+.
+          - language: java-kotlin
+            build-mode: none
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
