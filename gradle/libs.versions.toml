@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.4.10"
+kotlin                      = "2.4.20"
 agp                         = "9.3.2"
 javaVersion                 = "21"
 androidMinSdk               = "26"
