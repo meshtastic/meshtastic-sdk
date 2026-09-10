@@ -43,7 +43,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun setHamModeSendsHamParameters() = runTest {
-        val params = HamParameters(call_sign = "KD2ABC", tx_power = 20)
+        val params = HamParameters.Builder().also { wb ->wb.call_sign = "KD2ABC"; wb.tx_power = 20}.build()
         assertAckSuccess(
             call = { it.setHamMode(params) },
             requestMatches = { it.set_ham_mode == params },
@@ -60,7 +60,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun keyVerificationSendsVerificationMessage() = runTest {
-        val verification = KeyVerificationAdmin(remote_nodenum = 0x01020304, nonce = 1234L)
+        val verification = KeyVerificationAdmin.Builder().also { wb ->wb.remote_nodenum = 0x01020304; wb.nonce = 1234L}.build()
         assertAckSuccess(
             call = { it.keyVerification(verification) },
             requestMatches = { it.key_verification == verification },
@@ -69,7 +69,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun setSensorConfigSendsSensorConfig() = runTest {
-        val config = SensorConfig()
+        val config = SensorConfig.Builder().build()
         assertAckSuccess(
             call = { it.setSensorConfig(config) },
             requestMatches = { it.sensor_config == config },
@@ -78,7 +78,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun sendInputEventSendsInputEvent() = runTest {
-        val event = AdminMessage.InputEvent(event_code = 17, kb_char = 65)
+        val event = AdminMessage.InputEvent.Builder().also { wb ->wb.event_code = 17; wb.kb_char = 65}.build()
         assertAckSuccess(
             call = { it.sendInputEvent(event) },
             requestMatches = { it.send_input_event == event },
@@ -87,10 +87,10 @@ class AdminApiRemainingTest {
 
     @Test
     fun addContactSendsSharedContact() = runTest {
-        val contact = SharedContact(
-            node_num = 77,
-            user = User(id = "!0000004d", long_name = "Contact", short_name = "CT"),
-        )
+        val contact = SharedContact.Builder().also { wb ->
+        wb.node_num = 77
+        wb.user = User.Builder().also { wb ->wb.id = "!0000004d"; wb.long_name = "Contact"; wb.short_name = "CT"}.build()
+        }.build()
         assertAckSuccess(
             call = { it.addContact(contact) },
             requestMatches = { it.add_contact == contact },
@@ -99,7 +99,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun lockdownLockNowSendsFireAndForgetToLocalNode() = runTest {
-        val auth = LockdownAuth(lock_now = true)
+        val auth = LockdownAuth.Builder().also { wb ->wb.lock_now = true}.build()
         assertFireAndForgetSuccess(
             call = { it.lockdown(auth) },
             requestMatches = { it.lockdown_auth == auth },
@@ -108,11 +108,11 @@ class AdminApiRemainingTest {
 
     @Test
     fun lockdownProvisionSendsPassphraseFields() = runTest {
-        val auth = LockdownAuth(
-            passphrase = "hunter2".encodeToByteArray().toByteString(),
-            boots_remaining = 10,
-            valid_until_epoch = 1_900_000_000,
-        )
+        val auth = LockdownAuth.Builder().also { wb ->
+        wb.passphrase = "hunter2".encodeToByteArray().toByteString()
+        wb.boots_remaining = 10
+        wb.valid_until_epoch = 1_900_000_000
+        }.build()
         assertFireAndForgetSuccess(
             call = { it.lockdown(auth) },
             requestMatches = { it.lockdown_auth == auth },
@@ -127,7 +127,7 @@ class AdminApiRemainingTest {
         try {
             val outboundBefore = transport.outboundPackets().size
             val remote = client.admin.forNode(NodeId(0x22222222))
-            val result = remote.lockdown(LockdownAuth(lock_now = true))
+            val result = remote.lockdown(LockdownAuth.Builder().also { wb ->wb.lock_now = true}.build())
             runCurrent()
 
             assertEquals(AdminResult.Unauthorized, result)
@@ -142,22 +142,22 @@ class AdminApiRemainingTest {
 
     @Test
     fun getRemoteHardwarePinsRequestsRemotePins() = runTest {
-        val expected = NodeRemoteHardwarePinsResponse()
+        val expected = NodeRemoteHardwarePinsResponse.Builder().build()
         assertRpcSuccess(
             call = { it.getRemoteHardwarePins() },
             requestMatches = { it.get_node_remote_hardware_pins_request == true },
-            response = AdminMessage(get_node_remote_hardware_pins_response = expected),
+            response = AdminMessage.Builder().also { wb ->wb.get_node_remote_hardware_pins_response = expected}.build(),
             expected = expected,
         )
     }
 
     @Test
     fun getDeviceConnectionStatusRequestsConnectionStatus() = runTest {
-        val expected = DeviceConnectionStatus()
+        val expected = DeviceConnectionStatus.Builder().build()
         assertRpcSuccess(
             call = { it.getDeviceConnectionStatus() },
             requestMatches = { it.get_device_connection_status_request == true },
-            response = AdminMessage(get_device_connection_status_response = expected),
+            response = AdminMessage.Builder().also { wb ->wb.get_device_connection_status_response = expected}.build(),
             expected = expected,
         )
     }
@@ -173,7 +173,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun otaRequestSendsOtaEvent() = runTest {
-        val event = AdminMessage.OTAEvent()
+        val event = AdminMessage.OTAEvent.Builder().build()
         assertAckSuccess(
             call = { it.otaRequest(event) },
             requestMatches = { it.ota_request == event },
@@ -207,7 +207,7 @@ class AdminApiRemainingTest {
 
     @Test
     fun ackWritesTimeoutForHamDeleteAndScale() = runTest {
-        val params = HamParameters(call_sign = "KD2ABC", tx_power = 20)
+        val params = HamParameters.Builder().also { wb ->wb.call_sign = "KD2ABC"; wb.tx_power = 20}.build()
         assertAckTimeout(
             call = { it.setHamMode(params) },
             requestMatches = { it.set_ham_mode == params },
@@ -224,12 +224,12 @@ class AdminApiRemainingTest {
 
     @Test
     fun ackWritesTimeoutForVerificationInputAndContact() = runTest {
-        val verification = KeyVerificationAdmin(remote_nodenum = 0x01020304, nonce = 1234L)
-        val event = AdminMessage.InputEvent(event_code = 17, kb_char = 65)
-        val contact = SharedContact(
-            node_num = 77,
-            user = User(id = "!0000004d", long_name = "Contact", short_name = "CT"),
-        )
+        val verification = KeyVerificationAdmin.Builder().also { wb ->wb.remote_nodenum = 0x01020304; wb.nonce = 1234L}.build()
+        val event = AdminMessage.InputEvent.Builder().also { wb ->wb.event_code = 17; wb.kb_char = 65}.build()
+        val contact = SharedContact.Builder().also { wb ->
+        wb.node_num = 77
+        wb.user = User.Builder().also { wb ->wb.id = "!0000004d"; wb.long_name = "Contact"; wb.short_name = "CT"}.build()
+        }.build()
         assertAckTimeout(
             call = { it.keyVerification(verification) },
             requestMatches = { it.key_verification == verification },
@@ -247,8 +247,8 @@ class AdminApiRemainingTest {
     @Suppress("DEPRECATION")
     @Test
     fun ackWritesTimeoutForSensorOtaRebootAndExit() = runTest {
-        val config = SensorConfig()
-        val event = AdminMessage.OTAEvent()
+        val config = SensorConfig.Builder().build()
+        val event = AdminMessage.OTAEvent.Builder().build()
         assertAckTimeout(
             call = { it.setSensorConfig(config) },
             requestMatches = { it.sensor_config == config },

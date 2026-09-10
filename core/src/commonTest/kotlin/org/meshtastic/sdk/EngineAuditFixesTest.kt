@@ -60,12 +60,12 @@ class EngineAuditFixesTest {
      */
     @Test
     fun stage1DeviceUIConfigIsCapturedInBundle() = runTest {
-        val uiConfig = DeviceUIConfig()
+        val uiConfig = DeviceUIConfig.Builder().build()
         val transport = ScriptedHandshakeTransport(
             identity = TransportIdentity("fake:p1-1-stage1"),
             beforeStage1Complete = listOf(
-                FromRadio(metadata = org.meshtastic.proto.DeviceMetadata()),
-                FromRadio(deviceuiConfig = uiConfig),
+                FromRadio.Builder().also { wb ->wb.metadata = org.meshtastic.proto.DeviceMetadata.Builder().build()}.build(),
+                FromRadio.Builder().also { wb ->wb.deviceuiConfig = uiConfig}.build(),
             ),
         )
         val client = RadioClient.Builder()
@@ -145,7 +145,7 @@ class EngineAuditFixesTest {
             routingFrame(
                 requestId = handle.id.raw,
                 fromNodeNum = 0x22222222,
-                routing = Routing(route_request = RouteDiscovery()),
+                routing = Routing.Builder().also { wb ->wb.route_request = RouteDiscovery.Builder().build()}.build(),
             ),
         )
         runCurrent()
@@ -175,7 +175,7 @@ class EngineAuditFixesTest {
             routingFrame(
                 requestId = handle.id.raw,
                 fromNodeNum = 0x33333333,
-                routing = Routing(route_reply = RouteDiscovery()),
+                routing = Routing.Builder().also { wb ->wb.route_reply = RouteDiscovery.Builder().build()}.build(),
             ),
         )
         runCurrent()
@@ -203,7 +203,7 @@ class EngineAuditFixesTest {
             routingFrame(
                 requestId = handle.id.raw,
                 fromNodeNum = 0x44444444,
-                routing = Routing(error_reason = Routing.Error.NONE),
+                routing = Routing.Builder().also { wb ->wb.error_reason = Routing.Error.NONE}.build(),
             ),
         )
         runCurrent()
@@ -232,7 +232,7 @@ class EngineAuditFixesTest {
             routingFrame(
                 requestId = handle.id.raw,
                 fromNodeNum = 0x55555555,
-                routing = Routing(error_reason = Routing.Error.NO_ROUTE),
+                routing = Routing.Builder().also { wb ->wb.error_reason = Routing.Error.NO_ROUTE}.build(),
             ),
         )
         runCurrent()
@@ -259,18 +259,18 @@ class EngineAuditFixesTest {
             .build()
         client.connect()
 
-        val packet = MeshPacket(
-            to = 0x22222222,
-            channel = 0,
-            // NB: want_ack deliberately false; the timer must still arm because want_response
-            // expects a unicast reply with request_id set.
-            want_ack = false,
-            decoded = Data(
-                portnum = PortNum.ADMIN_APP,
-                payload = ByteString.of(*"x".encodeToByteArray()),
-                want_response = true,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+        wb.to = 0x22222222
+        wb.channel = 0
+        // NB: want_ack deliberately false; the timer must still arm because want_response
+        // expects a unicast reply with request_id set.
+        wb.want_ack = false
+        wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.ADMIN_APP
+                    wb.payload = ByteString.of(*"x".encodeToByteArray())
+                    wb.want_response = true
+                    }.build()
+        }.build()
         val handle = client.send(packet)
         runCurrent()
         assertEquals(SendState.Sent, handle.state.value)
@@ -301,9 +301,9 @@ class EngineAuditFixesTest {
         client.connect()
 
         // Two encrypted-only packets back-to-back — only the first must emit a warning.
-        val encrypted = MeshPacket(from = 0x77777777, to = 0)
-        transport.injectFrame(encodeFromRadio(FromRadio(packet = encrypted)))
-        transport.injectFrame(encodeFromRadio(FromRadio(packet = encrypted)))
+        val encrypted = MeshPacket.Builder().also { wb ->wb.from = 0x77777777; wb.to = 0}.build()
+        transport.injectFrame(encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = encrypted}.build()))
+        transport.injectFrame(encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = encrypted}.build()))
         runCurrent()
 
         val matches = warnings.filter { it.message.contains("encrypted") }
@@ -315,28 +315,28 @@ class EngineAuditFixesTest {
 
     // ── Helpers ────────────────────────────────────────────────────────────────
 
-    private fun unicastWantAckPacket(toNodeNum: Int) = MeshPacket(
-        to = toNodeNum,
-        channel = 0,
-        want_ack = true,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = ByteString.of(*"hi".encodeToByteArray()),
-        ),
-    )
+    private fun unicastWantAckPacket(toNodeNum: Int) = MeshPacket.Builder().also { wb ->
+    wb.to = toNodeNum
+    wb.channel = 0
+    wb.want_ack = true
+    wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = ByteString.of(*"hi".encodeToByteArray())
+            }.build()
+    }.build()
 
     private fun routingFrame(requestId: Int, fromNodeNum: Int, routing: Routing): Frame {
         val payload = ByteString.of(*Routing.ADAPTER.encode(routing))
-        val packet = MeshPacket(
-            from = fromNodeNum,
-            to = 0,
-            decoded = Data(
-                portnum = PortNum.ROUTING_APP,
-                payload = payload,
-                request_id = requestId,
-            ),
-        )
-        return encodeFromRadio(FromRadio(packet = packet))
+        val packet = MeshPacket.Builder().also { wb ->
+        wb.from = fromNodeNum
+        wb.to = 0
+        wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.ROUTING_APP
+                    wb.payload = payload
+                    wb.request_id = requestId
+                    }.build()
+        }.build()
+        return encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
     }
 
     private fun encodeFromRadio(fromRadio: FromRadio): Frame = fromRadio.toFrame()
@@ -369,13 +369,13 @@ class EngineAuditFixesTest {
             val to = decodeToRadioOrNull(frame) ?: return
             when (to.want_config_id) {
                 STAGE1_NONCE -> {
-                    inbound.trySend(encodeFromRadio(FromRadio(my_info = MyNodeInfo(my_node_num = 1))))
+                    inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = 1}.build()}.build()))
                     for (extra in beforeStage1Complete) inbound.trySend(encodeFromRadio(extra))
-                    inbound.trySend(encodeFromRadio(FromRadio(config_complete_id = STAGE1_NONCE)))
+                    inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = STAGE1_NONCE}.build()))
                 }
 
                 STAGE2_NONCE -> {
-                    inbound.trySend(encodeFromRadio(FromRadio(config_complete_id = STAGE2_NONCE)))
+                    inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = STAGE2_NONCE}.build()))
                 }
             }
             // Auto-respond to get_owner_request so the handshake can complete.
@@ -384,19 +384,19 @@ class EngineAuditFixesTest {
             if (decoded.portnum != PortNum.ADMIN_APP) return
             val admin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
             if (admin.get_owner_request == true) {
-                val response = AdminMessage(
-                    get_owner_response = org.meshtastic.proto.User(id = "!00000001"),
-                    session_passkey = ByteString.EMPTY,
-                )
-                val responsePacket = MeshPacket(
-                    from = 1,
-                    to = packet.from,
-                    decoded = Data(
-                        portnum = PortNum.ADMIN_APP,
-                        payload = ByteString.of(*AdminMessage.ADAPTER.encode(response)),
-                    ),
-                )
-                inbound.trySend(encodeFromRadio(FromRadio(packet = responsePacket)))
+                val response = AdminMessage.Builder().also { wb ->
+                wb.get_owner_response = org.meshtastic.proto.User.Builder().also { wb ->wb.id = "!00000001"}.build()
+                wb.session_passkey = ByteString.EMPTY
+                }.build()
+                val responsePacket = MeshPacket.Builder().also { wb ->
+                wb.from = 1
+                wb.to = packet.from
+                wb.decoded = Data.Builder().also { wb ->
+                                    wb.portnum = PortNum.ADMIN_APP
+                                    wb.payload = ByteString.of(*AdminMessage.ADAPTER.encode(response))
+                                    }.build()
+                }.build()
+                inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = responsePacket}.build()))
             }
         }
 
@@ -433,12 +433,12 @@ class EngineAuditFixesTest {
                 STAGE1_NONCE -> {
                     stage1WantConfigSeen += 1
                     if (stage1WantConfigSeen == 1) return // drop the first
-                    inbound.trySend(encodeFromRadio(FromRadio(my_info = MyNodeInfo(my_node_num = 1))))
-                    inbound.trySend(encodeFromRadio(FromRadio(config_complete_id = STAGE1_NONCE)))
+                    inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = 1}.build()}.build()))
+                    inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = STAGE1_NONCE}.build()))
                 }
 
                 STAGE2_NONCE -> {
-                    inbound.trySend(encodeFromRadio(FromRadio(config_complete_id = STAGE2_NONCE)))
+                    inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = STAGE2_NONCE}.build()))
                 }
             }
             val packet = to.packet ?: return
@@ -446,19 +446,19 @@ class EngineAuditFixesTest {
             if (decoded.portnum != PortNum.ADMIN_APP) return
             val admin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
             if (admin.get_owner_request == true) {
-                val response = AdminMessage(
-                    get_owner_response = org.meshtastic.proto.User(id = "!00000001"),
-                    session_passkey = ByteString.EMPTY,
-                )
-                val responsePacket = MeshPacket(
-                    from = 1,
-                    to = packet.from,
-                    decoded = Data(
-                        portnum = PortNum.ADMIN_APP,
-                        payload = ByteString.of(*AdminMessage.ADAPTER.encode(response)),
-                    ),
-                )
-                inbound.trySend(encodeFromRadio(FromRadio(packet = responsePacket)))
+                val response = AdminMessage.Builder().also { wb ->
+                wb.get_owner_response = org.meshtastic.proto.User.Builder().also { wb ->wb.id = "!00000001"}.build()
+                wb.session_passkey = ByteString.EMPTY
+                }.build()
+                val responsePacket = MeshPacket.Builder().also { wb ->
+                wb.from = 1
+                wb.to = packet.from
+                wb.decoded = Data.Builder().also { wb ->
+                                    wb.portnum = PortNum.ADMIN_APP
+                                    wb.payload = ByteString.of(*AdminMessage.ADAPTER.encode(response))
+                                    }.build()
+                }.build()
+                inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = responsePacket}.build()))
             }
         }
 

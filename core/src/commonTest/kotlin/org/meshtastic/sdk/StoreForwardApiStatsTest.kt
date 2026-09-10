@@ -49,14 +49,14 @@ class StoreForwardApiStatsTest {
         transport.injectStatsResponse(
             requestId = request.id,
             server = server,
-            stats = StoreAndForward.Statistics(
-                messages_saved = 9,
-                messages_max = 64,
-                up_time = 3600,
-                requests = 12,
-                requests_history = 7,
-                heartbeat = true,
-            ),
+            stats = StoreAndForward.Statistics.Builder().also { wb ->
+            wb.messages_saved = 9
+            wb.messages_max = 64
+            wb.up_time = 3600
+            wb.requests = 12
+            wb.requests_history = 7
+            wb.heartbeat = true
+            }.build(),
         )
         runCurrent()
 
@@ -285,10 +285,10 @@ class StoreForwardApiStatsTest {
     private fun FakeRadioTransport.injectHeartbeat(server: NodeId, period: Int = 900) {
         injectStoreForwardResponse(
             requestId = 0,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = period, secondary = 0),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+            wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+            wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->wb.period = period; wb.secondary = 0}.build()
+            }.build(),
             fromNode = server.raw,
         )
     }
@@ -296,20 +296,20 @@ class StoreForwardApiStatsTest {
     private fun FakeRadioTransport.injectStatsResponse(
         requestId: Int,
         server: NodeId,
-        stats: StoreAndForward.Statistics = StoreAndForward.Statistics(
-            messages_saved = 1,
-            messages_max = 2,
-            up_time = 3,
-            requests_history = 4,
-            heartbeat = true,
-        ),
+        stats: StoreAndForward.Statistics = StoreAndForward.Statistics.Builder().also { wb ->
+        wb.messages_saved = 1
+        wb.messages_max = 2
+        wb.up_time = 3
+        wb.requests_history = 4
+        wb.heartbeat = true
+        }.build(),
     ) {
         injectStoreForwardResponse(
             requestId = requestId,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_STATS,
-                stats = stats,
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+            wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
+            wb.stats = stats
+            }.build(),
             fromNode = server.raw,
         )
     }

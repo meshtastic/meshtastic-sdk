@@ -29,11 +29,11 @@ public suspend fun RadioClient.sendPosition(
     channel: ChannelIndex = ChannelIndex(0),
     wantAck: Boolean = false,
 ): MessageHandle {
-    val payload = Position(
-        latitude_i = (latLng.latitude * POSITION_SCALE).toInt(),
-        longitude_i = (latLng.longitude * POSITION_SCALE).toInt(),
-        altitude = latLng.altitudeMeters,
-    )
+    val payload = Position.Builder().also { wb ->
+    wb.latitude_i = (latLng.latitude * POSITION_SCALE).toInt()
+    wb.longitude_i = (latLng.longitude * POSITION_SCALE).toInt()
+    wb.altitude = latLng.altitudeMeters
+    }.build()
     return send(
         portnum = PortNum.POSITION_APP,
         payload = Position.ADAPTER.encode(payload),
@@ -52,16 +52,16 @@ public suspend fun RadioClient.sendPosition(
  * @since 0.1.0
  */
 public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = ChannelIndex(0)): MessageHandle {
-    val packet = MeshPacket(
-        to = from.raw,
-        channel = channel.raw,
-        want_ack = false,
-        decoded = Data(
-            portnum = PortNum.POSITION_APP,
-            payload = ByteString.EMPTY,
-            want_response = true,
-        ),
-    )
+    val packet = MeshPacket.Builder().also { wb ->
+    wb.to = from.raw
+    wb.channel = channel.raw
+    wb.want_ack = false
+    wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.POSITION_APP
+            wb.payload = ByteString.EMPTY
+            wb.want_response = true
+            }.build()
+    }.build()
     return send(packet)
 }
 
@@ -92,15 +92,15 @@ public suspend fun RadioClient.sendDirectMessage(
  * @since 0.1.0
  */
 public fun RadioClient.sendDirectMessageEncrypted(to: NodeId, text: String, wantAck: Boolean = true): MessageHandle {
-    val packet = MeshPacket(
-        to = to.raw,
-        channel = 0,
-        want_ack = wantAck,
-        pki_encrypted = true,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = text.encodeToByteArray().toByteString(),
-        ),
-    )
+    val packet = MeshPacket.Builder().also { wb ->
+    wb.to = to.raw
+    wb.channel = 0
+    wb.want_ack = wantAck
+    wb.pki_encrypted = true
+    wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = text.encodeToByteArray().toByteString()
+            }.build()
+    }.build()
     return send(packet)
 }

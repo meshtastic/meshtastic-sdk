@@ -93,7 +93,7 @@ class ConfigOnlyHandshakeTest {
         assertEquals("2.7.0", bundle.metadata.firmware_version)
         assertEquals(1, bundle.configs.size)
         assertEquals(1, bundle.moduleConfigs.size)
-        assertEquals(listOf(Channel(index = 0, role = Channel.Role.PRIMARY)), client.channels.value)
+        assertEquals(listOf(Channel.Builder().also { wb ->wb.index = 0; wb.role = Channel.Role.PRIMARY}.build()), client.channels.value)
         assertEquals(DEVICE_NODE_NUM, assertNotNull(client.ownNode.value).num)
 
         // The seed RPC is what makes AdminApi writes usable; it must still go out.
@@ -230,45 +230,45 @@ class ConfigOnlyHandshakeTest {
         fun outboundToRadio(): List<ToRadio> = sent.mapNotNull(::decodeToRadio)
 
         private fun streamStage1() {
-            emit(FromRadio(my_info = MyNodeInfo(my_node_num = DEVICE_NODE_NUM)))
-            emit(FromRadio(node_info = NodeInfo(num = DEVICE_NODE_NUM)))
-            emit(FromRadio(metadata = DeviceMetadata(firmware_version = "2.7.0")))
-            emit(FromRadio(channel = Channel(index = 0, role = Channel.Role.PRIMARY)))
-            emit(FromRadio(config = Config(lora = Config.LoRaConfig(use_preset = true))))
-            emit(FromRadio(moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false))))
-            emit(FromRadio(config_complete_id = NONCE_STAGE1))
+            emit(FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = DEVICE_NODE_NUM}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.node_info = NodeInfo.Builder().also { wb ->wb.num = DEVICE_NODE_NUM}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.metadata = DeviceMetadata.Builder().also { wb ->wb.firmware_version = "2.7.0"}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.channel = Channel.Builder().also { wb ->wb.index = 0; wb.role = Channel.Role.PRIMARY}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.config = Config.Builder().also { wb ->wb.lora = Config.LoRaConfig.Builder().also { wb ->wb.use_preset = true}.build()}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.moduleConfig = ModuleConfig.Builder().also { wb ->wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->wb.enabled = false}.build()}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build())
         }
 
         private fun streamStage2() {
-            for (num in PEER_NODE_NUMS) emit(FromRadio(node_info = NodeInfo(num = num)))
-            emit(FromRadio(config_complete_id = NONCE_STAGE2))
+            for (num in PEER_NODE_NUMS) emit(FromRadio.Builder().also { wb ->wb.node_info = NodeInfo.Builder().also { wb ->wb.num = num}.build()}.build())
+            emit(FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE2}.build())
         }
 
         private fun answerGetOwner(packet: MeshPacket) {
             val payload = packet.decoded?.payload ?: return
             val admin = runCatching { AdminMessage.ADAPTER.decode(payload) }.getOrNull() ?: return
             if (admin.get_owner_request != true) return
-            val response = AdminMessage(
-                get_owner_response = User(
-                    id = "!0000002a",
-                    long_name = "ScriptedNode",
-                    short_name = "SN",
-                    hw_model = HardwareModel.UNSET,
-                ),
-                session_passkey = byteArrayOf(1, 2, 3, 4).toByteString(),
-            )
+            val response = AdminMessage.Builder().also { wb ->
+            wb.get_owner_response = User.Builder().also { wb ->
+                            wb.id = "!0000002a"
+                            wb.long_name = "ScriptedNode"
+                            wb.short_name = "SN"
+                            wb.hw_model = HardwareModel.UNSET
+                            }.build()
+            wb.session_passkey = byteArrayOf(1, 2, 3, 4).toByteString()
+            }.build()
             emit(
-                FromRadio(
-                    packet = MeshPacket(
-                        from = DEVICE_NODE_NUM,
-                        to = 0,
-                        decoded = Data(
-                            portnum = PortNum.ADMIN_APP,
-                            payload = AdminMessage.ADAPTER.encode(response).toByteString(),
-                            request_id = packet.id,
-                        ),
-                    ),
-                ),
+                FromRadio.Builder().also { wb ->
+                wb.packet = MeshPacket.Builder().also { wb ->
+                                    wb.from = DEVICE_NODE_NUM
+                                    wb.to = 0
+                                    wb.decoded = Data.Builder().also { wb ->
+                                                            wb.portnum = PortNum.ADMIN_APP
+                                                            wb.payload = AdminMessage.ADAPTER.encode(response).toByteString()
+                                                            wb.request_id = packet.id
+                                                            }.build()
+                                    }.build()
+                }.build(),
             )
         }
 

@@ -69,7 +69,7 @@ class AndroidCutoverPrereqsTest {
             assertEquals(SendState.Sent, handle.state.value)
 
             transport.injectFrame(
-                frameOf(FromRadio(queueStatus = QueueStatus(res = 9, mesh_packet_id = handle.id.raw))),
+                frameOf(FromRadio.Builder().also { wb ->wb.queueStatus = QueueStatus.Builder().also { wb ->wb.res = 9; wb.mesh_packet_id = handle.id.raw}.build()}.build()),
             )
             runCurrent()
 
@@ -82,26 +82,26 @@ class AndroidCutoverPrereqsTest {
     fun auxiliaryFramesSurfaceAsTypedEvents() = runTest {
         withConnectedClient { client, transport ->
             client.events.test {
-                val proxy = MqttClientProxyMessage(topic = "msh/2/e/test", retained = true)
-                transport.injectFrame(frameOf(FromRadio(mqttClientProxyMessage = proxy)))
+                val proxy = MqttClientProxyMessage.Builder().also { wb ->wb.topic = "msh/2/e/test"; wb.retained = true}.build()
+                transport.injectFrame(frameOf(FromRadio.Builder().also { wb ->wb.mqttClientProxyMessage = proxy}.build()))
                 runCurrent()
                 assertEquals(MeshEvent.MqttProxyMessage(proxy), awaitItem())
 
-                val xmodem = XModem(seq = 7)
-                transport.injectFrame(frameOf(FromRadio(xmodemPacket = xmodem)))
+                val xmodem = XModem.Builder().also { wb ->wb.seq = 7}.build()
+                transport.injectFrame(frameOf(FromRadio.Builder().also { wb ->wb.xmodemPacket = xmodem}.build()))
                 runCurrent()
                 assertEquals(MeshEvent.XmodemPacket(xmodem), awaitItem())
 
-                val fileInfo = org.meshtastic.proto.FileInfo(file_name = "firmware.uf2", size_bytes = 1024)
-                transport.injectFrame(frameOf(FromRadio(fileInfo = fileInfo)))
+                val fileInfo = org.meshtastic.proto.FileInfo.Builder().also { wb ->wb.file_name = "firmware.uf2"; wb.size_bytes = 1024}.build()
+                transport.injectFrame(frameOf(FromRadio.Builder().also { wb ->wb.fileInfo = fileInfo}.build()))
                 runCurrent()
                 assertEquals(MeshEvent.FileInfoReceived(fileInfo), awaitItem())
 
                 // lockdown_status (hardened MESHTASTIC_LOCKDOWN builds) surfaces as a typed event.
-                val lockdown = org.meshtastic.proto.LockdownStatus(
-                    state = org.meshtastic.proto.LockdownStatus.State.LOCKED,
-                )
-                transport.injectFrame(frameOf(FromRadio(lockdown_status = lockdown)))
+                val lockdown = org.meshtastic.proto.LockdownStatus.Builder().also { wb ->
+                wb.state = org.meshtastic.proto.LockdownStatus.State.LOCKED
+                }.build()
+                transport.injectFrame(frameOf(FromRadio.Builder().also { wb ->wb.lockdown_status = lockdown}.build()))
                 runCurrent()
                 assertEquals(MeshEvent.LockdownStatusChanged(lockdown), awaitItem())
 
@@ -115,14 +115,14 @@ class AndroidCutoverPrereqsTest {
         withConnectedClient { client, transport ->
             transport.injectFrame(
                 frameOf(
-                    FromRadio(node_info = NodeInfo(num = TEST_NODE_NUM, user = User(id = "!1", public_key = MY_KEY))),
+                    FromRadio.Builder().also { wb ->wb.node_info = NodeInfo.Builder().also { wb ->wb.num = TEST_NODE_NUM; wb.user = User.Builder().also { wb ->wb.id = "!1"; wb.public_key = MY_KEY}.build()}.build()}.build(),
                 ),
             )
             transport.injectFrame(
                 frameOf(
-                    FromRadio(
-                        node_info = NodeInfo(num = REMOTE_NODE.raw, user = User(id = "!2", public_key = REMOTE_KEY)),
-                    ),
+                    FromRadio.Builder().also { wb ->
+                    wb.node_info = NodeInfo.Builder().also { wb ->wb.num = REMOTE_NODE.raw; wb.user = User.Builder().also { wb ->wb.id = "!2"; wb.public_key = REMOTE_KEY}.build()}.build()
+                    }.build(),
                 ),
             )
             runCurrent()
@@ -139,7 +139,7 @@ class AndroidCutoverPrereqsTest {
 
             transport.injectAdminResponse(
                 requestId = outbound.id,
-                response = AdminMessage(get_device_metadata_response = DeviceMetadata(firmware_version = "2.7.0")),
+                response = AdminMessage.Builder().also { wb ->wb.get_device_metadata_response = DeviceMetadata.Builder().also { wb ->wb.firmware_version = "2.7.0"}.build()}.build(),
                 fromNode = REMOTE_NODE.raw,
             )
             runCurrent()
@@ -152,11 +152,11 @@ class AndroidCutoverPrereqsTest {
         withConnectedClient { client, transport ->
             // Establish a secondary channel named "admin" via the normal setChannel path so
             // channelsState carries it at index 1.
-            val adminChannel = Channel(
-                index = 1,
-                role = Channel.Role.SECONDARY,
-                settings = ChannelSettings(name = "Admin"),
-            )
+            val adminChannel = Channel.Builder().also { wb ->
+            wb.index = 1
+            wb.role = Channel.Role.SECONDARY
+            wb.settings = ChannelSettings.Builder().also { wb ->wb.name = "Admin"}.build()
+            }.build()
             val setDeferred = backgroundScope.async { client.admin.setChannel(adminChannel) }
             runCurrent()
             val setPacket = transport.outboundPackets().last {
@@ -184,9 +184,9 @@ class AndroidCutoverPrereqsTest {
             // Only the TARGET has a published key — PKC requires BOTH sides.
             transport.injectFrame(
                 frameOf(
-                    FromRadio(
-                        node_info = NodeInfo(num = REMOTE_NODE.raw, user = User(id = "!2", public_key = REMOTE_KEY)),
-                    ),
+                    FromRadio.Builder().also { wb ->
+                    wb.node_info = NodeInfo.Builder().also { wb ->wb.num = REMOTE_NODE.raw; wb.user = User.Builder().also { wb ->wb.id = "!2"; wb.public_key = REMOTE_KEY}.build()}.build()
+                    }.build(),
                 ),
             )
             runCurrent()
@@ -208,7 +208,7 @@ class AndroidCutoverPrereqsTest {
             // Only OUR node has a published key.
             transport.injectFrame(
                 frameOf(
-                    FromRadio(node_info = NodeInfo(num = TEST_NODE_NUM, user = User(id = "!1", public_key = MY_KEY))),
+                    FromRadio.Builder().also { wb ->wb.node_info = NodeInfo.Builder().also { wb ->wb.num = TEST_NODE_NUM; wb.user = User.Builder().also { wb ->wb.id = "!1"; wb.public_key = MY_KEY}.build()}.build()}.build(),
                 ),
             )
             runCurrent()
@@ -232,10 +232,10 @@ class AndroidCutoverPrereqsTest {
             val seedReq = transport.outboundPackets().last { it.to == REMOTE_NODE.raw }
             transport.injectAdminResponse(
                 requestId = seedReq.id,
-                response = AdminMessage(
-                    get_device_metadata_response = DeviceMetadata(firmware_version = "2.7.0"),
-                    session_passkey = POISON_PASSKEY.toByteString(),
-                ),
+                response = AdminMessage.Builder().also { wb ->
+                wb.get_device_metadata_response = DeviceMetadata.Builder().also { wb ->wb.firmware_version = "2.7.0"}.build()
+                wb.session_passkey = POISON_PASSKEY.toByteString()
+                }.build(),
                 fromNode = REMOTE_NODE.raw,
             )
             runCurrent()
@@ -244,16 +244,16 @@ class AndroidCutoverPrereqsTest {
             // A caller-built PKC admin packet must keep its own routing; only the passkey lands.
             val before = transport.outboundPackets().size
             client.send(
-                MeshPacket(
-                    to = REMOTE_NODE.raw,
-                    channel = 3,
-                    pki_encrypted = true,
-                    public_key = CALLER_KEY,
-                    decoded = org.meshtastic.proto.Data(
-                        portnum = org.meshtastic.proto.PortNum.ADMIN_APP,
-                        payload = AdminMessage.ADAPTER.encode(AdminMessage(get_owner_request = true)).toByteString(),
-                    ),
-                ),
+                MeshPacket.Builder().also { wb ->
+                wb.to = REMOTE_NODE.raw
+                wb.channel = 3
+                wb.pki_encrypted = true
+                wb.public_key = CALLER_KEY
+                wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                                    wb.portnum = org.meshtastic.proto.PortNum.ADMIN_APP
+                                    wb.payload = AdminMessage.ADAPTER.encode(AdminMessage.Builder().also { wb ->wb.get_owner_request = true}.build()).toByteString()
+                                    }.build()
+                }.build(),
             )
             runCurrent()
 
@@ -271,14 +271,14 @@ class AndroidCutoverPrereqsTest {
         withConnectedClient { client, transport ->
             val before = transport.outboundPackets().size
             client.send(
-                MeshPacket(
-                    to = REMOTE_NODE.raw,
-                    priority = MeshPacket.Priority.BACKGROUND,
-                    decoded = org.meshtastic.proto.Data(
-                        portnum = org.meshtastic.proto.PortNum.ADMIN_APP,
-                        payload = AdminMessage.ADAPTER.encode(AdminMessage(get_owner_request = true)).toByteString(),
-                    ),
-                ),
+                MeshPacket.Builder().also { wb ->
+                wb.to = REMOTE_NODE.raw
+                wb.priority = MeshPacket.Priority.BACKGROUND
+                wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                                    wb.portnum = org.meshtastic.proto.PortNum.ADMIN_APP
+                                    wb.payload = AdminMessage.ADAPTER.encode(AdminMessage.Builder().also { wb ->wb.get_owner_request = true}.build()).toByteString()
+                                    }.build()
+                }.build(),
             )
             runCurrent()
             val outbound = transport.outboundPackets().drop(before).last { it.to == REMOTE_NODE.raw }
@@ -291,14 +291,15 @@ class AndroidCutoverPrereqsTest {
         withConnectedClient { client, transport ->
             val before = transport.outboundPackets().size
             client.send(
-                MeshPacket(
-                    to = -1, // broadcast
-                    channel = 2,
-                    decoded = org.meshtastic.proto.Data(
-                        portnum = org.meshtastic.proto.PortNum.ADMIN_APP,
-                        payload = AdminMessage.ADAPTER.encode(AdminMessage(get_owner_request = true)).toByteString(),
-                    ),
-                ),
+                MeshPacket.Builder().also { wb ->
+                wb.to = -1
+                // broadcast
+                wb.channel = 2
+                wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                                    wb.portnum = org.meshtastic.proto.PortNum.ADMIN_APP
+                                    wb.payload = AdminMessage.ADAPTER.encode(AdminMessage.Builder().also { wb ->wb.get_owner_request = true}.build()).toByteString()
+                                    }.build()
+                }.build(),
             )
             runCurrent()
             val outbound = transport.outboundPackets().drop(before).last { it.to == -1 }
@@ -319,7 +320,7 @@ class AndroidCutoverPrereqsTest {
 
             // res in 1..31 is a genuine Routing.Error (9 = DUTY_CYCLE_LIMIT).
             transport.injectFrame(
-                frameOf(FromRadio(queueStatus = QueueStatus(res = 9, mesh_packet_id = outbound.id))),
+                frameOf(FromRadio.Builder().also { wb ->wb.queueStatus = QueueStatus.Builder().also { wb ->wb.res = 9; wb.mesh_packet_id = outbound.id}.build()}.build()),
             )
             runCurrent()
             assertEquals(AdminResult.Failed(org.meshtastic.proto.Routing.Error.DUTY_CYCLE_LIMIT), deferred.await())
@@ -336,7 +337,7 @@ class AndroidCutoverPrereqsTest {
 
             // res >= 32 is the firmware ERRNO namespace (32 = queue full) — NOT Routing.Error.
             transport.injectFrame(
-                frameOf(FromRadio(queueStatus = QueueStatus(res = 32, mesh_packet_id = outbound.id))),
+                frameOf(FromRadio.Builder().also { wb ->wb.queueStatus = QueueStatus.Builder().also { wb ->wb.res = 32; wb.mesh_packet_id = outbound.id}.build()}.build()),
             )
             runCurrent()
             assertEquals(AdminResult.NodeUnreachable, deferred.await())
@@ -352,7 +353,7 @@ class AndroidCutoverPrereqsTest {
 
             // ERRNO_SHOULD_RELEASE (35) is "no error" — must NOT fail the handle.
             transport.injectFrame(
-                frameOf(FromRadio(queueStatus = QueueStatus(res = 35, mesh_packet_id = handle.id.raw))),
+                frameOf(FromRadio.Builder().also { wb ->wb.queueStatus = QueueStatus.Builder().also { wb ->wb.res = 35; wb.mesh_packet_id = handle.id.raw}.build()}.build()),
             )
             runCurrent()
             assertEquals(SendState.Sent, handle.state.value, "res=35 means success, not rejection")
@@ -365,7 +366,7 @@ class AndroidCutoverPrereqsTest {
             val handle = client.sendText("burst2")
             runCurrent()
             transport.injectFrame(
-                frameOf(FromRadio(queueStatus = QueueStatus(res = 100, mesh_packet_id = handle.id.raw))),
+                frameOf(FromRadio.Builder().also { wb ->wb.queueStatus = QueueStatus.Builder().also { wb ->wb.res = 100; wb.mesh_packet_id = handle.id.raw}.build()}.build()),
             )
             runCurrent()
             val state = assertIs<SendState.Failed>(handle.state.value)
@@ -379,21 +380,21 @@ class AndroidCutoverPrereqsTest {
             // A remote node administering US sends a REQUEST carrying the passkey WE issued it.
             transport.injectFrame(
                 frameOf(
-                    FromRadio(
-                        packet = MeshPacket(
-                            from = REMOTE_NODE.raw,
-                            to = TEST_NODE_NUM,
-                            decoded = org.meshtastic.proto.Data(
-                                portnum = org.meshtastic.proto.PortNum.ADMIN_APP,
-                                payload = AdminMessage.ADAPTER.encode(
-                                    AdminMessage(
-                                        set_owner = User(long_name = "intruder"),
-                                        session_passkey = POISON_PASSKEY.toByteString(),
-                                    ),
-                                ).toByteString(),
-                            ),
-                        ),
-                    ),
+                    FromRadio.Builder().also { wb ->
+                    wb.packet = MeshPacket.Builder().also { wb ->
+                                            wb.from = REMOTE_NODE.raw
+                                            wb.to = TEST_NODE_NUM
+                                            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                                                                        wb.portnum = org.meshtastic.proto.PortNum.ADMIN_APP
+                                                                        wb.payload = AdminMessage.ADAPTER.encode(
+                                                                                                            AdminMessage.Builder().also { wb ->
+                                                                                                            wb.set_owner = User.Builder().also { wb ->wb.long_name = "intruder"}.build()
+                                                                                                            wb.session_passkey = POISON_PASSKEY.toByteString()
+                                                                                                            }.build(),
+                                                                                                        ).toByteString()
+                                                                        }.build()
+                                            }.build()
+                    }.build(),
                 ),
             )
             runCurrent()
@@ -414,7 +415,7 @@ class AndroidCutoverPrereqsTest {
         withConnectedClient { client, transport ->
             transport.injectFrame(
                 frameOf(
-                    FromRadio(node_info = NodeInfo(num = REMOTE_NODE.raw, user = User(id = "!2", long_name = "Late"))),
+                    FromRadio.Builder().also { wb ->wb.node_info = NodeInfo.Builder().also { wb ->wb.num = REMOTE_NODE.raw; wb.user = User.Builder().also { wb ->wb.id = "!2"; wb.long_name = "Late"}.build()}.build()}.build(),
                 ),
             )
             runCurrent()

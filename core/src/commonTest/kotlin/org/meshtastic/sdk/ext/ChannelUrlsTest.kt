@@ -19,11 +19,11 @@ import kotlin.test.assertTrue
 
 class ChannelUrlsTest {
     @Test fun roundTripChannelSet() {
-        val set = ChannelSet(
-            settings = listOf(
-                ChannelSettings(name = "LongFast", psk = byteArrayOf(0x01).toByteString()),
-            ),
-        )
+        val set = ChannelSet.Builder().also { wb ->
+        wb.settings = listOf(
+                        ChannelSettings.Builder().also { wb ->wb.name = "LongFast"; wb.psk = byteArrayOf(0x01).toByteString()}.build(),
+                    )
+        }.build()
         val url = set.toUrl()
         assertTrue(url.startsWith(ChannelUrl.PREFIX))
         val decoded = ChannelUrl.parse(url)
@@ -33,7 +33,7 @@ class ChannelUrlsTest {
     }
 
     @Test fun parseToleratesMissingPrefix() {
-        val url = ChannelSet().toUrl()
+        val url = ChannelSet.Builder().build().toUrl()
         val payload = url.removePrefix(ChannelUrl.PREFIX)
         assertNotNull(ChannelUrl.parse("#$payload"))
     }

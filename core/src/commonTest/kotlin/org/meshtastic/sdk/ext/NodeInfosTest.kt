@@ -15,14 +15,14 @@ import kotlin.test.assertEquals
 
 class NodeInfosTest {
     @Test fun displayIdAndShortNameFallbacks() {
-        val n = NodeInfo(num = 0xa1b2c3d4.toInt())
+        val n = NodeInfo.Builder().also { wb ->wb.num = 0xa1b2c3d4.toInt()}.build()
         assertEquals("!a1b2c3d4", n.displayId)
         assertEquals("c3d4", n.shortName)
         assertEquals("!a1b2c3d4", n.longName)
     }
 
     @Test fun userPopulatedNamesWin() {
-        val n = NodeInfo(num = 1, user = User(id = "!00000001", short_name = "AL", long_name = "Alice"))
+        val n = NodeInfo.Builder().also { wb ->wb.num = 1; wb.user = User.Builder().also { wb ->wb.id = "!00000001"; wb.short_name = "AL"; wb.long_name = "Alice"}.build()}.build()
         assertEquals("AL", n.shortName)
         assertEquals("Alice", n.longName)
     }

@@ -30,14 +30,14 @@ class RadioClientSendTest {
     fun sendMeshPacket_connectedClientReturnsHandleAndWritesPacket() = runTest {
         withConnectedClient { client, transport ->
             val before = transport.outboundPackets().size
-            val packet = MeshPacket(
-                to = TARGET_NODE.raw,
-                channel = SECONDARY_CHANNEL.raw,
-                decoded = Data(
-                    portnum = PortNum.TEXT_MESSAGE_APP,
-                    payload = "mesh-packet".encodeToByteArray().toByteString(),
-                ),
-            )
+            val packet = MeshPacket.Builder().also { wb ->
+            wb.to = TARGET_NODE.raw
+            wb.channel = SECONDARY_CHANNEL.raw
+            wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TEXT_MESSAGE_APP
+                            wb.payload = "mesh-packet".encodeToByteArray().toByteString()
+                            }.build()
+            }.build()
 
             val handle = client.send(packet)
 
@@ -61,12 +61,12 @@ class RadioClientSendTest {
 
         assertFailsWith<MeshtasticException.NotConnected> {
             client.send(
-                MeshPacket(
-                    decoded = Data(
-                        portnum = PortNum.TEXT_MESSAGE_APP,
-                        payload = "offline".encodeToByteArray().toByteString(),
-                    ),
-                ),
+                MeshPacket.Builder().also { wb ->
+                wb.decoded = Data.Builder().also { wb ->
+                                    wb.portnum = PortNum.TEXT_MESSAGE_APP
+                                    wb.payload = "offline".encodeToByteArray().toByteString()
+                                    }.build()
+                }.build(),
             )
         }
     }
@@ -74,12 +74,12 @@ class RadioClientSendTest {
     @Test
     fun sendMeshPacket_payloadTooLargeThrows() = runTest {
         withConnectedClient { client, _ ->
-            val oversized = MeshPacket(
-                decoded = Data(
-                    portnum = PortNum.TEXT_MESSAGE_APP,
-                    payload = ByteArray(DATA_PAYLOAD_LEN + 1).toByteString(),
-                ),
-            )
+            val oversized = MeshPacket.Builder().also { wb ->
+            wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TEXT_MESSAGE_APP
+                            wb.payload = ByteArray(DATA_PAYLOAD_LEN + 1).toByteString()
+                            }.build()
+            }.build()
 
             assertFailsWith<MeshtasticException.PayloadTooLarge> {
                 client.send(oversized)
@@ -283,7 +283,7 @@ class RadioClientSendTest {
     fun sendRaw_connectedClientWritesFrameDirectlyToTransport() = runTest {
         withConnectedClient { client, transport ->
             val before = transport.outboundFrames().size
-            val frame = ToRadio(disconnect = true)
+            val frame = ToRadio.Builder().also { wb ->wb.disconnect = true}.build()
 
             client.sendRaw(frame)
             runCurrent()
@@ -298,7 +298,7 @@ class RadioClientSendTest {
         val client = buildClient()
 
         assertFailsWith<MeshtasticException.NotConnected> {
-            client.sendRaw(ToRadio(disconnect = true))
+            client.sendRaw(ToRadio.Builder().also { wb ->wb.disconnect = true}.build())
         }
     }
 

@@ -16,11 +16,11 @@ import kotlin.test.assertTrue
 
 class SharedContactUrlTest {
     @Test fun roundTripSharedContact() {
-        val contact = SharedContact(
-            node_num = 0xa1b2c3d4.toInt(),
-            should_ignore = true,
-            manually_verified = true,
-        )
+        val contact = SharedContact.Builder().also { wb ->
+        wb.node_num = 0xa1b2c3d4.toInt()
+        wb.should_ignore = true
+        wb.manually_verified = true
+        }.build()
 
         val url = contact.toUrl()
 
@@ -34,7 +34,7 @@ class SharedContactUrlTest {
     }
 
     @Test fun parseIgnoresQueryParams() {
-        val contact = SharedContact(node_num = 1234)
+        val contact = SharedContact.Builder().also { wb ->wb.node_num = 1234}.build()
         val withQuery = contact.toUrl() + "?from=test"
 
         val parsed = SharedContactUrl.parse(withQuery)
