@@ -30,7 +30,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class MessageHandleRetryTest {
     private fun fakeHandle(
         terminal: SendState,
-        packet: MeshPacket? = MeshPacket.Builder().also { wb ->wb.id = 1}.build(),
+        packet: MeshPacket? = MeshPacket.Builder().also { wb -> wb.id = 1 }.build(),
         resendFn: ((MeshPacket) -> MessageHandle)? = null,
     ): MessageHandle {
         val state = MutableStateFlow<SendState>(terminal)

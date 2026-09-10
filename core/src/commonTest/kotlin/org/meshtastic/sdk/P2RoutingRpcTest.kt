@@ -59,10 +59,10 @@ class P2RoutingRpcTest {
         assertEquals(5, req.hop_limit)
 
         val expected = RouteDiscovery.Builder().also { wb ->
-        wb.route = listOf(0x111, 0x222)
-        wb.snr_towards = listOf(40, 32)
-        wb.route_back = listOf(0x222, 0x111)
-        wb.snr_back = listOf(36, 40)
+            wb.route = listOf(0x111, 0x222)
+            wb.snr_towards = listOf(40, 32)
+            wb.route_back = listOf(0x222, 0x111)
+            wb.snr_back = listOf(36, 40)
         }.build()
         transport.injectRouteReply(requestId = req.id, reply = expected, fromNode = dest.raw)
         runCurrent()
@@ -125,7 +125,12 @@ class P2RoutingRpcTest {
             wb.node_id = 1
             wb.last_sent_by_id = 1
             wb.node_broadcast_interval_secs = 600
-            wb.neighbors = listOf(org.meshtastic.proto.Neighbor.Builder().also { wb -> wb.node_id = 2; wb.snr = 7.5f }.build())
+            wb.neighbors = listOf(
+                org.meshtastic.proto.Neighbor.Builder().also { wb ->
+                    wb.node_id = 2
+                    wb.snr = 7.5f
+                }.build(),
+            )
         }.build()
         transport.injectNeighborInfoResponse(requestId = req.id, info = expected)
         runCurrent()

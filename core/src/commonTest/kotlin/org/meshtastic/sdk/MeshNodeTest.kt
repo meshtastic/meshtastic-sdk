@@ -30,22 +30,22 @@ class MeshNodeTest {
         hopsAway: Int? = 0,
         viaMqtt: Boolean = false,
         user: User? = User.Builder().also { wb ->
-        wb.id = "!00000001"
-        wb.long_name = "TestNode"
-        wb.short_name = "TN"
-        wb.hw_model = HardwareModel.TBEAM
+            wb.id = "!00000001"
+            wb.long_name = "TestNode"
+            wb.short_name = "TN"
+            wb.hw_model = HardwareModel.TBEAM
         }.build(),
         position: Position? = null,
         deviceMetrics: DeviceMetrics? = null,
     ) = NodeInfo.Builder().also { wb ->
-    wb.num = num
-    wb.last_heard = lastHeard
-    wb.snr = snr
-    wb.hops_away = hopsAway
-    wb.via_mqtt = viaMqtt
-    wb.user = user
-    wb.position = position
-    wb.device_metrics = deviceMetrics
+        wb.num = num
+        wb.last_heard = lastHeard
+        wb.snr = snr
+        wb.hops_away = hopsAway
+        wb.via_mqtt = viaMqtt
+        wb.user = user
+        wb.position = position
+        wb.device_metrics = deviceMetrics
     }.build()
 
     @Test
@@ -109,7 +109,11 @@ class MeshNodeTest {
 
     @Test
     fun positionAccessors() {
-        val pos = Position.Builder().also { wb ->wb.latitude_i = 371234567; wb.longitude_i = -1221234567; wb.altitude = 100}.build()
+        val pos = Position.Builder().also { wb ->
+            wb.latitude_i = 371234567
+            wb.longitude_i = -1221234567
+            wb.altitude = 100
+        }.build()
         val node = nodeInfo(position = pos).toMeshNode(now)
         assertNotNull(node.latitude)
         assertNotNull(node.longitude)
@@ -120,7 +124,10 @@ class MeshNodeTest {
 
     @Test
     fun nullPositionWhenZero() {
-        val pos = Position.Builder().also { wb ->wb.latitude_i = 0; wb.longitude_i = 0}.build()
+        val pos = Position.Builder().also { wb ->
+            wb.latitude_i = 0
+            wb.longitude_i = 0
+        }.build()
         val node = nodeInfo(position = pos).toMeshNode(now)
         assertNull(node.latitude)
         assertNull(node.longitude)
@@ -128,7 +135,11 @@ class MeshNodeTest {
 
     @Test
     fun deviceMetricsAccessors() {
-        val metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 85; wb.voltage = 4.1f; wb.channel_utilization = 12.5f}.build()
+        val metrics = DeviceMetrics.Builder().also { wb ->
+            wb.battery_level = 85
+            wb.voltage = 4.1f
+            wb.channel_utilization = 12.5f
+        }.build()
         val node = nodeInfo(deviceMetrics = metrics).toMeshNode(now)
         assertEquals(85, node.batteryLevel)
         assertEquals(4.1f, node.voltage)

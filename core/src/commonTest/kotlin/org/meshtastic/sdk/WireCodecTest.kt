@@ -50,17 +50,47 @@ class WireCodecTest {
 
     private fun toRadioWithSerializedSize(targetSize: Int): ToRadio {
         val builders = listOf<(ByteArray) -> ToRadio>(
-            { payload -> ToRadio.Builder().also { wb ->wb.packet = MeshPacket.Builder().also { wb ->wb.decoded = Data.Builder().also { wb ->wb.payload = payload.toByteString()}.build()}.build()}.build() },
-            { payload -> ToRadio.Builder().also { wb ->wb.packet = MeshPacket.Builder().also { wb ->wb.channel = 1; wb.decoded = Data.Builder().also { wb ->wb.payload = payload.toByteString()}.build()}.build()}.build() },
-            { payload -> ToRadio.Builder().also { wb ->wb.packet = MeshPacket.Builder().also { wb ->wb.to = 1; wb.decoded = Data.Builder().also { wb ->wb.payload = payload.toByteString()}.build()}.build()}.build() },
             { payload ->
                 ToRadio.Builder().also { wb ->
-                wb.packet = MeshPacket.Builder().also { wb ->
-                                    wb.from = 1
-                                    wb.to = 1
-                                    wb.channel = 1
-                                    wb.decoded = Data.Builder().also { wb ->wb.payload = payload.toByteString()}.build()
-                                    }.build()
+                    wb.packet =
+                        MeshPacket.Builder().also { wb ->
+                            wb.decoded =
+                                Data.Builder().also { wb ->
+                                    wb.payload = payload.toByteString()
+                                }.build()
+                        }.build()
+                }.build()
+            },
+            { payload ->
+                ToRadio.Builder().also { wb ->
+                    wb.packet = MeshPacket.Builder().also { wb ->
+                        wb.channel = 1
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.payload = payload.toByteString()
+                        }.build()
+                    }.build()
+                }.build()
+            },
+            { payload ->
+                ToRadio.Builder().also { wb ->
+                    wb.packet = MeshPacket.Builder().also { wb ->
+                        wb.to = 1
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.payload = payload.toByteString()
+                        }.build()
+                    }.build()
+                }.build()
+            },
+            { payload ->
+                ToRadio.Builder().also { wb ->
+                    wb.packet = MeshPacket.Builder().also { wb ->
+                        wb.from = 1
+                        wb.to = 1
+                        wb.channel = 1
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.payload = payload.toByteString()
+                        }.build()
+                    }.build()
                 }.build()
             },
         )
@@ -100,10 +130,12 @@ class WireCodecTest {
         // the `RadioClient.send` path which enforces `DATA_PAYLOAD_LEN` (233 bytes).
         val bigPayload = ByteArray(513)
         val packet = MeshPacket.Builder().also { wb ->
-        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->wb.payload = bigPayload.toByteString()}.build()
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.payload = bigPayload.toByteString()
+            }.build()
         }.build()
         assertFailsWith<MeshtasticException.Protocol> {
-            WireCodec.encodeToRadio(ToRadio.Builder().also { wb ->wb.packet = packet}.build())
+            WireCodec.encodeToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
         }
     }
 
@@ -120,7 +152,7 @@ class WireCodecTest {
     fun testRoundTripHeartbeat() {
         // A ToRadio with heartbeat may not decode as FromRadio (different proto shapes);
         // verify only that the frame is well-formed (correct header + length encoding).
-        val msg = ToRadio.Builder().also { wb ->wb.heartbeat = Heartbeat.Builder().build()}.build()
+        val msg = ToRadio.Builder().also { wb -> wb.heartbeat = Heartbeat.Builder().build() }.build()
         val frame = WireCodec.encodeToRadio(msg)
         val payload = msg.adapter.encode(msg)
         assertEquals(0x94.toByte(), frame[0])
@@ -133,8 +165,11 @@ class WireCodecTest {
     @Test
     fun testRoundTripMeshPacket() {
         // Verifies framing is well-formed; ToRadio/FromRadio may have different schemas.
-        val packet = MeshPacket.Builder().also { wb ->wb.to = 0xFFFFFFFF.toInt(); wb.channel = 3}.build()
-        val msg = ToRadio.Builder().also { wb ->wb.packet = packet}.build()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = 0xFFFFFFFF.toInt()
+            wb.channel = 3
+        }.build()
+        val msg = ToRadio.Builder().also { wb -> wb.packet = packet }.build()
         val frame = WireCodec.encodeToRadio(msg)
         val payload = msg.adapter.encode(msg)
         assertEquals(4 + payload.size, frame.size)
@@ -145,7 +180,8 @@ class WireCodecTest {
     @Test
     fun testRoundTripMultipleFrames() {
         // Use empty ToRadio so each frame decodes cleanly as empty FromRadio.
-        val combined = WireCodec.encodeToRadio(ToRadio.Builder().build()) + WireCodec.encodeToRadio(ToRadio.Builder().build())
+        val combined =
+            WireCodec.encodeToRadio(ToRadio.Builder().build()) + WireCodec.encodeToRadio(ToRadio.Builder().build())
         val results = WireCodec.FrameDecoder().feedBytes(combined)
         assertEquals(2, results.size, "Two concatenated frames must decode to exactly 2 messages")
     }
@@ -233,23 +269,34 @@ class WireCodecTest {
     @Test
     fun testResyncAfterCorruptionMidPayload() {
         val decoder = WireCodec.FrameDecoder()
-        val partialFrame = encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 1}.build()).copyOfRange(0, 5)
-        val recoveredFrame = encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 42}.build())
+        val partialFrame = encodeFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.id = 1
+            }.build(),
+        ).copyOfRange(0, 5)
+        val recoveredFrame = encodeFromRadio(FromRadio.Builder().also { wb -> wb.id = 42 }.build())
 
         assertTrue(decoder.feedBytes(partialFrame).isEmpty())
         assertTrue(decoder.feedBytes(byteArrayOf(0x80.toByte())).isEmpty())
 
         val results = decoder.feedBytes(recoveredFrame)
-        assertEquals(listOf(FromRadio.Builder().also { wb ->wb.id = 42}.build()), results)
+        assertEquals(listOf(FromRadio.Builder().also { wb -> wb.id = 42 }.build()), results)
     }
 
     @Test
     fun testMultipleConsecutiveStart1Bytes() {
-        val frame = withRepeatedStart1s(encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 7}.build()), count = 5)
+        val frame = withRepeatedStart1s(
+            encodeFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.id = 7
+                }.build(),
+            ),
+            count = 5,
+        )
 
         val results = WireCodec.FrameDecoder().feedBytes(frame)
 
-        assertEquals(listOf(FromRadio.Builder().also { wb ->wb.id = 7}.build()), results)
+        assertEquals(listOf(FromRadio.Builder().also { wb -> wb.id = 7 }.build()), results)
     }
 
     @Test
@@ -264,39 +311,67 @@ class WireCodecTest {
 
     @Test
     fun testFeedBytesReturnsCorrectCountForMixedValidInvalid() {
-        val valid1 = encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 1}.build())
-        val valid2 = encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 2}.build())
+        val valid1 = encodeFromRadio(FromRadio.Builder().also { wb -> wb.id = 1 }.build())
+        val valid2 = encodeFromRadio(FromRadio.Builder().also { wb -> wb.id = 2 }.build())
         val zeroFrame = byteArrayOf(START1, START2, 0x00, 0x00)
         val garbage = byteArrayOf(0x00, 0x7F, 0x01, 0x55)
         val malformedFrame = byteArrayOf(START1, START2, 0x00, 0x02, 0x08, 0x80.toByte())
-        val truncatedFrame = encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 9}.build()).copyOfRange(0, 5)
+        val truncatedFrame = encodeFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.id = 9
+            }.build(),
+        ).copyOfRange(0, 5)
 
         val results = WireCodec.FrameDecoder().feedBytes(
             valid1 + garbage + malformedFrame + valid2 + zeroFrame + truncatedFrame,
         )
 
-        assertEquals(listOf(FromRadio.Builder().also { wb ->wb.id = 1}.build(), FromRadio.Builder().also { wb ->wb.id = 2}.build(), FromRadio.Builder().build()), results)
+        assertEquals(
+            listOf(
+                FromRadio.Builder().also { wb ->
+                    wb.id = 1
+                }.build(),
+                FromRadio.Builder().also { wb ->
+                    wb.id = 2
+                }.build(),
+                FromRadio.Builder().build(),
+            ),
+            results,
+        )
     }
 
     @Test
     fun testPartialFrameThenValidFrameNoReset() {
         val decoder = WireCodec.FrameDecoder()
-        val partialFrame = encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 1}.build()).copyOfRange(0, 5)
-        val recoveredFrame = withRepeatedStart1s(encodeFromRadio(FromRadio.Builder().also { wb ->wb.id = 77}.build()), count = 5)
+        val partialFrame = encodeFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.id = 1
+            }.build(),
+        ).copyOfRange(0, 5)
+        val recoveredFrame = withRepeatedStart1s(
+            encodeFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.id = 77
+                }.build(),
+            ),
+            count = 5,
+        )
 
         assertTrue(decoder.feedBytes(partialFrame).isEmpty())
 
         val results = decoder.feedBytes(recoveredFrame)
 
-        assertEquals(listOf(FromRadio.Builder().also { wb ->wb.id = 77}.build()), results)
+        assertEquals(listOf(FromRadio.Builder().also { wb -> wb.id = 77 }.build()), results)
     }
 
     @Test
     fun testStart1AppearingAsPayloadByte() {
         val message = FromRadio.Builder().also { wb ->
-        wb.packet = MeshPacket.Builder().also { wb ->
-                    wb.decoded = Data.Builder().also { wb ->wb.payload = byteArrayOf(START1).toByteString()}.build()
-                    }.build()
+            wb.packet = MeshPacket.Builder().also { wb ->
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.payload = byteArrayOf(START1).toByteString()
+                }.build()
+            }.build()
         }.build()
         val payload = FromRadio.ADAPTER.encode(message)
 

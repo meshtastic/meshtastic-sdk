@@ -94,14 +94,14 @@ internal class TelemetryApiImpl(
         val requestId = engine.nextMessageId().raw
         val payload = Telemetry.ADAPTER.encode(Telemetry.Builder().build()).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-        wb.id = requestId
-        wb.from = engine.myNodeNumOrNull() ?: 0
-        wb.to = target.raw
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.TELEMETRY_APP
-                    wb.payload = payload
-                    wb.want_response = true
-                    }.build()
+            wb.id = requestId
+            wb.from = engine.myNodeNumOrNull() ?: 0
+            wb.to = target.raw
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.TELEMETRY_APP
+                wb.payload = payload
+                wb.want_response = true
+            }.build()
         }.build()
         val result = engine.submitRpc(packet, requestId, ResponseKind.Telemetry, rpcTimeout)
         return when (result) {

@@ -42,15 +42,19 @@ class CongestionEmissionTest {
     }
 
     private fun FakeRadioTransport.injectTelemetry(fromNode: Int = nodeNum, deviceMetrics: DeviceMetrics) {
-        val payload = Telemetry.ADAPTER.encode(Telemetry.Builder().also { wb ->wb.device_metrics = deviceMetrics}.build()).toByteString()
+        val payload = Telemetry.ADAPTER.encode(
+            Telemetry.Builder().also { wb ->
+                wb.device_metrics = deviceMetrics
+            }.build(),
+        ).toByteString()
         injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.from = fromNode
-            wb.to = 0
-            wb.decoded = Data.Builder().also { wb ->
-                            wb.portnum = PortNum.TELEMETRY_APP
-                            wb.payload = payload
-                            }.build()
+                wb.from = fromNode
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.TELEMETRY_APP
+                    wb.payload = payload
+                }.build()
             }.build(),
         )
     }
@@ -78,11 +82,26 @@ class CongestionEmissionTest {
         }
         runCurrent()
 
-        transport.injectTelemetry(deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 10f; wb.channel_utilization = 10f}.build())
+        transport.injectTelemetry(
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 10f
+                wb.channel_utilization = 10f
+            }.build(),
+        )
         runCurrent()
-        transport.injectTelemetry(deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 55f; wb.channel_utilization = 10f}.build())
+        transport.injectTelemetry(
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 55f
+                wb.channel_utilization = 10f
+            }.build(),
+        )
         runCurrent()
-        transport.injectTelemetry(deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 60f; wb.channel_utilization = 15f}.build())
+        transport.injectTelemetry(
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 60f
+                wb.channel_utilization = 15f
+            }.build(),
+        )
         runCurrent()
 
         assertEquals(listOf(CongestionLevel.LOW, CongestionLevel.HIGH), events.map { it.metrics.level })
@@ -108,9 +127,19 @@ class CongestionEmissionTest {
         }
         runCurrent()
 
-        transport.injectTelemetry(deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 0f; wb.channel_utilization = 0f}.build())
+        transport.injectTelemetry(
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 0f
+                wb.channel_utilization = 0f
+            }.build(),
+        )
         runCurrent()
-        transport.injectTelemetry(deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 55f; wb.channel_utilization = 0f}.build())
+        transport.injectTelemetry(
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 55f
+                wb.channel_utilization = 0f
+            }.build(),
+        )
         runCurrent()
 
         assertEquals(1, events.size)
@@ -138,17 +167,26 @@ class CongestionEmissionTest {
 
         transport.injectTelemetry(
             fromNode = 0x10101010,
-            deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 55f; wb.channel_utilization = 10f}.build(),
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 55f
+                wb.channel_utilization = 10f
+            }.build(),
         )
         runCurrent()
         transport.injectTelemetry(
             fromNode = 0x10101010,
-            deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 60f; wb.channel_utilization = 15f}.build(),
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 60f
+                wb.channel_utilization = 15f
+            }.build(),
         )
         runCurrent()
         transport.injectTelemetry(
             fromNode = 0x20202020,
-            deviceMetrics = DeviceMetrics.Builder().also { wb ->wb.air_util_tx = 65f; wb.channel_utilization = 12f}.build(),
+            deviceMetrics = DeviceMetrics.Builder().also { wb ->
+                wb.air_util_tx = 65f
+                wb.channel_utilization = 12f
+            }.build(),
         )
         runCurrent()
 

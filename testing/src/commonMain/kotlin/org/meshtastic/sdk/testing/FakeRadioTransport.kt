@@ -92,7 +92,7 @@ public class FakeRadioTransport(
      * Use this to test flows that consume [RadioClient.packets] (e.g. [RadioClient.textMessages]).
      */
     public fun injectPacket(packet: MeshPacket) {
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /**
@@ -103,15 +103,15 @@ public class FakeRadioTransport(
     public fun injectAdminResponse(requestId: Int, response: AdminMessage, fromNode: Int = nodeNum) {
         val payload = okio.ByteString.of(*AdminMessage.ADAPTER.encode(response))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ADMIN_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ADMIN_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /** Inject a Telemetry response packet correlated to [requestId]. */
@@ -122,45 +122,57 @@ public class FakeRadioTransport(
     ) {
         val payload = okio.ByteString.of(*org.meshtastic.proto.Telemetry.ADAPTER.encode(telemetry))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.TELEMETRY_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.TELEMETRY_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /** Inject a Routing.route_reply correlated to [requestId]. */
     public fun injectRouteReply(requestId: Int, reply: org.meshtastic.proto.RouteDiscovery, fromNode: Int = nodeNum) {
-        val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing.Builder().also { wb ->wb.route_reply = reply}.build()))
+        val payload = okio.ByteString.of(
+            *Routing.ADAPTER.encode(
+                Routing.Builder().also { wb ->
+                    wb.route_reply = reply
+                }.build(),
+            ),
+        )
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /** Inject a Routing error correlated to [requestId] (failure-mapping tests). */
     public fun injectRoutingError(requestId: Int, error: Routing.Error, fromNode: Int = nodeNum) {
-        val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing.Builder().also { wb ->wb.error_reason = error}.build()))
+        val payload = okio.ByteString.of(
+            *Routing.ADAPTER.encode(
+                Routing.Builder().also { wb ->
+                    wb.error_reason = error
+                }.build(),
+            ),
+        )
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /** Inject a NeighborInfo response correlated to [requestId]. */
@@ -171,15 +183,15 @@ public class FakeRadioTransport(
     ) {
         val payload = okio.ByteString.of(*org.meshtastic.proto.NeighborInfo.ADAPTER.encode(info))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.NEIGHBORINFO_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.NEIGHBORINFO_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /** Inject a Store-and-Forward response correlated to [requestId]. */
@@ -190,30 +202,36 @@ public class FakeRadioTransport(
     ) {
         val payload = okio.ByteString.of(*org.meshtastic.proto.StoreAndForward.ADAPTER.encode(message))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.STORE_FORWARD_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.STORE_FORWARD_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     /** Inject a Routing.Ack correlated to [requestId] (setter ack-style tests). */
     public fun injectRoutingAck(requestId: Int, fromNode: Int = nodeNum) {
-        val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing.Builder().also { wb ->wb.error_reason = Routing.Error.NONE}.build()))
+        val payload = okio.ByteString.of(
+            *Routing.ADAPTER.encode(
+                Routing.Builder().also { wb ->
+                    wb.error_reason = Routing.Error.NONE
+                }.build(),
+            ),
+        )
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNode
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNode
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     override suspend fun connect() {
@@ -263,12 +281,26 @@ public class FakeRadioTransport(
     }
 
     private fun injectStage1Frames() {
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = nodeNum}.build()}.build())
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build())
+        injectFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb ->
+                    wb.my_node_num = nodeNum
+                }.build()
+            }.build(),
+        )
+        injectFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.config_complete_id = NONCE_STAGE1
+            }.build(),
+        )
     }
 
     private fun injectStage2Frames() {
-        injectFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE2}.build())
+        injectFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.config_complete_id = NONCE_STAGE2
+            }.build(),
+        )
     }
 
     private fun handleAdminPacket(packet: MeshPacket) {
@@ -281,23 +313,26 @@ public class FakeRadioTransport(
         }
         if (admin.get_owner_request == true) {
             val user = User.Builder().also { wb ->
-            wb.id = "!00000001"
-            wb.long_name = "FakeNode"
-            wb.short_name = "FN"
-            wb.hw_model = HardwareModel.UNSET
+                wb.id = "!00000001"
+                wb.long_name = "FakeNode"
+                wb.short_name = "FN"
+                wb.hw_model = HardwareModel.UNSET
             }.build()
             val response = AdminMessage.Builder().also { wb ->
-            wb.get_owner_response = user
-            wb.session_passkey = okio.ByteString.EMPTY
+                wb.get_owner_response = user
+                wb.session_passkey = okio.ByteString.EMPTY
             }.build()
             val encoded = AdminMessage.ADAPTER.encode(response)
             val responsePayload = okio.ByteString.of(*encoded)
             val responsePacket = MeshPacket.Builder().also { wb ->
-            wb.from = nodeNum
-            wb.to = packet.from
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.ADMIN_APP; wb.payload = responsePayload}.build()
+                wb.from = nodeNum
+                wb.to = packet.from
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.ADMIN_APP
+                    wb.payload = responsePayload
+                }.build()
             }.build()
-            injectFromRadio(FromRadio.Builder().also { wb ->wb.packet = responsePacket}.build())
+            injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = responsePacket }.build())
         }
     }
 

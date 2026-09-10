@@ -79,9 +79,9 @@ class PresenceTimerTest {
 
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.from = remoteNode.raw
-            wb.to = 0
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.TEXT_MESSAGE_APP}.build()
+                wb.from = remoteNode.raw
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb -> wb.portnum = PortNum.TEXT_MESSAGE_APP }.build()
             }.build(),
         )
         runCurrent()

@@ -46,8 +46,8 @@ class NodeKeyedStorageTest {
     }
 
     private fun sampleBundle(nodeNum: Int, longName: String = "Radio"): ConfigBundle = ConfigBundle(
-        myInfo = MyNodeInfo.Builder().also { wb ->wb.my_node_num = nodeNum}.build(),
-        metadata = DeviceMetadata.Builder().also { wb ->wb.firmware_version = "2.5.0"}.build(),
+        myInfo = MyNodeInfo.Builder().also { wb -> wb.my_node_num = nodeNum }.build(),
+        metadata = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "2.5.0" }.build(),
         configs = listOf(Config.Builder().build()),
         moduleConfigs = emptyList(),
     ).also { _ ->
@@ -56,8 +56,12 @@ class NodeKeyedStorageTest {
     }
 
     private fun sampleNode(nodeNum: Int, longName: String): NodeInfo = NodeInfo.Builder().also { wb ->
-    wb.num = nodeNum
-    wb.user = User.Builder().also { wb ->wb.id = "!${nodeNum.toString(16)}"; wb.long_name = longName; wb.short_name = longName.take(4)}.build()
+        wb.num = nodeNum
+        wb.user = User.Builder().also { wb ->
+            wb.id = "!${nodeNum.toString(16)}"
+            wb.long_name = longName
+            wb.short_name = longName.take(4)
+        }.build()
     }.build()
 
     @Test

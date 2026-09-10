@@ -47,9 +47,12 @@ public fun ChannelSet.toUrl(): String = ChannelUrl.encode(this)
 
 /** Returns a standard PRIMARY [Channel] configuration (index 0, empty name, default PSK). */
 public fun Channel.Companion.default(): Channel = Channel.Builder().also { wb ->
-wb.index = 0
-wb.settings = ChannelSettings.Builder().also { wb ->wb.name = ""; wb.psk = DefaultPsk.toByteString()}.build()
-wb.role = Channel.Role.PRIMARY
+    wb.index = 0
+    wb.settings = ChannelSettings.Builder().also { wb ->
+        wb.name = ""
+        wb.psk = DefaultPsk.toByteString()
+    }.build()
+    wb.role = Channel.Role.PRIMARY
 }.build()
 
 /**

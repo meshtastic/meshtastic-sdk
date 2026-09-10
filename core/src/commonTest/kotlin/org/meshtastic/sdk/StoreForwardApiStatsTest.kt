@@ -50,12 +50,12 @@ class StoreForwardApiStatsTest {
             requestId = request.id,
             server = server,
             stats = StoreAndForward.Statistics.Builder().also { wb ->
-            wb.messages_saved = 9
-            wb.messages_max = 64
-            wb.up_time = 3600
-            wb.requests = 12
-            wb.requests_history = 7
-            wb.heartbeat = true
+                wb.messages_saved = 9
+                wb.messages_max = 64
+                wb.up_time = 3600
+                wb.requests = 12
+                wb.requests_history = 7
+                wb.heartbeat = true
             }.build(),
         )
         runCurrent()
@@ -286,8 +286,11 @@ class StoreForwardApiStatsTest {
         injectStoreForwardResponse(
             requestId = 0,
             message = StoreAndForward.Builder().also { wb ->
-            wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
-            wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->wb.period = period; wb.secondary = 0}.build()
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->
+                    wb.period = period
+                    wb.secondary = 0
+                }.build()
             }.build(),
             fromNode = server.raw,
         )
@@ -297,18 +300,18 @@ class StoreForwardApiStatsTest {
         requestId: Int,
         server: NodeId,
         stats: StoreAndForward.Statistics = StoreAndForward.Statistics.Builder().also { wb ->
-        wb.messages_saved = 1
-        wb.messages_max = 2
-        wb.up_time = 3
-        wb.requests_history = 4
-        wb.heartbeat = true
+            wb.messages_saved = 1
+            wb.messages_max = 2
+            wb.up_time = 3
+            wb.requests_history = 4
+            wb.heartbeat = true
         }.build(),
     ) {
         injectStoreForwardResponse(
             requestId = requestId,
             message = StoreAndForward.Builder().also { wb ->
-            wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
-            wb.stats = stats
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
+                wb.stats = stats
             }.build(),
             fromNode = server.raw,
         )

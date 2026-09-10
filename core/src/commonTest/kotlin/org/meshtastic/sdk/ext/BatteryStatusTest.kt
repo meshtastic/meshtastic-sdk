@@ -18,7 +18,10 @@ import kotlin.test.assertTrue
 
 class BatteryStatusTest {
     @Test fun normalReading() {
-        val s = DeviceMetrics.Builder().also { wb ->wb.battery_level = 55; wb.voltage = 4.05f}.build().toBatteryStatus()
+        val s = DeviceMetrics.Builder().also { wb ->
+            wb.battery_level = 55
+            wb.voltage = 4.05f
+        }.build().toBatteryStatus()
         assertNotNull(s)
         assertEquals(55, s.percent)
         assertEquals(4.05f, s.voltageVolts)
@@ -26,13 +29,21 @@ class BatteryStatusTest {
     }
 
     @Test fun pluggedInSentinel() {
-        val s = DeviceMetrics.Builder().also { wb ->wb.battery_level = 101; wb.voltage = 5.0f}.build().toBatteryStatus()!!
+        val s = DeviceMetrics.Builder().also { wb ->
+            wb.battery_level = 101
+            wb.voltage = 5.0f
+        }.build().toBatteryStatus()!!
         assertEquals(100, s.percent)
         assertTrue(s.pluggedIn)
     }
 
     @Test fun coercesOutOfRangeIntoBounds() {
-        assertEquals(100, DeviceMetrics.Builder().also { wb ->wb.battery_level = 100}.build().toBatteryStatus()!!.percent)
+        assertEquals(
+            100,
+            DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 100
+            }.build().toBatteryStatus()!!.percent,
+        )
     }
 
     @Test fun emptyReturnsNull() {
@@ -40,7 +51,11 @@ class BatteryStatusTest {
     }
 
     @Test fun telemetryDelegates() {
-        val t = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 42}.build()}.build()
+        val t = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 42
+            }.build()
+        }.build()
         assertEquals(42, t.toBatteryStatus()!!.percent)
         assertNull(Telemetry.Builder().build().toBatteryStatus())
     }

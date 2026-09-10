@@ -72,7 +72,12 @@ class SendDslTest {
         val client = buildClient()
         client.connect()
         val handle = client.send {
-            proto(MeshPacket.Builder().also { wb ->wb.to = 0x42; wb.channel = 1}.build())
+            proto(
+                MeshPacket.Builder().also { wb ->
+                    wb.to = 0x42
+                    wb.channel = 1
+                }.build(),
+            )
         }
         assertNotNull(handle)
         client.disconnect()

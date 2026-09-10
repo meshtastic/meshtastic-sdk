@@ -69,10 +69,15 @@ class P2AdminRpcTest {
         // Locate the getOwner request packet and synthesize the response.
         val outbound = transport.outboundPackets().drop(outboundBefore)
         val getOwner = outbound.last { adminOf(it)?.get_owner_request == true }
-        val expected = User.Builder().also { wb ->wb.id = "!00000001"; wb.long_name = "Test"; wb.short_name = "T"; wb.hw_model = HardwareModel.UNSET}.build()
+        val expected = User.Builder().also { wb ->
+            wb.id = "!00000001"
+            wb.long_name = "Test"
+            wb.short_name = "T"
+            wb.hw_model = HardwareModel.UNSET
+        }.build()
         transport.injectAdminResponse(
             requestId = getOwner.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_owner_response = expected}.build(),
+            response = AdminMessage.Builder().also { wb -> wb.get_owner_response = expected }.build(),
         )
         runCurrent()
 
@@ -95,11 +100,13 @@ class P2AdminRpcTest {
         val getConfig = transport.outboundPackets().drop(outboundBefore)
             .last { adminOf(it)?.get_config_request == AdminMessage.ConfigType.LORA_CONFIG }
         val cfg = org.meshtastic.proto.Config.Builder().also { wb ->
-        wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->wb.use_preset = true}.build()
+            wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->
+                wb.use_preset = true
+            }.build()
         }.build()
         transport.injectAdminResponse(
             requestId = getConfig.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_config_response = cfg}.build(),
+            response = AdminMessage.Builder().also { wb -> wb.get_config_response = cfg }.build(),
         )
         runCurrent()
 
@@ -115,7 +122,12 @@ class P2AdminRpcTest {
         client.connect()
         runCurrent()
 
-        val user = User.Builder().also { wb ->wb.id = "!00000001"; wb.long_name = "Set"; wb.short_name = "S"; wb.hw_model = HardwareModel.UNSET}.build()
+        val user = User.Builder().also { wb ->
+            wb.id = "!00000001"
+            wb.long_name = "Set"
+            wb.short_name = "S"
+            wb.hw_model = HardwareModel.UNSET
+        }.build()
         val outboundBefore = transport.outboundPackets().size
         val deferred = async { client.admin.setOwner(user) }
         runCurrent()
@@ -195,10 +207,17 @@ class P2AdminRpcTest {
         // response so the retry can proceed to the replay step.
         val reseedSlice = transport.outboundPackets().drop(outboundBefore + 1)
         val reseedReq = reseedSlice.first { adminOf(it)?.get_owner_request == true }
-        val reseedUser = User.Builder().also { wb ->wb.id = "!00000001"; wb.long_name = "Reseed"; wb.short_name = "R"; wb.hw_model = HardwareModel.UNSET}.build()
+        val reseedUser = User.Builder().also { wb ->
+            wb.id = "!00000001"
+            wb.long_name = "Reseed"
+            wb.short_name = "R"
+            wb.hw_model = HardwareModel.UNSET
+        }.build()
         transport.injectAdminResponse(
             requestId = reseedReq.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_owner_response = reseedUser}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_owner_response = reseedUser
+            }.build(),
         )
         runCurrent()
         advanceUntilIdle()
@@ -206,10 +225,17 @@ class P2AdminRpcTest {
         // (3) After the re-seed completes, the original block is replayed. Satisfy that too.
         val replaySlice = transport.outboundPackets().drop(outboundBefore + 1 + reseedSlice.indexOf(reseedReq) + 1)
         val replayReq = replaySlice.first { adminOf(it)?.get_owner_request == true }
-        val replayUser = User.Builder().also { wb ->wb.id = "!00000001"; wb.long_name = "Replay"; wb.short_name = "X"; wb.hw_model = HardwareModel.UNSET}.build()
+        val replayUser = User.Builder().also { wb ->
+            wb.id = "!00000001"
+            wb.long_name = "Replay"
+            wb.short_name = "X"
+            wb.hw_model = HardwareModel.UNSET
+        }.build()
         transport.injectAdminResponse(
             requestId = replayReq.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_owner_response = replayUser}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_owner_response = replayUser
+            }.build(),
         )
         runCurrent()
         advanceUntilIdle()
@@ -241,13 +267,21 @@ class P2AdminRpcTest {
             val wireIndex = adminOf(req)!!.get_channel_request!!
             val realIndex = wireIndex - 1
             val channel = if (realIndex < 2) {
-                Channel.Builder().also { wb ->wb.index = realIndex; wb.role = Channel.Role.PRIMARY}.build()
+                Channel.Builder().also { wb ->
+                    wb.index = realIndex
+                    wb.role = Channel.Role.PRIMARY
+                }.build()
             } else {
-                Channel.Builder().also { wb ->wb.index = realIndex; wb.role = Channel.Role.DISABLED}.build()
+                Channel.Builder().also { wb ->
+                    wb.index = realIndex
+                    wb.role = Channel.Role.DISABLED
+                }.build()
             }
             transport.injectAdminResponse(
                 requestId = req.id,
-                response = AdminMessage.Builder().also { wb ->wb.get_channel_response = channel}.build(),
+                response = AdminMessage.Builder().also { wb ->
+                    wb.get_channel_response = channel
+                }.build(),
             )
         }
         runCurrent()
@@ -400,12 +434,23 @@ class P2AdminRpcTest {
 
         val outboundBefore = transport.outboundPackets().size
         val expectedConfig = Config.Builder().also { wb ->
-        wb.device = Config.DeviceConfig.Builder().also { wb ->wb.role = Config.DeviceConfig.Role.CLIENT}.build()
+            wb.device = Config.DeviceConfig.Builder().also { wb ->
+                wb.role = Config.DeviceConfig.Role.CLIENT
+            }.build()
         }.build()
-        val updatedChannel = Channel.Builder().also { wb ->wb.index = 3; wb.role = Channel.Role.SECONDARY}.build()
+        val updatedChannel = Channel.Builder().also { wb ->
+            wb.index = 3
+            wb.role = Channel.Role.SECONDARY
+        }.build()
         val expectedChannels = listOf(
-            Channel.Builder().also { wb ->wb.index = 0; wb.role = Channel.Role.PRIMARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 1; wb.role = Channel.Role.SECONDARY}.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 0
+                wb.role = Channel.Role.PRIMARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 1
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
         )
         val deferred = async {
             client.admin.batch {
@@ -426,7 +471,9 @@ class P2AdminRpcTest {
             .last { adminOf(it)?.get_config_request == AdminMessage.ConfigType.DEVICE_CONFIG }
         transport.injectAdminResponse(
             requestId = getConfig.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_config_response = expectedConfig}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_config_response = expectedConfig
+            }.build(),
         )
 
         repeat(3) {
@@ -438,12 +485,19 @@ class P2AdminRpcTest {
             val realIndex = wireIndex - 1
             val channel = when (realIndex) {
                 0 -> expectedChannels[0]
+
                 1 -> expectedChannels[1]
-                else -> Channel.Builder().also { wb ->wb.index = realIndex; wb.role = Channel.Role.DISABLED}.build()
+
+                else -> Channel.Builder().also { wb ->
+                    wb.index = realIndex
+                    wb.role = Channel.Role.DISABLED
+                }.build()
             }
             transport.injectAdminResponse(
                 requestId = req.id,
-                response = AdminMessage.Builder().also { wb ->wb.get_channel_response = channel}.build(),
+                response = AdminMessage.Builder().also { wb ->
+                    wb.get_channel_response = channel
+                }.build(),
             )
         }
         runCurrent()
@@ -535,7 +589,10 @@ class P2AdminRpcTest {
 
         val favoriteNode = NodeId(0x01020304)
         val ignoredNode = NodeId(0x05060708)
-        val updatedChannel = Channel.Builder().also { wb ->wb.index = 4; wb.role = Channel.Role.SECONDARY}.build()
+        val updatedChannel = Channel.Builder().also { wb ->
+            wb.index = 4
+            wb.role = Channel.Role.SECONDARY
+        }.build()
         val outboundBefore = transport.outboundPackets().size
         val deferred = async {
             client.admin.batch {
@@ -589,7 +646,7 @@ class P2AdminRpcTest {
 
         val outboundBefore = transport.outboundPackets().size
         val expectedModuleConfig = ModuleConfig.Builder().also { wb ->
-        wb.serial = ModuleConfig.SerialConfig.Builder().also { wb ->wb.enabled = true}.build()
+            wb.serial = ModuleConfig.SerialConfig.Builder().also { wb -> wb.enabled = true }.build()
         }.build()
         val deferred = async {
             client.admin.batch {
@@ -607,7 +664,9 @@ class P2AdminRpcTest {
             .last { adminOf(it)?.get_module_config_request == AdminMessage.ModuleConfigType.SERIAL_CONFIG }
         transport.injectAdminResponse(
             requestId = getModuleConfig.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_module_config_response = expectedModuleConfig}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_module_config_response = expectedModuleConfig
+            }.build(),
         )
         runCurrent()
         runCurrent()
@@ -673,13 +732,16 @@ class P2AdminRpcTest {
         runCurrent()
 
         val writtenConfig = Config.Builder().also { wb ->
-        wb.device = Config.DeviceConfig.Builder().also { wb ->wb.role = Config.DeviceConfig.Role.ROUTER; wb.button_gpio = 14}.build()
+            wb.device = Config.DeviceConfig.Builder().also { wb ->
+                wb.role = Config.DeviceConfig.Role.ROUTER
+                wb.button_gpio = 14
+            }.build()
         }.build()
         val expectedModuleConfig = ModuleConfig.Builder().also { wb ->
-        wb.serial = ModuleConfig.SerialConfig.Builder().also { wb ->wb.enabled = true}.build()
+            wb.serial = ModuleConfig.SerialConfig.Builder().also { wb -> wb.enabled = true }.build()
         }.build()
         val writtenModuleConfig = ModuleConfig.Builder().also { wb ->
-        wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->wb.enabled = true}.build()
+            wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb -> wb.enabled = true }.build()
         }.build()
         val outboundBefore = transport.outboundPackets().size
         val deferred = async {
@@ -702,7 +764,9 @@ class P2AdminRpcTest {
             .last { adminOf(it)?.get_module_config_request == AdminMessage.ModuleConfigType.SERIAL_CONFIG }
         transport.injectAdminResponse(
             requestId = getModuleConfig.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_module_config_response = expectedModuleConfig}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_module_config_response = expectedModuleConfig
+            }.build(),
         )
         runCurrent()
         runCurrent()
@@ -745,17 +809,23 @@ class P2AdminRpcTest {
         .mapNotNull { packet -> adminOf(packet)?.let { packet to it } }
 
     private fun buildRoutingErrorFrame(requestId: Int, error: Routing.Error): Frame {
-        val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing.Builder().also { wb ->wb.error_reason = error}.build()))
+        val payload = okio.ByteString.of(
+            *Routing.ADAPTER.encode(
+                Routing.Builder().also { wb ->
+                    wb.error_reason = error
+                }.build(),
+            ),
+        )
         val packet = org.meshtastic.proto.MeshPacket.Builder().also { wb ->
-        wb.from = 1
-        wb.to = 0
-        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                    wb.portnum = org.meshtastic.proto.PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = 1
+            wb.to = 0
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        val fr = org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.packet = packet}.build()
+        val fr = org.meshtastic.proto.FromRadio.Builder().also { wb -> wb.packet = packet }.build()
         val proto = org.meshtastic.proto.FromRadio.ADAPTER.encode(fr)
         val bytes = ByteArray(4 + proto.size).apply {
             this[0] = 0x94.toByte()
