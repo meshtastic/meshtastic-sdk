@@ -45,12 +45,12 @@ class ConfigBuildersTest {
     fun deviceConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.device = Config.DeviceConfig.Builder().build().newBuilder().also { wb ->
-                wb.role = Config.DeviceConfig.Role.TRACKER
-                wb.serial_enabled = true
-                wb.button_gpio = 23
-                wb.buzzer_gpio = 12
-            }.build()
+                wb.device = Config.DeviceConfig.Builder().also { wb ->
+                    wb.role = Config.DeviceConfig.Role.TRACKER
+                    wb.serial_enabled = true
+                    wb.button_gpio = 23
+                    wb.buzzer_gpio = 12
+                }.build()
             }.build(),
         ) {
             setDeviceConfig {
@@ -68,13 +68,13 @@ class ConfigBuildersTest {
     fun loraConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.lora = Config.LoRaConfig.Builder().build().newBuilder().also { wb ->
-                wb.use_preset = true
-                wb.region = Config.LoRaConfig.RegionCode.EU_868
-                wb.modem_preset = Config.LoRaConfig.ModemPreset.SHORT_FAST
-                wb.bandwidth = 250
-                wb.spread_factor = 9
-            }.build()
+                wb.lora = Config.LoRaConfig.Builder().also { wb ->
+                    wb.use_preset = true
+                    wb.region = Config.LoRaConfig.RegionCode.EU_868
+                    wb.modem_preset = Config.LoRaConfig.ModemPreset.SHORT_FAST
+                    wb.bandwidth = 250
+                    wb.spread_factor = 9
+                }.build()
             }.build(),
         ) {
             setLoraConfig {
@@ -93,11 +93,11 @@ class ConfigBuildersTest {
     fun bluetoothConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.bluetooth = Config.BluetoothConfig.Builder().build().newBuilder().also { wb ->
-                wb.enabled = true
-                wb.fixed_pin = 123456
-                wb.mode = Config.BluetoothConfig.PairingMode.FIXED_PIN
-            }.build()
+                wb.bluetooth = Config.BluetoothConfig.Builder().also { wb ->
+                    wb.enabled = true
+                    wb.fixed_pin = 123456
+                    wb.mode = Config.BluetoothConfig.PairingMode.FIXED_PIN
+                }.build()
             }.build(),
         ) {
             setBluetoothConfig {
@@ -114,12 +114,12 @@ class ConfigBuildersTest {
     fun displayConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.display = Config.DisplayConfig.Builder().build().newBuilder().also { wb ->
-                wb.screen_on_secs = 45
-                wb.gps_format = Config.DisplayConfig.DeprecatedGpsCoordinateFormat.UNUSED
-                wb.units = Config.DisplayConfig.DisplayUnits.IMPERIAL
-                wb.flip_screen = true
-            }.build()
+                wb.display = Config.DisplayConfig.Builder().also { wb ->
+                    wb.screen_on_secs = 45
+                    wb.gps_format = Config.DisplayConfig.DeprecatedGpsCoordinateFormat.UNUSED
+                    wb.units = Config.DisplayConfig.DisplayUnits.IMPERIAL
+                    wb.flip_screen = true
+                }.build()
             }.build(),
         ) {
             setDisplayConfig {
@@ -137,12 +137,12 @@ class ConfigBuildersTest {
     fun networkConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.network = Config.NetworkConfig.Builder().build().newBuilder().also { wb ->
-                wb.wifi_enabled = true
-                wb.wifi_ssid = "mesh-wifi"
-                wb.wifi_psk = "super-secret"
-                wb.eth_enabled = true
-            }.build()
+                wb.network = Config.NetworkConfig.Builder().also { wb ->
+                    wb.wifi_enabled = true
+                    wb.wifi_ssid = "mesh-wifi"
+                    wb.wifi_psk = "super-secret"
+                    wb.eth_enabled = true
+                }.build()
             }.build(),
         ) {
             setNetworkConfig {
@@ -160,12 +160,12 @@ class ConfigBuildersTest {
     fun positionConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.position = Config.PositionConfig.Builder().build().newBuilder().also { wb ->
-                wb.gps_enabled = true
-                wb.fixed_position = true
-                wb.position_broadcast_secs = 300
-                wb.gps_mode = Config.PositionConfig.GpsMode.ENABLED
-            }.build()
+                wb.position = Config.PositionConfig.Builder().also { wb ->
+                    wb.gps_enabled = true
+                    wb.fixed_position = true
+                    wb.position_broadcast_secs = 300
+                    wb.gps_mode = Config.PositionConfig.GpsMode.ENABLED
+                }.build()
             }.build(),
         ) {
             setPositionConfig {
@@ -183,11 +183,11 @@ class ConfigBuildersTest {
     fun powerConfigBuilderWrapsExpectedFields() = runTest {
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.power = Config.PowerConfig.Builder().build().newBuilder().also { wb ->
-                wb.is_power_saving = true
-                wb.on_battery_shutdown_after_secs = 90
-                wb.wait_bluetooth_secs = 15
-            }.build()
+                wb.power = Config.PowerConfig.Builder().also { wb ->
+                    wb.is_power_saving = true
+                    wb.on_battery_shutdown_after_secs = 90
+                    wb.wait_bluetooth_secs = 15
+                }.build()
             }.build(),
         ) {
             setPowerConfig {
@@ -208,12 +208,12 @@ class ConfigBuildersTest {
 
         assertConfigWrite(
             Config.Builder().also { wb ->
-            wb.security = Config.SecurityConfig.Builder().build().newBuilder().also { wb ->
-                wb.public_key = publicKey
-                wb.private_key = privateKey
-                wb.admin_key = listOf(adminKey)
-                wb.serial_enabled = true
-            }.build()
+                wb.security = Config.SecurityConfig.Builder().also { wb ->
+                    wb.public_key = publicKey
+                    wb.private_key = privateKey
+                    wb.admin_key = listOf(adminKey)
+                    wb.serial_enabled = true
+                }.build()
             }.build(),
         ) {
             setSecurityConfig {
@@ -267,26 +267,26 @@ class ConfigBuildersTest {
         assertEquals(
             listOf(
                 Config.Builder().also { wb ->
-                wb.device = Config.DeviceConfig.Builder().build().newBuilder().also { wb ->
-                    wb.role = Config.DeviceConfig.Role.CLIENT_HIDDEN
-                    wb.button_gpio = 5
-                }.build()
+                    wb.device = Config.DeviceConfig.Builder().also { wb ->
+                        wb.role = Config.DeviceConfig.Role.CLIENT_HIDDEN
+                        wb.button_gpio = 5
+                    }.build()
                 }.build(),
                 Config.Builder().also { wb ->
-                wb.network = Config.NetworkConfig.Builder().build().newBuilder().also { wb ->
-                    wb.wifi_enabled = true
-                    wb.wifi_ssid = "mesh"
-                    wb.wifi_psk = "secret"
-                    wb.eth_enabled = true
-                }.build()
+                    wb.network = Config.NetworkConfig.Builder().also { wb ->
+                        wb.wifi_enabled = true
+                        wb.wifi_ssid = "mesh"
+                        wb.wifi_psk = "secret"
+                        wb.eth_enabled = true
+                    }.build()
                 }.build(),
                 Config.Builder().also { wb ->
-                wb.lora = Config.LoRaConfig.Builder().build().newBuilder().also { wb ->
-                    wb.region = Config.LoRaConfig.RegionCode.US
-                    wb.modem_preset = Config.LoRaConfig.ModemPreset.LONG_TURBO
-                    wb.bandwidth = 500
-                    wb.spread_factor = 7
-                }.build()
+                    wb.lora = Config.LoRaConfig.Builder().also { wb ->
+                        wb.region = Config.LoRaConfig.RegionCode.US
+                        wb.modem_preset = Config.LoRaConfig.ModemPreset.LONG_TURBO
+                        wb.bandwidth = 500
+                        wb.spread_factor = 7
+                    }.build()
                 }.build(),
             ),
             admin.configs,
@@ -298,47 +298,89 @@ class ConfigBuildersTest {
         val admin = CapturingAdminApi()
         val expectedResult = AdminResult.Success(Unit)
 
-        assertEquals(expectedResult, admin.setDeviceConfig { this.newBuilder().also { wb ->
-            wb.button_gpio = -1
-        }.build() })
-        assertEquals(expectedResult, admin.setLoraConfig { this.newBuilder().also { wb ->
-            wb.bandwidth = -1
-            wb.spread_factor = -7
-        }.build() })
-        assertEquals(expectedResult, admin.setBluetoothConfig { this.newBuilder().also { wb ->
-            wb.fixed_pin = -1
-        }.build() })
-        assertEquals(expectedResult, admin.setDisplayConfig { this.newBuilder().also { wb ->
-            wb.screen_on_secs = -1
-        }.build() })
-        assertEquals(expectedResult, admin.setPositionConfig { this.newBuilder().also { wb ->
-            wb.position_broadcast_secs = -1
-        }.build() })
-        assertEquals(expectedResult, admin.setPowerConfig { this.newBuilder().also { wb ->
-            wb.on_battery_shutdown_after_secs = -1
-        }.build() })
+        assertEquals(
+            expectedResult,
+            admin.setDeviceConfig {
+                this.newBuilder().also { wb ->
+                    wb.button_gpio = -1
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setLoraConfig {
+                this.newBuilder().also { wb ->
+                    wb.bandwidth = -1
+                    wb.spread_factor = -7
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setBluetoothConfig {
+                this.newBuilder().also { wb ->
+                    wb.fixed_pin = -1
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setDisplayConfig {
+                this.newBuilder().also { wb ->
+                    wb.screen_on_secs = -1
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setPositionConfig {
+                this.newBuilder().also { wb ->
+                    wb.position_broadcast_secs = -1
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setPowerConfig {
+                this.newBuilder().also { wb ->
+                    wb.on_battery_shutdown_after_secs = -1
+                }.build()
+            },
+        )
 
         assertEquals(
             listOf(
-                Config.Builder().also { wb ->wb.device = Config.DeviceConfig.Builder().build().newBuilder().also { wb ->
-                    wb.button_gpio = -1
-                }.build()}.build(),
-                Config.Builder().also { wb ->wb.lora = Config.LoRaConfig.Builder().build().newBuilder().also { wb ->
-                    wb.bandwidth = -1
-                    wb.spread_factor = -7
-                }.build()}.build(),
-                Config.Builder().also { wb ->wb.bluetooth = Config.BluetoothConfig.Builder().build().newBuilder().also { wb ->
-                    wb.fixed_pin = -1
-                }.build()}.build(),
-                Config.Builder().also { wb ->wb.display = Config.DisplayConfig.Builder().build().newBuilder().also { wb ->
-                    wb.screen_on_secs = -1
-                }.build()}.build(),
-                Config.Builder().also { wb ->wb.position = Config.PositionConfig.Builder().build().newBuilder().also { wb ->
-                    wb.position_broadcast_secs = -1
-                }.build()}.build(),
-                Config.Builder().also { wb ->wb.power = Config.PowerConfig.Builder().build().newBuilder().also { wb ->
-                    wb.on_battery_shutdown_after_secs = -1
-                }.build()}.build(),
+                Config.Builder().also { wb ->
+                    wb.device = Config.DeviceConfig.Builder().also { wb ->
+                        wb.button_gpio = -1
+                    }.build()
+                }.build(),
+                Config.Builder().also { wb ->
+                    wb.lora = Config.LoRaConfig.Builder().also { wb ->
+                        wb.bandwidth = -1
+                        wb.spread_factor = -7
+                    }.build()
+                }.build(),
+                Config.Builder().also { wb ->
+                    wb.bluetooth = Config.BluetoothConfig.Builder().also { wb ->
+                        wb.fixed_pin = -1
+                    }.build()
+                }.build(),
+                Config.Builder().also { wb ->
+                    wb.display = Config.DisplayConfig.Builder().also { wb ->
+                        wb.screen_on_secs = -1
+                    }.build()
+                }.build(),
+                Config.Builder().also { wb ->
+                    wb.position = Config.PositionConfig.Builder().also { wb ->
+                        wb.position_broadcast_secs = -1
+                    }.build()
+                }.build(),
+                Config.Builder().also { wb ->
+                    wb.power = Config.PowerConfig.Builder().also { wb ->
+                        wb.on_battery_shutdown_after_secs = -1
+                    }.build()
+                }.build(),
             ),
             admin.configs,
         )
@@ -349,100 +391,211 @@ class ConfigBuildersTest {
         val admin = CapturingAdminApi()
         val expectedResult = AdminResult.Success(Unit)
 
-        assertEquals(expectedResult, admin.setMqttConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setSerialConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setExternalNotificationConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setStoreForwardConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setRangeTestConfig { this.newBuilder().also { wb ->
-            wb.sender = 7
-        }.build() })
-        assertEquals(expectedResult, admin.setTelemetryConfig { this.newBuilder().also { wb ->
-            wb.device_update_interval = 60
-        }.build() })
-        assertEquals(expectedResult, admin.setCannedMessageConfig { this.newBuilder().also { wb ->
-            wb.rotary1_enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setAudioConfig { this.newBuilder().also { wb ->
-            wb.codec2_enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setRemoteHardwareConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setNeighborInfoConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setAmbientLightingConfig { this.newBuilder().also { wb ->
-            wb.led_state = true
-        }.build() })
-        assertEquals(expectedResult, admin.setDetectionSensorConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setPaxcounterConfig { this.newBuilder().also { wb ->
-            wb.enabled = true
-        }.build() })
-        assertEquals(expectedResult, admin.setStatusMessageConfig { this.newBuilder().also { wb ->
-            wb.node_status = "ready"
-        }.build() })
-        assertEquals(expectedResult, admin.setTrafficManagementConfig { this.newBuilder().also { wb ->
-            wb.position_min_interval_secs = 60
-        }.build() })
+        assertEquals(
+            expectedResult,
+            admin.setMqttConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setSerialConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setExternalNotificationConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setStoreForwardConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setRangeTestConfig {
+                this.newBuilder().also { wb ->
+                    wb.sender = 7
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setTelemetryConfig {
+                this.newBuilder().also { wb ->
+                    wb.device_update_interval = 60
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setCannedMessageConfig {
+                this.newBuilder().also { wb ->
+                    wb.rotary1_enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setAudioConfig {
+                this.newBuilder().also { wb ->
+                    wb.codec2_enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setRemoteHardwareConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setNeighborInfoConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setAmbientLightingConfig {
+                this.newBuilder().also { wb ->
+                    wb.led_state = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setDetectionSensorConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setPaxcounterConfig {
+                this.newBuilder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setStatusMessageConfig {
+                this.newBuilder().also { wb ->
+                    wb.node_status = "ready"
+                }.build()
+            },
+        )
+        assertEquals(
+            expectedResult,
+            admin.setTrafficManagementConfig {
+                this.newBuilder().also { wb ->
+                    wb.position_min_interval_secs = 60
+                }.build()
+            },
+        )
 
         assertEquals(
             listOf(
-                ModuleConfig.Builder().also { wb ->wb.mqtt = ModuleConfig.MQTTConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.serial = ModuleConfig.SerialConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.external_notification = ModuleConfig.ExternalNotificationConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.store_forward = ModuleConfig.StoreForwardConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.range_test = ModuleConfig.RangeTestConfig.Builder().build().newBuilder().also { wb ->
-                    wb.sender = 7
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.telemetry = ModuleConfig.TelemetryConfig.Builder().build().newBuilder().also { wb ->
-                    wb.device_update_interval = 60
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.canned_message = ModuleConfig.CannedMessageConfig.Builder().build().newBuilder().also { wb ->
-                    wb.rotary1_enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.audio = ModuleConfig.AudioConfig.Builder().build().newBuilder().also { wb ->
-                    wb.codec2_enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.remote_hardware = ModuleConfig.RemoteHardwareConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.neighbor_info = ModuleConfig.NeighborInfoConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.ambient_lighting = ModuleConfig.AmbientLightingConfig.Builder().build().newBuilder().also { wb ->
-                    wb.led_state = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.detection_sensor = ModuleConfig.DetectionSensorConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.paxcounter = ModuleConfig.PaxcounterConfig.Builder().build().newBuilder().also { wb ->
-                    wb.enabled = true
-                }.build()}.build(),
-                ModuleConfig.Builder().also { wb ->wb.statusmessage = ModuleConfig.StatusMessageConfig.Builder().build().newBuilder().also { wb ->
-                    wb.node_status = "ready"
-                }.build()}.build(),
                 ModuleConfig.Builder().also { wb ->
-                wb.traffic_management = ModuleConfig.TrafficManagementConfig.Builder().build().newBuilder().also { wb ->
-                    wb.position_min_interval_secs = 60
-                }.build()
+                    wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                        wb.enabled = true
+                    }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.serial = ModuleConfig.SerialConfig.Builder().also { wb ->
+                        wb.enabled = true
+                    }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.external_notification =
+                        ModuleConfig.ExternalNotificationConfig.Builder().also { wb ->
+                            wb.enabled = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.store_forward =
+                        ModuleConfig.StoreForwardConfig.Builder().also { wb ->
+                            wb.enabled = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.range_test = ModuleConfig.RangeTestConfig.Builder().also { wb ->
+                        wb.sender = 7
+                    }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.telemetry = ModuleConfig.TelemetryConfig.Builder().also { wb ->
+                        wb.device_update_interval = 60
+                    }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.canned_message =
+                        ModuleConfig.CannedMessageConfig.Builder().also { wb ->
+                            wb.rotary1_enabled = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.audio = ModuleConfig.AudioConfig.Builder().also { wb ->
+                        wb.codec2_enabled = true
+                    }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.remote_hardware =
+                        ModuleConfig.RemoteHardwareConfig.Builder().also { wb ->
+                            wb.enabled = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.neighbor_info =
+                        ModuleConfig.NeighborInfoConfig.Builder().also { wb ->
+                            wb.enabled = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.ambient_lighting =
+                        ModuleConfig.AmbientLightingConfig.Builder().also { wb ->
+                            wb.led_state = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.detection_sensor =
+                        ModuleConfig.DetectionSensorConfig.Builder().also { wb ->
+                            wb.enabled = true
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.paxcounter = ModuleConfig.PaxcounterConfig.Builder().also { wb ->
+                        wb.enabled = true
+                    }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.statusmessage =
+                        ModuleConfig.StatusMessageConfig.Builder().also { wb ->
+                            wb.node_status = "ready"
+                        }.build()
+                }.build(),
+                ModuleConfig.Builder().also { wb ->
+                    wb.traffic_management = ModuleConfig.TrafficManagementConfig.Builder().also { wb ->
+                        wb.position_min_interval_secs = 60
+                    }.build()
                 }.build(),
             ),
             admin.moduleConfigs,

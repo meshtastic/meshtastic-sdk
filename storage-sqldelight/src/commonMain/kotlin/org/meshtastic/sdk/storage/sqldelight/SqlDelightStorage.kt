@@ -72,7 +72,7 @@ internal class SqlDelightStorage(
                     } catch (_: Exception) {
                         null
                     }
-                } ?: NodeInfo.Builder().also { wb ->wb.num = row.node_num.toInt()}.build()
+                } ?: NodeInfo.Builder().also { wb -> wb.num = row.node_num.toInt() }.build()
                 put(nodeId, nodeInfo)
             }
         }

@@ -72,7 +72,13 @@ class MeshEngineEdgeCasesTest {
         client.connect()
         transport.injectFrame(
             rawFrame(
-                encodedFromRadio(FromRadio.Builder().also { wb ->wb.node_info = org.meshtastic.proto.NodeInfo.Builder().also { wb ->wb.num = 7}.build()}.build()),
+                encodedFromRadio(
+                    FromRadio.Builder().also { wb ->
+                        wb.node_info = org.meshtastic.proto.NodeInfo.Builder().also { wb ->
+                            wb.num = 7
+                        }.build()
+                    }.build(),
+                ),
                 header0 = 0x00,
                 header1 = 0x00,
             ),
@@ -116,7 +122,11 @@ class MeshEngineEdgeCasesTest {
             client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
         }
 
-        val fullPayload = encodedFromRadio(FromRadio.Builder().also { wb ->wb.packet = inboundTextPacket(id = 1, from = 0x1001)}.build())
+        val fullPayload = encodedFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.packet = inboundTextPacket(id = 1, from = 0x1001)
+            }.build(),
+        )
         client.connect()
         transport.injectFrame(rawFrame(fullPayload.copyOf(fullPayload.size - 1), declaredLength = fullPayload.size))
         runCurrent()
@@ -209,13 +219,13 @@ class MeshEngineEdgeCasesTest {
         client.connect()
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.from = 0x2001
-            wb.to = 0
-            wb.id = 20
-            wb.decoded = Data.Builder().also { wb ->
-                            wb.portnum = PortNum.UNKNOWN_APP
-                            wb.payload = ByteString.of(*byteArrayOf(0x01, 0x02))
-                            }.build()
+                wb.from = 0x2001
+                wb.to = 0
+                wb.id = 20
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.UNKNOWN_APP
+                    wb.payload = ByteString.of(*byteArrayOf(0x01, 0x02))
+                }.build()
             }.build(),
         )
         runCurrent()
@@ -239,10 +249,13 @@ class MeshEngineEdgeCasesTest {
         client.connect()
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.from = 0x2002
-            wb.to = 0
-            wb.id = 21
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.UNKNOWN_APP; wb.payload = ByteString.of(*byteArrayOf(0x05))}.build()
+                wb.from = 0x2002
+                wb.to = 0
+                wb.id = 21
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.UNKNOWN_APP
+                    wb.payload = ByteString.of(*byteArrayOf(0x05))
+                }.build()
             }.build(),
         )
         runCurrent()
@@ -262,10 +275,13 @@ class MeshEngineEdgeCasesTest {
         client.connect()
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.from = 0x2003
-            wb.to = 0
-            wb.id = 22
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.UNKNOWN_APP; wb.payload = ByteString.of(*byteArrayOf(0x07))}.build()
+                wb.from = 0x2003
+                wb.to = 0
+                wb.id = 22
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.UNKNOWN_APP
+                    wb.payload = ByteString.of(*byteArrayOf(0x07))
+                }.build()
             }.build(),
         )
         runCurrent()
@@ -282,12 +298,12 @@ class MeshEngineEdgeCasesTest {
         assertFailsWith<MeshtasticException.PayloadTooLarge> {
             client.send(
                 MeshPacket.Builder().also { wb ->
-                wb.to = NodeId.BROADCAST.raw
-                wb.channel = 0
-                wb.decoded = Data.Builder().also { wb ->
-                                    wb.portnum = PortNum.TEXT_MESSAGE_APP
-                                    wb.payload = ByteString.of(*ByteArray(DATA_PAYLOAD_LEN + 1))
-                                    }.build()
+                    wb.to = NodeId.BROADCAST.raw
+                    wb.channel = 0
+                    wb.decoded = Data.Builder().also { wb ->
+                        wb.portnum = PortNum.TEXT_MESSAGE_APP
+                        wb.payload = ByteString.of(*ByteArray(DATA_PAYLOAD_LEN + 1))
+                    }.build()
                 }.build(),
             )
         }
@@ -327,7 +343,13 @@ class MeshEngineEdgeCasesTest {
         val job = backgroundScope.launch { client.packets.collect { packets += it } }
 
         client.connect()
-        transport.injectPacket(MeshPacket.Builder().also { wb ->wb.from = 0x3001; wb.to = 0; wb.id = 30}.build())
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3001
+                wb.to = 0
+                wb.id = 30
+            }.build(),
+        )
         runCurrent()
 
         assertTrue(packets.isEmpty())
@@ -347,7 +369,13 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectPacket(MeshPacket.Builder().also { wb ->wb.from = 0x3002; wb.to = 0; wb.id = 31}.build())
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3002
+                wb.to = 0
+                wb.id = 31
+            }.build(),
+        )
         runCurrent()
 
         assertTrue(logs.any { it.level == LogLevel.WARN && it.message.contains("encrypted packet") })
@@ -367,8 +395,20 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectPacket(MeshPacket.Builder().also { wb ->wb.from = 0x3003; wb.to = 0; wb.id = 32}.build())
-        transport.injectPacket(MeshPacket.Builder().also { wb ->wb.from = 0x3003; wb.to = 0; wb.id = 33}.build())
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3003
+                wb.to = 0
+                wb.id = 32
+            }.build(),
+        )
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3003
+                wb.to = 0
+                wb.id = 33
+            }.build(),
+        )
         runCurrent()
 
         assertEquals(1, warnings.count { it.message.contains("encrypted packet") })
@@ -387,7 +427,13 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectPacket(MeshPacket.Builder().also { wb ->wb.from = 0x3004; wb.to = 0; wb.id = 34}.build())
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3004
+                wb.to = 0
+                wb.id = 34
+            }.build(),
+        )
         runCurrent()
 
         val warning = warnings.last()
@@ -408,7 +454,13 @@ class MeshEngineEdgeCasesTest {
         runCurrent()
         assertEquals(SendState.Sent, handle.state.value)
 
-        transport.injectPacket(MeshPacket.Builder().also { wb ->wb.from = 0x3005; wb.to = 0; wb.id = 37}.build())
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3005
+                wb.to = 0
+                wb.id = 37
+            }.build(),
+        )
         runCurrent()
         assertEquals(SendState.Sent, handle.state.value)
 
@@ -606,12 +658,12 @@ class MeshEngineEdgeCasesTest {
             backgroundScope.async {
                 client.send(
                     MeshPacket.Builder().also { wb ->
-                    wb.to = NodeId.BROADCAST.raw
-                    wb.channel = 0
-                    wb.decoded = Data.Builder().also { wb ->
-                                            wb.portnum = PortNum.TEXT_MESSAGE_APP
-                                            wb.payload = ByteString.of(*"payload-$index".encodeToByteArray())
-                                            }.build()
+                        wb.to = NodeId.BROADCAST.raw
+                        wb.channel = 0
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TEXT_MESSAGE_APP
+                            wb.payload = ByteString.of(*"payload-$index".encodeToByteArray())
+                        }.build()
                     }.build(),
                 )
             }
@@ -671,39 +723,45 @@ class MeshEngineEdgeCasesTest {
     }
 
     private fun inboundTextPacket(id: Int, from: Int, text: String = "hello") = MeshPacket.Builder().also { wb ->
-    wb.from = from
-    wb.to = 0
-    wb.id = id
-    wb.channel = 0
-    wb.decoded = Data.Builder().also { wb ->
+        wb.from = from
+        wb.to = 0
+        wb.id = id
+        wb.channel = 0
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = ByteString.of(*text.encodeToByteArray())
-            }.build()
+        }.build()
     }.build()
 
     private fun unicastWantAckPacket(toNodeNum: Int) = MeshPacket.Builder().also { wb ->
-    wb.to = toNodeNum
-    wb.channel = 0
-    wb.want_ack = true
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = toNodeNum
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = ByteString.of(*"hi".encodeToByteArray())
-            }.build()
+        }.build()
     }.build()
 
     private fun routingAckFrame(requestId: Int, fromNodeNum: Int, error: Routing.Error = Routing.Error.NONE): Frame {
-        val routing = Routing.Builder().also { wb ->wb.error_reason = error}.build()
+        val routing = Routing.Builder().also { wb -> wb.error_reason = error }.build()
         val payload = ByteString.of(*Routing.ADAPTER.encode(routing))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNodeNum
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNodeNum
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        return rawFrame(encodedFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build()))
+        return rawFrame(
+            encodedFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.packet = packet
+                }.build(),
+            ),
+        )
     }
 
     private fun rawFrame(

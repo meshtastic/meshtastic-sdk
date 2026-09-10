@@ -205,13 +205,13 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class)
     public fun requestNodeInfo(node: NodeId): MessageHandle {
         val packet = MeshPacket.Builder().also { wb ->
-        wb.to = node.raw
-        wb.want_ack = true
-        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                    wb.portnum = org.meshtastic.proto.PortNum.NODEINFO_APP
-                    wb.payload = okio.ByteString.EMPTY
-                    wb.want_response = true
-                    }.build()
+            wb.to = node.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.NODEINFO_APP
+                wb.payload = okio.ByteString.EMPTY
+                wb.want_response = true
+            }.build()
         }.build()
         return send(packet)
     }
@@ -362,14 +362,14 @@ public class RadioClient internal constructor(
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
         val packet = MeshPacket.Builder().also { wb ->
-        wb.to = to.raw
-        wb.channel = channel.raw
-        wb.want_ack = true
-        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                    wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
-                    wb.payload = payload.toByteString()
-                    wb.reply_id = replyId
-                    }.build()
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+                wb.payload = payload.toByteString()
+                wb.reply_id = replyId
+            }.build()
         }.build()
         return send(packet)
     }
@@ -402,15 +402,15 @@ public class RadioClient internal constructor(
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
         val packet = MeshPacket.Builder().also { wb ->
-        wb.to = to.raw
-        wb.channel = channel.raw
-        wb.want_ack = true
-        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                    wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
-                    wb.payload = payload.toByteString()
-                    wb.emoji = EMOJI_INDICATOR
-                    wb.reply_id = replyId
-                    }.build()
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+                wb.payload = payload.toByteString()
+                wb.emoji = EMOJI_INDICATOR
+                wb.reply_id = replyId
+            }.build()
         }.build()
         return send(packet)
     }
@@ -463,15 +463,15 @@ public class RadioClient internal constructor(
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
         val packet = MeshPacket.Builder().also { wb ->
-        wb.to = to.raw
-        wb.channel = channel.raw
-        wb.want_ack = wantAck
-        wb.hop_limit = hopLimit ?: 0
-        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                    wb.portnum = portnum
-                    wb.payload = payload.toByteString()
-                    wb.want_response = false
-                    }.build()
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = wantAck
+            wb.hop_limit = hopLimit ?: 0
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = portnum
+                wb.payload = payload.toByteString()
+                wb.want_response = false
+            }.build()
         }.build()
         return send(packet)
     }

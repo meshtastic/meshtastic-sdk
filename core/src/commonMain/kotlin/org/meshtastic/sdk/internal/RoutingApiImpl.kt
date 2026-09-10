@@ -35,17 +35,21 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
     override suspend fun traceRoute(dest: NodeId, hopLimit: Int): AdminResult<RouteDiscovery> {
         if (engine.myNodeNumOrNull() == null) return AdminResult.NodeUnreachable
         val requestId = engine.nextMessageId().raw
-        val payload = Routing.ADAPTER.encode(Routing.Builder().also { wb ->wb.route_request = RouteDiscovery.Builder().build()}.build()).toByteString()
+        val payload = Routing.ADAPTER.encode(
+            Routing.Builder().also { wb ->
+                wb.route_request = RouteDiscovery.Builder().build()
+            }.build(),
+        ).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-        wb.id = requestId
-        wb.from = engine.myNodeNumOrNull() ?: 0
-        wb.to = dest.raw
-        wb.hop_limit = hopLimit.coerceAtLeast(0)
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.want_response = true
-                    }.build()
+            wb.id = requestId
+            wb.from = engine.myNodeNumOrNull() ?: 0
+            wb.to = dest.raw
+            wb.hop_limit = hopLimit.coerceAtLeast(0)
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.want_response = true
+            }.build()
         }.build()
         return engine.submitRpc(packet, requestId, ResponseKind.RouteDiscoveryReply, rpcTimeout)
     }
@@ -59,14 +63,14 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
         val requestId = engine.nextMessageId().raw
         val payload = ProtoNeighborInfo.ADAPTER.encode(ProtoNeighborInfo.Builder().build()).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-        wb.id = requestId
-        wb.from = engine.myNodeNumOrNull() ?: 0
-        wb.to = target.raw
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.NEIGHBORINFO_APP
-                    wb.payload = payload
-                    wb.want_response = true
-                    }.build()
+            wb.id = requestId
+            wb.from = engine.myNodeNumOrNull() ?: 0
+            wb.to = target.raw
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.NEIGHBORINFO_APP
+                wb.payload = payload
+                wb.want_response = true
+            }.build()
         }.build()
         return engine.submitRpc(packet, requestId, ResponseKind.NeighborInfoReply, rpcTimeout)
     }

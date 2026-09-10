@@ -58,13 +58,13 @@ class ExternalConfigChangeTest {
     private fun FakeRadioTransport.injectUnsolicitedAdmin(adminMsg: AdminMessage) {
         val payload = okio.ByteString.of(*AdminMessage.ADAPTER.encode(adminMsg))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = nodeNum
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                        wb.portnum = PortNum.ADMIN_APP
-                        wb.payload = payload
-                        wb.request_id = 0 // unsolicited — not a response to our request
-                    }.build()
+            wb.from = nodeNum
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ADMIN_APP
+                wb.payload = payload
+                wb.request_id = 0 // unsolicited — not a response to our request
+            }.build()
         }.build()
         injectPacket(packet)
     }
@@ -76,12 +76,16 @@ class ExternalConfigChangeTest {
         runCurrent()
 
         val channel = Channel.Builder().also { wb ->
-        wb.index = 0
-        wb.settings = ChannelSettings.Builder().also { wb ->wb.name = "ExternallySet"}.build()
-        wb.role = Channel.Role.PRIMARY
+            wb.index = 0
+            wb.settings = ChannelSettings.Builder().also { wb -> wb.name = "ExternallySet" }.build()
+            wb.role = Channel.Role.PRIMARY
         }.build()
 
-        transport.injectUnsolicitedAdmin(AdminMessage.Builder().also { wb ->wb.get_channel_response = channel}.build())
+        transport.injectUnsolicitedAdmin(
+            AdminMessage.Builder().also { wb ->
+                wb.get_channel_response = channel
+            }.build(),
+        )
         runCurrent()
 
         val channels = client.channels.value
@@ -103,11 +107,15 @@ class ExternalConfigChangeTest {
         runCurrent()
 
         val channel = Channel.Builder().also { wb ->
-        wb.index = 1
-        wb.settings = ChannelSettings.Builder().also { wb ->wb.name = "NewChannel"}.build()
-        wb.role = Channel.Role.SECONDARY
+            wb.index = 1
+            wb.settings = ChannelSettings.Builder().also { wb -> wb.name = "NewChannel" }.build()
+            wb.role = Channel.Role.SECONDARY
         }.build()
-        transport.injectUnsolicitedAdmin(AdminMessage.Builder().also { wb ->wb.get_channel_response = channel}.build())
+        transport.injectUnsolicitedAdmin(
+            AdminMessage.Builder().also { wb ->
+                wb.get_channel_response = channel
+            }.build(),
+        )
         runCurrent()
 
         val configEvents = events.filterIsInstance<MeshEvent.ExternalConfigChange>()
@@ -133,8 +141,17 @@ class ExternalConfigChangeTest {
             return@runTest
         }
 
-        val newLora = Config.Builder().also { wb ->wb.lora = Config.LoRaConfig.Builder().also { wb ->wb.use_preset = true; wb.region = Config.LoRaConfig.RegionCode.EU_868}.build()}.build()
-        transport.injectUnsolicitedAdmin(AdminMessage.Builder().also { wb ->wb.get_config_response = newLora}.build())
+        val newLora = Config.Builder().also { wb ->
+            wb.lora = Config.LoRaConfig.Builder().also { wb ->
+                wb.use_preset = true
+                wb.region = Config.LoRaConfig.RegionCode.EU_868
+            }.build()
+        }.build()
+        transport.injectUnsolicitedAdmin(
+            AdminMessage.Builder().also { wb ->
+                wb.get_config_response = newLora
+            }.build(),
+        )
         runCurrent()
 
         val updated = client.configBundle.value
@@ -158,8 +175,16 @@ class ExternalConfigChangeTest {
         }
         runCurrent()
 
-        val newMqtt = ModuleConfig.Builder().also { wb ->wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->wb.enabled = true}.build()}.build()
-        transport.injectUnsolicitedAdmin(AdminMessage.Builder().also { wb ->wb.get_module_config_response = newMqtt}.build())
+        val newMqtt = ModuleConfig.Builder().also { wb ->
+            wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                wb.enabled = true
+            }.build()
+        }.build()
+        transport.injectUnsolicitedAdmin(
+            AdminMessage.Builder().also { wb ->
+                wb.get_module_config_response = newMqtt
+            }.build(),
+        )
         runCurrent()
 
         val configEvents = events.filterIsInstance<MeshEvent.ExternalConfigChange>()
@@ -187,17 +212,22 @@ class ExternalConfigChangeTest {
         // Inject a channel response WITH a non-zero request_id (simulates response to our RPC)
         val payload = okio.ByteString.of(
             *AdminMessage.ADAPTER.encode(
-                AdminMessage.Builder().also { wb ->wb.get_channel_response = Channel.Builder().also { wb ->wb.index = 0; wb.role = Channel.Role.PRIMARY}.build()}.build(),
+                AdminMessage.Builder().also { wb ->
+                    wb.get_channel_response = Channel.Builder().also { wb ->
+                        wb.index = 0
+                        wb.role = Channel.Role.PRIMARY
+                    }.build()
+                }.build(),
             ),
         )
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = transport.nodeNum
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                        wb.portnum = PortNum.ADMIN_APP
-                        wb.payload = payload
-                        wb.request_id = 42 // non-zero → solicited response
-                    }.build()
+            wb.from = transport.nodeNum
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ADMIN_APP
+                wb.payload = payload
+                wb.request_id = 42 // non-zero → solicited response
+            }.build()
         }.build()
         transport.injectPacket(packet)
         runCurrent()

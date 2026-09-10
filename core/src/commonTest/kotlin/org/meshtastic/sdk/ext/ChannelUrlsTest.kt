@@ -20,9 +20,12 @@ import kotlin.test.assertTrue
 class ChannelUrlsTest {
     @Test fun roundTripChannelSet() {
         val set = ChannelSet.Builder().also { wb ->
-        wb.settings = listOf(
-                        ChannelSettings.Builder().also { wb ->wb.name = "LongFast"; wb.psk = byteArrayOf(0x01).toByteString()}.build(),
-                    )
+            wb.settings = listOf(
+                ChannelSettings.Builder().also { wb ->
+                    wb.name = "LongFast"
+                    wb.psk = byteArrayOf(0x01).toByteString()
+                }.build(),
+            )
         }.build()
         val url = set.toUrl()
         assertTrue(url.startsWith(ChannelUrl.PREFIX))

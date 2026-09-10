@@ -51,9 +51,18 @@ class ChannelHelpersTest {
     @Test
     fun findEmptySlotUsesFirstDisabledOrMissingSecondarySlot() {
         val channels = listOf(
-            Channel.Builder().also { wb ->wb.index = 0; wb.role = Channel.Role.PRIMARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 1; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 2; wb.role = Channel.Role.DISABLED}.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 0
+                wb.role = Channel.Role.PRIMARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 1
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 2
+                wb.role = Channel.Role.DISABLED
+            }.build(),
         )
 
         assertEquals(2, ChannelHelpers.findEmptySlot(channels))
@@ -63,14 +72,38 @@ class ChannelHelpersTest {
     @Test
     fun findEmptySlotReturnsNullWhenFull() {
         val channels = listOf(
-            Channel.Builder().also { wb ->wb.index = 0; wb.role = Channel.Role.PRIMARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 1; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 2; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 3; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 4; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 5; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 6; wb.role = Channel.Role.SECONDARY}.build(),
-            Channel.Builder().also { wb ->wb.index = 7; wb.role = Channel.Role.SECONDARY}.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 0
+                wb.role = Channel.Role.PRIMARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 1
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 2
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 3
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 4
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 5
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 6
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
+            Channel.Builder().also { wb ->
+                wb.index = 7
+                wb.role = Channel.Role.SECONDARY
+            }.build(),
         )
 
         assertNull(ChannelHelpers.findEmptySlot(channels))

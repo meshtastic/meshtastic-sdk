@@ -86,8 +86,8 @@ class StoreForwardImplTest {
         transport.injectStoreForwardResponse(
             requestId = 0,
             message = StoreAndForward.Builder().also { wb ->
-            wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
-            wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->wb.period = 300}.build()
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 300 }.build()
             }.build(),
             fromNode = server.raw,
         )
@@ -113,8 +113,8 @@ class StoreForwardImplTest {
         transport.injectStoreForwardResponse(
             requestId = 0,
             message = StoreAndForward.Builder().also { wb ->
-            wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
-            wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->wb.period = 120}.build()
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 120 }.build()
             }.build(),
             fromNode = server.raw,
         )
@@ -133,8 +133,11 @@ class StoreForwardImplTest {
         transport.injectStoreForwardResponse(
             requestId = request.id,
             message = StoreAndForward.Builder().also { wb ->
-            wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
-            wb.history = StoreAndForward.History.Builder().also { wb ->wb.history_messages = 3; wb.window = 120000}.build()
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 3
+                    wb.window = 120000
+                }.build()
             }.build(),
             fromNode = server.raw,
         )
@@ -165,15 +168,15 @@ class StoreForwardImplTest {
         transport.injectStoreForwardResponse(
             requestId = request.id,
             message = StoreAndForward.Builder().also { wb ->
-            wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
-            wb.stats = StoreAndForward.Statistics.Builder().also { wb ->
-                            wb.messages_saved = 9
-                            wb.messages_max = 64
-                            wb.up_time = 3600
-                            wb.requests = 12
-                            wb.requests_history = 7
-                            wb.heartbeat = true
-                            }.build()
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
+                wb.stats = StoreAndForward.Statistics.Builder().also { wb ->
+                    wb.messages_saved = 9
+                    wb.messages_max = 64
+                    wb.up_time = 3600
+                    wb.requests = 12
+                    wb.requests_history = 7
+                    wb.heartbeat = true
+                }.build()
             }.build(),
             fromNode = server.raw,
         )

@@ -77,8 +77,8 @@ public object ChannelHelpers {
         val validation = validate(name, psk)
         if (!validation.isValid) return null
         return ChannelSettings.Builder().also { wb ->
-        wb.name = name
-        wb.psk = psk.toByteString()
+            wb.name = name
+            wb.psk = psk.toByteString()
         }.build()
     }
 }

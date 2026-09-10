@@ -288,29 +288,53 @@ class HandshakeAndReconnectTest {
         runCurrent()
 
         val channel0 = org.meshtastic.proto.Channel.Builder().also { wb ->
-        wb.index = 0
-        wb.role = org.meshtastic.proto.Channel.Role.PRIMARY
-        wb.settings = org.meshtastic.proto.ChannelSettings.Builder().also { wb ->wb.name = "LongFast"}.build()
+            wb.index = 0
+            wb.role = org.meshtastic.proto.Channel.Role.PRIMARY
+            wb.settings = org.meshtastic.proto.ChannelSettings.Builder().also { wb ->
+                wb.name = "LongFast"
+            }.build()
         }.build()
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = transport.nodeNum}.build()}.build())
         transport.injectFromRadio(
             org.meshtastic.proto.FromRadio.Builder().also { wb ->
-            wb.config = org.meshtastic.proto.Config.Builder().also { wb ->
-                            wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->wb.use_preset = true}.build()
-                            }.build()
+                wb.my_info = MyNodeInfo.Builder().also { wb ->
+                    wb.my_node_num = transport.nodeNum
+                }.build()
             }.build(),
         )
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.channel = channel0}.build())
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.config = org.meshtastic.proto.Config.Builder().also { wb ->
+                    wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->
+                        wb.use_preset = true
+                    }.build()
+                }.build()
+            }.build(),
+        )
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.channel = channel0
+            }.build(),
+        )
         // Re-drain: the same section + channel stream again (latest value wins).
         transport.injectFromRadio(
             org.meshtastic.proto.FromRadio.Builder().also { wb ->
-            wb.config = org.meshtastic.proto.Config.Builder().also { wb ->
-                            wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->wb.use_preset = false}.build()
-                            }.build()
+                wb.config = org.meshtastic.proto.Config.Builder().also { wb ->
+                    wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->
+                        wb.use_preset = false
+                    }.build()
+                }.build()
             }.build(),
         )
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.channel = channel0}.build())
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build())
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.channel = channel0
+            }.build(),
+        )
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.config_complete_id = NONCE_STAGE1
+            }.build(),
+        )
         drainCurrent()
 
         // Settle windows (100 ms each) → heartbeat → Stage 2 (auto-completed) → seeding → Ready.
@@ -345,11 +369,19 @@ class HandshakeAndReconnectTest {
         runCurrent()
 
         transport.injectFromRadio(
-            org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = transport.nodeNum}.build()}.build(),
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb ->
+                    wb.my_node_num = transport.nodeNum
+                }.build()
+            }.build(),
         )
         // An empty FromRadio — every oneof arm unset (the unrecognized / misframed case).
         transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().build())
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build())
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.config_complete_id = NONCE_STAGE1
+            }.build(),
+        )
         drainCurrent()
 
         // Settle → Stage 2 (auto-completed) → seeding → Ready.
@@ -379,7 +411,11 @@ class HandshakeAndReconnectTest {
             drainCurrent()
             expectNoEvents()
 
-            transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE2}.build())
+            transport.injectFromRadio(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config_complete_id = NONCE_STAGE2
+                }.build(),
+            )
             drainCurrent()
             connectJob.await()
             assertEquals(ConnectionState.Connected, client.connection.value)
@@ -409,7 +445,9 @@ class HandshakeAndReconnectTest {
 
         val outboundBefore = transport.outboundPackets().size
         val expected = org.meshtastic.proto.Config.Builder().also { wb ->
-        wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->wb.use_preset = true}.build()
+            wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->
+                wb.use_preset = true
+            }.build()
         }.build()
         val deferred = backgroundScope.async {
             client.admin.forNode(remoteNode).getConfig(AdminMessage.ConfigType.LORA_CONFIG)
@@ -427,7 +465,10 @@ class HandshakeAndReconnectTest {
         // admin response); the engine latches it keyed by the responder.
         transport.injectAdminResponse(
             requestId = request.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_config_response = expected; wb.session_passkey = REMOTE_PASSKEY.toByteString()}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_config_response = expected
+                wb.session_passkey = REMOTE_PASSKEY.toByteString()
+            }.build(),
             fromNode = remoteNode.raw,
         )
         runCurrent()
@@ -448,7 +489,9 @@ class HandshakeAndReconnectTest {
 
         transport.injectAdminResponse(
             requestId = secondRequest.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_config_response = expected}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_config_response = expected
+            }.build(),
             fromNode = remoteNode.raw,
         )
         runCurrent()
@@ -471,9 +514,9 @@ class HandshakeAndReconnectTest {
 
         val outboundBefore = transport.outboundPackets().size
         val expected = org.meshtastic.proto.Config.Builder().also { wb ->
-        wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->
-                    wb.region = org.meshtastic.proto.Config.LoRaConfig.RegionCode.US
-                    }.build()
+            wb.lora = org.meshtastic.proto.Config.LoRaConfig.Builder().also { wb ->
+                wb.region = org.meshtastic.proto.Config.LoRaConfig.RegionCode.US
+            }.build()
         }.build()
         val deferred = backgroundScope.async {
             client.admin.forNode(remoteNode).getConfig(AdminMessage.ConfigType.LORA_CONFIG)
@@ -496,8 +539,12 @@ class HandshakeAndReconnectTest {
         transport.injectAdminResponse(
             requestId = reseed.id,
             response = AdminMessage.Builder().also { wb ->
-            wb.get_owner_response = User.Builder().also { wb ->wb.id = "!0000beef"; wb.long_name = "Remote"; wb.short_name = "RN"}.build()
-            wb.session_passkey = REMOTE_PASSKEY.toByteString()
+                wb.get_owner_response = User.Builder().also { wb ->
+                    wb.id = "!0000beef"
+                    wb.long_name = "Remote"
+                    wb.short_name = "RN"
+                }.build()
+                wb.session_passkey = REMOTE_PASSKEY.toByteString()
             }.build(),
             fromNode = remoteNode.raw,
         )
@@ -511,7 +558,9 @@ class HandshakeAndReconnectTest {
 
         transport.injectAdminResponse(
             requestId = replay.id,
-            response = AdminMessage.Builder().also { wb ->wb.get_config_response = expected}.build(),
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_config_response = expected
+            }.build(),
             fromNode = remoteNode.raw,
         )
         runCurrent()
@@ -552,8 +601,12 @@ class HandshakeAndReconnectTest {
         transport.injectAdminResponse(
             requestId = reseed.id,
             response = AdminMessage.Builder().also { wb ->
-            wb.get_owner_response = User.Builder().also { wb ->wb.id = "!0000d00d"; wb.long_name = "Remote"; wb.short_name = "RN"}.build()
-            wb.session_passkey = REMOTE_PASSKEY.toByteString()
+                wb.get_owner_response = User.Builder().also { wb ->
+                    wb.id = "!0000d00d"
+                    wb.long_name = "Remote"
+                    wb.short_name = "RN"
+                }.build()
+                wb.session_passkey = REMOTE_PASSKEY.toByteString()
             }.build(),
             fromNode = remoteNode.raw,
         )
@@ -795,8 +848,10 @@ class HandshakeAndReconnectTest {
         transport.injectAdminResponse(
             requestId = requestA.id,
             response = AdminMessage.Builder().also { wb ->
-            wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->wb.firmware_version = "a"}.build()
-            wb.session_passkey = PASSKEY_A.toByteString()
+                wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->
+                    wb.firmware_version = "a"
+                }.build()
+                wb.session_passkey = PASSKEY_A.toByteString()
             }.build(),
             fromNode = nodeA.raw,
         )
@@ -811,8 +866,10 @@ class HandshakeAndReconnectTest {
         transport.injectAdminResponse(
             requestId = requestB.id,
             response = AdminMessage.Builder().also { wb ->
-            wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->wb.firmware_version = "b"}.build()
-            wb.session_passkey = PASSKEY_B.toByteString()
+                wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->
+                    wb.firmware_version = "b"
+                }.build()
+                wb.session_passkey = PASSKEY_B.toByteString()
             }.build(),
             fromNode = nodeB.raw,
         )
@@ -847,8 +904,10 @@ class HandshakeAndReconnectTest {
         transport.injectAdminResponse(
             requestId = request.id,
             response = AdminMessage.Builder().also { wb ->
-            wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->wb.firmware_version = "x"}.build()
-            wb.session_passkey = REMOTE_PASSKEY.toByteString()
+                wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->
+                    wb.firmware_version = "x"
+                }.build()
+                wb.session_passkey = REMOTE_PASSKEY.toByteString()
             }.build(),
             fromNode = remoteNode.raw,
         )
@@ -892,8 +951,10 @@ class HandshakeAndReconnectTest {
         transport.injectAdminResponse(
             requestId = request.id,
             response = AdminMessage.Builder().also { wb ->
-            wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->wb.firmware_version = "x"}.build()
-            wb.session_passkey = REMOTE_PASSKEY.toByteString()
+                wb.get_device_metadata_response = org.meshtastic.proto.DeviceMetadata.Builder().also { wb ->
+                    wb.firmware_version = "x"
+                }.build()
+                wb.session_passkey = REMOTE_PASSKEY.toByteString()
             }.build(),
             fromNode = remoteNode.raw,
         )
@@ -940,7 +1001,11 @@ class HandshakeAndReconnectTest {
         }
 
         client.packets.test {
-            transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE2}.build())
+            transport.injectFromRadio(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config_complete_id = NONCE_STAGE2
+                }.build(),
+            )
             drainCurrent()
             connectJob.await()
             assertEquals(1002, awaitItem().id, "Drop-oldest: the flush must start at the third packet")
@@ -970,16 +1035,24 @@ class HandshakeAndReconnectTest {
             transport.injectAlivePacket(packetId = 555)
             transport.injectFromRadio(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
-                wb.packet = MeshPacket.Builder().also { wb ->
-                                    wb.from = 0x0DEAD
-                                    wb.to = transport.nodeNum
-                                    wb.decoded = Data.Builder().also { wb ->
-                                                            wb.portnum = PortNum.ADMIN_APP
-                                                            wb.payload = AdminMessage.ADAPTER
-                                                                                            .encode(AdminMessage.Builder().also { wb ->wb.set_owner = User.Builder().also { wb ->wb.long_name = "stray"}.build()}.build())
-                                                                                            .toByteString()
-                                                            }.build()
-                                    }.build()
+                    wb.packet = MeshPacket.Builder().also { wb ->
+                        wb.from = 0x0DEAD
+                        wb.to = transport.nodeNum
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.ADMIN_APP
+                            wb.payload = AdminMessage.ADAPTER
+                                .encode(
+                                    AdminMessage.Builder().also { wb ->
+                                        wb.set_owner =
+                                            User.Builder().also { wb ->
+                                                wb.long_name =
+                                                    "stray"
+                                            }.build()
+                                    }.build(),
+                                )
+                                .toByteString()
+                        }.build()
+                    }.build()
                 }.build(),
             )
             drainCurrent()
@@ -992,8 +1065,12 @@ class HandshakeAndReconnectTest {
             transport.injectAdminResponse(
                 requestId = seedRequest.id,
                 response = AdminMessage.Builder().also { wb ->
-                wb.get_owner_response = User.Builder().also { wb ->wb.id = "!00000001"; wb.long_name = "ScriptedNode"; wb.short_name = "SN"}.build()
-                wb.session_passkey = SEEDED_PASSKEY.toByteString()
+                    wb.get_owner_response = User.Builder().also { wb ->
+                        wb.id = "!00000001"
+                        wb.long_name = "ScriptedNode"
+                        wb.short_name = "SN"
+                    }.build()
+                    wb.session_passkey = SEEDED_PASSKEY.toByteString()
                 }.build(),
                 fromNode = transport.nodeNum,
             )
@@ -1018,10 +1095,24 @@ class HandshakeAndReconnectTest {
 
         // Manual Stage 1, then a duplicate completion AND a live packet inside the settle window
         // (the firmware re-drains from scratch on a want_config retry, producing exactly this).
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = transport.nodeNum}.build()}.build())
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build())
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb ->
+                    wb.my_node_num = transport.nodeNum
+                }.build()
+            }.build(),
+        )
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.config_complete_id = NONCE_STAGE1
+            }.build(),
+        )
         runCurrent()
-        transport.injectFromRadio(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build())
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.config_complete_id = NONCE_STAGE1
+            }.build(),
+        )
         transport.injectAlivePacket(packetId = 777)
         runCurrent()
 
@@ -1169,7 +1260,15 @@ class HandshakeAndReconnectTest {
         fun reconnectAttemptTimes(): List<Long> = connectTimes.drop(1)
 
         fun injectStage2Progress(node: Int) {
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.node_info = NodeInfo.Builder().also { wb ->wb.num = node}.build()}.build()))
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.node_info = NodeInfo.Builder().also { wb ->
+                            wb.num = node
+                        }.build()
+                    }.build(),
+                ),
+            )
         }
 
         fun injectFromRadio(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -1179,42 +1278,64 @@ class HandshakeAndReconnectTest {
         fun injectAdminResponse(requestId: Int, response: AdminMessage, fromNode: Int = nodeNum) {
             val payload = AdminMessage.ADAPTER.encode(response).toByteString()
             val packet = MeshPacket.Builder().also { wb ->
-            wb.from = fromNode
-            wb.to = 0
-            wb.decoded = Data.Builder().also { wb ->
-                            wb.portnum = PortNum.ADMIN_APP
-                            wb.payload = payload
-                            wb.request_id = requestId
-                            }.build()
+                wb.from = fromNode
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.ADMIN_APP
+                    wb.payload = payload
+                    wb.request_id = requestId
+                }.build()
             }.build()
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.packet = packet}.build()))
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.packet = packet
+                    }.build(),
+                ),
+            )
         }
 
         fun injectRoutingError(requestId: Int, error: Routing.Error, fromNode: Int = nodeNum) {
-            val payload = Routing.ADAPTER.encode(Routing.Builder().also { wb ->wb.error_reason = error}.build()).toByteString()
+            val payload = Routing.ADAPTER.encode(
+                Routing.Builder().also { wb ->
+                    wb.error_reason = error
+                }.build(),
+            ).toByteString()
             val packet = MeshPacket.Builder().also { wb ->
-            wb.from = fromNode
-            wb.to = 0
-            wb.decoded = Data.Builder().also { wb ->
-                            wb.portnum = PortNum.ROUTING_APP
-                            wb.payload = payload
-                            wb.request_id = requestId
-                            }.build()
+                wb.from = fromNode
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.ROUTING_APP
+                    wb.payload = payload
+                    wb.request_id = requestId
+                }.build()
             }.build()
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.packet = packet}.build()))
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.packet = packet
+                    }.build(),
+                ),
+            )
         }
 
         fun injectAlivePacket(packetId: Int) {
             val packet = MeshPacket.Builder().also { wb ->
-            wb.id = packetId
-            wb.from = nodeNum
-            wb.to = 0
-            wb.decoded = Data.Builder().also { wb ->
-                            wb.portnum = PortNum.TEXT_MESSAGE_APP
-                            wb.payload = okio.ByteString.EMPTY
-                            }.build()
+                wb.id = packetId
+                wb.from = nodeNum
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.TEXT_MESSAGE_APP
+                    wb.payload = okio.ByteString.EMPTY
+                }.build()
             }.build()
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.packet = packet}.build()))
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.packet = packet
+                    }.build(),
+                ),
+            )
         }
 
         fun simulateRecoverableError(message: String, recoverable: Boolean = true) {
@@ -1229,9 +1350,21 @@ class HandshakeAndReconnectTest {
             }
             if (!autoCompleteStage1) return
             inbound.tryEmit(
-                encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = nodeNum}.build()}.build()),
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.my_info = MyNodeInfo.Builder().also { wb ->
+                            wb.my_node_num = nodeNum
+                        }.build()
+                    }.build(),
+                ),
             )
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE1}.build()))
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.config_complete_id = NONCE_STAGE1
+                    }.build(),
+                ),
+            )
         }
 
         private fun handleStage2Request() {
@@ -1241,7 +1374,13 @@ class HandshakeAndReconnectTest {
                 return
             }
             if (!autoCompleteStage2) return
-            inbound.tryEmit(encodeFromRadioFrame(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE2}.build()))
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.config_complete_id = NONCE_STAGE2
+                    }.build(),
+                ),
+            )
         }
 
         private fun handleAdminPacket(packet: MeshPacket) {
@@ -1249,14 +1388,14 @@ class HandshakeAndReconnectTest {
             if (!autoRespondGetOwner) return
             if (packet.to != nodeNum || admin.get_owner_request != true) return
             val user = User.Builder().also { wb ->
-            wb.id = "!00000001"
-            wb.long_name = "ScriptedNode"
-            wb.short_name = "SN"
-            wb.hw_model = HardwareModel.UNSET
+                wb.id = "!00000001"
+                wb.long_name = "ScriptedNode"
+                wb.short_name = "SN"
+                wb.hw_model = HardwareModel.UNSET
             }.build()
             val response = AdminMessage.Builder().also { wb ->
-            wb.get_owner_response = user
-            wb.session_passkey = sessionPasskey.toByteString()
+                wb.get_owner_response = user
+                wb.session_passkey = sessionPasskey.toByteString()
             }.build()
             injectAdminResponse(requestId = packet.id, response = response, fromNode = nodeNum)
         }

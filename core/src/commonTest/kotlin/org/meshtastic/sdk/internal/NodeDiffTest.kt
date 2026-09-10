@@ -19,19 +19,29 @@ import kotlin.test.assertTrue
 class NodeDiffTest {
 
     private val baseNode = NodeInfo.Builder().also { wb ->
-    wb.num = 1
-    wb.user = User.Builder().also { wb ->wb.id = "!aabbccdd"; wb.long_name = "Alpha"; wb.short_name = "AL"}.build()
-    wb.position = Position.Builder().also { wb ->wb.latitude_i = 370000000; wb.longitude_i = -1220000000}.build()
-    wb.snr = 10.5f
-    wb.last_heard = 1000
-    wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 80; wb.voltage = 3.9f}.build()
-    wb.channel = 0
-    wb.via_mqtt = false
-    wb.hops_away = 0
-    wb.is_favorite = false
-    wb.is_ignored = false
-    wb.is_muted = false
-    wb.is_key_manually_verified = false
+        wb.num = 1
+        wb.user = User.Builder().also { wb ->
+            wb.id = "!aabbccdd"
+            wb.long_name = "Alpha"
+            wb.short_name = "AL"
+        }.build()
+        wb.position = Position.Builder().also { wb ->
+            wb.latitude_i = 370000000
+            wb.longitude_i = -1220000000
+        }.build()
+        wb.snr = 10.5f
+        wb.last_heard = 1000
+        wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+            wb.battery_level = 80
+            wb.voltage = 3.9f
+        }.build()
+        wb.channel = 0
+        wb.via_mqtt = false
+        wb.hops_away = 0
+        wb.is_favorite = false
+        wb.is_ignored = false
+        wb.is_muted = false
+        wb.is_key_manually_verified = false
     }.build()
 
     @Test
@@ -73,7 +83,10 @@ class NodeDiffTest {
     @Test
     fun positionChange_flagsPosition() {
         val updated = baseNode.newBuilder().also { wb ->
-            wb.position = Position.Builder().also { wb ->wb.latitude_i = 380000000; wb.longitude_i = -1220000000}.build()
+            wb.position = Position.Builder().also { wb ->
+                wb.latitude_i = 380000000
+                wb.longitude_i = -1220000000
+            }.build()
         }.build()
         val result = diffNodeFields(baseNode, updated)
         assertTrue(NodeField.Position in result)
@@ -103,7 +116,10 @@ class NodeDiffTest {
     @Test
     fun batteryChange_flagsBatteryAndTelemetry() {
         val updated = baseNode.newBuilder().also { wb ->
-            wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 50; wb.voltage = 3.5f}.build()
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 50
+                wb.voltage = 3.5f
+            }.build()
         }.build()
         val result = diffNodeFields(baseNode, updated)
         assertTrue(NodeField.Battery in result)
@@ -113,7 +129,9 @@ class NodeDiffTest {
     @Test
     fun deviceMetricsNonBatteryChange_flagsTelemetryOnly() {
         val updated = baseNode.newBuilder().also { wb ->
-            wb.device_metrics = baseNode.device_metrics!!.newBuilder().also { wb -> wb.channel_utilization = 25.0f }.build()
+            wb.device_metrics = baseNode.device_metrics!!.newBuilder().also { wb ->
+                wb.channel_utilization = 25.0f
+            }.build()
         }.build()
         val result = diffNodeFields(baseNode, updated)
         assertTrue(NodeField.Telemetry in result)
@@ -146,7 +164,10 @@ class NodeDiffTest {
         val updated = baseNode.newBuilder().also { wb ->
             wb.snr = 2.0f
             wb.last_heard = 5000
-            wb.position = Position.Builder().also { wb ->wb.latitude_i = 390000000; wb.longitude_i = -1210000000}.build()
+            wb.position = Position.Builder().also { wb ->
+                wb.latitude_i = 390000000
+                wb.longitude_i = -1210000000
+            }.build()
         }.build()
         val result = diffNodeFields(baseNode, updated)
         assertTrue(NodeField.SignalQuality in result)

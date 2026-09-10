@@ -316,7 +316,15 @@ class P1EngineHardeningTest {
         repeat(4) {
             advanceTimeBy(25_000L)
             runCurrent()
-            transport.injectFrame(encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = MeshPacket.Builder().also { wb ->wb.from = 0xABCD}.build()}.build()))
+            transport.injectFrame(
+                encodeFromRadio(
+                    FromRadio.Builder().also { wb ->
+                        wb.packet = MeshPacket.Builder().also { wb ->
+                            wb.from = 0xABCD
+                        }.build()
+                    }.build(),
+                ),
+            )
             runCurrent()
         }
 
@@ -346,9 +354,10 @@ class P1EngineHardeningTest {
         transport.injectFrame(
             encodeFromRadio(
                 FromRadio.Builder().also { wb ->
-                wb.clientNotification = org.meshtastic.proto.ClientNotification.Builder().also { wb ->
-                                    wb.duplicated_public_key = org.meshtastic.proto.DuplicatedPublicKey.Builder().build()
-                                    }.build()
+                    wb.clientNotification = org.meshtastic.proto.ClientNotification.Builder().also { wb ->
+                        wb.duplicated_public_key =
+                            org.meshtastic.proto.DuplicatedPublicKey.Builder().build()
+                    }.build()
                 }.build(),
             ),
         )
@@ -356,9 +365,9 @@ class P1EngineHardeningTest {
         transport.injectFrame(
             encodeFromRadio(
                 FromRadio.Builder().also { wb ->
-                wb.clientNotification = org.meshtastic.proto.ClientNotification.Builder().also { wb ->
-                                    wb.low_entropy_key = org.meshtastic.proto.LowEntropyKey.Builder().build()
-                                    }.build()
+                    wb.clientNotification = org.meshtastic.proto.ClientNotification.Builder().also { wb ->
+                        wb.low_entropy_key = org.meshtastic.proto.LowEntropyKey.Builder().build()
+                    }.build()
                 }.build(),
             ),
         )
@@ -384,28 +393,28 @@ class P1EngineHardeningTest {
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun unicastWantAckPacket(toNodeNum: Int) = MeshPacket.Builder().also { wb ->
-    wb.to = toNodeNum
-    wb.channel = 0
-    wb.want_ack = true
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = toNodeNum
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = ByteString.of(*"hi".encodeToByteArray())
-            }.build()
+        }.build()
     }.build()
 
     private fun routingAckFrame(requestId: Int, fromNodeNum: Int, error: Routing.Error = Routing.Error.NONE): Frame {
-        val routing = Routing.Builder().also { wb ->wb.error_reason = error}.build()
+        val routing = Routing.Builder().also { wb -> wb.error_reason = error }.build()
         val payload = ByteString.of(*Routing.ADAPTER.encode(routing))
         val packet = MeshPacket.Builder().also { wb ->
-        wb.from = fromNodeNum
-        wb.to = 0
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ROUTING_APP
-                    wb.payload = payload
-                    wb.request_id = requestId
-                    }.build()
+            wb.from = fromNodeNum
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
         }.build()
-        return encodeFromRadio(FromRadio.Builder().also { wb ->wb.packet = packet}.build())
+        return encodeFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     private fun encodeFromRadio(fromRadio: FromRadio): Frame = fromRadio.toFrame()
@@ -457,8 +466,22 @@ class P1EngineHardeningTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadio(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
-                inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.my_info = MyNodeInfo.Builder().also { wb ->wb.my_node_num = 1}.build()}.build()))
-                inbound.trySend(encodeFromRadio(FromRadio.Builder().also { wb ->wb.config_complete_id = STAGE1_NONCE}.build()))
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.my_info = MyNodeInfo.Builder().also { wb ->
+                                wb.my_node_num = 1
+                            }.build()
+                        }.build(),
+                    ),
+                )
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.config_complete_id = STAGE1_NONCE
+                        }.build(),
+                    ),
+                )
             }
             // Stage 2 nonce is intentionally swallowed — the test feeds progress manually.
         }
@@ -469,7 +492,9 @@ class P1EngineHardeningTest {
             inbound.trySend(
                 encodeFromRadio(
                     FromRadio.Builder().also { wb ->
-                    wb.node_info = org.meshtastic.proto.NodeInfo.Builder().also { wb ->wb.num = nodeNum}.build()
+                        wb.node_info = org.meshtastic.proto.NodeInfo.Builder().also { wb ->
+                            wb.num = nodeNum
+                        }.build()
                     }.build(),
                 ),
             )

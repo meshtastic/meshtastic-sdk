@@ -37,7 +37,12 @@ class CommandDispatcherTest {
         val timeoutJob = Job()
         dispatcher.attachTimeoutJob(101, timeoutJob)
 
-        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 87; wb.voltage = 4.1f}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 87
+                wb.voltage = 4.1f
+            }.build()
+        }.build()
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 101, telemetry = expected)))
 
         val result = deferred.await()
@@ -64,17 +69,27 @@ class CommandDispatcherTest {
         val telemetryDeferred = register(dispatcher, requestId = 301)
         val ownerDeferred = register(dispatcher, requestId = 302, kind = ResponseKind.AdminOwner)
 
-        val expectedOwner = User.Builder().also { wb ->wb.long_name = "Remote Node"; wb.short_name = "RN"}.build()
+        val expectedOwner = User.Builder().also { wb ->
+            wb.long_name = "Remote Node"
+            wb.short_name = "RN"
+        }.build()
         assertTrue(
             dispatcher.tryComplete(
                 adminPacket(
                     requestId = 302,
-                    response = AdminMessage.Builder().also { wb ->wb.get_owner_response = expectedOwner}.build(),
+                    response = AdminMessage.Builder().also { wb ->
+                        wb.get_owner_response = expectedOwner
+                    }.build(),
                 ),
             ),
         )
 
-        val expectedTelemetry = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 45; wb.uptime_seconds = 99}.build()}.build()
+        val expectedTelemetry = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 45
+                wb.uptime_seconds = 99
+            }.build()
+        }.build()
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 301, telemetry = expectedTelemetry)))
 
         val ownerResult = ownerDeferred.await() as AdminResult.Success<*>
@@ -97,7 +112,11 @@ class CommandDispatcherTest {
         assertFalse(successDeferred.isCompleted)
         assertTrue(timeoutJob.isCancelled)
 
-        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 64}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 64
+            }.build()
+        }.build()
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 402, telemetry = expected)))
         val success = successDeferred.await() as AdminResult.Success<*>
         assertEquals(expected, success.value)
@@ -107,14 +126,22 @@ class CommandDispatcherTest {
     fun duplicateResponseIsIgnoredAfterCompletion() = runTest {
         val dispatcher = CommandDispatcher()
         val deferred = register(dispatcher, requestId = 501)
-        val first = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 12}.build()}.build()
+        val first = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 12
+            }.build()
+        }.build()
 
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 501, telemetry = first)))
         assertFalse(
             dispatcher.tryComplete(
                 telemetryPacket(
                     requestId = 501,
-                    telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 99}.build()}.build(),
+                    telemetry = Telemetry.Builder().also { wb ->
+                        wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                            wb.battery_level = 99
+                        }.build()
+                    }.build(),
                 ),
             ),
         )
@@ -133,7 +160,11 @@ class CommandDispatcherTest {
             dispatcher.tryComplete(
                 telemetryPacket(
                     requestId = 999,
-                    telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 1}.build()}.build(),
+                    telemetry = Telemetry.Builder().also { wb ->
+                        wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                            wb.battery_level = 1
+                        }.build()
+                    }.build(),
                 ),
             ),
         )
@@ -151,14 +182,22 @@ class CommandDispatcherTest {
             dispatcher.tryComplete(
                 adminPacket(
                     requestId = 701,
-                    response = AdminMessage.Builder().also { wb ->wb.get_owner_response = User.Builder().also { wb ->wb.long_name = "Wrong Port"}.build()}.build(),
+                    response = AdminMessage.Builder().also { wb ->
+                        wb.get_owner_response = User.Builder().also { wb ->
+                            wb.long_name = "Wrong Port"
+                        }.build()
+                    }.build(),
                 ),
             ),
         )
         assertFalse(deferred.isCompleted)
         assertEquals(1, dispatcher.size())
 
-        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 22}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 22
+            }.build()
+        }.build()
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 701, telemetry = expected)))
         val success = deferred.await() as AdminResult.Success<*>
         assertEquals(expected, success.value)
@@ -199,7 +238,11 @@ class CommandDispatcherTest {
         assertTrue(oldTimeoutJob.isCancelled)
         assertEquals(1, dispatcher.size())
 
-        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 73}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 73
+            }.build()
+        }.build()
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 1001, telemetry = expected)))
         val success = replacementDeferred.await() as AdminResult.Success<*>
         assertEquals(expected, success.value)
@@ -233,7 +276,11 @@ class CommandDispatcherTest {
             dispatcher.tryComplete(
                 telemetryPacket(
                     requestId = 0,
-                    telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 99}.build()}.build(),
+                    telemetry = Telemetry.Builder().also { wb ->
+                        wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                            wb.battery_level = 99
+                        }.build()
+                    }.build(),
                 ),
             ),
         )
@@ -257,26 +304,26 @@ class CommandDispatcherTest {
         telemetry: Telemetry,
         portnum: PortNum = PortNum.TELEMETRY_APP,
     ): MeshPacket = MeshPacket.Builder().also { wb ->
-    wb.decoded = Data.Builder().also { wb ->
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = portnum
             wb.payload = Telemetry.ADAPTER.encode(telemetry).toByteString()
             wb.request_id = requestId
-            }.build()
+        }.build()
     }.build()
 
     private fun adminPacket(requestId: Int, response: AdminMessage): MeshPacket = MeshPacket.Builder().also { wb ->
-    wb.decoded = Data.Builder().also { wb ->
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.ADMIN_APP
             wb.payload = AdminMessage.ADAPTER.encode(response).toByteString()
             wb.request_id = requestId
-            }.build()
+        }.build()
     }.build()
 
     private fun invalidPacket(requestId: Int): MeshPacket = MeshPacket.Builder().also { wb ->
-    wb.decoded = Data.Builder().also { wb ->
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TELEMETRY_APP
             wb.payload = byteArrayOf(0x80.toByte()).toByteString()
             wb.request_id = requestId
-            }.build()
+        }.build()
     }.build()
 }

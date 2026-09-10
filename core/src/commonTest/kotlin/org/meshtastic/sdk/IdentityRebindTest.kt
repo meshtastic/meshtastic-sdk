@@ -41,8 +41,10 @@ class IdentityRebindTest {
         storage.recordOwnNode(NodeId(previousNodeNum), "1.0.0")
         storage.saveConfig(
             ConfigBundle(
-                myInfo = MyNodeInfo.Builder().also { wb ->wb.my_node_num = previousNodeNum}.build(),
-                metadata = DeviceMetadata.Builder().also { wb ->wb.firmware_version = "1.0.0"}.build(),
+                myInfo = MyNodeInfo.Builder().also { wb -> wb.my_node_num = previousNodeNum }.build(),
+                metadata = DeviceMetadata.Builder().also { wb ->
+                    wb.firmware_version = "1.0.0"
+                }.build(),
                 configs = emptyList(),
                 moduleConfigs = emptyList(),
             ),

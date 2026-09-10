@@ -55,7 +55,9 @@ class StorageDriverTest {
         driver.close()
     }
 
-    private fun nodeInfo(id: NodeId) = org.meshtastic.proto.NodeInfo.Builder().also { wb ->wb.num = id.raw}.build()
+    private fun nodeInfo(id: NodeId) = org.meshtastic.proto.NodeInfo.Builder().also { wb ->
+        wb.num = id.raw
+    }.build()
 
     private fun scalarString(driver: SqlDriver, sql: String): String {
         var result: String? = null

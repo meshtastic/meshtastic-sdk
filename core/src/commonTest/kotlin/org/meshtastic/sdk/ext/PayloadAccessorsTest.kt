@@ -31,8 +31,12 @@ import kotlin.test.assertNull
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class PayloadAccessorsTest {
-    private fun pkt(port: PortNum, payload: ByteArray) =
-        MeshPacket.Builder().also { wb ->wb.decoded = Data.Builder().also { wb ->wb.portnum = port; wb.payload = payload.toByteString()}.build()}.build()
+    private fun pkt(port: PortNum, payload: ByteArray) = MeshPacket.Builder().also { wb ->
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = port
+            wb.payload = payload.toByteString()
+        }.build()
+    }.build()
 
     private fun TestScope.buildClient(transport: FakeRadioTransport): RadioClient = RadioClient.Builder()
         .transport(transport)
@@ -55,18 +59,40 @@ class PayloadAccessorsTest {
     }
 
     @Test fun positionAndUserDecode() {
-        val pos = Position.Builder().also { wb ->wb.latitude_i = 1; wb.longitude_i = 2}.build()
+        val pos = Position.Builder().also { wb ->
+            wb.latitude_i = 1
+            wb.longitude_i = 2
+        }.build()
         assertEquals(1, pkt(PortNum.POSITION_APP, Position.ADAPTER.encode(pos)).asPosition()!!.latitude_i)
-        val user = User.Builder().also { wb ->wb.id = "!aabbccdd"; wb.long_name = "Alice"}.build()
+        val user = User.Builder().also { wb ->
+            wb.id = "!aabbccdd"
+            wb.long_name = "Alice"
+        }.build()
         assertEquals("Alice", pkt(PortNum.NODEINFO_APP, User.ADAPTER.encode(user)).asNodeInfoUser()!!.long_name)
     }
 
     @Test fun telemetryAdminRouting() {
-        val telPkt = pkt(PortNum.TELEMETRY_APP, Telemetry.ADAPTER.encode(Telemetry.Builder().also { wb ->wb.time = 12345}.build()))
+        val telPkt = pkt(
+            PortNum.TELEMETRY_APP,
+            Telemetry.ADAPTER.encode(
+                Telemetry.Builder().also { wb ->
+                    wb.time = 12345
+                }.build(),
+            ),
+        )
         assertEquals(12345, telPkt.asTelemetry()!!.time)
-        val adminPkt = pkt(PortNum.ADMIN_APP, AdminMessage.ADAPTER.encode(AdminMessage.Builder().also { wb ->wb.get_owner_request = true}.build()))
+        val adminPkt = pkt(
+            PortNum.ADMIN_APP,
+            AdminMessage.ADAPTER.encode(
+                AdminMessage.Builder().also { wb ->
+                    wb.get_owner_request = true
+                }.build(),
+            ),
+        )
         assertNotNull(adminPkt.asAdminMessage())
-        val routing = Routing.Builder().also { wb ->wb.error_reason = Routing.Error.NO_ROUTE}.build()
+        val routing = Routing.Builder().also { wb ->
+            wb.error_reason = Routing.Error.NO_ROUTE
+        }.build()
         assertEquals(
             Routing.Error.NO_ROUTE,
             pkt(PortNum.ROUTING_APP, Routing.ADAPTER.encode(routing)).asRouting()!!.error_reason,
@@ -74,7 +100,13 @@ class PayloadAccessorsTest {
     }
 
     @Test fun emptyPayloadReturnsNull() {
-        assertNull(MeshPacket.Builder().also { wb ->wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.TEXT_MESSAGE_APP}.build()}.build().asText())
+        assertNull(
+            MeshPacket.Builder().also { wb ->
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.TEXT_MESSAGE_APP
+                }.build()
+            }.build().asText(),
+        )
     }
 
     // ── textMessages flow ─────────────────────────────────────────────────
@@ -93,8 +125,11 @@ class PayloadAccessorsTest {
 
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.from = 0xABCD
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.TEXT_MESSAGE_APP; wb.payload = "test".encodeToByteArray().toByteString()}.build()
+                wb.from = 0xABCD
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.TEXT_MESSAGE_APP
+                    wb.payload = "test".encodeToByteArray().toByteString()
+                }.build()
             }.build(),
         )
         runCurrent() // frame-reader → engine actor → emitPacketOrLog → collector
@@ -118,8 +153,11 @@ class PayloadAccessorsTest {
         runCurrent() // start the collector without advancing virtual time
 
         val textPkt = MeshPacket.Builder().also { wb ->
-        wb.from = 0x1234
-        wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.TEXT_MESSAGE_APP; wb.payload = "hi".encodeToByteArray().toByteString()}.build()
+            wb.from = 0x1234
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.TEXT_MESSAGE_APP
+                wb.payload = "hi".encodeToByteArray().toByteString()
+            }.build()
         }.build()
         transport.injectPacket(textPkt)
         runCurrent()
@@ -142,12 +180,18 @@ class PayloadAccessorsTest {
 
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.POSITION_APP; wb.payload = "xyz".encodeToByteArray().toByteString()}.build()
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.POSITION_APP
+                    wb.payload = "xyz".encodeToByteArray().toByteString()
+                }.build()
             }.build(),
         )
         transport.injectPacket(
             MeshPacket.Builder().also { wb ->
-            wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.TELEMETRY_APP; wb.payload = "xyz".encodeToByteArray().toByteString()}.build()
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.TELEMETRY_APP
+                    wb.payload = "xyz".encodeToByteArray().toByteString()
+                }.build()
             }.build(),
         )
         runCurrent()
@@ -169,7 +213,11 @@ class PayloadAccessorsTest {
         runCurrent()
 
         transport.injectPacket(
-            MeshPacket.Builder().also { wb ->wb.decoded = Data.Builder().also { wb ->wb.portnum = PortNum.TEXT_MESSAGE_APP}.build()}.build(), // no payload
+            MeshPacket.Builder().also { wb ->
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.TEXT_MESSAGE_APP
+                }.build()
+            }.build(), // no payload
         )
         runCurrent()
         runCurrent()
@@ -182,7 +230,10 @@ class PayloadAccessorsTest {
     // ── Waypoint / Traceroute / NeighborInfo accessors ────────────────────
 
     @Test fun waypointDecodes() {
-        val wp = org.meshtastic.proto.Waypoint.Builder().also { wb ->wb.id = 42; wb.name = "Base"}.build()
+        val wp = org.meshtastic.proto.Waypoint.Builder().also { wb ->
+            wb.id = 42
+            wb.name = "Base"
+        }.build()
         val decoded = pkt(PortNum.WAYPOINT_APP, org.meshtastic.proto.Waypoint.ADAPTER.encode(wp)).asWaypoint()
         assertNotNull(decoded)
         assertEquals(42, decoded.id)
@@ -190,12 +241,14 @@ class PayloadAccessorsTest {
     }
 
     @Test fun waypointWrongPortReturnsNull() {
-        val wp = org.meshtastic.proto.Waypoint.Builder().also { wb ->wb.id = 1}.build()
+        val wp = org.meshtastic.proto.Waypoint.Builder().also { wb -> wb.id = 1 }.build()
         assertNull(pkt(PortNum.TEXT_MESSAGE_APP, org.meshtastic.proto.Waypoint.ADAPTER.encode(wp)).asWaypoint())
     }
 
     @Test fun tracerouteDecodes() {
-        val route = org.meshtastic.proto.RouteDiscovery.Builder().also { wb ->wb.route = listOf(100, 200, 300)}.build()
+        val route = org.meshtastic.proto.RouteDiscovery.Builder().also { wb ->
+            wb.route = listOf(100, 200, 300)
+        }.build()
         val decoded = pkt(
             PortNum.TRACEROUTE_APP,
             org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(route),
@@ -205,12 +258,17 @@ class PayloadAccessorsTest {
     }
 
     @Test fun tracerouteWrongPortReturnsNull() {
-        val route = org.meshtastic.proto.RouteDiscovery.Builder().also { wb ->wb.route = listOf(1)}.build()
+        val route = org.meshtastic.proto.RouteDiscovery.Builder().also { wb ->
+            wb.route = listOf(1)
+        }.build()
         assertNull(pkt(PortNum.ROUTING_APP, org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(route)).asTraceroute())
     }
 
     @Test fun neighborInfoDecodes() {
-        val ni = org.meshtastic.proto.NeighborInfo.Builder().also { wb ->wb.node_id = 0xABCD; wb.last_sent_by_id = 0x1234}.build()
+        val ni = org.meshtastic.proto.NeighborInfo.Builder().also { wb ->
+            wb.node_id = 0xABCD
+            wb.last_sent_by_id = 0x1234
+        }.build()
         val decoded = pkt(
             PortNum.NEIGHBORINFO_APP,
             org.meshtastic.proto.NeighborInfo.ADAPTER.encode(ni),
@@ -221,7 +279,7 @@ class PayloadAccessorsTest {
     }
 
     @Test fun neighborInfoWrongPortReturnsNull() {
-        val ni = org.meshtastic.proto.NeighborInfo.Builder().also { wb ->wb.node_id = 1}.build()
+        val ni = org.meshtastic.proto.NeighborInfo.Builder().also { wb -> wb.node_id = 1 }.build()
         assertNull(pkt(PortNum.TELEMETRY_APP, org.meshtastic.proto.NeighborInfo.ADAPTER.encode(ni)).asNeighborInfo())
     }
 }

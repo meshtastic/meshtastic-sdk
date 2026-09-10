@@ -194,32 +194,32 @@ class P0ReliabilityTest {
     // ── Helpers ────────────────────────────────────────────────────────────
 
     private fun unicastWantAckPacket() = MeshPacket.Builder().also { wb ->
-    wb.to = 0x12345678
-    wb.channel = 0
-    wb.want_ack = true
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = 0x12345678
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = ByteString.of(*"hi".encodeToByteArray())
-            }.build()
+        }.build()
     }.build()
 
     private fun broadcastPacket() = MeshPacket.Builder().also { wb ->
-    wb.to = NodeId.BROADCAST.raw
-    wb.channel = 0
-    wb.want_ack = false
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = NodeId.BROADCAST.raw
+        wb.channel = 0
+        wb.want_ack = false
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = ByteString.of(*"hello".encodeToByteArray())
-            }.build()
+        }.build()
     }.build()
 
     private fun broadcastWantAckPacket() = MeshPacket.Builder().also { wb ->
-    wb.to = NodeId.BROADCAST.raw
-    wb.channel = 0
-    wb.want_ack = true
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = NodeId.BROADCAST.raw
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = ByteString.of(*"hello-ack".encodeToByteArray())
-            }.build()
+        }.build()
     }.build()
 }

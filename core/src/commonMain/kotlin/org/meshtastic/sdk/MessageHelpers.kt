@@ -30,9 +30,9 @@ public suspend fun RadioClient.sendPosition(
     wantAck: Boolean = false,
 ): MessageHandle {
     val payload = Position.Builder().also { wb ->
-    wb.latitude_i = (latLng.latitude * POSITION_SCALE).toInt()
-    wb.longitude_i = (latLng.longitude * POSITION_SCALE).toInt()
-    wb.altitude = latLng.altitudeMeters
+        wb.latitude_i = (latLng.latitude * POSITION_SCALE).toInt()
+        wb.longitude_i = (latLng.longitude * POSITION_SCALE).toInt()
+        wb.altitude = latLng.altitudeMeters
     }.build()
     return send(
         portnum = PortNum.POSITION_APP,
@@ -53,14 +53,14 @@ public suspend fun RadioClient.sendPosition(
  */
 public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = ChannelIndex(0)): MessageHandle {
     val packet = MeshPacket.Builder().also { wb ->
-    wb.to = from.raw
-    wb.channel = channel.raw
-    wb.want_ack = false
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = from.raw
+        wb.channel = channel.raw
+        wb.want_ack = false
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.POSITION_APP
             wb.payload = ByteString.EMPTY
             wb.want_response = true
-            }.build()
+        }.build()
     }.build()
     return send(packet)
 }
@@ -93,14 +93,14 @@ public suspend fun RadioClient.sendDirectMessage(
  */
 public fun RadioClient.sendDirectMessageEncrypted(to: NodeId, text: String, wantAck: Boolean = true): MessageHandle {
     val packet = MeshPacket.Builder().also { wb ->
-    wb.to = to.raw
-    wb.channel = 0
-    wb.want_ack = wantAck
-    wb.pki_encrypted = true
-    wb.decoded = Data.Builder().also { wb ->
+        wb.to = to.raw
+        wb.channel = 0
+        wb.want_ack = wantAck
+        wb.pki_encrypted = true
+        wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = text.encodeToByteArray().toByteString()
-            }.build()
+        }.build()
     }.build()
     return send(packet)
 }

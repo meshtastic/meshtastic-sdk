@@ -37,7 +37,11 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val node = NodeId(0x22222222)
-        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 85}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 85
+            }.build()
+        }.build()
         val received = backgroundScope.async { client.telemetry.observe(node).first() }
         runCurrent()
 
@@ -65,7 +69,11 @@ class TelemetryApiObserveTest {
 
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 42}.build()}.build(),
+            telemetry = Telemetry.Builder().also { wb ->
+                wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                    wb.battery_level = 42
+                }.build()
+            }.build(),
             fromNode = otherNode,
         )
         runCurrent()
@@ -82,9 +90,22 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val expected = listOf(
-            Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 81}.build()}.build(),
-            Telemetry.Builder().also { wb ->wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->wb.temperature = 21.5f}.build()}.build(),
-            Telemetry.Builder().also { wb ->wb.power_metrics = PowerMetrics.Builder().also { wb ->wb.ch1_voltage = 4.2f; wb.ch1_current = 0.48f}.build()}.build(),
+            Telemetry.Builder().also { wb ->
+                wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                    wb.battery_level = 81
+                }.build()
+            }.build(),
+            Telemetry.Builder().also { wb ->
+                wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->
+                    wb.temperature = 21.5f
+                }.build()
+            }.build(),
+            Telemetry.Builder().also { wb ->
+                wb.power_metrics = PowerMetrics.Builder().also { wb ->
+                    wb.ch1_voltage = 4.2f
+                    wb.ch1_current = 0.48f
+                }.build()
+            }.build(),
         )
         val fromNodes = listOf(0x22222222, 0x33333333, 0x44444444)
         val received = backgroundScope.async {
@@ -108,13 +129,17 @@ class TelemetryApiObserveTest {
         client.connect()
         runCurrent()
 
-        val expected = DeviceMetrics.Builder().also { wb ->wb.battery_level = 90; wb.voltage = 4.1f; wb.uptime_seconds = 600}.build()
+        val expected = DeviceMetrics.Builder().also { wb ->
+            wb.battery_level = 90
+            wb.voltage = 4.1f
+            wb.uptime_seconds = 600
+        }.build()
         val received = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
         runCurrent()
 
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = expected}.build(),
+            telemetry = Telemetry.Builder().also { wb -> wb.device_metrics = expected }.build(),
             fromNode = 0x22222222,
         )
         runCurrent()
@@ -131,16 +156,16 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val expected = EnvironmentMetrics.Builder().also { wb ->
-        wb.temperature = 23.4f
-        wb.relative_humidity = 56.0f
-        wb.barometric_pressure = 1008.7f
+            wb.temperature = 23.4f
+            wb.relative_humidity = 56.0f
+            wb.barometric_pressure = 1008.7f
         }.build()
         val received = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
         runCurrent()
 
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry.Builder().also { wb ->wb.environment_metrics = expected}.build(),
+            telemetry = Telemetry.Builder().also { wb -> wb.environment_metrics = expected }.build(),
             fromNode = 0x33333333,
         )
         runCurrent()
@@ -156,13 +181,17 @@ class TelemetryApiObserveTest {
         client.connect()
         runCurrent()
 
-        val expected = PowerMetrics.Builder().also { wb ->wb.ch1_voltage = 4.18f; wb.ch1_current = 0.42f; wb.ch2_voltage = 5.0f}.build()
+        val expected = PowerMetrics.Builder().also { wb ->
+            wb.ch1_voltage = 4.18f
+            wb.ch1_current = 0.42f
+            wb.ch2_voltage = 5.0f
+        }.build()
         val received = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
         runCurrent()
 
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry.Builder().also { wb ->wb.power_metrics = expected}.build(),
+            telemetry = Telemetry.Builder().also { wb -> wb.power_metrics = expected }.build(),
             fromNode = 0x44444444,
         )
         runCurrent()
@@ -179,7 +208,11 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val node = NodeId(0x55555555)
-        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 73}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 73
+            }.build()
+        }.build()
         val first = backgroundScope.async { client.telemetry.observe(node).first() }
         val second = backgroundScope.async { client.telemetry.observe(node).first() }
         runCurrent()
@@ -210,7 +243,11 @@ class TelemetryApiObserveTest {
 
         cancelledCollector.cancelAndJoin()
 
-        val expected = Telemetry.Builder().also { wb ->wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->wb.temperature = 18.2f}.build()}.build()
+        val expected = Telemetry.Builder().also { wb ->
+            wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->
+                wb.temperature = 18.2f
+            }.build()
+        }.build()
         transport.injectTelemetryResponse(requestId = 0, telemetry = expected, fromNode = node.raw)
         runCurrent()
 
@@ -235,7 +272,11 @@ class TelemetryApiObserveTest {
 
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 1}.build()}.build(),
+            telemetry = Telemetry.Builder().also { wb ->
+                wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                    wb.battery_level = 1
+                }.build()
+            }.build(),
             fromNode = 0x22222222,
         )
         runCurrent()
@@ -252,7 +293,11 @@ class TelemetryApiObserveTest {
 
         val node = NodeId(0x77777777)
         val expected = (1..10).map { level ->
-            Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = level}.build()}.build()
+            Telemetry.Builder().also { wb ->
+                wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                    wb.battery_level = level
+                }.build()
+            }.build()
         }
         val received = backgroundScope.async {
             client.telemetry.observe(node).take(expected.size).toList()
@@ -276,7 +321,11 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val node = NodeId(0x22222222)
-        val beforeSubscription = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 10}.build()}.build()
+        val beforeSubscription = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 10
+            }.build()
+        }.build()
         transport.injectTelemetryResponse(requestId = 0, telemetry = beforeSubscription, fromNode = node.raw)
         runCurrent()
 
@@ -288,7 +337,11 @@ class TelemetryApiObserveTest {
 
         assertEquals(0, collected.size)
 
-        val afterSubscription = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 11}.build()}.build()
+        val afterSubscription = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 11
+            }.build()
+        }.build()
         transport.injectTelemetryResponse(requestId = 0, telemetry = afterSubscription, fromNode = node.raw)
         runCurrent()
 

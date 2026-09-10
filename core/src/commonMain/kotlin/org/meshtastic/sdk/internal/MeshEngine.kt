@@ -168,7 +168,7 @@ internal class MeshEngine(
     // nonces > 0 are reserved for explicit "ping our nodeinfo" semantics that we don't
     // expose today. Sending 0 is the safe keep-alive value and matches Android's reference
     // client.
-    private val keepaliveHeartbeat = Heartbeat.Builder().also { wb ->wb.nonce = 0}.build()
+    private val keepaliveHeartbeat = Heartbeat.Builder().also { wb -> wb.nonce = 0 }.build()
     private var myNodeNum = 0
 
     // R-9: snapshot of the previously-persisted my_node_num, captured at connect time so
@@ -558,7 +558,11 @@ internal class MeshEngine(
         if (transport.state.value is TransportState.Connected) {
             try {
                 withTimeoutOrNull(GOODBYE_TIMEOUT_MS) {
-                    val encoded = WireCodec.encodeToRadio(ToRadio.Builder().also { wb ->wb.disconnect = true}.build())
+                    val encoded = WireCodec.encodeToRadio(
+                        ToRadio.Builder().also { wb ->
+                            wb.disconnect = true
+                        }.build(),
+                    )
                     transport.send(Frame(encoded.toByteString()))
                 }
             } catch (e: CancellationException) {
@@ -656,7 +660,11 @@ internal class MeshEngine(
         dispatcher.register(msg.requestId, msg.kind, msg.deferred)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
-        val encoded = WireCodec.encodeToRadio(ToRadio.Builder().also { wb ->wb.packet = outboundPacket}.build())
+        val encoded = WireCodec.encodeToRadio(
+            ToRadio.Builder().also { wb ->
+                wb.packet = outboundPacket
+            }.build(),
+        )
         outbound.trySend(Frame(encoded.toByteString()))
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
@@ -701,8 +709,12 @@ internal class MeshEngine(
         if (passkey != null) {
             val originalAdmin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()
             if (originalAdmin != null && originalAdmin.session_passkey.size == 0) {
-                val stamped = originalAdmin.newBuilder().also { wb ->wb.session_passkey = passkey.toByteString()}.build()
-                outDecoded = decoded.newBuilder().also { wb ->wb.payload = AdminMessage.ADAPTER.encode(stamped).toByteString()}.build()
+                val stamped = originalAdmin.newBuilder().also { wb ->
+                    wb.session_passkey = passkey.toByteString()
+                }.build()
+                outDecoded = decoded.newBuilder().also { wb ->
+                    wb.payload = AdminMessage.ADAPTER.encode(stamped).toByteString()
+                }.build()
             }
         } else {
             events.tryEmit(
@@ -721,7 +733,10 @@ internal class MeshEngine(
 
         // Caller already routed the packet itself (custom PKC build) — passkey/priority only.
         if (packet.pki_encrypted) {
-            return packet.newBuilder().also { wb ->wb.decoded = outDecoded; wb.priority = priority}.build()
+            return packet.newBuilder().also { wb ->
+                wb.decoded = outDecoded
+                wb.priority = priority
+            }.build()
         }
 
         // 2. PKC when both sides have published keys; legacy "admin" channel otherwise.
@@ -729,17 +744,21 @@ internal class MeshEngine(
         val ownKey = meshState.nodes[NodeId(myNodeNum)]?.user?.public_key
         return if (targetKey != null && targetKey.size > 0 && ownKey != null && ownKey.size > 0) {
             packet.newBuilder().also { wb ->
-            wb.decoded = outDecoded
-            wb.channel = 0
-            wb.pki_encrypted = true
-            wb.public_key = targetKey
-            wb.priority = priority
+                wb.decoded = outDecoded
+                wb.channel = 0
+                wb.pki_encrypted = true
+                wb.public_key = targetKey
+                wb.priority = priority
             }.build()
         } else {
             val adminIndex = channelsState.value
                 ?.indexOfFirst { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
                 ?.takeIf { it >= 0 } ?: 0
-            packet.newBuilder().also { wb ->wb.decoded = outDecoded; wb.channel = adminIndex; wb.priority = priority}.build()
+            packet.newBuilder().also { wb ->
+                wb.decoded = outDecoded
+                wb.channel = adminIndex
+                wb.priority = priority
+            }.build()
         }
     }
 
@@ -828,7 +847,7 @@ internal class MeshEngine(
             outbound.trySend(Frame(wakeBytes.toByteString()))
         }
 
-        sendToRadio(ToRadio.Builder().also { wb ->wb.want_config_id = NONCE_STAGE1}.build())
+        sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
         handshakeStage = HandshakeStage.Stage1Draining
 
         engineScope?.launch {
@@ -1113,7 +1132,7 @@ internal class MeshEngine(
         }
 
         // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
-        sendToRadio(ToRadio.Builder().also { wb ->wb.heartbeat = keepaliveHeartbeat}.build())
+        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
         logger.debug(TAG) { "Sent inter-stage heartbeat nonce=0" }
         engineScope?.launch {
             delay(INTER_STAGE_SETTLE_MS)
@@ -1125,12 +1144,16 @@ internal class MeshEngine(
         // Config-only: finish after Stage 1 via a synthetic Stage-2 completion; no NodeDB request (§6).
         if (skipNodeDb) {
             handshakeStage = HandshakeStage.Stage2Draining
-            processStage2Envelope(org.meshtastic.proto.FromRadio.Builder().also { wb ->wb.config_complete_id = NONCE_STAGE2}.build())
+            processStage2Envelope(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config_complete_id = NONCE_STAGE2
+                }.build(),
+            )
             logger.info(TAG) { "Handshake ended after Stage 1 (config-only; NodeDB skipped)" }
             return
         }
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f)
-        sendToRadio(ToRadio.Builder().also { wb ->wb.want_config_id = NONCE_STAGE2}.build())
+        sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE2 }.build())
         handshakeStage = HandshakeStage.Stage2Draining
 
         // install the sliding Stage 2 watchdog. Frame arrival in processStage2Envelope
@@ -1305,7 +1328,12 @@ internal class MeshEngine(
 
                 // Send get_owner_request to seed the session passkey.
                 if (myNodeNum != 0) {
-                    sendAdminPacket(AdminMessage.Builder().also { wb ->wb.get_owner_request = true}.build(), wantResponse = true)
+                    sendAdminPacket(
+                        AdminMessage.Builder().also { wb ->
+                            wb.get_owner_request = true
+                        }.build(),
+                        wantResponse = true,
+                    )
                     engineScope?.launch {
                         delay(SEED_TIMEOUT_MS)
                         inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession))
@@ -1853,7 +1881,7 @@ internal class MeshEngine(
         val nodeId = NodeId(packet.from)
         val existing = meshState.nodes[nodeId] ?: return
 
-        val updated = existing.newBuilder().also { wb ->wb.device_metrics = deviceMetrics}.build()
+        val updated = existing.newBuilder().also { wb -> wb.device_metrics = deviceMetrics }.build()
         meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
         if (nodeId == NodeId(myNodeNum)) ownNode.value = updated
 
@@ -2202,15 +2230,19 @@ internal class MeshEngine(
         // (no-op for everything else).
         val packet = prepareOutboundAdminPacket(
             msg.packet.newBuilder().also { wb ->
-            wb.from = if (msg.packet.from == 0 && myNodeNum != 0) myNodeNum else msg.packet.from
-            wb.id = wireId
+                wb.from = if (msg.packet.from == 0 && myNodeNum != 0) myNodeNum else msg.packet.from
+                wb.id = wireId
             }.build(),
         )
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
 
-        val encoded = WireCodec.encodeToRadio(ToRadio.Builder().also { wb ->wb.packet = packet}.build())
+        val encoded = WireCodec.encodeToRadio(
+            ToRadio.Builder().also { wb ->
+                wb.packet = packet
+            }.build(),
+        )
         outbound.trySend(Frame(encoded.toByteString()))
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
@@ -2258,7 +2290,7 @@ internal class MeshEngine(
         if (handshakeStage != HandshakeStage.Ready) return
         if (!bleHeartbeatEnabled && transport.identity.raw.startsWith("ble:")) return
         // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
-        sendToRadio(ToRadio.Builder().also { wb ->wb.heartbeat = keepaliveHeartbeat}.build())
+        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
         logger.verbose(TAG) { "Heartbeat sent nonce=0" }
         // piggy-back heartbeat persistence on the 30 s heartbeat tick so we write at most
         // a bounded number of rows per session tick, even on busy meshes.
@@ -2291,7 +2323,7 @@ internal class MeshEngine(
         if (handshakeStage != HandshakeStage.Stage1Draining) return
         if (pendingMyInfo != null) return
         logger.warn(TAG) { "Stage 1 silent — retrying want_config_id=$NONCE_STAGE1" }
-        sendToRadio(ToRadio.Builder().also { wb ->wb.want_config_id = NONCE_STAGE1}.build())
+        sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
     }
 
     private fun handleHandshakeTimeout(msg: EngineMessage.HandshakeTimeout) {
@@ -2388,16 +2420,20 @@ internal class MeshEngine(
         if (myNodeNum == 0) return
         val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-        wb.to = to
-        wb.from = myNodeNum
-        wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ADMIN_APP
-                    wb.payload = payload
-                    wb.want_response = wantResponse
-                    }.build()
+            wb.to = to
+            wb.from = myNodeNum
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ADMIN_APP
+                wb.payload = payload
+                wb.want_response = wantResponse
+            }.build()
         }.build()
         // Remote targets pick up the session passkey + PKC routing in the shared choke point.
-        sendToRadio(ToRadio.Builder().also { wb ->wb.packet = prepareOutboundAdminPacket(packet)}.build())
+        sendToRadio(
+            ToRadio.Builder().also { wb ->
+                wb.packet = prepareOutboundAdminPacket(packet)
+            }.build(),
+        )
     }
 
     // ---- C-shared-flow emit helpers ----
@@ -2448,8 +2484,8 @@ internal class MeshEngine(
                     while (list.size < idx) {
                         list.add(
                             org.meshtastic.proto.Channel.Builder().also { wb ->
-                            wb.index = list.size
-                            wb.role = org.meshtastic.proto.Channel.Role.DISABLED
+                                wb.index = list.size
+                                wb.role = org.meshtastic.proto.Channel.Role.DISABLED
                             }.build(),
                         )
                     }
