@@ -193,33 +193,33 @@ class P0ReliabilityTest {
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
-    private fun unicastWantAckPacket() = MeshPacket(
-        to = 0x12345678,
-        channel = 0,
-        want_ack = true,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = ByteString.of(*"hi".encodeToByteArray()),
-        ),
-    )
+    private fun unicastWantAckPacket() = MeshPacket.Builder().also { wb ->
+        wb.to = 0x12345678
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = ByteString.of(*"hi".encodeToByteArray())
+        }.build()
+    }.build()
 
-    private fun broadcastPacket() = MeshPacket(
-        to = NodeId.BROADCAST.raw,
-        channel = 0,
-        want_ack = false,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = ByteString.of(*"hello".encodeToByteArray()),
-        ),
-    )
+    private fun broadcastPacket() = MeshPacket.Builder().also { wb ->
+        wb.to = NodeId.BROADCAST.raw
+        wb.channel = 0
+        wb.want_ack = false
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = ByteString.of(*"hello".encodeToByteArray())
+        }.build()
+    }.build()
 
-    private fun broadcastWantAckPacket() = MeshPacket(
-        to = NodeId.BROADCAST.raw,
-        channel = 0,
-        want_ack = true,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = ByteString.of(*"hello-ack".encodeToByteArray()),
-        ),
-    )
+    private fun broadcastWantAckPacket() = MeshPacket.Builder().also { wb ->
+        wb.to = NodeId.BROADCAST.raw
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = ByteString.of(*"hello-ack".encodeToByteArray())
+        }.build()
+    }.build()
 }

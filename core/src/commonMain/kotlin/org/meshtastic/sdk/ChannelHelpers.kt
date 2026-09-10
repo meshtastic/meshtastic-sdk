@@ -76,9 +76,9 @@ public object ChannelHelpers {
     public fun createSettings(name: String, psk: ByteArray = byteArrayOf(0x01)): ChannelSettings? {
         val validation = validate(name, psk)
         if (!validation.isValid) return null
-        return ChannelSettings(
-            name = name,
-            psk = psk.toByteString(),
-        )
+        return ChannelSettings.Builder().also { wb ->
+            wb.name = name
+            wb.psk = psk.toByteString()
+        }.build()
     }
 }

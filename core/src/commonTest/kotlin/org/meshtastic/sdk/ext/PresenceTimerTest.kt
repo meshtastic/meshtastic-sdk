@@ -78,11 +78,11 @@ class PresenceTimerTest {
         assertEquals((staleHeartbeatMs / 1000).toInt(), wentOffline.lastHeard)
 
         transport.injectPacket(
-            MeshPacket(
-                from = remoteNode.raw,
-                to = 0,
-                decoded = Data(portnum = PortNum.TEXT_MESSAGE_APP),
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.from = remoteNode.raw
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb -> wb.portnum = PortNum.TEXT_MESSAGE_APP }.build()
+            }.build(),
         )
         runCurrent()
 

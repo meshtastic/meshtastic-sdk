@@ -112,8 +112,14 @@ class StorageResilienceTest {
 
         // Inject a mesh packet from a peer — the engine should record it as a presence signal.
         val peerId = 0x1234
-        val peerPacket = org.meshtastic.proto.MeshPacket(from = peerId, to = 7, id = 1)
-        val fromRadio = org.meshtastic.proto.FromRadio(packet = peerPacket)
+        val peerPacket = org.meshtastic.proto.MeshPacket.Builder().also { wb ->
+            wb.from = peerId
+            wb.to = 7
+            wb.id = 1
+        }.build()
+        val fromRadio = org.meshtastic.proto.FromRadio.Builder().also { wb ->
+            wb.packet = peerPacket
+        }.build()
         t1.injectFrame(framed(fromRadio))
 
         // Advance past one heartbeat tick so flushDirtyHeartbeats() drains the dirty set.

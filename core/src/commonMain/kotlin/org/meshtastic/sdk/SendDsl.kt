@@ -115,11 +115,11 @@ public class SendBuilder internal constructor() {
     public fun position(latLng: LatLng) {
         recordPayload()
         this.portnum = PortNum.POSITION_APP
-        val pos = Position(
-            latitude_i = (latLng.latitude * POSITION_SCALE).toInt(),
-            longitude_i = (latLng.longitude * POSITION_SCALE).toInt(),
-            altitude = latLng.altitudeMeters,
-        )
+        val pos = Position.Builder().also { wb ->
+            wb.latitude_i = (latLng.latitude * POSITION_SCALE).toInt()
+            wb.longitude_i = (latLng.longitude * POSITION_SCALE).toInt()
+            wb.altitude = latLng.altitudeMeters
+        }.build()
         this.payload = Position.ADAPTER.encode(pos).toByteString()
     }
 
@@ -154,13 +154,17 @@ public class SendBuilder internal constructor() {
         rawPacket?.let { return it }
         val portnum = checkNotNull(portnum)
         val payload = checkNotNull(payload)
-        return MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = wantAck,
-            hop_limit = hopLimit ?: 0,
-            decoded = Data(portnum = portnum, payload = payload, want_response = false),
-        )
+        return MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = wantAck
+            wb.hop_limit = hopLimit ?: 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = portnum
+                wb.payload = payload
+                wb.want_response = false
+            }.build()
+        }.build()
     }
 }
 

@@ -50,105 +50,188 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun getDeviceConfigReturnsDeviceSection() = runTest {
-        val expected = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT))
+        val expected = Config.Builder().also { wb ->
+            wb.device = Config.DeviceConfig.Builder().also { wb ->
+                wb.role = Config.DeviceConfig.Role.CLIENT
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.DEVICE_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.DEVICE_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getLoraConfigReturnsLoraSection() = runTest {
-        val expected = Config(lora = Config.LoRaConfig(use_preset = true))
+        val expected = Config.Builder().also { wb ->
+            wb.lora = Config.LoRaConfig.Builder().also { wb ->
+                wb.use_preset = true
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.LORA_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.LORA_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getBluetoothConfigReturnsBluetoothSection() = runTest {
-        val expected = Config(bluetooth = Config.BluetoothConfig(enabled = true))
+        val expected = Config.Builder().also { wb ->
+            wb.bluetooth = Config.BluetoothConfig.Builder().also { wb ->
+                wb.enabled = true
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.BLUETOOTH_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.BLUETOOTH_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getDisplayConfigReturnsDisplaySection() = runTest {
-        val expected = Config(display = Config.DisplayConfig(screen_on_secs = 45))
+        val expected = Config.Builder().also { wb ->
+            wb.display = Config.DisplayConfig.Builder().also { wb ->
+                wb.screen_on_secs = 45
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.DISPLAY_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.DISPLAY_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getNetworkConfigReturnsNetworkSection() = runTest {
-        val expected = Config(network = Config.NetworkConfig(wifi_enabled = true, wifi_ssid = "mesh"))
+        val expected = Config.Builder().also { wb ->
+            wb.network = Config.NetworkConfig.Builder().also { wb ->
+                wb.wifi_enabled = true
+                wb.wifi_ssid = "mesh"
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.NETWORK_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.NETWORK_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getPositionConfigReturnsPositionSection() = runTest {
-        val expected = Config(position = Config.PositionConfig(position_broadcast_secs = 300))
+        val expected = Config.Builder().also { wb ->
+            wb.position = Config.PositionConfig.Builder().also { wb ->
+                wb.position_broadcast_secs = 300
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.POSITION_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.POSITION_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getPowerConfigReturnsPowerSection() = runTest {
-        val expected = Config(power = Config.PowerConfig(is_power_saving = true))
+        val expected = Config.Builder().also { wb ->
+            wb.power = Config.PowerConfig.Builder().also { wb ->
+                wb.is_power_saving = true
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.POWER_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.POWER_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getSecurityConfigReturnsSecuritySection() = runTest {
-        val expected = Config(security = Config.SecurityConfig(is_managed = true))
+        val expected = Config.Builder().also { wb ->
+            wb.security = Config.SecurityConfig.Builder().also { wb ->
+                wb.is_managed = true
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getConfig(AdminMessage.ConfigType.SECURITY_CONFIG) },
             requestMatches = { it.get_config_request == AdminMessage.ConfigType.SECURITY_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_config_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun setDeviceConfigBuilderSendsDeviceSection() = runTest {
-        val expected = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT))
+        val expected = Config.Builder().also { wb ->
+            wb.device = Config.DeviceConfig.Builder().also { wb ->
+                wb.role = Config.DeviceConfig.Role.CLIENT
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setDeviceConfig { copy(role = Config.DeviceConfig.Role.CLIENT) } },
+            call = {
+                it.setDeviceConfig {
+                    this.newBuilder().also { wb ->
+                        wb.role = Config.DeviceConfig.Role.CLIENT
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -157,9 +240,19 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setLoraConfigBuilderSendsLoraSection() = runTest {
-        val expected = Config(lora = Config.LoRaConfig(use_preset = true))
+        val expected = Config.Builder().also { wb ->
+            wb.lora = Config.LoRaConfig.Builder().also { wb ->
+                wb.use_preset = true
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setLoraConfig { copy(use_preset = true) } },
+            call = {
+                it.setLoraConfig {
+                    this.newBuilder().also { wb ->
+                        wb.use_preset = true
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -168,9 +261,19 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setBluetoothConfigBuilderSendsBluetoothSection() = runTest {
-        val expected = Config(bluetooth = Config.BluetoothConfig(enabled = true))
+        val expected = Config.Builder().also { wb ->
+            wb.bluetooth = Config.BluetoothConfig.Builder().also { wb ->
+                wb.enabled = true
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setBluetoothConfig { copy(enabled = true) } },
+            call = {
+                it.setBluetoothConfig {
+                    this.newBuilder().also { wb ->
+                        wb.enabled = true
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -179,9 +282,19 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setDisplayConfigBuilderSendsDisplaySection() = runTest {
-        val expected = Config(display = Config.DisplayConfig(screen_on_secs = 45))
+        val expected = Config.Builder().also { wb ->
+            wb.display = Config.DisplayConfig.Builder().also { wb ->
+                wb.screen_on_secs = 45
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setDisplayConfig { copy(screen_on_secs = 45) } },
+            call = {
+                it.setDisplayConfig {
+                    this.newBuilder().also { wb ->
+                        wb.screen_on_secs = 45
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -190,9 +303,21 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setNetworkConfigBuilderSendsNetworkSection() = runTest {
-        val expected = Config(network = Config.NetworkConfig(wifi_enabled = true, wifi_ssid = "mesh"))
+        val expected = Config.Builder().also { wb ->
+            wb.network = Config.NetworkConfig.Builder().also { wb ->
+                wb.wifi_enabled = true
+                wb.wifi_ssid = "mesh"
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setNetworkConfig { copy(wifi_enabled = true, wifi_ssid = "mesh") } },
+            call = {
+                it.setNetworkConfig {
+                    this.newBuilder().also { wb ->
+                        wb.wifi_enabled = true
+                        wb.wifi_ssid = "mesh"
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -201,9 +326,19 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setPositionConfigBuilderSendsPositionSection() = runTest {
-        val expected = Config(position = Config.PositionConfig(position_broadcast_secs = 300))
+        val expected = Config.Builder().also { wb ->
+            wb.position = Config.PositionConfig.Builder().also { wb ->
+                wb.position_broadcast_secs = 300
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setPositionConfig { copy(position_broadcast_secs = 300) } },
+            call = {
+                it.setPositionConfig {
+                    this.newBuilder().also { wb ->
+                        wb.position_broadcast_secs = 300
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -212,9 +347,19 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setPowerConfigBuilderSendsPowerSection() = runTest {
-        val expected = Config(power = Config.PowerConfig(is_power_saving = true))
+        val expected = Config.Builder().also { wb ->
+            wb.power = Config.PowerConfig.Builder().also { wb ->
+                wb.is_power_saving = true
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setPowerConfig { copy(is_power_saving = true) } },
+            call = {
+                it.setPowerConfig {
+                    this.newBuilder().also { wb ->
+                        wb.is_power_saving = true
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -223,9 +368,19 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setSecurityConfigBuilderSendsSecuritySection() = runTest {
-        val expected = Config(security = Config.SecurityConfig(is_managed = true))
+        val expected = Config.Builder().also { wb ->
+            wb.security = Config.SecurityConfig.Builder().also { wb ->
+                wb.is_managed = true
+            }.build()
+        }.build()
         assertAckedOperation(
-            call = { it.setSecurityConfig { copy(is_managed = true) } },
+            call = {
+                it.setSecurityConfig {
+                    this.newBuilder().also { wb ->
+                        wb.is_managed = true
+                    }.build()
+                }
+            },
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -234,13 +389,18 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun getDeviceMetadataReturnsResponse() = runTest {
-        val expected = DeviceMetadata(firmware_version = "2.5.0")
+        val expected = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "2.5.0" }.build()
         assertRpcOperation(
             call = { it.getDeviceMetadata() },
             requestMatches = { it.get_device_metadata_request == true },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_device_metadata_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_device_metadata_response = expected
+                }.build(),
+            )
         }
     }
 
@@ -257,13 +417,22 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun getModuleConfigReturnsResponse() = runTest {
-        val expected = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = true))
+        val expected = ModuleConfig.Builder().also { wb ->
+            wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                wb.enabled = true
+            }.build()
+        }.build()
         assertRpcOperation(
             call = { it.getModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG) },
             requestMatches = { it.get_module_config_request == AdminMessage.ModuleConfigType.MQTT_CONFIG },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_module_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_module_config_response = expected
+                }.build(),
+            )
         }
     }
 
@@ -280,13 +449,18 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun getUiConfigReturnsResponse() = runTest {
-        val expected = DeviceUIConfig(screen_brightness = 128)
+        val expected = DeviceUIConfig.Builder().also { wb -> wb.screen_brightness = 128 }.build()
         assertRpcOperation(
             call = { it.getUIConfig() },
             requestMatches = { it.get_ui_config_request == true },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_ui_config_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_ui_config_response = expected
+                }.build(),
+            )
         }
     }
 
@@ -299,7 +473,9 @@ class AdminApiImplComprehensiveTest {
         ) { transport, packet ->
             transport.injectAdminResponse(
                 packet.id,
-                AdminMessage(get_canned_message_module_messages_response = "alpha|bravo"),
+                AdminMessage.Builder().also { wb ->
+                    wb.get_canned_message_module_messages_response = "alpha|bravo"
+                }.build(),
             )
         }
     }
@@ -311,44 +487,67 @@ class AdminApiImplComprehensiveTest {
             requestMatches = { it.get_ringtone_request == true },
             expected = AdminResult.Success("Test:d=4,o=5,b=100:c"),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_ringtone_response = "Test:d=4,o=5,b=100:c"))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_ringtone_response = "Test:d=4,o=5,b=100:c"
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getDeviceConnectionStatusReturnsResponse() = runTest {
-        val expected = DeviceConnectionStatus()
+        val expected = DeviceConnectionStatus.Builder().build()
         assertRpcOperation(
             call = { it.getDeviceConnectionStatus() },
             requestMatches = { it.get_device_connection_status_request == true },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_device_connection_status_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_device_connection_status_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getRemoteHardwarePinsReturnsResponse() = runTest {
-        val expected = NodeRemoteHardwarePinsResponse()
+        val expected = NodeRemoteHardwarePinsResponse.Builder().build()
         assertRpcOperation(
             call = { it.getRemoteHardwarePins() },
             requestMatches = { it.get_node_remote_hardware_pins_request == true },
             expected = AdminResult.Success(expected),
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_node_remote_hardware_pins_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_node_remote_hardware_pins_response = expected
+                }.build(),
+            )
         }
     }
 
     @Test
     fun getChannelUsesOneBasedWireIndex() = runTest {
-        val expected = Channel(index = 0, role = Channel.Role.PRIMARY)
+        val expected = Channel.Builder().also { wb ->
+            wb.index = 0
+            wb.role = Channel.Role.PRIMARY
+        }.build()
         assertRpcOperation(
             call = { it.getChannel(ChannelIndex(0)) },
             requestMatches = { it.get_channel_request == 1 },
             expected = AdminResult.Success(expected),
             assertPacket = { _, admin -> assertEquals(1, admin.get_channel_request) },
         ) { transport, packet ->
-            transport.injectAdminResponse(packet.id, AdminMessage(get_channel_response = expected))
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_channel_response = expected
+                }.build(),
+            )
         }
     }
 
@@ -365,7 +564,12 @@ class AdminApiImplComprehensiveTest {
             val first = latestAdminPacket(transport, outboundBefore) { it.get_channel_request == 1 }
             transport.injectAdminResponse(
                 first.id,
-                AdminMessage(get_channel_response = Channel(index = 0, role = Channel.Role.PRIMARY)),
+                AdminMessage.Builder().also { wb ->
+                    wb.get_channel_response = Channel.Builder().also { wb ->
+                        wb.index = 0
+                        wb.role = Channel.Role.PRIMARY
+                    }.build()
+                }.build(),
             )
             runCurrent()
 
@@ -381,7 +585,10 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setChannelSuccessUpdatesChannelsState() = runTest {
-        val channel = Channel(index = 3, role = Channel.Role.SECONDARY)
+        val channel = Channel.Builder().also { wb ->
+            wb.index = 3
+            wb.role = Channel.Role.SECONDARY
+        }.build()
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -405,7 +612,10 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setChannelTimeoutReturnsTimeout() = runTest {
-        val channel = Channel(index = 1, role = Channel.Role.SECONDARY)
+        val channel = Channel.Builder().also { wb ->
+            wb.index = 1
+            wb.role = Channel.Role.SECONDARY
+        }.build()
         assertAckedOperation(
             call = { it.setChannel(channel) },
             requestMatches = { it.set_channel == channel },
@@ -417,7 +627,10 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setChannelRoutingErrorMapsToNodeUnreachable() = runTest {
-        val channel = Channel(index = 1, role = Channel.Role.SECONDARY)
+        val channel = Channel.Builder().also { wb ->
+            wb.index = 1
+            wb.role = Channel.Role.SECONDARY
+        }.build()
         assertAckedOperation(
             call = { it.setChannel(channel) },
             requestMatches = { it.set_channel == channel },
@@ -484,7 +697,11 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setFixedPositionSendsPosition() = runTest {
-        val position = Position(latitude_i = 377749000, longitude_i = -1224194000, altitude = 12)
+        val position = Position.Builder().also { wb ->
+            wb.latitude_i = 377749000
+            wb.longitude_i = -1224194000
+            wb.altitude = 12
+        }.build()
         assertAckedOperation(
             call = { it.setFixedPosition(position) },
             requestMatches = { it.set_fixed_position == position },
@@ -505,7 +722,7 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun storeUiConfigSendsConfig() = runTest {
-        val uiConfig = DeviceUIConfig(screen_brightness = 64)
+        val uiConfig = DeviceUIConfig.Builder().also { wb -> wb.screen_brightness = 64 }.build()
         assertAckedOperation(
             call = { it.storeUIConfig(uiConfig) },
             requestMatches = { it.store_ui_config == uiConfig },
@@ -587,7 +804,10 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun sendInputEventSendsInputEvent() = runTest {
-        val event = AdminMessage.InputEvent(event_code = 17, kb_char = 65)
+        val event = AdminMessage.InputEvent.Builder().also { wb ->
+            wb.event_code = 17
+            wb.kb_char = 65
+        }.build()
         assertAckedOperation(
             call = { it.sendInputEvent(event) },
             requestMatches = { it.send_input_event == event },
@@ -599,7 +819,14 @@ class AdminApiImplComprehensiveTest {
     @Test
     fun addContactSendsSharedContact() = runTest {
         val contact =
-            SharedContact(node_num = 77, user = User(id = "!0000004d", long_name = "Contact", short_name = "CT"))
+            SharedContact.Builder().also { wb ->
+                wb.node_num = 77
+                wb.user = User.Builder().also { wb ->
+                    wb.id = "!0000004d"
+                    wb.long_name = "Contact"
+                    wb.short_name = "CT"
+                }.build()
+            }.build()
         assertAckedOperation(
             call = { it.addContact(contact) },
             requestMatches = { it.add_contact == contact },
@@ -610,7 +837,10 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun keyVerificationSendsVerification() = runTest {
-        val verification = KeyVerificationAdmin(remote_nodenum = 99, nonce = 1234L)
+        val verification = KeyVerificationAdmin.Builder().also { wb ->
+            wb.remote_nodenum = 99
+            wb.nonce = 1234L
+        }.build()
         assertAckedOperation(
             call = { it.keyVerification(verification) },
             requestMatches = { it.key_verification == verification },
@@ -632,7 +862,7 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun otaRequestSendsEvent() = runTest {
-        val event = AdminMessage.OTAEvent()
+        val event = AdminMessage.OTAEvent.Builder().build()
         assertAckedOperation(
             call = { it.otaRequest(event) },
             requestMatches = { it.ota_request == event },
@@ -643,7 +873,7 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setSensorConfigSendsConfig() = runTest {
-        val config = SensorConfig()
+        val config = SensorConfig.Builder().build()
         assertAckedOperation(
             call = { it.setSensorConfig(config) },
             requestMatches = { it.sensor_config == config },
@@ -686,8 +916,20 @@ class AdminApiImplComprehensiveTest {
     fun enterDfuModeManagedDeviceIsUnauthorized() = runTest {
         val (transport, client) = connectedClient(
             frames = handshakeFrames(
-                org.meshtastic.proto.FromRadio(metadata = DeviceMetadata(firmware_version = "managed")),
-                org.meshtastic.proto.FromRadio(config = Config(security = Config.SecurityConfig(is_managed = true))),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.metadata = DeviceMetadata.Builder().also { wb ->
+                        wb.firmware_version = "managed"
+                    }.build()
+                }.build(),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config =
+                        Config.Builder().also { wb ->
+                            wb.security =
+                                Config.SecurityConfig.Builder().also { wb ->
+                                    wb.is_managed = true
+                                }.build()
+                        }.build()
+                }.build(),
             ),
         )
         client.connect()
@@ -745,7 +987,11 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setOwnerTimeoutReturnsTimeout() = runTest {
-        val user = User(id = "!00000001", long_name = "Owner", short_name = "OW")
+        val user = User.Builder().also { wb ->
+            wb.id = "!00000001"
+            wb.long_name = "Owner"
+            wb.short_name = "OW"
+        }.build()
         assertAckedOperation(
             call = { it.setOwner(user) },
             requestMatches = { it.set_owner == user },
@@ -757,7 +1003,11 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setOwnerRoutingErrorMapsToRateLimited() = runTest {
-        val user = User(id = "!00000001", long_name = "Owner", short_name = "OW")
+        val user = User.Builder().also { wb ->
+            wb.id = "!00000001"
+            wb.long_name = "Owner"
+            wb.short_name = "OW"
+        }.build()
         assertAckedOperation(
             call = { it.setOwner(user) },
             requestMatches = { it.set_owner == user },
@@ -771,8 +1021,20 @@ class AdminApiImplComprehensiveTest {
     fun setTimeOnlyManagedDeviceIsUnauthorized() = runTest {
         val (transport, client) = connectedClient(
             frames = handshakeFrames(
-                org.meshtastic.proto.FromRadio(metadata = DeviceMetadata(firmware_version = "managed")),
-                org.meshtastic.proto.FromRadio(config = Config(security = Config.SecurityConfig(is_managed = true))),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.metadata = DeviceMetadata.Builder().also { wb ->
+                        wb.firmware_version = "managed"
+                    }.build()
+                }.build(),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config =
+                        Config.Builder().also { wb ->
+                            wb.security =
+                                Config.SecurityConfig.Builder().also { wb ->
+                                    wb.is_managed = true
+                                }.build()
+                        }.build()
+                }.build(),
             ),
         )
         client.connect()
@@ -810,7 +1072,12 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setHamModeSuccess() = runTest {
-        val params = HamParameters(call_sign = "KD2ABC", tx_power = 20, frequency = 146.52f, short_name = "KD")
+        val params = HamParameters.Builder().also { wb ->
+            wb.call_sign = "KD2ABC"
+            wb.tx_power = 20
+            wb.frequency = 146.52f
+            wb.short_name = "KD"
+        }.build()
         assertAckedOperation(
             call = { it.setHamMode(params) },
             requestMatches = { it.set_ham_mode == params },
@@ -821,7 +1088,7 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setHamModeTimeoutReturnsTimeout() = runTest {
-        val params = HamParameters(call_sign = "KD2ABC")
+        val params = HamParameters.Builder().also { wb -> wb.call_sign = "KD2ABC" }.build()
         assertAckedOperation(
             call = { it.setHamMode(params) },
             requestMatches = { it.set_ham_mode == params },
@@ -834,7 +1101,7 @@ class AdminApiImplComprehensiveTest {
     @Test
     fun forNodeTargetsRemoteDestination() = runTest {
         val remote = NodeId(0x12345678)
-        val expected = DeviceMetadata(firmware_version = "remote")
+        val expected = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "remote" }.build()
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -847,7 +1114,9 @@ class AdminApiImplComprehensiveTest {
             assertEquals(remote.raw, packet.to)
             transport.injectAdminResponse(
                 packet.id,
-                AdminMessage(get_device_metadata_response = expected),
+                AdminMessage.Builder().also { wb ->
+                    wb.get_device_metadata_response = expected
+                }.build(),
                 fromNode = remote.raw,
             )
             runCurrent()
@@ -860,17 +1129,37 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun editSettingsSuccessfulWritesUpdateConfigBundle() = runTest {
-        val updatedConfig = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.ROUTER))
-        val updatedModule = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = true))
+        val updatedConfig = Config.Builder().also { wb ->
+            wb.device = Config.DeviceConfig.Builder().also { wb ->
+                wb.role = Config.DeviceConfig.Role.ROUTER
+            }.build()
+        }.build()
+        val updatedModule = ModuleConfig.Builder().also { wb ->
+            wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                wb.enabled = true
+            }.build()
+        }.build()
         val (transport, client) = connectedClient(
             frames = handshakeFrames(
-                org.meshtastic.proto.FromRadio(metadata = DeviceMetadata(firmware_version = "2.5.0")),
-                org.meshtastic.proto.FromRadio(
-                    config = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT)),
-                ),
-                org.meshtastic.proto.FromRadio(
-                    moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false)),
-                ),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.metadata = DeviceMetadata.Builder().also { wb ->
+                        wb.firmware_version = "2.5.0"
+                    }.build()
+                }.build(),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config = Config.Builder().also { wb ->
+                        wb.device = Config.DeviceConfig.Builder().also { wb ->
+                            wb.role = Config.DeviceConfig.Role.CLIENT
+                        }.build()
+                    }.build()
+                }.build(),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.moduleConfig = ModuleConfig.Builder().also { wb ->
+                        wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                            wb.enabled = false
+                        }.build()
+                    }.build()
+                }.build(),
             ),
         )
         client.connect()
@@ -905,17 +1194,37 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun batchSuccessfulWritesUpdateConfigBundle() = runTest {
-        val updatedConfig = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.ROUTER))
-        val updatedModule = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = true))
+        val updatedConfig = Config.Builder().also { wb ->
+            wb.device = Config.DeviceConfig.Builder().also { wb ->
+                wb.role = Config.DeviceConfig.Role.ROUTER
+            }.build()
+        }.build()
+        val updatedModule = ModuleConfig.Builder().also { wb ->
+            wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                wb.enabled = true
+            }.build()
+        }.build()
         val (transport, client) = connectedClient(
             frames = handshakeFrames(
-                org.meshtastic.proto.FromRadio(metadata = DeviceMetadata(firmware_version = "2.5.0")),
-                org.meshtastic.proto.FromRadio(
-                    config = Config(device = Config.DeviceConfig(role = Config.DeviceConfig.Role.CLIENT)),
-                ),
-                org.meshtastic.proto.FromRadio(
-                    moduleConfig = ModuleConfig(mqtt = ModuleConfig.MQTTConfig(enabled = false)),
-                ),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.metadata = DeviceMetadata.Builder().also { wb ->
+                        wb.firmware_version = "2.5.0"
+                    }.build()
+                }.build(),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config = Config.Builder().also { wb ->
+                        wb.device = Config.DeviceConfig.Builder().also { wb ->
+                            wb.role = Config.DeviceConfig.Role.CLIENT
+                        }.build()
+                    }.build()
+                }.build(),
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.moduleConfig = ModuleConfig.Builder().also { wb ->
+                        wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { wb ->
+                            wb.enabled = false
+                        }.build()
+                    }.build()
+                }.build(),
             ),
         )
         client.connect()
@@ -1238,17 +1547,25 @@ class AdminApiImplComprehensiveTest {
     }
 
     private fun buildRoutingErrorFrame(requestId: Int, error: Routing.Error): Frame {
-        val payload = okio.ByteString.of(*Routing.ADAPTER.encode(Routing(error_reason = error)))
-        val packet = MeshPacket(
-            from = 1,
-            to = 0,
-            decoded = org.meshtastic.proto.Data(
-                portnum = PortNum.ROUTING_APP,
-                payload = payload,
-                request_id = requestId,
+        val payload = okio.ByteString.of(
+            *Routing.ADAPTER.encode(
+                Routing.Builder().also { wb ->
+                    wb.error_reason = error
+                }.build(),
             ),
         )
-        val fromRadio = org.meshtastic.proto.FromRadio(packet = packet)
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.from = 1
+            wb.to = 0
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
+        }.build()
+        val fromRadio = org.meshtastic.proto.FromRadio.Builder().also { wb ->
+            wb.packet = packet
+        }.build()
         val proto = org.meshtastic.proto.FromRadio.ADAPTER.encode(fromRadio)
         val bytes = ByteArray(4 + proto.size).apply {
             this[0] = 0x94.toByte()

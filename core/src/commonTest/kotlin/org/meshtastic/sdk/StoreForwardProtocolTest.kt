@@ -74,10 +74,10 @@ class StoreForwardProtocolTest {
 
         val server = NodeId(0x10203040)
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 120),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 120 }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -112,10 +112,12 @@ class StoreForwardProtocolTest {
         repeat(2) { index ->
             transport.injectLegacyStoreForward(
                 packetId = index + 1,
-                message = StoreAndForward(
-                    rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                    heartbeat = StoreAndForward.Heartbeat(period = 60),
-                ),
+                message = StoreAndForward.Builder().also { wb ->
+                    wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                    wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->
+                        wb.period = 60
+                    }.build()
+                }.build(),
                 fromNode = server.raw,
             )
             runCurrent()
@@ -138,10 +140,10 @@ class StoreForwardProtocolTest {
 
         val server = NodeId(0x55667788)
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 120),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 120 }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -159,10 +161,13 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 3, window = ALL_HISTORY_WINDOW_MINUTES),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 3
+                    wb.window = ALL_HISTORY_WINDOW_MINUTES
+                }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -182,17 +187,17 @@ class StoreForwardProtocolTest {
         val firstServer = NodeId(0x01020304)
         val targetServer = NodeId(0x0A0B0C0D)
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 120),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 120 }.build()
+            }.build(),
             fromNode = firstServer.raw,
         )
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 120),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 120 }.build()
+            }.build(),
             fromNode = targetServer.raw,
         )
         runCurrent()
@@ -210,10 +215,13 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 1, window = 2),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 1
+                    wb.window = 2
+                }.build()
+            }.build(),
             fromNode = targetServer.raw,
         )
         runCurrent()
@@ -232,10 +240,10 @@ class StoreForwardProtocolTest {
 
         val server = NodeId(0x11112222)
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 120),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb -> wb.period = 120 }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -252,10 +260,13 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 0, window = 1),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 0
+                    wb.window = 1
+                }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -281,10 +292,13 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 2, window = ALL_HISTORY_WINDOW_MINUTES),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 2
+                    wb.window = ALL_HISTORY_WINDOW_MINUTES
+                }.build()
+            }.build(),
             fromNode = myNode,
         )
         runCurrent()
@@ -317,10 +331,13 @@ class StoreForwardProtocolTest {
 
         val server = NodeId(0x61626364)
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 0, window = 5),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 0
+                    wb.window = 5
+                }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -346,20 +363,23 @@ class StoreForwardProtocolTest {
 
         val server = NodeId(0x71727374)
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 2, window = 30),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 2
+                    wb.window = 30
+                }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
 
         transport.injectLegacyStoreForward(
             packetId = 41,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT,
-                text = "same".encodeToByteArray().toByteString(),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT
+                wb.text = "same".encodeToByteArray().toByteString()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -367,10 +387,10 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             packetId = 41,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT,
-                text = "same".encodeToByteArray().toByteString(),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT
+                wb.text = "same".encodeToByteArray().toByteString()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -378,10 +398,10 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             packetId = 42,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST,
-                text = "other".encodeToByteArray().toByteString(),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST
+                wb.text = "other".encodeToByteArray().toByteString()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -419,26 +439,29 @@ class StoreForwardProtocolTest {
 
         val server = NodeId(0x81828384.toInt())
         transport.injectLegacyStoreForward(
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 2, window = 30),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 2
+                    wb.window = 30
+                }.build()
+            }.build(),
             fromNode = server.raw,
         )
         transport.injectLegacyStoreForward(
             packetId = 101,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT,
-                text = "first".encodeToByteArray().toByteString(),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT
+                wb.text = "first".encodeToByteArray().toByteString()
+            }.build(),
             fromNode = server.raw,
         )
         transport.injectLegacyStoreForward(
             packetId = 102,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST,
-                text = "second".encodeToByteArray().toByteString(),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_BROADCAST
+                wb.text = "second".encodeToByteArray().toByteString()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -465,10 +488,12 @@ class StoreForwardProtocolTest {
         val second = NodeId(0x02020202)
         listOf(first, second).forEach { server ->
             transport.injectLegacyStoreForward(
-                message = StoreAndForward(
-                    rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                    heartbeat = StoreAndForward.Heartbeat(period = 60),
-                ),
+                message = StoreAndForward.Builder().also { wb ->
+                    wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+                    wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->
+                        wb.period = 60
+                    }.build()
+                }.build(),
                 fromNode = server.raw,
             )
         }
@@ -510,17 +535,17 @@ class StoreForwardProtocolTest {
 
         transport.injectLegacyStoreForward(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_STATS,
-                stats = StoreAndForward.Statistics(
-                    messages_saved = 9,
-                    messages_max = 64,
-                    up_time = 3600,
-                    requests = 12,
-                    requests_history = 7,
-                    heartbeat = true,
-                ),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
+                wb.stats = StoreAndForward.Statistics.Builder().also { wb ->
+                    wb.messages_saved = 9
+                    wb.messages_max = 64
+                    wb.up_time = 3600
+                    wb.requests = 12
+                    wb.requests_history = 7
+                    wb.heartbeat = true
+                }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -547,13 +572,13 @@ class StoreForwardProtocolTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,
-                message = message.toByteString(),
-                encapsulated_id = 42,
-                encapsulated_to = 0,
-                encapsulated_from = 0x0BADF00D,
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+                wb.message = message.toByteString()
+                wb.encapsulated_id = 42
+                wb.encapsulated_to = 0
+                wb.encapsulated_from = 0x0BADF00D
+            }.build(),
         )
         runCurrent()
 
@@ -581,27 +606,27 @@ class StoreForwardProtocolTest {
         runCurrent()
 
         transport.injectSfpp(
-            message = StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF,
-                message = "hello ".encodeToByteArray().toByteString(),
-                encapsulated_id = 77,
-                encapsulated_to = 88,
-                encapsulated_from = 99,
-            ),
+            message = StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF
+                wb.message = "hello ".encodeToByteArray().toByteString()
+                wb.encapsulated_id = 77
+                wb.encapsulated_to = 88
+                wb.encapsulated_from = 99
+            }.build(),
             packetId = 701,
         )
         runCurrent()
         assertFalse(eventDeferred.isCompleted)
 
         transport.injectSfpp(
-            message = StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_SECONDHALF,
-                message = "world".encodeToByteArray().toByteString(),
-                commit_hash = byteArrayOf(9).toByteString(),
-                encapsulated_id = 77,
-                encapsulated_to = 88,
-                encapsulated_from = 99,
-            ),
+            message = StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_SECONDHALF
+                wb.message = "world".encodeToByteArray().toByteString()
+                wb.commit_hash = byteArrayOf(9).toByteString()
+                wb.encapsulated_id = 77
+                wb.encapsulated_to = 88
+                wb.encapsulated_from = 99
+            }.build(),
             packetId = 702,
         )
         runCurrent()
@@ -631,26 +656,26 @@ class StoreForwardProtocolTest {
         runCurrent()
 
         transport.injectSfpp(
-            message = StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_SECONDHALF,
-                message = "beta".encodeToByteArray().toByteString(),
-                encapsulated_id = 15,
-                encapsulated_to = 16,
-                encapsulated_from = 17,
-            ),
+            message = StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_SECONDHALF
+                wb.message = "beta".encodeToByteArray().toByteString()
+                wb.encapsulated_id = 15
+                wb.encapsulated_to = 16
+                wb.encapsulated_from = 17
+            }.build(),
             packetId = 801,
         )
         runCurrent()
         assertFalse(eventDeferred.isCompleted)
 
         transport.injectSfpp(
-            message = StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF,
-                message = "alpha".encodeToByteArray().toByteString(),
-                encapsulated_id = 15,
-                encapsulated_to = 16,
-                encapsulated_from = 17,
-            ),
+            message = StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF
+                wb.message = "alpha".encodeToByteArray().toByteString()
+                wb.encapsulated_id = 15
+                wb.encapsulated_to = 16
+                wb.encapsulated_from = 17
+            }.build(),
             packetId = 802,
         )
         runCurrent()
@@ -693,10 +718,10 @@ class StoreForwardProtocolTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.CANON_ANNOUNCE,
-                encapsulated_rxtime = 99,
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.CANON_ANNOUNCE
+                wb.encapsulated_rxtime = 99
+            }.build(),
         )
         runCurrent()
 
@@ -712,25 +737,25 @@ class StoreForwardProtocolTest {
         requestId: Int? = null,
     ) {
         val decoded = if (requestId != null) {
-            Data(
-                portnum = PortNum.STORE_FORWARD_APP,
-                payload = StoreAndForward.ADAPTER.encode(message).toByteString(),
-                request_id = requestId,
-            )
+            Data.Builder().also { wb ->
+                wb.portnum = PortNum.STORE_FORWARD_APP
+                wb.payload = StoreAndForward.ADAPTER.encode(message).toByteString()
+                wb.request_id = requestId
+            }.build()
         } else {
-            Data(
-                portnum = PortNum.STORE_FORWARD_APP,
-                payload = StoreAndForward.ADAPTER.encode(message).toByteString(),
-            )
+            Data.Builder().also { wb ->
+                wb.portnum = PortNum.STORE_FORWARD_APP
+                wb.payload = StoreAndForward.ADAPTER.encode(message).toByteString()
+            }.build()
         }
         val effectivePacketId = if (packetId == 1 && requestId != null) requestId else packetId
         injectPacket(
-            MeshPacket(
-                id = effectivePacketId,
-                from = fromNode,
-                to = 0,
-                decoded = decoded,
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.id = effectivePacketId
+                wb.from = fromNode
+                wb.to = 0
+                wb.decoded = decoded
+            }.build(),
         )
     }
 
@@ -752,15 +777,15 @@ class StoreForwardProtocolTest {
         packetId: Int = 1,
     ) {
         injectPacket(
-            MeshPacket(
-                id = packetId,
-                from = fromNode,
-                to = 0,
-                decoded = Data(
-                    portnum = PortNum.STORE_FORWARD_APP,
-                    payload = payload.toByteString(),
-                ),
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.id = packetId
+                wb.from = fromNode
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.STORE_FORWARD_APP
+                    wb.payload = payload.toByteString()
+                }.build()
+            }.build(),
         )
     }
 

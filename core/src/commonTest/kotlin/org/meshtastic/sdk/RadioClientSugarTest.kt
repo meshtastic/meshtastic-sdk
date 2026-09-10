@@ -92,9 +92,27 @@ class RadioClientSugarTest {
 
     @Test
     fun asNodeMapFoldsTheCanonicalAccumulator() = runTest {
-        val alice = NodeInfo(num = 1, user = User(id = "!1", long_name = "Alice"))
-        val bob = NodeInfo(num = 2, user = User(id = "!2", long_name = "Bob"))
-        val bobRenamed = NodeInfo(num = 2, user = User(id = "!2", long_name = "Bobby"))
+        val alice = NodeInfo.Builder().also { wb ->
+            wb.num = 1
+            wb.user = User.Builder().also { wb ->
+                wb.id = "!1"
+                wb.long_name = "Alice"
+            }.build()
+        }.build()
+        val bob = NodeInfo.Builder().also { wb ->
+            wb.num = 2
+            wb.user = User.Builder().also { wb ->
+                wb.id = "!2"
+                wb.long_name = "Bob"
+            }.build()
+        }.build()
+        val bobRenamed = NodeInfo.Builder().also { wb ->
+            wb.num = 2
+            wb.user = User.Builder().also { wb ->
+                wb.id = "!2"
+                wb.long_name = "Bobby"
+            }.build()
+        }.build()
 
         val emissions = flowOf(
             NodeChange.Snapshot(mapOf(NodeId(1) to alice)),

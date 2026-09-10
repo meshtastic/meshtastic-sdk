@@ -65,14 +65,14 @@ class StoreForwardApiImplSfppTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,
-                message_hash = expectedHash.toByteString(),
-                commit_hash = byteArrayOf(9, 8, 7).toByteString(),
-                encapsulated_id = 0x1234,
-                encapsulated_to = 0x01020304,
-                encapsulated_from = 0x55667788,
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+                wb.message_hash = expectedHash.toByteString()
+                wb.commit_hash = byteArrayOf(9, 8, 7).toByteString()
+                wb.encapsulated_id = 0x1234
+                wb.encapsulated_to = 0x01020304
+                wb.encapsulated_from = 0x55667788
+            }.build(),
         )
         runCurrent()
 
@@ -99,11 +99,11 @@ class StoreForwardApiImplSfppTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.CANON_ANNOUNCE,
-                message_hash = expectedHash.toByteString(),
-                encapsulated_rxtime = 0xFEDCBA98.toInt(),
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.CANON_ANNOUNCE
+                wb.message_hash = expectedHash.toByteString()
+                wb.encapsulated_rxtime = 0xFEDCBA98.toInt()
+            }.build(),
         )
         runCurrent()
 
@@ -127,13 +127,13 @@ class StoreForwardApiImplSfppTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF,
-                message_hash = expectedHash.toByteString(),
-                encapsulated_id = 77,
-                encapsulated_to = 88,
-                encapsulated_from = 99,
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE_FIRSTHALF
+                wb.message_hash = expectedHash.toByteString()
+                wb.encapsulated_id = 77
+                wb.encapsulated_to = 88
+                wb.encapsulated_from = 99
+            }.build(),
         )
         runCurrent()
 
@@ -160,13 +160,13 @@ class StoreForwardApiImplSfppTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,
-                message = message.toByteString(),
-                encapsulated_id = 42,
-                encapsulated_to = 0,
-                encapsulated_from = 0x0BADF00D,
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+                wb.message = message.toByteString()
+                wb.encapsulated_id = 42
+                wb.encapsulated_to = 0
+                wb.encapsulated_from = 0x0BADF00D
+            }.build(),
         )
         runCurrent()
 
@@ -214,12 +214,12 @@ class StoreForwardApiImplSfppTest {
         runCurrent()
 
         transport.injectSfpp(
-            StoreForwardPlusPlus(
-                sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE,
-                encapsulated_id = 99,
-                encapsulated_to = 0x11111111,
-                encapsulated_from = 0x22222222,
-            ),
+            StoreForwardPlusPlus.Builder().also { wb ->
+                wb.sfpp_message_type = StoreForwardPlusPlus.SFPP_message_type.LINK_PROVIDE
+                wb.encapsulated_id = 99
+                wb.encapsulated_to = 0x11111111
+                wb.encapsulated_from = 0x22222222
+            }.build(),
         )
         runCurrent()
 
@@ -256,15 +256,15 @@ class StoreForwardApiImplSfppTest {
 
     private fun FakeRadioTransport.injectStoreForwardPayload(payload: ByteArray, fromNode: Int = 0x10203040) {
         injectPacket(
-            MeshPacket(
-                id = 1,
-                from = fromNode,
-                to = 0,
-                decoded = Data(
-                    portnum = PortNum.STORE_FORWARD_APP,
-                    payload = payload.toByteString(),
-                ),
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.id = 1
+                wb.from = fromNode
+                wb.to = 0
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.STORE_FORWARD_APP
+                    wb.payload = payload.toByteString()
+                }.build()
+            }.build(),
         )
     }
 }
