@@ -85,10 +85,10 @@ class StoreForwardImplTest {
         val server = NodeId(0x10203040)
         transport.injectStoreForwardResponse(
             requestId = 0,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 300),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+            wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+            wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->wb.period = 300}.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -112,10 +112,10 @@ class StoreForwardImplTest {
         val server = NodeId(0x55667788)
         transport.injectStoreForwardResponse(
             requestId = 0,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT,
-                heartbeat = StoreAndForward.Heartbeat(period = 120),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+            wb.rr = StoreAndForward.RequestResponse.ROUTER_HEARTBEAT
+            wb.heartbeat = StoreAndForward.Heartbeat.Builder().also { wb ->wb.period = 120}.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -132,10 +132,10 @@ class StoreForwardImplTest {
 
         transport.injectStoreForwardResponse(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_HISTORY,
-                history = StoreAndForward.History(history_messages = 3, window = 120000),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+            wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+            wb.history = StoreAndForward.History.Builder().also { wb ->wb.history_messages = 3; wb.window = 120000}.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()
@@ -164,17 +164,17 @@ class StoreForwardImplTest {
 
         transport.injectStoreForwardResponse(
             requestId = request.id,
-            message = StoreAndForward(
-                rr = StoreAndForward.RequestResponse.ROUTER_STATS,
-                stats = StoreAndForward.Statistics(
-                    messages_saved = 9,
-                    messages_max = 64,
-                    up_time = 3600,
-                    requests = 12,
-                    requests_history = 7,
-                    heartbeat = true,
-                ),
-            ),
+            message = StoreAndForward.Builder().also { wb ->
+            wb.rr = StoreAndForward.RequestResponse.ROUTER_STATS
+            wb.stats = StoreAndForward.Statistics.Builder().also { wb ->
+                            wb.messages_saved = 9
+                            wb.messages_max = 64
+                            wb.up_time = 3600
+                            wb.requests = 12
+                            wb.requests_history = 7
+                            wb.heartbeat = true
+                            }.build()
+            }.build(),
             fromNode = server.raw,
         )
         runCurrent()

@@ -21,33 +21,33 @@ class NodeStatusTest {
 
     @Test
     fun isOnline_heardRecently_returnsTrue() {
-        val node = NodeInfo(num = 1, last_heard = now - 60) // 1 minute ago
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.last_heard = now - 60}.build() // 1 minute ago
         assertTrue(node.isOnline(now))
     }
 
     @Test
     fun isOnline_heardExactlyAtThreshold_returnsTrue() {
         val cutoff = now - DEFAULT_ONLINE_THRESHOLD.inWholeSeconds.toInt()
-        val node = NodeInfo(num = 1, last_heard = cutoff)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.last_heard = cutoff}.build()
         assertTrue(node.isOnline(now))
     }
 
     @Test
     fun isOnline_heardBeyondThreshold_returnsFalse() {
         val cutoff = now - DEFAULT_ONLINE_THRESHOLD.inWholeSeconds.toInt() - 1
-        val node = NodeInfo(num = 1, last_heard = cutoff)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.last_heard = cutoff}.build()
         assertFalse(node.isOnline(now))
     }
 
     @Test
     fun isOnline_neverHeard_returnsFalse() {
-        val node = NodeInfo(num = 1, last_heard = 0)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.last_heard = 0}.build()
         assertFalse(node.isOnline(now))
     }
 
     @Test
     fun isOnline_customThreshold() {
-        val node = NodeInfo(num = 1, last_heard = now - 45 * 60) // 45 min ago
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.last_heard = now - 45 * 60}.build() // 45 min ago
         assertTrue(node.isOnline(now, threshold = 1.hours))
         assertFalse(node.isOnline(now, threshold = 30.minutes))
     }
@@ -56,31 +56,31 @@ class NodeStatusTest {
 
     @Test
     fun connectionQuality_direct() {
-        val node = NodeInfo(num = 1, hops_away = 0, via_mqtt = false)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.hops_away = 0; wb.via_mqtt = false}.build()
         assertEquals(ConnectionQuality.DIRECT, node.connectionQuality)
     }
 
     @Test
     fun connectionQuality_relayed() {
-        val node = NodeInfo(num = 1, hops_away = 2, via_mqtt = false)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.hops_away = 2; wb.via_mqtt = false}.build()
         assertEquals(ConnectionQuality.RELAYED, node.connectionQuality)
     }
 
     @Test
     fun connectionQuality_mqtt() {
-        val node = NodeInfo(num = 1, hops_away = 0, via_mqtt = true)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.hops_away = 0; wb.via_mqtt = true}.build()
         assertEquals(ConnectionQuality.MQTT, node.connectionQuality)
     }
 
     @Test
     fun connectionQuality_mqttTakesPrecedenceOverHops() {
-        val node = NodeInfo(num = 1, hops_away = 3, via_mqtt = true)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.hops_away = 3; wb.via_mqtt = true}.build()
         assertEquals(ConnectionQuality.MQTT, node.connectionQuality)
     }
 
     @Test
     fun connectionQuality_unknown() {
-        val node = NodeInfo(num = 1, hops_away = null, via_mqtt = false)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.hops_away = null; wb.via_mqtt = false}.build()
         assertEquals(ConnectionQuality.UNKNOWN, node.connectionQuality)
     }
 
@@ -88,32 +88,32 @@ class NodeStatusTest {
 
     @Test
     fun signalQuality_good() {
-        val node = NodeInfo(num = 1, snr = 10.0f, hops_away = 0)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.snr = 10.0f; wb.hops_away = 0}.build()
         assertEquals(SignalQuality.GOOD, node.signalQuality)
     }
 
     @Test
     fun signalQuality_fair() {
-        val node = NodeInfo(num = 1, snr = 2.5f, hops_away = 0)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.snr = 2.5f; wb.hops_away = 0}.build()
         assertEquals(SignalQuality.FAIR, node.signalQuality)
     }
 
     @Test
     fun signalQuality_poor() {
-        val node = NodeInfo(num = 1, snr = -5.0f, hops_away = 0)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.snr = -5.0f; wb.hops_away = 0}.build()
         assertEquals(SignalQuality.POOR, node.signalQuality)
     }
 
     @Test
     fun signalQuality_none_noData() {
-        val node = NodeInfo(num = 1, snr = 0f, hops_away = null)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.snr = 0f; wb.hops_away = null}.build()
         assertEquals(SignalQuality.NONE, node.signalQuality)
     }
 
     @Test
     fun signalQuality_zeroSnrWithHops_isFair() {
         // If we have hops_away data, snr=0 is a valid reading (fair threshold boundary)
-        val node = NodeInfo(num = 1, snr = 0f, hops_away = 1)
+        val node = NodeInfo.Builder().also { wb ->wb.num = 1; wb.snr = 0f; wb.hops_away = 1}.build()
         assertEquals(SignalQuality.FAIR, node.signalQuality)
     }
 }

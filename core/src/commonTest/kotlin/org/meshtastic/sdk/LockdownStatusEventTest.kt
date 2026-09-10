@@ -38,12 +38,12 @@ class LockdownStatusEventTest {
         client.connect()
         runCurrent()
 
-        val status = LockdownStatus(
-            state = LockdownStatus.State.LOCKED,
-            lock_reason = "needs_auth",
-            backoff_seconds = 0,
-        )
-        transport.injectFrame(FromRadio(lockdown_status = status).toFrame())
+        val status = LockdownStatus.Builder().also { wb ->
+        wb.state = LockdownStatus.State.LOCKED
+        wb.lock_reason = "needs_auth"
+        wb.backoff_seconds = 0
+        }.build()
+        transport.injectFrame(FromRadio.Builder().also { wb ->wb.lockdown_status = status}.build().toFrame())
         runCurrent()
 
         val event = events.filterIsInstance<MeshEvent.LockdownStatusChanged>().singleOrNull()

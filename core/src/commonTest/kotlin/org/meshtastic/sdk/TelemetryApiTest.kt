@@ -54,8 +54,8 @@ class TelemetryApiTest {
         assertEquals(localNodeNum, request.to)
         assertTrue(request.decoded?.want_response == true)
 
-        val expected = DeviceMetrics(battery_level = 87, voltage = 4.1f, uptime_seconds = 3600)
-        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry(device_metrics = expected))
+        val expected = DeviceMetrics.Builder().also { wb ->wb.battery_level = 87; wb.voltage = 4.1f; wb.uptime_seconds = 3600}.build()
+        transport.injectTelemetryResponse(requestId = request.id, telemetry = Telemetry.Builder().also { wb ->wb.device_metrics = expected}.build())
         runCurrent()
 
         val result = deferred.await()
@@ -78,14 +78,14 @@ class TelemetryApiTest {
         val request = transport.lastTelemetryRequest(outboundBefore)
         assertEquals(node.raw, request.to)
 
-        val expected = EnvironmentMetrics(
-            temperature = 21.5f,
-            relative_humidity = 62.0f,
-            barometric_pressure = 1013.2f,
-        )
+        val expected = EnvironmentMetrics.Builder().also { wb ->
+        wb.temperature = 21.5f
+        wb.relative_humidity = 62.0f
+        wb.barometric_pressure = 1013.2f
+        }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(environment_metrics = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.environment_metrics = expected}.build(),
             fromNode = node.raw,
         )
         runCurrent()
@@ -108,15 +108,15 @@ class TelemetryApiTest {
         runCurrent()
 
         val request = transport.lastTelemetryRequest(outboundBefore)
-        val expected = AirQualityMetrics(
-            pm10_standard = 5,
-            pm25_standard = 12,
-            pm100_standard = 20,
-            particles_03um = 41,
-        )
+        val expected = AirQualityMetrics.Builder().also { wb ->
+        wb.pm10_standard = 5
+        wb.pm25_standard = 12
+        wb.pm100_standard = 20
+        wb.particles_03um = 41
+        }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(air_quality_metrics = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.air_quality_metrics = expected}.build(),
             fromNode = node.raw,
         )
         runCurrent()
@@ -139,10 +139,10 @@ class TelemetryApiTest {
         runCurrent()
 
         val request = transport.lastTelemetryRequest(outboundBefore)
-        val expected = PowerMetrics(ch1_voltage = 4.18f, ch1_current = 0.42f, ch2_voltage = 5.0f)
+        val expected = PowerMetrics.Builder().also { wb ->wb.ch1_voltage = 4.18f; wb.ch1_current = 0.42f; wb.ch2_voltage = 5.0f}.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(power_metrics = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.power_metrics = expected}.build(),
             fromNode = node.raw,
         )
         runCurrent()
@@ -167,15 +167,15 @@ class TelemetryApiTest {
         val request = transport.lastTelemetryRequest(outboundBefore)
         assertEquals(localNodeNum, request.to)
 
-        val expected = LocalStats(
-            uptime_seconds = 55,
-            num_packets_tx = 12,
-            num_packets_rx = 9,
-            num_online_nodes = 3,
-        )
+        val expected = LocalStats.Builder().also { wb ->
+        wb.uptime_seconds = 55
+        wb.num_packets_tx = 12
+        wb.num_packets_rx = 9
+        wb.num_online_nodes = 3
+        }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(local_stats = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.local_stats = expected}.build(),
             fromNode = localNodeNum,
         )
         runCurrent()
@@ -198,10 +198,10 @@ class TelemetryApiTest {
         runCurrent()
 
         val request = transport.lastTelemetryRequest(outboundBefore)
-        val expected = HealthMetrics(heart_bpm = 72, spO2 = 98, temperature = 36.7f)
+        val expected = HealthMetrics.Builder().also { wb ->wb.heart_bpm = 72; wb.spO2 = 98; wb.temperature = 36.7f}.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(health_metrics = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.health_metrics = expected}.build(),
             fromNode = node.raw,
         )
         runCurrent()
@@ -224,17 +224,17 @@ class TelemetryApiTest {
         runCurrent()
 
         val request = transport.lastTelemetryRequest(outboundBefore)
-        val expected = HostMetrics(
-            uptime_seconds = 1000,
-            freemem_bytes = 2048,
-            diskfree1_bytes = 4096,
-            load1 = 23,
-            load5 = 17,
-            load15 = 11,
-        )
+        val expected = HostMetrics.Builder().also { wb ->
+        wb.uptime_seconds = 1000
+        wb.freemem_bytes = 2048
+        wb.diskfree1_bytes = 4096
+        wb.load1 = 23
+        wb.load5 = 17
+        wb.load15 = 11
+        }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(host_metrics = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.host_metrics = expected}.build(),
             fromNode = node.raw,
         )
         runCurrent()
@@ -257,15 +257,15 @@ class TelemetryApiTest {
         runCurrent()
 
         val request = transport.lastTelemetryRequest(outboundBefore)
-        val expected = TrafficManagementStats(
-            packets_inspected = 100,
-            position_dedup_drops = 2,
-            rate_limit_drops = 3,
-            router_hops_preserved = 4,
-        )
+        val expected = TrafficManagementStats.Builder().also { wb ->
+        wb.packets_inspected = 100
+        wb.position_dedup_drops = 2
+        wb.rate_limit_drops = 3
+        wb.router_hops_preserved = 4
+        }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
-            telemetry = Telemetry(traffic_management_stats = expected),
+            telemetry = Telemetry.Builder().also { wb ->wb.traffic_management_stats = expected}.build(),
             fromNode = node.raw,
         )
         runCurrent()
@@ -284,8 +284,8 @@ class TelemetryApiTest {
 
         val node = NodeId(8888)
         val expected = listOf(
-            Telemetry(environment_metrics = EnvironmentMetrics(temperature = 19.8f)),
-            Telemetry(power_metrics = PowerMetrics(ch1_voltage = 4.05f, ch1_current = 0.31f)),
+            Telemetry.Builder().also { wb ->wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->wb.temperature = 19.8f}.build()}.build(),
+            Telemetry.Builder().also { wb ->wb.power_metrics = PowerMetrics.Builder().also { wb ->wb.ch1_voltage = 4.05f; wb.ch1_current = 0.31f}.build()}.build(),
         )
         val collected = backgroundScope.async {
             client.telemetry.observe(node).take(expected.size).toList()
@@ -307,7 +307,7 @@ class TelemetryApiTest {
         runCurrent()
 
         val node = NodeId(9999)
-        val expected = Telemetry(device_metrics = DeviceMetrics(battery_level = 15))
+        val expected = Telemetry.Builder().also { wb ->wb.device_metrics = DeviceMetrics.Builder().also { wb ->wb.battery_level = 15}.build()}.build()
         val collected = backgroundScope.async {
             client.telemetry.observe(node).take(1).toList()
         }
@@ -315,26 +315,26 @@ class TelemetryApiTest {
 
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry(environment_metrics = EnvironmentMetrics(temperature = 30.0f)),
+            telemetry = Telemetry.Builder().also { wb ->wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->wb.temperature = 30.0f}.build()}.build(),
             fromNode = 1111,
         )
         transport.injectPacket(
-            MeshPacket(
-                from = node.raw,
-                decoded = Data(
-                    portnum = PortNum.TEXT_MESSAGE_APP,
-                    payload = okio.ByteString.of(*"ignored".encodeToByteArray()),
-                ),
-            ),
+            MeshPacket.Builder().also { wb ->
+            wb.from = node.raw
+            wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TEXT_MESSAGE_APP
+                            wb.payload = okio.ByteString.of(*"ignored".encodeToByteArray())
+                            }.build()
+            }.build(),
         )
         transport.injectPacket(
-            MeshPacket(
-                from = node.raw,
-                decoded = Data(
-                    portnum = PortNum.TELEMETRY_APP,
-                    payload = okio.ByteString.of(0x80.toByte()),
-                ),
-            ),
+            MeshPacket.Builder().also { wb ->
+            wb.from = node.raw
+            wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TELEMETRY_APP
+                            wb.payload = okio.ByteString.of(0x80.toByte())
+                            }.build()
+            }.build(),
         )
         transport.injectTelemetryResponse(requestId = 0, telemetry = expected, fromNode = node.raw)
         runCurrent()

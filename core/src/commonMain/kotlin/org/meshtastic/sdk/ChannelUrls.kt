@@ -46,11 +46,11 @@ public object ChannelUrl {
 public fun ChannelSet.toUrl(): String = ChannelUrl.encode(this)
 
 /** Returns a standard PRIMARY [Channel] configuration (index 0, empty name, default PSK). */
-public fun Channel.Companion.default(): Channel = Channel(
-    index = 0,
-    settings = ChannelSettings(name = "", psk = DefaultPsk.toByteString()),
-    role = Channel.Role.PRIMARY,
-)
+public fun Channel.Companion.default(): Channel = Channel.Builder().also { wb ->
+wb.index = 0
+wb.settings = ChannelSettings.Builder().also { wb ->wb.name = ""; wb.psk = DefaultPsk.toByteString()}.build()
+wb.role = Channel.Role.PRIMARY
+}.build()
 
 /**
  * Computes the firmware-compatible 8-bit channel hash for [name] and [psk].

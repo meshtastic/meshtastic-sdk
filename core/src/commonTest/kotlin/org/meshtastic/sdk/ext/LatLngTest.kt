@@ -15,7 +15,7 @@ import kotlin.test.assertNull
 
 class LatLngTest {
     @Test fun decodesScaledIntegers() {
-        val pos = Position(latitude_i = 374200000, longitude_i = -1220800000, altitude = 25)
+        val pos = Position.Builder().also { wb ->wb.latitude_i = 374200000; wb.longitude_i = -1220800000; wb.altitude = 25}.build()
         val ll = pos.toLatLng()
         assertNotNull(ll)
         assertEquals(37.42, ll.latitude, 0.0001)
@@ -24,8 +24,8 @@ class LatLngTest {
     }
 
     @Test fun zeroCoordinatesReturnNull() {
-        assertNull(Position(latitude_i = 0, longitude_i = 0).toLatLng())
-        assertNull(Position().toLatLng())
+        assertNull(Position.Builder().also { wb ->wb.latitude_i = 0; wb.longitude_i = 0}.build().toLatLng())
+        assertNull(Position.Builder().build().toLatLng())
     }
 }
 
