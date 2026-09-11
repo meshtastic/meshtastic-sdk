@@ -37,7 +37,7 @@ androidxActivityCompose     = "1.13.0"
 androidxLifecycleCompose    = "2.11.0"
 
 # --- Logging ---
-kermit                      = "2.1.0"
+kermit                      = "2.2.0"
 
 # --- Testing ---
 turbine                     = "1.2.1"
