@@ -25,12 +25,14 @@ public data class RadioMetrics(
 )
 
 /**
- * Extracts [RadioMetrics] from a [MeshPacket]. Returns `null` if metrics are missing.
+ * Extracts [RadioMetrics] from a [MeshPacket]. Returns `null` only when the packet carries no
+ * radio reading at all: `rx_rssi` absent **and** `rx_snr` zero, as in one replayed from history.
  *
- * Missing means `rx_rssi` is absent, not zero. Since protobufs 2.8.0 the field is `optional`
- * precisely because 0 dBm is a legitimate reading - an SX126x can report exactly 0, and the
- * SX127x formula can go positive - so a packet carrying a real 0 dBm still has metrics. Only a
- * packet that reports no rssi at all, such as one replayed from history, has none.
+ * Absent is not zero. Since protobufs 2.8.0 `rx_rssi` is `optional` precisely because 0 dBm is a
+ * legitimate reading - an SX126x can report exactly 0, and the SX127x formula can go positive -
+ * so a packet carrying a real 0 dBm still has metrics. An absent `rx_rssi` next to a nonzero
+ * `rx_snr` still has metrics too, with [RadioMetrics.rssiDbm] falling back to 0; that is the
+ * shape a packet from pre-2.8.0 firmware takes, where proto3 elided a genuine 0 from the wire.
  */
 public fun MeshPacket.toRadioMetrics(): RadioMetrics? {
     if (rx_rssi == null && rx_snr == 0f) return null

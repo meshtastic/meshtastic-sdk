@@ -37,6 +37,17 @@ class RadioMetricsTest {
         assertEquals(0, m.rssiDbm)
     }
 
+    /**
+     * Pre-2.8.0 firmware elides a genuine 0 dBm from the wire, so it decodes as an absent
+     * `rx_rssi` next to a real snr. Those packets keep their snr rather than being discarded.
+     */
+    @Test fun absentRssiWithSnrStillHasMetrics() {
+        val m = MeshPacket(rx_snr = 3f).toRadioMetrics()
+        assertNotNull(m)
+        assertEquals(0, m.rssiDbm)
+        assertEquals(3f, m.snrDb)
+    }
+
     @Test fun signalQualityBuckets() {
         assertEquals(5, MeshPacket(rx_rssi = -50, rx_snr = 10f).signalQuality())
         assertEquals(4, MeshPacket(rx_rssi = -60, rx_snr = 1f).signalQuality())
