@@ -22,8 +22,30 @@ class RadioMetricsTest {
         assertEquals(2, m.hopsAway)
     }
 
-    @Test fun zeroSentinelReturnsNull() {
+    @Test fun absentRssiReturnsNull() {
         assertNull(MeshPacket().toRadioMetrics())
+    }
+
+    /**
+     * 0 dBm is a reading, not an absence. An SX126x can report exactly 0 and the SX127x formula
+     * can go positive, which is why protobufs 2.8.0 made rx_rssi `optional`. Before that this
+     * packet was indistinguishable from one carrying no metrics and was thrown away.
+     */
+    @Test fun zeroDbmIsARealReading() {
+        val m = MeshPacket(rx_rssi = 0, rx_snr = 0f).toRadioMetrics()
+        assertNotNull(m)
+        assertEquals(0, m.rssiDbm)
+    }
+
+    /**
+     * Pre-2.8.0 firmware elides a genuine 0 dBm from the wire, so it decodes as an absent
+     * `rx_rssi` next to a real snr. Those packets keep their snr rather than being discarded.
+     */
+    @Test fun absentRssiWithSnrStillHasMetrics() {
+        val m = MeshPacket(rx_snr = 3f).toRadioMetrics()
+        assertNotNull(m)
+        assertEquals(0, m.rssiDbm)
+        assertEquals(3f, m.snrDb)
     }
 
     @Test fun signalQualityBuckets() {
