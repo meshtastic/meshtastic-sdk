@@ -30,7 +30,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `MeshPacket.toRadioMetrics()` no longer discards a packet carrying a genuine 0 dBm `rx_rssi`.
   The old guard treated `rx_rssi == 0` as "no metrics", which is exactly the ambiguity 2.8.0 made
   the field `optional` to remove — an SX126x can report exactly 0 dBm. The guard now tests
-  presence, so absence still yields `null` and a real zero survives.
+  presence: a real zero survives, and `null` comes back only for a packet carrying no reading at
+  all, with `rx_rssi` absent and `rx_snr` zero.
 
 ## [0.1.1] — 2026-08-18
 
