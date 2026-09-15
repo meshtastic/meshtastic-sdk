@@ -72,7 +72,13 @@ class MeshEngineEdgeCasesTest {
         client.connect()
         transport.injectFrame(
             rawFrame(
-                encodedFromRadio(FromRadio(node_info = org.meshtastic.proto.NodeInfo(num = 7))),
+                encodedFromRadio(
+                    FromRadio.Builder().also { wb ->
+                        wb.node_info = org.meshtastic.proto.NodeInfo.Builder().also { wb ->
+                            wb.num = 7
+                        }.build()
+                    }.build(),
+                ),
                 header0 = 0x00,
                 header1 = 0x00,
             ),
@@ -116,7 +122,11 @@ class MeshEngineEdgeCasesTest {
             client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
         }
 
-        val fullPayload = encodedFromRadio(FromRadio(packet = inboundTextPacket(id = 1, from = 0x1001)))
+        val fullPayload = encodedFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.packet = inboundTextPacket(id = 1, from = 0x1001)
+            }.build(),
+        )
         client.connect()
         transport.injectFrame(rawFrame(fullPayload.copyOf(fullPayload.size - 1), declaredLength = fullPayload.size))
         runCurrent()
@@ -208,15 +218,15 @@ class MeshEngineEdgeCasesTest {
 
         client.connect()
         transport.injectPacket(
-            MeshPacket(
-                from = 0x2001,
-                to = 0,
-                id = 20,
-                decoded = Data(
-                    portnum = PortNum.UNKNOWN_APP,
-                    payload = ByteString.of(*byteArrayOf(0x01, 0x02)),
-                ),
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x2001
+                wb.to = 0
+                wb.id = 20
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.UNKNOWN_APP
+                    wb.payload = ByteString.of(*byteArrayOf(0x01, 0x02))
+                }.build()
+            }.build(),
         )
         runCurrent()
 
@@ -238,12 +248,15 @@ class MeshEngineEdgeCasesTest {
 
         client.connect()
         transport.injectPacket(
-            MeshPacket(
-                from = 0x2002,
-                to = 0,
-                id = 21,
-                decoded = Data(portnum = PortNum.UNKNOWN_APP, payload = ByteString.of(*byteArrayOf(0x05))),
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x2002
+                wb.to = 0
+                wb.id = 21
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.UNKNOWN_APP
+                    wb.payload = ByteString.of(*byteArrayOf(0x05))
+                }.build()
+            }.build(),
         )
         runCurrent()
 
@@ -261,12 +274,15 @@ class MeshEngineEdgeCasesTest {
 
         client.connect()
         transport.injectPacket(
-            MeshPacket(
-                from = 0x2003,
-                to = 0,
-                id = 22,
-                decoded = Data(portnum = PortNum.UNKNOWN_APP, payload = ByteString.of(*byteArrayOf(0x07))),
-            ),
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x2003
+                wb.to = 0
+                wb.id = 22
+                wb.decoded = Data.Builder().also { wb ->
+                    wb.portnum = PortNum.UNKNOWN_APP
+                    wb.payload = ByteString.of(*byteArrayOf(0x07))
+                }.build()
+            }.build(),
         )
         runCurrent()
 
@@ -281,14 +297,14 @@ class MeshEngineEdgeCasesTest {
 
         assertFailsWith<MeshtasticException.PayloadTooLarge> {
             client.send(
-                MeshPacket(
-                    to = NodeId.BROADCAST.raw,
-                    channel = 0,
-                    decoded = Data(
-                        portnum = PortNum.TEXT_MESSAGE_APP,
-                        payload = ByteString.of(*ByteArray(DATA_PAYLOAD_LEN + 1)),
-                    ),
-                ),
+                MeshPacket.Builder().also { wb ->
+                    wb.to = NodeId.BROADCAST.raw
+                    wb.channel = 0
+                    wb.decoded = Data.Builder().also { wb ->
+                        wb.portnum = PortNum.TEXT_MESSAGE_APP
+                        wb.payload = ByteString.of(*ByteArray(DATA_PAYLOAD_LEN + 1))
+                    }.build()
+                }.build(),
             )
         }
 
@@ -327,7 +343,13 @@ class MeshEngineEdgeCasesTest {
         val job = backgroundScope.launch { client.packets.collect { packets += it } }
 
         client.connect()
-        transport.injectPacket(MeshPacket(from = 0x3001, to = 0, id = 30))
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3001
+                wb.to = 0
+                wb.id = 30
+            }.build(),
+        )
         runCurrent()
 
         assertTrue(packets.isEmpty())
@@ -347,7 +369,13 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectPacket(MeshPacket(from = 0x3002, to = 0, id = 31))
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3002
+                wb.to = 0
+                wb.id = 31
+            }.build(),
+        )
         runCurrent()
 
         assertTrue(logs.any { it.level == LogLevel.WARN && it.message.contains("encrypted packet") })
@@ -367,8 +395,20 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectPacket(MeshPacket(from = 0x3003, to = 0, id = 32))
-        transport.injectPacket(MeshPacket(from = 0x3003, to = 0, id = 33))
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3003
+                wb.to = 0
+                wb.id = 32
+            }.build(),
+        )
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3003
+                wb.to = 0
+                wb.id = 33
+            }.build(),
+        )
         runCurrent()
 
         assertEquals(1, warnings.count { it.message.contains("encrypted packet") })
@@ -387,7 +427,13 @@ class MeshEngineEdgeCasesTest {
         }
 
         client.connect()
-        transport.injectPacket(MeshPacket(from = 0x3004, to = 0, id = 34))
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3004
+                wb.to = 0
+                wb.id = 34
+            }.build(),
+        )
         runCurrent()
 
         val warning = warnings.last()
@@ -408,7 +454,13 @@ class MeshEngineEdgeCasesTest {
         runCurrent()
         assertEquals(SendState.Sent, handle.state.value)
 
-        transport.injectPacket(MeshPacket(from = 0x3005, to = 0, id = 37))
+        transport.injectPacket(
+            MeshPacket.Builder().also { wb ->
+                wb.from = 0x3005
+                wb.to = 0
+                wb.id = 37
+            }.build(),
+        )
         runCurrent()
         assertEquals(SendState.Sent, handle.state.value)
 
@@ -605,14 +657,14 @@ class MeshEngineEdgeCasesTest {
         (1..8).map { index ->
             backgroundScope.async {
                 client.send(
-                    MeshPacket(
-                        to = NodeId.BROADCAST.raw,
-                        channel = 0,
-                        decoded = Data(
-                            portnum = PortNum.TEXT_MESSAGE_APP,
-                            payload = ByteString.of(*"payload-$index".encodeToByteArray()),
-                        ),
-                    ),
+                    MeshPacket.Builder().also { wb ->
+                        wb.to = NodeId.BROADCAST.raw
+                        wb.channel = 0
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TEXT_MESSAGE_APP
+                            wb.payload = ByteString.of(*"payload-$index".encodeToByteArray())
+                        }.build()
+                    }.build(),
                 )
             }
         }.awaitAll()
@@ -670,40 +722,46 @@ class MeshEngineEdgeCasesTest {
         logs += CapturedLog(level, tag, message, cause)
     }
 
-    private fun inboundTextPacket(id: Int, from: Int, text: String = "hello") = MeshPacket(
-        from = from,
-        to = 0,
-        id = id,
-        channel = 0,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = ByteString.of(*text.encodeToByteArray()),
-        ),
-    )
+    private fun inboundTextPacket(id: Int, from: Int, text: String = "hello") = MeshPacket.Builder().also { wb ->
+        wb.from = from
+        wb.to = 0
+        wb.id = id
+        wb.channel = 0
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = ByteString.of(*text.encodeToByteArray())
+        }.build()
+    }.build()
 
-    private fun unicastWantAckPacket(toNodeNum: Int) = MeshPacket(
-        to = toNodeNum,
-        channel = 0,
-        want_ack = true,
-        decoded = Data(
-            portnum = PortNum.TEXT_MESSAGE_APP,
-            payload = ByteString.of(*"hi".encodeToByteArray()),
-        ),
-    )
+    private fun unicastWantAckPacket(toNodeNum: Int) = MeshPacket.Builder().also { wb ->
+        wb.to = toNodeNum
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.TEXT_MESSAGE_APP
+            wb.payload = ByteString.of(*"hi".encodeToByteArray())
+        }.build()
+    }.build()
 
     private fun routingAckFrame(requestId: Int, fromNodeNum: Int, error: Routing.Error = Routing.Error.NONE): Frame {
-        val routing = Routing(error_reason = error)
+        val routing = Routing.Builder().also { wb -> wb.error_reason = error }.build()
         val payload = ByteString.of(*Routing.ADAPTER.encode(routing))
-        val packet = MeshPacket(
-            from = fromNodeNum,
-            to = 0,
-            decoded = Data(
-                portnum = PortNum.ROUTING_APP,
-                payload = payload,
-                request_id = requestId,
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.from = fromNodeNum
+            wb.to = 0
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ROUTING_APP
+                wb.payload = payload
+                wb.request_id = requestId
+            }.build()
+        }.build()
+        return rawFrame(
+            encodedFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.packet = packet
+                }.build(),
             ),
         )
-        return rawFrame(encodedFromRadio(FromRadio(packet = packet)))
     }
 
     private fun rawFrame(

@@ -204,15 +204,15 @@ public class RadioClient internal constructor(
      */
     @Throws(MeshtasticException::class)
     public fun requestNodeInfo(node: NodeId): MessageHandle {
-        val packet = MeshPacket(
-            to = node.raw,
-            want_ack = true,
-            decoded = org.meshtastic.proto.Data(
-                portnum = org.meshtastic.proto.PortNum.NODEINFO_APP,
-                payload = okio.ByteString.EMPTY,
-                want_response = true,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = node.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.NODEINFO_APP
+                wb.payload = okio.ByteString.EMPTY
+                wb.want_response = true
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -361,16 +361,16 @@ public class RadioClient internal constructor(
         if (payload.size > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        val packet = MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = true,
-            decoded = org.meshtastic.proto.Data(
-                portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-                payload = payload.toByteString(),
-                reply_id = replyId,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+                wb.payload = payload.toByteString()
+                wb.reply_id = replyId
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -401,17 +401,17 @@ public class RadioClient internal constructor(
         if (payload.size > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        val packet = MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = true,
-            decoded = org.meshtastic.proto.Data(
-                portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-                payload = payload.toByteString(),
-                emoji = EMOJI_INDICATOR,
-                reply_id = replyId,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+                wb.payload = payload.toByteString()
+                wb.emoji = EMOJI_INDICATOR
+                wb.reply_id = replyId
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -462,17 +462,17 @@ public class RadioClient internal constructor(
         if (payload.size > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        val packet = MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = wantAck,
-            hop_limit = hopLimit ?: 0,
-            decoded = org.meshtastic.proto.Data(
-                portnum = portnum,
-                payload = payload.toByteString(),
-                want_response = false,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = wantAck
+            wb.hop_limit = hopLimit ?: 0
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = portnum
+                wb.payload = payload.toByteString()
+                wb.want_response = false
+            }.build()
+        }.build()
         return send(packet)
     }
 

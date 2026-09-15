@@ -26,9 +26,9 @@ public data class RadioMetrics(
 
 /** Extracts [RadioMetrics] from a [MeshPacket]. Returns `null` if metrics are missing. */
 public fun MeshPacket.toRadioMetrics(): RadioMetrics? {
-    if (rx_rssi == 0 && rx_snr == 0f) return null
+    if ((rx_rssi ?: 0) == 0 && rx_snr == 0f) return null
     val hops = if (hop_start > 0) (hop_start - hop_limit).coerceAtLeast(0) else null
-    return RadioMetrics(rssiDbm = rx_rssi, snrDb = rx_snr, hopsAway = hops, viaMqtt = via_mqtt)
+    return RadioMetrics(rssiDbm = rx_rssi ?: 0, snrDb = rx_snr, hopsAway = hops, viaMqtt = via_mqtt)
 }
 
 /**

@@ -204,31 +204,31 @@ class EngineTest {
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private fun testPacket() = org.meshtastic.proto.MeshPacket(
-        to = NodeId.BROADCAST.raw,
-        channel = 0,
-        decoded = org.meshtastic.proto.Data(
-            portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-            payload = okio.ByteString.of(*"hello".encodeToByteArray()),
-        ),
-    )
+    private fun testPacket() = org.meshtastic.proto.MeshPacket.Builder().also { wb ->
+        wb.to = NodeId.BROADCAST.raw
+        wb.channel = 0
+        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+            wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+            wb.payload = okio.ByteString.of(*"hello".encodeToByteArray())
+        }.build()
+    }.build()
 
-    private fun unicastPacket() = org.meshtastic.proto.MeshPacket(
-        to = 0x12345678,
-        channel = 0,
-        want_ack = true,
-        decoded = org.meshtastic.proto.Data(
-            portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-            payload = okio.ByteString.of(*"hello".encodeToByteArray()),
-        ),
-    )
+    private fun unicastPacket() = org.meshtastic.proto.MeshPacket.Builder().also { wb ->
+        wb.to = 0x12345678
+        wb.channel = 0
+        wb.want_ack = true
+        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+            wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+            wb.payload = okio.ByteString.of(*"hello".encodeToByteArray())
+        }.build()
+    }.build()
 
-    private fun oversizedPacket() = org.meshtastic.proto.MeshPacket(
-        to = NodeId.BROADCAST.raw,
-        channel = 0,
-        decoded = org.meshtastic.proto.Data(
-            portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-            payload = okio.ByteString.of(*ByteArray(300)),
-        ),
-    )
+    private fun oversizedPacket() = org.meshtastic.proto.MeshPacket.Builder().also { wb ->
+        wb.to = NodeId.BROADCAST.raw
+        wb.channel = 0
+        wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+            wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+            wb.payload = okio.ByteString.of(*ByteArray(300))
+        }.build()
+    }.build()
 }
