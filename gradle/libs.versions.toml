@@ -3,7 +3,7 @@
 [versions]
 # --- Kotlin & build ---
 kotlin                      = "2.4.10"
-agp                         = "9.3.2"
+agp                         = "9.4.0"
 javaVersion                 = "21"
 androidMinSdk               = "26"
 androidCompileSdk           = "37"
