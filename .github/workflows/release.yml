@@ -142,7 +142,10 @@ jobs:
         # rather than failing.
         run: |
           version="${{ steps.ver.outputs.version }}"
-          if ! grep -qE "^## \\[${version}\\]" CHANGELOG.md; then
+          # awk, not grep -E: the version is a literal and its dots are ERE
+          # wildcards. `index($0, v) == 1` is "this line starts with exactly
+          # this string", with no escaping to get wrong.
+          if ! awk -v v="## [$version]" 'index($0, v) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
             echo "::error::CHANGELOG.md has no '## [$version]' section — run './gradlew patchChangelog -PchangelogVersion=$version' and commit it before tagging."
             exit 1
           fi
