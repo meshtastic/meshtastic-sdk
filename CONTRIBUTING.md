@@ -160,8 +160,43 @@ Workflow:
 3. Pre-1.0: any breaking change is allowed but requires the dump
    refresh + a CHANGELOG `### Breaking` entry. 1.0+: the ABI baseline
    is treated as the contract.
+4. **Any dump move needs a changelog entry, breaking or not.** A dump that
+   moved is by definition a public-API change; if a consumer can carry on
+   after a recompile it goes under `### Added`, `### Changed`,
+   `### Deprecated` or `### Removed`, and only under `### Breaking` if they
+   have to change code. See [Changelog](#changelog).
 
 > **Never** edit `api/*.api` files by hand. They are generated artefacts.
+
+## Changelog
+
+[`CHANGELOG.md`](CHANGELOG.md) is hand-written in
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) form. The JetBrains
+[gradle-changelog-plugin](https://github.com/JetBrains/gradle-changelog-plugin)
+parses and renders it and never generates an entry from a commit.
+
+Three rules already live elsewhere and are not restated here: constitution
+principle V (a pre-1.0 breaking change MUST add a `### Breaking` section),
+[`GOVERNANCE.md`](GOVERNANCE.md) §3 (every breaking change is called out in the
+changelog), and the SQLDelight migration rule above (`### Breaking` if an
+on-disk database loses data, `### Changed` otherwise). This section is the
+general case they are instances of.
+
+Add an entry under `## [Unreleased]` for anything a consumer would notice — a
+new or changed public API, a behaviour change, a fix to something they could
+have hit, a security property, a schema migration. Refactors, test-only changes,
+sample-only changes and CI work need none.
+
+**A change that moves any `api/*.api` or `api/*.klib.api` dump always needs an
+entry.** `Breaking` leads the group order because principle V requires that
+group to exist, and because with committed ABI dumps the first thing a consumer
+needs to know is whether recompiling is enough.
+
+Cut the section with `./gradlew patchChangelog`, not by hand. It reads axion's
+resolved version with `-SNAPSHOT` stripped — the **next patch** — so for a minor,
+a major or an rc pass `-PchangelogVersion=x.y.z`. Do not reach for axion's own
+`-Prelease.version` for this: off the default branch it appends the branch name
+as a qualifier, and you get a `## [0.2.0-my-branch]` heading.
 
 ## SQLDelight schema migrations
 

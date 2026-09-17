@@ -135,6 +135,19 @@ jobs:
             exit 1
           fi
 
+      - name: Verify the changelog has a section for this version
+        # The tag and the version agree; the changelog is the third thing that has
+        # to. `getChangelog` cannot be used as the check — when the declared
+        # version has no section it silently returns the most recent released one
+        # rather than failing.
+        run: |
+          version="${{ steps.ver.outputs.version }}"
+          if ! grep -qE "^## \\[${version}\\]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section — run './gradlew patchChangelog -PchangelogVersion=$version' and commit it before tagging."
+            exit 1
+          fi
+          echo "✓ CHANGELOG.md has a section for $version"
+
       # Samples are excluded: they are CI-gated on every PR and are not
       # published, and their RELEASE-mode iOS framework links run the
       # Kotlin/Native devirtualization pass, which OOMs the 7GB macOS
