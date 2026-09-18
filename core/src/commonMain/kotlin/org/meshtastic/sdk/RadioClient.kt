@@ -129,9 +129,10 @@ public class RadioClient internal constructor(
      * `onSubscription`), then live [NodeChange.Added] / [NodeChange.Updated] /
      * [NodeChange.Removed] / [NodeChange.WentOffline] / [NodeChange.CameOnline] in causal
      * order. A delta whose change is already reflected in the seeded snapshot re-applies
-     * idempotently. The handshake additionally emits a live [NodeChange.Snapshot] at Stage-2
+     * idempotently. The handshake additionally emits a live [NodeChange.Snapshot] at handshake
      * commit (and after each reconnect), which existing subscribers must treat as a full
-     * replacement.
+     * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
+     * arrive as [NodeChange.Added] once they are heard.
      *
      * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
      * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
@@ -203,15 +204,15 @@ public class RadioClient internal constructor(
      */
     @Throws(MeshtasticException::class)
     public fun requestNodeInfo(node: NodeId): MessageHandle {
-        val packet = MeshPacket(
-            to = node.raw,
-            want_ack = true,
-            decoded = org.meshtastic.proto.Data(
-                portnum = org.meshtastic.proto.PortNum.NODEINFO_APP,
-                payload = okio.ByteString.EMPTY,
-                want_response = true,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = node.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.NODEINFO_APP
+                wb.payload = okio.ByteString.EMPTY
+                wb.want_response = true
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -360,16 +361,16 @@ public class RadioClient internal constructor(
         if (payload.size > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        val packet = MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = true,
-            decoded = org.meshtastic.proto.Data(
-                portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-                payload = payload.toByteString(),
-                reply_id = replyId,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+                wb.payload = payload.toByteString()
+                wb.reply_id = replyId
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -400,17 +401,17 @@ public class RadioClient internal constructor(
         if (payload.size > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        val packet = MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = true,
-            decoded = org.meshtastic.proto.Data(
-                portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP,
-                payload = payload.toByteString(),
-                emoji = EMOJI_INDICATOR,
-                reply_id = replyId,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = true
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
+                wb.payload = payload.toByteString()
+                wb.emoji = EMOJI_INDICATOR
+                wb.reply_id = replyId
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -461,17 +462,17 @@ public class RadioClient internal constructor(
         if (payload.size > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        val packet = MeshPacket(
-            to = to.raw,
-            channel = channel.raw,
-            want_ack = wantAck,
-            hop_limit = hopLimit ?: 0,
-            decoded = org.meshtastic.proto.Data(
-                portnum = portnum,
-                payload = payload.toByteString(),
-                want_response = false,
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = to.raw
+            wb.channel = channel.raw
+            wb.want_ack = wantAck
+            wb.hop_limit = hopLimit ?: 0
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = portnum
+                wb.payload = payload.toByteString()
+                wb.want_response = false
+            }.build()
+        }.build()
         return send(packet)
     }
 
@@ -613,6 +614,7 @@ public class RadioClient internal constructor(
         private var rpcTimeout: Duration = 30.seconds
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
+        private var skipNodeDb: Boolean = false
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -801,6 +803,18 @@ public class RadioClient internal constructor(
         }
 
         /**
+         * Skip the Stage-2 NodeDB download ("config-only" connect): the handshake stops after
+         * Stage 1, so `want_config_id = 69421` is never sent and connect returns once config and
+         * channels are in — cutting the bulk of BLE connect time on a large mesh. Config, channels,
+         * own node, admin and send/receive are unaffected; the node map holds only the local node
+         * until peers are heard live. For config editors, provisioning and CLI one-shots; leave off
+         * for chat/map UIs. See `docs/protocol.md` §6.
+         *
+         * @param skip `true` to skip Stage 2; `false` restores the default two-stage handshake.
+         */
+        public fun skipNodeDb(skip: Boolean = true): Builder = apply { skipNodeDb = skip }
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -820,6 +834,7 @@ public class RadioClient internal constructor(
                 sendTimeout = sendTimeout,
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
+                skipNodeDb = skipNodeDb,
             )
 
             return RadioClient(

@@ -14,6 +14,10 @@ plugins {
     alias(libs.plugins.spotless)
     alias(libs.plugins.detekt) apply false
     alias(libs.plugins.kover)
+    // Manages CHANGELOG.md, which stays hand-written: it parses and renders the
+    // file and never generates an entry from a commit. `patchChangelog` is the
+    // release step; `getChangelog` prints a released section for release notes.
+    alias(libs.plugins.changelog)
     // axionRelease applied conditionally below — it fails to apply when this build is
     // included as a Gradle composite build because the root project is not yet available.
     alias(libs.plugins.axionRelease) apply false
@@ -41,6 +45,40 @@ val resolvedVersion: String = if (gradle.parent == null) {
 allprojects {
     group = "org.meshtastic"
     version = resolvedVersion
+}
+
+// ---------------------------------------------------------------------------
+// CHANGELOG.md. The section is cut BEFORE the tag exists, and axion derives the
+// version FROM tags — so between tags `resolvedVersion` is the next patch plus
+// `-SNAPSHOT`. Stripping that suffix names the release a patch would produce,
+// which is the common case.
+//
+// `-PchangelogVersion=x.y.z` overrides it for anything else — a minor, a major,
+// or an rc. Axion's own `-Prelease.version` is deliberately NOT the escape hatch
+// here: off the default branch it appends the branch name as a qualifier, so
+// `-Prelease.version=0.2.0` on a feature branch cuts a `## [0.2.0-my-branch]`
+// heading and a matching compare link. A property that means only one thing
+// cannot do that.
+// ---------------------------------------------------------------------------
+changelog {
+    version = providers.gradleProperty("changelogVersion")
+        .getOrElse(resolvedVersion.removeSuffix("-SNAPSHOT"))
+    repositoryUrl = "https://github.com/meshtastic/meshtastic-sdk"
+    // Breaking leads, and the constitution is why: principle V requires a
+    // `### Breaking` section for every pre-1.0 breaking change, so the group has
+    // to exist and belongs first.
+    groups = listOf("Breaking", "Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
+    // `patchChangelog` rewrites everything between the title and the first section
+    // from this value, so anything that must survive a release lives here —
+    // including the horizontal rule.
+    introduction =
+        """
+        All notable changes to this project will be documented in this file.
+
+        The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+        ---
+        """.trimIndent()
 }
 
 dependencies {

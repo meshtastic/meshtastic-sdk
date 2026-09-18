@@ -75,8 +75,31 @@ RadioClient.Builder()
     .rpcTimeout(10.seconds)                                            // default: 10 s — per-op admin RPC timeout
     .presenceTimeout(15.minutes)                                       // default: 15 min — node offline threshold
     .autoReconnect(AutoReconnectConfig())                              // default: disabled; opt-in exponential backoff
+    .skipNodeDb()                                                      // default: off — config-only connect, skips Stage 2
     .build()
 ```
+
+#### Config-only connect — `skipNodeDb()` *(since 0.3.0)*
+
+The handshake normally runs in two stages (`docs/protocol.md` §6): Stage 1 (`want_config_id =
+69420`) streams `my_info`, `metadata`, device/module config, channels and the device's own
+`NodeInfo`; Stage 2 (`69421`) streams the whole node database. On a large mesh over BLE, Stage 2
+dominates connect time — hundreds of `NodeInfo` envelopes, each a separate GATT read.
+
+`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session goes straight to
+seeding the admin session passkey and then `Connected`.
+`ConfigPhase.Stage2` is never projected on `connection`.
+
+| Still works | Degraded |
+|---|---|
+| `configBundle`, `channels`, `ownNode` | `nodes` emits a `Snapshot` holding only the local node |
+| `admin`, `telemetry`, `routing`, `storeForward` | `nodeSnapshot()` likewise starts with only the local node |
+| `send` / `sendText`, `packets`, `events` | presence events cover only nodes actually heard this session |
+
+Peers still appear as they are heard live (`NODEINFO_APP`, position, telemetry traffic). Persisted
+node rows from earlier sessions are left untouched but are not loaded into the session's node map.
+
+Use it for config editors, provisioning tools and CLI one-shots. Leave it off for chat and map UIs.
 
 `Builder.transport(spec: TransportSpec)` is also available for spec-driven setups, but you must additionally provide a concrete `RadioTransport` — see `samples/cli` for a `TransportSpec → RadioTransport` opener pattern.
 

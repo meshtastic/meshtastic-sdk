@@ -13,6 +13,7 @@ import com.github.ajalt.clikt.core.Context
 import com.github.ajalt.clikt.core.subcommands
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.options.default
+import com.github.ajalt.clikt.parameters.options.flag
 import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import com.juul.kable.Advertisement
@@ -60,6 +61,7 @@ internal class ProbeBle : BaseCommand(name = "ble") {
         help = "Substring match against name / peripheralName / identifier. Empty = first match.",
     ).argumentDefault("")
     private val runs by option("--runs", help = "Number of connect cycles.").int().default(DEFAULT_RUNS)
+    private val skipNodeDb by option("--skip-nodedb", help = CONFIG_ONLY_HELP).flag()
     private val scanSeconds by option(
         "--scan",
         help = "Scan duration to locate the device (default ${DEFAULT_SCAN_SECONDS}s).",
@@ -68,7 +70,7 @@ internal class ProbeBle : BaseCommand(name = "ble") {
     override fun help(context: Context) = "BLE connect/disconnect reconnect loop. Device must be bonded."
 
     override fun run() = runBlocking {
-        val summary = runBleProbe(needle, runs, scanSeconds, out)
+        val summary = runBleProbe(needle, runs, scanSeconds, out, skipNodeDb)
         emitSummary(listOf(summary), out)
         val ok = summary.fails == 0 && summary.passes > 0
         if (!ok) exit(ExitCodes.FAILURE)
@@ -81,12 +83,13 @@ internal class ProbeTcp : BaseCommand(name = "tcp") {
         help = "HOST or HOST:PORT (port defaults to 4403).",
     )
     private val runs by option("--runs", help = "Number of connect cycles.").int().default(DEFAULT_RUNS)
+    private val skipNodeDb by option("--skip-nodedb", help = CONFIG_ONLY_HELP).flag()
 
     override fun help(context: Context) = "TCP connect/disconnect reconnect loop."
 
     override fun run() = runBlocking {
         val (host, port) = parseHostPort(target)
-        val summary = runTcpProbe(host, port, runs, out)
+        val summary = runTcpProbe(host, port, runs, out, skipNodeDb)
         emitSummary(listOf(summary), out)
         if (summary.fails > 0) exit(ExitCodes.FAILURE)
     }
@@ -98,12 +101,13 @@ internal class ProbeSerial : BaseCommand(name = "serial") {
         help = "PORT or PORT:BAUD (baud defaults to ${JvmSerialPorts.DEFAULT_BAUD}). A leading /dev/ is stripped.",
     )
     private val runs by option("--runs", help = "Number of connect cycles.").int().default(DEFAULT_RUNS)
+    private val skipNodeDb by option("--skip-nodedb", help = CONFIG_ONLY_HELP).flag()
 
     override fun help(context: Context) = "Serial connect/disconnect reconnect loop."
 
     override fun run() = runBlocking {
         val (port, baud) = parsePortBaud(target)
-        val summary = runSerialProbe(port, baud, runs, out)
+        val summary = runSerialProbe(port, baud, runs, out, skipNodeDb)
         emitSummary(listOf(summary), out)
         if (summary.fails > 0) exit(ExitCodes.FAILURE)
     }
@@ -115,6 +119,7 @@ internal class ProbeAll : BaseCommand(name = "all") {
     private val tcp by option("--tcp", help = "TCP target (HOST or HOST:PORT).", metavar = "TARGET")
     private val ble by option("--ble", help = "BLE needle (substring; empty = first match).", metavar = "NEEDLE")
     private val runs by option("--runs", help = "Runs per transport.").int().default(DEFAULT_RUNS)
+    private val skipNodeDb by option("--skip-nodedb", help = CONFIG_ONLY_HELP).flag()
     private val scanSeconds by option(
         "--scan",
         help = "BLE scan duration (default ${DEFAULT_SCAN_SECONDS}s).",
@@ -127,16 +132,16 @@ internal class ProbeAll : BaseCommand(name = "all") {
 
         serial?.let {
             val (port, baud) = parsePortBaud(it)
-            results += runSerialProbe(port, baud, runs, out)
+            results += runSerialProbe(port, baud, runs, out, skipNodeDb)
             delay(INTER_TRANSPORT_PAUSE_MS)
         }
         tcp?.let {
             val (host, port) = parseHostPort(it)
-            results += runTcpProbe(host, port, runs, out)
+            results += runTcpProbe(host, port, runs, out, skipNodeDb)
             delay(INTER_TRANSPORT_PAUSE_MS)
         }
         ble?.let {
-            results += runBleProbe(it, runs, scanSeconds, out)
+            results += runBleProbe(it, runs, scanSeconds, out, skipNodeDb)
         }
 
         if (results.isEmpty()) {
@@ -152,6 +157,8 @@ internal class ProbeAll : BaseCommand(name = "all") {
 
 // ---- Shared probe machinery ----------------------------------------------------------------------
 
+private const val CONFIG_ONLY_HELP =
+    "Config-only connect: stop after Stage 1, skip the NodeDB download (RadioClient.Builder.skipNodeDb)."
 private const val DEFAULT_RUNS = 3
 private const val DEFAULT_SCAN_SECONDS = 8
 private const val CONNECT_TIMEOUT_MS = 45_000L
@@ -186,7 +193,13 @@ internal fun parsePortBaud(raw: String): Pair<String, Int> {
 
 private const val DEFAULT_TCP_PORT = 4403
 
-private suspend fun runSerialProbe(port: String, baud: Int, runs: Int, out: Output): Summary {
+private suspend fun runSerialProbe(
+    port: String,
+    baud: Int,
+    runs: Int,
+    out: Output,
+    skipNodeDb: Boolean = false,
+): Summary {
     out.human("")
     out.human("─── SERIAL  $port @ ${baud}bps  ×$runs ───")
     val avail = JvmSerialPorts.list()
@@ -194,20 +207,32 @@ private suspend fun runSerialProbe(port: String, baud: Int, runs: Int, out: Outp
         out.human("serial port '$port' not found; available: ${avail.joinToString { it.name }}")
         return Summary("serial $port", 0, 0, emptyList(), notes = "port not found")
     }
-    return runProbeLoop("serial $port", runs, out, INTER_RUN_PAUSE_MS) {
+    return runProbeLoop("serial $port", runs, out, INTER_RUN_PAUSE_MS, skipNodeDb) {
         JvmSerialPorts.open(port, baud)
     }
 }
 
-private suspend fun runTcpProbe(host: String, port: Int, runs: Int, out: Output): Summary {
+private suspend fun runTcpProbe(
+    host: String,
+    port: Int,
+    runs: Int,
+    out: Output,
+    skipNodeDb: Boolean = false,
+): Summary {
     out.human("")
     out.human("─── TCP  $host:$port  ×$runs ───")
-    return runProbeLoop("tcp $host:$port", runs, out, INTER_RUN_PAUSE_MS) {
+    return runProbeLoop("tcp $host:$port", runs, out, INTER_RUN_PAUSE_MS, skipNodeDb) {
         TcpTransport(host = host, port = port)
     }
 }
 
-private suspend fun runBleProbe(needle: String, runs: Int, scanSeconds: Int, out: Output): Summary {
+private suspend fun runBleProbe(
+    needle: String,
+    runs: Int,
+    scanSeconds: Int,
+    out: Output,
+    skipNodeDb: Boolean = false,
+): Summary {
     out.human("")
     out.human("─── BLE  ${needle.ifBlank { "<any>" }}  ×$runs  (scan ${scanSeconds}s) ───")
     val n = needle.lowercase()
@@ -229,7 +254,7 @@ private suspend fun runBleProbe(needle: String, runs: Int, scanSeconds: Int, out
     val displayName = match.name ?: match.peripheralName ?: match.identifier.toString()
     out.human("Match: $displayName  rssi=${match.rssi}dBm  id=${match.identifier}")
     val identifier = match.identifier.toString()
-    return runProbeLoop("ble $displayName", runs, out, INTER_RUN_PAUSE_BLE_MS) {
+    return runProbeLoop("ble $displayName", runs, out, INTER_RUN_PAUSE_BLE_MS, skipNodeDb) {
         BleTransport(peripheral = Peripheral(match), address = identifier)
     }
 }
@@ -245,6 +270,7 @@ private suspend fun runProbeLoop(
     runs: Int,
     out: Output,
     perRunPauseMs: Long,
+    skipNodeDb: Boolean = false,
     factory: () -> RadioTransport,
 ): Summary {
     var pass = 0
@@ -268,6 +294,7 @@ private suspend fun runProbeLoop(
         val client = RadioClient.Builder()
             .transport(transport)
             .storage(SqlDelightStorageProvider(baseDir = ""))
+            .apply { if (skipNodeDb) skipNodeDb(true) }
             .build()
         val timings = ProbeTimings(transport.state, client.connection)
         val start = System.currentTimeMillis()
@@ -284,11 +311,15 @@ private suspend fun runProbeLoop(
         val nodeCount = withTimeoutOrNull(SNAPSHOT_TIMEOUT_MS) { client.nodes.first() }
             ?.let { (it as? NodeChange.Snapshot)?.nodes?.size } ?: -1
 
+        // NodeNum is unsigned on the wire; render it that way or high ids print negative.
+        val ownNode = client.ownNode.value?.num?.let { "0x" + it.toUInt().toString(16) } ?: "NULL"
         timings.stop()
         val ok = outcome == "OK"
         if (ok) {
             elapsed += duration
-            out.human("Run $n: ✓ CONNECTED in ${duration}ms ($nodeCount nodes)  [${timings.format()}]")
+            out.human(
+                "Run $n: ✓ CONNECTED in ${duration}ms ($nodeCount nodes, ownNode=$ownNode)  [${timings.format()}]",
+            )
             pass++
         } else {
             out.human("Run $n: ✗ $outcome (after ${duration}ms)  [${timings.format()}]")
@@ -300,6 +331,7 @@ private suspend fun runProbeLoop(
             put("ok", ok)
             put("elapsedMs", duration)
             put("nodeCount", nodeCount)
+            put("ownNode", ownNode)
             put("outcome", outcome)
             putObject("timings") {
                 timings.snapshot().forEach { (k, v) -> put(k, v) }

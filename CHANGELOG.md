@@ -2,8 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
@@ -11,11 +10,27 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `RadioClient.Builder.skipNodeDb()` — opt into a config-only connect that
+  stops the handshake after Stage 1 and never issues the `want_config_id = 69421` NodeDB request.
+  Cuts the bulk of BLE connect latency on large meshes for config editors, provisioning tools and
+  CLI one-shots. Config bundle, channels, own node, admin RPCs and send/receive are unaffected;
+  peers are only known once heard live. See `docs/api-reference.md` → "Config-only connect".
+
 ### Changed
+
+- `org.meshtastic:protobufs` 2.7.26 → 2.8.0. `MeshPacket.rx_rssi` is now an `optional int32`, so
+  the generated Kotlin property is `Int?` rather than `Int`. `:core` re-exports the proto types
+  via `api`, so consumers reading `rx_rssi` off a raw `MeshPacket` see the nullable type.
 
 ### Removed
 
 ### Fixed
+
+- `MeshPacket.toRadioMetrics()` no longer discards a packet carrying a genuine 0 dBm `rx_rssi`.
+  The old guard treated `rx_rssi == 0` as "no metrics", which is exactly the ambiguity 2.8.0 made
+  the field `optional` to remove — an SX126x can report exactly 0 dBm. The guard now tests
+  presence: a real zero survives, and `null` comes back only for a packet carrying no reading at
+  all, with `rx_rssi` absent and `rx_snr` zero.
 
 ## [0.1.1] — 2026-08-18
 

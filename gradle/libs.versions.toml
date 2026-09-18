@@ -3,7 +3,7 @@
 [versions]
 # --- Kotlin & build ---
 kotlin                      = "2.4.10"
-agp                         = "9.3.2"
+agp                         = "9.4.0"
 javaVersion                 = "21"
 androidMinSdk               = "26"
 androidCompileSdk           = "37"
@@ -13,11 +13,11 @@ androidTargetSdk            = "37"
 coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
 atomicfu                    = "0.33.0"
-okio                        = "3.18.1"
+okio                        = "3.18.2"
 
 # --- Protobuf / Wire ---
-wire                        = "6.4.7"            # wire-runtime version (transitive via protobufs SDK)
-meshtasticProtobufs         = "2.7.26"
+wire                        = "7.0.0"            # wire-runtime version (transitive via protobufs SDK)
+meshtasticProtobufs         = "2.8.0.85-ge319346-SNAPSHOT"
 
 # --- Storage ---
 sqldelight                  = "2.3.2"
@@ -37,11 +37,11 @@ androidxActivityCompose     = "1.13.0"
 androidxLifecycleCompose    = "2.11.0"
 
 # --- Logging ---
-kermit                      = "2.1.0"
+kermit                      = "2.2.0"
 
 # --- Testing ---
 turbine                     = "1.2.1"
-kotest                      = "6.2.4"
+kotest                      = "6.2.5"
 junit                       = "4.13.2"
 androidxTestRunner          = "1.7.0"
 androidxTestRules           = "1.7.0"
@@ -55,10 +55,13 @@ dokka                       = "2.2.0"
 
 # --- Static analysis & tooling ---
 ktlint                      = "1.8.0"
-spotless                    = "8.10.0"
+spotless                    = "8.10.2"
 detekt                      = "2.0.0-alpha.6"
-detektComposeRules          = "0.6.4"
+detektComposeRules          = "0.6.6"
 axionRelease                = "1.21.3"
+# JetBrains gradle-changelog-plugin: parses and renders the hand-written
+# CHANGELOG.md. It never generates an entry from a commit.
+changelog                   = "2.5.0"
 kover                       = "0.9.9"
 
 [libraries]
@@ -122,4 +125,5 @@ powerAssert                 = { id = "org.jetbrains.kotlin.plugin.power-assert",
 spotless                    = { id = "com.diffplug.spotless",                                    version.ref = "spotless" }
 detekt                      = { id = "dev.detekt",                                               version.ref = "detekt" }
 axionRelease                = { id = "pl.allegro.tech.build.axion-release",                      version.ref = "axionRelease" }
+changelog                   = { id = "org.jetbrains.changelog",                                   version.ref = "changelog" }
 kover                       = { id = "org.jetbrains.kotlinx.kover",                              version.ref = "kover" }

@@ -103,7 +103,11 @@ class HandshakeFsmTest {
         // through the normal autoHandshake flow (i.e. the bogus frames did not
         // break the FSM).
         val staleFrame = encodeFromRadio(
-            FromRadio(my_info = MyNodeInfo(my_node_num = 0xDEADBEEF.toInt())),
+            FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb ->
+                    wb.my_node_num = 0xDEADBEEF.toInt()
+                }.build()
+            }.build(),
         )
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:pre-handshake"),
@@ -185,8 +189,22 @@ class HandshakeFsmTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadioOrNull(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
-                inbound.trySend(encodeFromRadio(FromRadio(my_info = MyNodeInfo(my_node_num = 1))))
-                inbound.trySend(encodeFromRadio(FromRadio(config_complete_id = STAGE1_NONCE)))
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.my_info = MyNodeInfo.Builder().also { wb ->
+                                wb.my_node_num = 1
+                            }.build()
+                        }.build(),
+                    ),
+                )
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.config_complete_id = STAGE1_NONCE
+                        }.build(),
+                    ),
+                )
             }
             // Swallow Stage 2 nonce so the engine times out.
         }
@@ -309,9 +327,23 @@ class HandshakeFsmTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadioOrNull(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
-                inbound.trySend(encodeFromRadio(FromRadio(my_info = MyNodeInfo(my_node_num = 1))))
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.my_info = MyNodeInfo.Builder().also { wb ->
+                                wb.my_node_num = 1
+                            }.build()
+                        }.build(),
+                    ),
+                )
                 // WRONG nonce echoed back.
-                inbound.trySend(encodeFromRadio(FromRadio(config_complete_id = 0xDEAD)))
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.config_complete_id = 0xDEAD
+                        }.build(),
+                    ),
+                )
             }
         }
 
@@ -372,7 +404,13 @@ class HandshakeFsmTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadioOrNull(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
-                inbound.trySend(encodeFromRadio(FromRadio(rebooted = true)))
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.rebooted = true
+                        }.build(),
+                    ),
+                )
             }
         }
 

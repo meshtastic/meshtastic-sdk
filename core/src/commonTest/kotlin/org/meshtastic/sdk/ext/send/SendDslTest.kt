@@ -72,7 +72,12 @@ class SendDslTest {
         val client = buildClient()
         client.connect()
         val handle = client.send {
-            proto(MeshPacket(to = 0x42, channel = 1))
+            proto(
+                MeshPacket.Builder().also { wb ->
+                    wb.to = 0x42
+                    wb.channel = 1
+                }.build(),
+            )
         }
         assertNotNull(handle)
         client.disconnect()
@@ -81,7 +86,7 @@ class SendDslTest {
     @Test
     fun dsl_protoForbidsConvenienceSetters() {
         val builder = SendBuilder()
-        builder.proto(MeshPacket())
+        builder.proto(MeshPacket.Builder().build())
         assertFailsWith<IllegalStateException> { builder.to(NodeId.BROADCAST) }
         assertFailsWith<IllegalStateException> { builder.channel(ChannelIndex(0)) }
         assertFailsWith<IllegalStateException> { builder.wantAck() }

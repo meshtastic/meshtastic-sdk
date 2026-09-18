@@ -24,12 +24,28 @@ class ConfigMergeTest {
     @Test
     fun mergeConfigs_replacesMatchingSection() {
         val existing = listOf(
-            Config(device = DeviceConfig(role = Config.DeviceConfig.Role.CLIENT)),
-            Config(lora = LoRaConfig(region = Config.LoRaConfig.RegionCode.US)),
-            Config(display = DisplayConfig(screen_on_secs = 30)),
+            Config.Builder().also { wb ->
+                wb.device = DeviceConfig.Builder().also { wb ->
+                    wb.role = Config.DeviceConfig.Role.CLIENT
+                }.build()
+            }.build(),
+            Config.Builder().also { wb ->
+                wb.lora = LoRaConfig.Builder().also { wb ->
+                    wb.region = Config.LoRaConfig.RegionCode.US
+                }.build()
+            }.build(),
+            Config.Builder().also { wb ->
+                wb.display = DisplayConfig.Builder().also { wb ->
+                    wb.screen_on_secs = 30
+                }.build()
+            }.build(),
         )
         val written = listOf(
-            Config(lora = LoRaConfig(region = Config.LoRaConfig.RegionCode.EU_868)),
+            Config.Builder().also { wb ->
+                wb.lora = LoRaConfig.Builder().also { wb ->
+                    wb.region = Config.LoRaConfig.RegionCode.EU_868
+                }.build()
+            }.build(),
         )
         val merged = mergeConfigs(existing, written)
 
@@ -45,10 +61,18 @@ class ConfigMergeTest {
     @Test
     fun mergeConfigs_appendsNewSection() {
         val existing = listOf(
-            Config(device = DeviceConfig(role = Config.DeviceConfig.Role.ROUTER)),
+            Config.Builder().also { wb ->
+                wb.device = DeviceConfig.Builder().also { wb ->
+                    wb.role = Config.DeviceConfig.Role.ROUTER
+                }.build()
+            }.build(),
         )
         val written = listOf(
-            Config(bluetooth = BluetoothConfig(enabled = true)),
+            Config.Builder().also { wb ->
+                wb.bluetooth = BluetoothConfig.Builder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            }.build(),
         )
         val merged = mergeConfigs(existing, written)
 
@@ -59,7 +83,13 @@ class ConfigMergeTest {
 
     @Test
     fun mergeConfigs_emptyWrittenReturnsExisting() {
-        val existing = listOf(Config(power = PowerConfig(on_battery_shutdown_after_secs = 120)))
+        val existing = listOf(
+            Config.Builder().also { wb ->
+                wb.power = PowerConfig.Builder().also { wb ->
+                    wb.on_battery_shutdown_after_secs = 120
+                }.build()
+            }.build(),
+        )
         val merged = mergeConfigs(existing, emptyList())
         assertEquals(existing, merged)
     }
@@ -67,11 +97,23 @@ class ConfigMergeTest {
     @Test
     fun mergeModuleConfigs_replacesMatchingSection() {
         val existing = listOf(
-            ModuleConfig(mqtt = MQTTConfig(enabled = true)),
-            ModuleConfig(telemetry = TelemetryConfig(device_update_interval = 60)),
+            ModuleConfig.Builder().also { wb ->
+                wb.mqtt = MQTTConfig.Builder().also { wb ->
+                    wb.enabled = true
+                }.build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.telemetry = TelemetryConfig.Builder().also { wb ->
+                    wb.device_update_interval = 60
+                }.build()
+            }.build(),
         )
         val written = listOf(
-            ModuleConfig(telemetry = TelemetryConfig(device_update_interval = 30)),
+            ModuleConfig.Builder().also { wb ->
+                wb.telemetry = TelemetryConfig.Builder().also { wb ->
+                    wb.device_update_interval = 30
+                }.build()
+            }.build(),
         )
         val merged = mergeModuleConfigs(existing, written)
 
@@ -82,15 +124,35 @@ class ConfigMergeTest {
 
     @Test
     fun sectionKey_configSections() {
-        assertEquals("device", Config(device = DeviceConfig()).sectionKey())
-        assertEquals("lora", Config(lora = LoRaConfig()).sectionKey())
-        assertEquals(null, Config().sectionKey())
+        assertEquals(
+            "device",
+            Config.Builder().also { wb ->
+                wb.device = DeviceConfig.Builder().build()
+            }.build().sectionKey(),
+        )
+        assertEquals(
+            "lora",
+            Config.Builder().also { wb ->
+                wb.lora = LoRaConfig.Builder().build()
+            }.build().sectionKey(),
+        )
+        assertEquals(null, Config.Builder().build().sectionKey())
     }
 
     @Test
     fun sectionKey_moduleConfigSections() {
-        assertEquals("mqtt", ModuleConfig(mqtt = MQTTConfig()).sectionKey())
-        assertEquals("telemetry", ModuleConfig(telemetry = TelemetryConfig()).sectionKey())
-        assertEquals(null, ModuleConfig().sectionKey())
+        assertEquals(
+            "mqtt",
+            ModuleConfig.Builder().also { wb ->
+                wb.mqtt = MQTTConfig.Builder().build()
+            }.build().sectionKey(),
+        )
+        assertEquals(
+            "telemetry",
+            ModuleConfig.Builder().also { wb ->
+                wb.telemetry = TelemetryConfig.Builder().build()
+            }.build().sectionKey(),
+        )
+        assertEquals(null, ModuleConfig.Builder().build().sectionKey())
     }
 }
