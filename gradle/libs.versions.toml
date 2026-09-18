@@ -59,6 +59,9 @@ spotless                    = "8.10.2"
 detekt                      = "2.0.0-alpha.6"
 detektComposeRules          = "0.6.6"
 axionRelease                = "1.21.3"
+# JetBrains gradle-changelog-plugin: parses and renders the hand-written
+# CHANGELOG.md. It never generates an entry from a commit.
+changelog                   = "2.5.0"
 kover                       = "0.9.9"
 
 [libraries]
@@ -122,4 +125,5 @@ powerAssert                 = { id = "org.jetbrains.kotlin.plugin.power-assert",
 spotless                    = { id = "com.diffplug.spotless",                                    version.ref = "spotless" }
 detekt                      = { id = "dev.detekt",                                               version.ref = "detekt" }
 axionRelease                = { id = "pl.allegro.tech.build.axion-release",                      version.ref = "axionRelease" }
+changelog                   = { id = "org.jetbrains.changelog",                                   version.ref = "changelog" }
 kover                       = { id = "org.jetbrains.kotlinx.kover",                              version.ref = "kover" }
