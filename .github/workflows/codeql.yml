@@ -31,20 +31,28 @@ jobs:
         include:
           - language: actions
             build-mode: none
-          # Re-enabled: the pinned codeql-action v4.37.8 ships CodeQL CLI 2.26.3,
-          # past the 2.26.1 that rejected Kotlin 2.4.10 as "too recent". The
-          # upstream ceiling is 2.4.20, so this stays green until Kotlin 2.4.20+.
+          # Kotlin needs a traced build: with build-mode none the extractor sees no
+          # compilation and finalize fails with "could not process any code".
           - language: java-kotlin
-            build-mode: none
+            build-mode: manual
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/gradle-setup
+        if: matrix.language == 'java-kotlin'
+        with:
+          java_version: '21'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+
+      - name: Build (java-kotlin)
+        if: matrix.language == 'java-kotlin'
+        run: ./gradlew compileKotlinJvm --no-daemon --no-build-cache
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
