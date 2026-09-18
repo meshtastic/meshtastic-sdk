@@ -72,7 +72,7 @@ internal class SqlDelightStorage(
                     } catch (_: Exception) {
                         null
                     }
-                } ?: NodeInfo(num = row.node_num.toInt())
+                } ?: NodeInfo.Builder().also { wb -> wb.num = row.node_num.toInt() }.build()
                 put(nodeId, nodeInfo)
             }
         }
@@ -121,7 +121,7 @@ internal class SqlDelightStorage(
             } catch (_: Exception) {
                 null
             }
-        } ?: DeviceMetadata()
+        } ?: DeviceMetadata.Builder().build()
 
         val allConfigs = q.selectAllConfigs().executeAsList()
         val configs: List<Config> = allConfigs

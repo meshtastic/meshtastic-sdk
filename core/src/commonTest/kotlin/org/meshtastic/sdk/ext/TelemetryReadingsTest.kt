@@ -16,16 +16,24 @@ import kotlin.test.assertNull
 
 class TelemetryReadingsTest {
     @Test fun deviceMetricsTakePriority() {
-        val r = Telemetry(device_metrics = DeviceMetrics(battery_level = 50)).toReading()
+        val r = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 50
+            }.build()
+        }.build().toReading()
         assertIs<TelemetryReading.Device>(r)
     }
 
     @Test fun environmentVariant() {
-        val r = Telemetry(environment_metrics = EnvironmentMetrics(temperature = 20f)).toReading()
+        val r = Telemetry.Builder().also { wb ->
+            wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->
+                wb.temperature = 20f
+            }.build()
+        }.build().toReading()
         assertIs<TelemetryReading.Environment>(r)
     }
 
     @Test fun nullWhenEmpty() {
-        assertNull(Telemetry().toReading())
+        assertNull(Telemetry.Builder().build().toReading())
     }
 }

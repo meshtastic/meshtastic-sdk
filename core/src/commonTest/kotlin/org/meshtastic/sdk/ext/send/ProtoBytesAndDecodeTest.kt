@@ -24,7 +24,11 @@ class ProtoBytesAndDecodeTest {
 
     @Test
     fun meshPacket_roundTripBytes() {
-        val original = MeshPacket(to = 0x42, channel = 1, want_ack = true)
+        val original = MeshPacket.Builder().also { wb ->
+            wb.to = 0x42
+            wb.channel = 1
+            wb.want_ack = true
+        }.build()
         val bytes = original.toByteArray()
         val decoded = bytes.toMeshPacket()
         assertEquals(original, decoded)
@@ -32,14 +36,23 @@ class ProtoBytesAndDecodeTest {
 
     @Test
     fun fromRadio_roundTripBytes() {
-        val original = FromRadio(id = 7, packet = MeshPacket(to = 0x09))
+        val original = FromRadio.Builder().also { wb ->
+            wb.id = 7
+            wb.packet = MeshPacket.Builder().also { wb ->
+                wb.to = 0x09
+            }.build()
+        }.build()
         val bytes = original.toByteArray()
         assertEquals(original, bytes.toFromRadio())
     }
 
     @Test
     fun toRadio_roundTripBytes() {
-        val original = ToRadio(packet = MeshPacket(to = 0x11))
+        val original = ToRadio.Builder().also { wb ->
+            wb.packet = MeshPacket.Builder().also { wb ->
+                wb.to = 0x11
+            }.build()
+        }.build()
         val bytes = original.toByteArray()
         assertEquals(original, bytes.toToRadio())
     }
@@ -51,35 +64,39 @@ class ProtoBytesAndDecodeTest {
 
     @Test
     fun asText_readsTextPayload() {
-        val packet = MeshPacket(
-            decoded = Data(
-                portnum = PortNum.TEXT_MESSAGE_APP,
-                payload = ByteString.of(*"hello".encodeToByteArray()),
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.TEXT_MESSAGE_APP
+                wb.payload = ByteString.of(*"hello".encodeToByteArray())
+            }.build()
+        }.build()
         assertEquals("hello", packet.asText())
     }
 
     @Test
     fun asText_returnsNullForWrongPortnum() {
-        val packet = MeshPacket(
-            decoded = Data(
-                portnum = PortNum.POSITION_APP,
-                payload = ByteString.of(*"bytes".encodeToByteArray()),
-            ),
-        )
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.POSITION_APP
+                wb.payload = ByteString.of(*"bytes".encodeToByteArray())
+            }.build()
+        }.build()
         assertNull(packet.asText())
     }
 
     @Test
     fun asPosition_roundTrip() {
-        val pos = Position(latitude_i = 377749000, longitude_i = -1224194000, altitude = 12)
-        val packet = MeshPacket(
-            decoded = Data(
-                portnum = PortNum.POSITION_APP,
-                payload = ByteString.of(*Position.ADAPTER.encode(pos)),
-            ),
-        )
+        val pos = Position.Builder().also { wb ->
+            wb.latitude_i = 377749000
+            wb.longitude_i = -1224194000
+            wb.altitude = 12
+        }.build()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.POSITION_APP
+                wb.payload = ByteString.of(*Position.ADAPTER.encode(pos))
+            }.build()
+        }.build()
         val decoded = packet.asPosition()
         assertNotNull(decoded)
         assertEquals(pos, decoded)
@@ -87,29 +104,32 @@ class ProtoBytesAndDecodeTest {
 
     @Test
     fun asPosition_missingDecodedReturnsNull() {
-        assertNull(MeshPacket().asPosition())
+        assertNull(MeshPacket.Builder().build().asPosition())
     }
 
     @Test
     fun decodeAs_ignoresPortnumAndSwallowsCorruptBytes() {
-        val position = Position(latitude_i = 450000000, longitude_i = -930000000)
+        val position = Position.Builder().also { wb ->
+            wb.latitude_i = 450000000
+            wb.longitude_i = -930000000
+        }.build()
         // decodeAs is the documented escape hatch: NO portnum guard (Paxcount/StoreAndForward
         // consumers decode payloads carried under arbitrary ports).
-        val mismatchedPort = MeshPacket(
-            decoded = Data(
-                portnum = PortNum.TEXT_MESSAGE_APP,
-                payload = Position.ADAPTER.encode(position).toByteString(),
-            ),
-        )
+        val mismatchedPort = MeshPacket.Builder().also { wb ->
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.TEXT_MESSAGE_APP
+                wb.payload = Position.ADAPTER.encode(position).toByteString()
+            }.build()
+        }.build()
         assertEquals(position, mismatchedPort.decodeAs(Position.ADAPTER))
 
-        val corrupt = MeshPacket(
-            decoded = Data(
-                portnum = PortNum.POSITION_APP,
-                payload = byteArrayOf(-1, -1, -1).toByteString(),
-            ),
-        )
+        val corrupt = MeshPacket.Builder().also { wb ->
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.POSITION_APP
+                wb.payload = byteArrayOf(-1, -1, -1).toByteString()
+            }.build()
+        }.build()
         assertNull(corrupt.decodeAs(Position.ADAPTER))
-        assertNull(MeshPacket().decodeAs(Position.ADAPTER))
+        assertNull(MeshPacket.Builder().build().decodeAs(Position.ADAPTER))
     }
 }

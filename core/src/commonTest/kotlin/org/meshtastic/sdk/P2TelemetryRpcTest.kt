@@ -57,10 +57,14 @@ class P2TelemetryRpcTest {
 
         val req = transport.outboundPackets().drop(outboundBefore)
             .last { it.decoded?.portnum == org.meshtastic.proto.PortNum.TELEMETRY_APP }
-        val expected = DeviceMetrics(battery_level = 87, voltage = 4.05f, uptime_seconds = 3600)
+        val expected = DeviceMetrics.Builder().also { wb ->
+            wb.battery_level = 87
+            wb.voltage = 4.05f
+            wb.uptime_seconds = 3600
+        }.build()
         transport.injectTelemetryResponse(
             requestId = req.id,
-            telemetry = Telemetry(device_metrics = expected),
+            telemetry = Telemetry.Builder().also { wb -> wb.device_metrics = expected }.build(),
         )
         runCurrent()
 
@@ -85,7 +89,11 @@ class P2TelemetryRpcTest {
         // Reply with the wrong arm (DeviceMetrics) — must surface as Failed(NO_RESPONSE).
         transport.injectTelemetryResponse(
             requestId = req.id,
-            telemetry = Telemetry(device_metrics = DeviceMetrics(battery_level = 50)),
+            telemetry = Telemetry.Builder().also { wb ->
+                wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                    wb.battery_level = 50
+                }.build()
+            }.build(),
         )
         runCurrent()
 
@@ -127,14 +135,18 @@ class P2TelemetryRpcTest {
         // Inject a Telemetry packet from the wrong node — must be filtered out.
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry(local_stats = LocalStats(uptime_seconds = 1)),
+            telemetry = Telemetry.Builder().also { wb ->
+                wb.local_stats = LocalStats.Builder().also { wb ->
+                    wb.uptime_seconds = 1
+                }.build()
+            }.build(),
             fromNode = 0x42,
         )
         // Inject a matching packet — must reach the collector.
-        val matchEnv = EnvironmentMetrics(temperature = 21.5f)
+        val matchEnv = EnvironmentMetrics.Builder().also { wb -> wb.temperature = 21.5f }.build()
         transport.injectTelemetryResponse(
             requestId = 0,
-            telemetry = Telemetry(environment_metrics = matchEnv),
+            telemetry = Telemetry.Builder().also { wb -> wb.environment_metrics = matchEnv }.build(),
             fromNode = nodeOfInterest.raw,
         )
         runCurrent()
@@ -154,7 +166,11 @@ class P2TelemetryRpcTest {
 
         val first = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
         runCurrent()
-        val telem = Telemetry(device_metrics = DeviceMetrics(battery_level = 12))
+        val telem = Telemetry.Builder().also { wb ->
+            wb.device_metrics = DeviceMetrics.Builder().also { wb ->
+                wb.battery_level = 12
+            }.build()
+        }.build()
         transport.injectTelemetryResponse(requestId = 0, telemetry = telem, fromNode = 0xAB)
         runCurrent()
 
