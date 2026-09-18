@@ -64,6 +64,10 @@ changelog {
     version = providers.gradleProperty("changelogVersion")
         .getOrElse(resolvedVersion.removeSuffix("-SNAPSHOT"))
     repositoryUrl = "https://github.com/meshtastic/meshtastic-sdk"
+    // An empty Unreleased fails the bump here, with the plugin's own message.
+    // The default skips the task green and leaves no heading, which the release
+    // gate would only catch one tag later.
+    patchEmpty = false
     // Breaking leads, and the constitution is why: principle V requires a
     // `### Breaking` section for every pre-1.0 breaking change, so the group has
     // to exist and belongs first.
