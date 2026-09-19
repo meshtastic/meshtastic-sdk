@@ -13,6 +13,7 @@
 /build-logic/                                           @meshtastic/sdk-maintainers @meshtastic/build-infra
 /gradle/                                                @meshtastic/sdk-maintainers @meshtastic/build-infra
 /.github/                                               @meshtastic/sdk-maintainers @meshtastic/build-infra
+/.claude/                                               @meshtastic/sdk-maintainers @meshtastic/build-infra
 /renovate.json                                          @meshtastic/build-infra
 /settings.gradle.kts                                    @meshtastic/sdk-maintainers @meshtastic/build-infra
 /build.gradle.kts                                       @meshtastic/sdk-maintainers @meshtastic/build-infra

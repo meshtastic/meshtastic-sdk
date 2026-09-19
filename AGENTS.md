@@ -87,8 +87,11 @@ Slim by design. The full inventory:
 - **`GEMINI.md`** — companion pointer file for Gemini runners. Kept in sync.
 - **Skills** (`.github/skills/`) — invokable workflow recipes; one
   `SKILL.md` per pack. See `.github/skills/README.md` for the index.
-- **One agent** (`.github/agents/spec-guard.agent.md`) — full
-  spec-compliance review. Other "agent" workflows are now skills.
+- **One agent**, shipped once per loader — `.github/agents/spec-guard.agent.md`
+  for GitHub Copilot and `.claude/agents/spec-guard.md` for Claude Code (which
+  loads only `.claude/agents/`). Same body in both; a change to one is a change
+  to the other. Full spec-compliance review. Other "agent" workflows are now
+  skills.
 - **One prompt** (`.github/prompts/pre-pr-sanity.prompt.md`) — final
   pre-PR sweep. Other prompts collapsed into the matching skills.
 - **Eval harness** (`.github/evals/`) — scoring smoke check for prompts.
