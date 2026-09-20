@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Extends the org-wide policy for published KMP libraries (automerge baseline, 3-day soak, kotlin-toolchain and first-party holds — see meshtastic/.github:kmp-library.json for rationale). Local rules below keep this repo stricter than the preset: every Gradle update is human-reviewed because this SDK is consumed by the apple and android apps. packageRules apply in order and the last match wins, so these rules override the preset's.",
+  "description": "Extends the org-wide policy for published KMP libraries (automerge baseline, 3-day soak, kotlin-toolchain and first-party holds — see meshtastic/.github:kmp-library.json for rationale). Local rules below are additive to the preset, not stricter: the third-party Gradle baseline automerges after the soak, guarded by the required `api-check` — an ABI-moving bump goes red rather than merged. The holds that matter here are the preset's own (majors, the kotlin-toolchain group, every org.meshtastic coordinate) plus the protobufs note below. packageRules apply in order and the last match wins, so these rules override the preset's.",
   "extends": [
     "local>meshtastic/.github:kmp-library",
     ":timezone(UTC)"
@@ -8,12 +8,6 @@
   "rangeStrategy": "bump",
   "lockFileMaintenance": { "enabled": true, "schedule": ["before 6am on monday"] },
   "packageRules": [
-    {
-      "description": "Hold all non-major Gradle updates for review — overrides the preset's automerge baseline. Delete this rule to adopt the preset's baseline (automerge minor/patch/digest after the soak).",
-      "matchManagers": ["gradle", "gradle-wrapper"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": false
-    },
     {
       "matchPackageNames": ["org.meshtastic:protobufs"],
       "automerge": false,
