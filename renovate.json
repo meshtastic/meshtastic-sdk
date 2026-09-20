@@ -1,6 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "description": "Extends the org-wide policy for published KMP libraries (automerge baseline, 3-day soak, kotlin-toolchain and first-party holds — see meshtastic/.github:kmp-library.json for rationale). Local rules below are additive to the preset, not stricter: the third-party Gradle baseline automerges after the soak, guarded by the required `api-check` — an ABI-moving bump goes red rather than merged. The holds that matter here are the preset's own (majors, the kotlin-toolchain group, every org.meshtastic coordinate) plus the protobufs note below. packageRules apply in order and the last match wins, so these rules override the preset's.",
+  "description": "Extends the org-wide policy for published KMP libraries (automerge baseline, 3-day soak, kotlin-toolchain and first-party holds — see meshtastic/.github:kmp-library.json for rationale). Local rules below are additive to the preset, not stricter. The third-party Gradle baseline automerges after the soak, gated on the required `api-check`, so a bump that moves the ABI goes red rather than merged. The holds that matter here are the preset's own: majors, the kotlin-toolchain group, and every org.meshtastic coordinate, plus the protobufs note below. packageRules apply in order and the last match wins, so these rules override the preset's.",
   "extends": [
     "local>meshtastic/.github:kmp-library",
     ":timezone(UTC)"
