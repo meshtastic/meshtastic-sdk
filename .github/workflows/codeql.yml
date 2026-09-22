@@ -31,24 +31,32 @@ jobs:
         include:
           - language: actions
             build-mode: none
-          # java-kotlin is disabled until the CodeQL CLI supports Kotlin 2.4.10.
-          # CodeQL CLI 2.26.1 (shipped by codeql-action v4.37.2) rejects it
-          # ("Kotlin version 2.4.10 is too recent"), so the analysis autobuild
-          # fails and no analysis runs. Support (ceiling 2.4.20) is merged
-          # upstream and ships in a later CLI release that codeql-action picks up
-          # automatically -- once a CodeQL CLI newer than 2.26.1 is out, uncomment
-          # to re-enable and verify the Analyze (java-kotlin) job goes green.
-          # - language: java-kotlin
-          #   build-mode: none
+          # Kotlin needs a traced build: with build-mode none the extractor sees no
+          # compilation and finalize fails with "could not process any code".
+          - language: java-kotlin
+            build-mode: manual
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The traced Gradle build runs repository-controlled logic; keep the
+          # job token out of the git config it could read.
+          persist-credentials: false
+
+      - uses: ./.github/actions/gradle-setup
+        if: matrix.language == 'java-kotlin'
+        with:
+          java_version: '21'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
+
+      - name: Build (java-kotlin)
+        if: matrix.language == 'java-kotlin'
+        run: ./gradlew compileKotlinJvm --no-daemon --no-build-cache
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
