@@ -17,7 +17,7 @@ okio                        = "3.18.2"
 
 # --- Protobuf / Wire ---
 wire                        = "7.0.3"            # wire-runtime version (transitive via protobufs SDK)
-meshtasticProtobufs         = "2.8.0.85-ge319346-SNAPSHOT"
+meshtasticProtobufs         = "2.8.0.116-g51028ca-SNAPSHOT"
 
 # --- Storage ---
 sqldelight                  = "2.4.0"
