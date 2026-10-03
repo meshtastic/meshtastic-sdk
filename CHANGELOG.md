@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-03
+
+The first release on Maven Central since 0.1.0. 0.1.1 was never tagged or published, so this
+release also carries the 0.1.1 changes below.
+
+### Breaking
+
+- `MeshPacket.rx_rssi` is an `optional int32` from protobufs 2.8, so the generated Kotlin property
+  is `Int?` rather than `Int`. `:core` re-exports the proto types via `api`, so code reading
+  `rx_rssi` off a raw `MeshPacket` must handle `null`.
+
 ### Added
 
 - `RadioClient.Builder.skipNodeDb()` — opt into a config-only connect that
@@ -18,11 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- `org.meshtastic:protobufs` 2.7.26 → 2.8.1. `MeshPacket.rx_rssi` is now an `optional int32`, so
-  the generated Kotlin property is `Int?` rather than `Int`. `:core` re-exports the proto types
-  via `api`, so consumers reading `rx_rssi` off a raw `MeshPacket` see the nullable type.
-
-### Removed
+- `org.meshtastic:protobufs` 2.7.26 → 2.8.1, a tagged release built with Wire's `buildersOnly`.
 
 ### Fixed
 
@@ -31,6 +38,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the field `optional` to remove — an SX126x can report exactly 0 dBm. The guard now tests
   presence: a real zero survives, and `null` comes back only for a packet carrying no reading at
   all, with `rx_rssi` absent and `rx_snr` zero.
+
+### Release verification
+
+The conformance sweep ran against the meshtastic-mcp simulated TCP radio, as for 0.1.1, with the
+same result: cs1/cs3/cs5 pass, cs2 and cs6 fail on the simulator limitations recorded there,
+cs4/cs7 skipped (no peer node). Transcript: `docs/release-history/v0.2.0-conformance.md`.
 
 ## [0.1.1] — 2026-08-18
 
