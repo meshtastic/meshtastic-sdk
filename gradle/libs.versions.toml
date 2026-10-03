@@ -62,7 +62,7 @@ axionRelease                = "1.21.4"
 # JetBrains gradle-changelog-plugin: parses and renders the hand-written
 # CHANGELOG.md. It never generates an entry from a commit.
 changelog                   = "2.5.0"
-kover                       = "0.9.9"
+kover                       = "0.9.11"
 
 [libraries]
 coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",        version.ref = "coroutines" }
