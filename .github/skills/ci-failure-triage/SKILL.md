@@ -36,7 +36,7 @@ Use this skill when local or CI checks fail.
 
 ## Validation Commands
 - ./gradlew <failingTask>
-- ./gradlew detekt ktlintCheck
+- ./gradlew detekt spotlessCheck
 - ./gradlew checkKotlinAbi
 - ./gradlew check
 

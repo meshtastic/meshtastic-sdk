@@ -1,83 +1,115 @@
 name: Release
 
-# Release pipeline. See docs/release-runbook.md.
-#
-# Triggers:
-#   - Tag push (vX.Y.Z, stable only) — automatic publish.
-#   - workflow_dispatch — manual fallback, dry-runs, and pre-release tags
-#     (vX.Y.Z-rcN). Pre-release tags deliberately do NOT auto-publish; see
-#     docs/release-runbook.md §Release candidates.
-#
-# Pre-flight (done before tagging):
-#   - main is green
-#   - CHANGELOG.md [Unreleased] section is finalized
-#   - Tag signed and pushed: git tag -s vX.Y.Z -m "vX.Y.Z" && git push --tags
-
+# Dispatch from main with the version a merged release PR cut in CHANGELOG.md, or push its tag.
+# Every gate runs before the tag is pushed, so a refused release leaves no tag behind.
+# Release process: RELEASING.md.
 on:
   push:
     tags:
-      # Stable tags only. A vX.Y.Z-rcN tag does NOT match and will not publish —
-      # publish rcs via workflow_dispatch instead (v0.1.0-rc1 once silently
-      # did nothing because of this pattern; the exclusion is now intentional).
       - 'v[0-9]+.[0-9]+.[0-9]+'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 0.1.0 or 0.1.0-rc2). Must match a pushed tag vX.Y.Z or vX.Y.Z-rcN.'
+        description: 'Version to release, e.g. 0.3.0 (must have a CHANGELOG.md section)'
         required: true
         type: string
       dry_run:
-        description: 'If true, build artifacts but skip publish.'
+        description: 'Run every gate and stage the artifacts, but tag, publish and release nothing'
         required: false
         type: boolean
         default: false
 
 concurrency:
-  group: release-${{ inputs.version || github.ref_name }}
+  group: release-${{ github.event_name == 'push' && github.ref_name || format('v{0}', inputs.version) }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  publish:
-    name: Publish ${{ inputs.version || github.ref_name }}
-    # Linux publishes every target. Kotlin/Native cross-compiles the Apple klibs
-    # from any host, and nothing in the publish path needs Xcode — SKIE and the
-    # iOS framework only exist in the framework-link path, which Maven publishing
-    # never enters. Verified on 2.4.10: a Linux `publishToMavenLocal` emits the
-    # same 37 artifacts Maven Central holds, Apple klibs included.
-    # What Linux cannot do is *run* the iOS tests; the guard below covers that.
+  release:
+    name: Gate, publish to Maven Central & release
+    # Kotlin/Native cross-compiles the Apple klibs from Linux, and nothing in the publish path
+    # needs Xcode: SKIE and the iOS framework only exist in the framework-link path, which Maven
+    # publishing never enters. Linux cannot run the iOS tests; the green-CI gate covers them.
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     permissions:
-      contents: read
-      # the "Require green CI" step reads check-runs for the released commit
+      contents: write
+      id-token: write
+      attestations: write
       checks: read
+    env:
+      DRY_RUN: ${{ inputs.dry_run || false }}
     steps:
-      - name: Resolve version
-        id: ver
-        run: |
-          if [ -n "${{ inputs.version }}" ]; then
-            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "ref=refs/tags/v${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
-            tag="${GITHUB_REF_NAME}"
-            echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
-            echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Checkout tag v${{ steps.ver.outputs.version }}
+      - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.ver.outputs.ref }}
           submodules: recursive
-          fetch-depth: 0  # axion-release reads tags
+          fetch-depth: 0 # axion-release derives the version from tags
 
-      # The release job cross-compiles every Kotlin/Native target; without
-      # this cache each release run re-downloads the konan toolchain and
-      # rebuilds dependency klibs from scratch (the CI test jobs have had
-      # this cache all along — v0.1.0's first attempt ran >1h cold).
-      - name: Cache Konan
+      - name: Resolve version
+        id: version
+        env:
+          REQUESTED: ${{ inputs.version || github.ref_name }}
+        run: echo "version=${REQUESTED#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Release from main only
+        if: env.DRY_RUN != 'true'
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$GITHUB_REF is not on main; release from main (dry_run may run anywhere)"
+            exit 1
+          fi
+
+      - name: Verify an existing tag points at this commit
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          if git rev-parse --quiet --verify "v$V^{commit}" >/dev/null &&
+             [ "$(git rev-parse "v$V^{commit}")" != "$(git rev-parse HEAD)" ]; then
+            if [ "$DRY_RUN" = true ]; then
+              echo "::warning::v$V already exists on another commit; a real release would stop here"
+            else
+              echo "::error::v$V already exists on another commit"
+              exit 1
+            fi
+          fi
+          echo "releasing $V from $(git rev-parse --short HEAD)"
+
+      # Scratch files go to RUNNER_TEMP: axion resolves a dirty checkout to -SNAPSHOT.
+      - name: Render release notes
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          NOTES=$(scripts/changelog.sh notes "$V")
+          {
+            echo "Kotlin Multiplatform SDK for Meshtastic radios over BLE, TCP and USB-serial,"
+            echo "on Android, JVM and iOS."
+            echo
+            echo '```kotlin'
+            echo "implementation(platform(\"org.meshtastic:sdk-bom:$V\"))"
+            echo 'implementation("org.meshtastic:sdk-core")'
+            echo '```'
+            echo
+            # The constitution requires a pre-1.0 breaking release to say so in its notes.
+            if grep -qx '### Breaking' <<<"$NOTES"; then
+              echo "**BREAKING**: see the Breaking section below."
+              echo
+            fi
+            printf '%s\n' "$NOTES"
+          } > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+
+      # CI does not run on tags, so the iOS tests this runner cannot execute are only
+      # guaranteed by the required checks having passed on this exact commit.
+      - name: Require green CI on the commit being released
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release-checks.sh green-ci "$(git rev-parse HEAD)"
+
+      - name: Cache Konan (Kotlin/Native toolchain)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.konan
@@ -85,77 +117,43 @@ jobs:
           restore-keys: |
             konan-${{ runner.os }}-
 
-      # Cap build memory below the macOS runner's budget. The project
-      # gradle.properties asks for -Xmx4g and full parallelism, which — plus
-      # the Kotlin daemon and konan compilers — swap-thrashes the runner.
-      # GRADLE_USER_HOME properties take precedence over the project's.
-      - uses: ./.github/actions/gradle-setup
+      - name: Setup JDK and Gradle
+        uses: ./.github/actions/gradle-setup
         with:
           cache_read_only: 'true'
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
-      # CI runs on push/pull_request/merge_group — never on tags — and this
-      # workflow can be dispatched against any ref, so the iOS tests (macOS-only,
-      # and the one thing this runner cannot do) are only guaranteed if the commit
-      # being released already passed them.
-      - name: Require green CI on the commit being released
+      # axion derives the version from the tag on HEAD, so the build needs it before the push.
+      - name: Tag the release locally
         env:
-          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.version.outputs.version }}
         run: |
-          set -euo pipefail
-          SHA=$(git rev-parse HEAD)
-          JOB="test-ios (iosSimulatorArm64)"
-          for _ in $(seq 1 60); do
-            # -f filters server-side: the unfiltered check-runs list is paginated,
-            # so a client-side match can miss the job entirely and wait forever.
-            if ! CONC=$(gh api -X GET \
-              "repos/${{ github.repository }}/commits/$SHA/check-runs" \
-              -f check_name="$JOB" --jq '.check_runs[0].conclusion // ""'); then
-              echo "::warning::check-runs query failed; retrying"
-              sleep 30
-              continue
-            fi
-            case "$CONC" in
-              success) echo "✓ $JOB passed on $SHA"; exit 0 ;;
-              "") echo "waiting for '$JOB' on $SHA…"; sleep 30 ;;
-              *) echo "::error::'$JOB' concluded '$CONC' on $SHA — not releasing"; exit 1 ;;
-            esac
-          done
-          echo "::error::timed out waiting for '$JOB' on $SHA"
-          exit 1
+          # An earlier gate refused a real release whose tag sits on another commit; a dry run
+          # moves the tag locally so axion still resolves the version it is checking.
+          if [ "$(git rev-parse --quiet --verify "v$V^{commit}")" = "$(git rev-parse HEAD)" ]; then
+            echo "v$V already on this commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f -a "v$V" -m "v$V"
 
       - name: Verify version matches tag
+        env:
+          V: ${{ steps.version.outputs.version }}
         run: |
           # axion's currentVersion prints "Project version: X.Y.Z" (plus a
           # blank line under -q); extract the bare version before comparing.
           actual=$(./gradlew -q currentVersion | sed -n 's/^Project version: //p' | tail -1)
-          if [[ "$actual" != "${{ steps.ver.outputs.version }}" ]]; then
-            echo "::error::Tag v${{ steps.ver.outputs.version }} resolves to '$actual' (expected ${{ steps.ver.outputs.version }})"
+          if [ "$actual" != "$V" ]; then
+            echo "::error::v$V resolves to '$actual'"
             exit 1
           fi
 
-      - name: Verify the changelog has a section for this version
-        # The tag and the version agree; the changelog is the third thing that has
-        # to. `getChangelog` cannot be used as the check — when the declared
-        # version has no section it silently returns the most recent released one
-        # rather than failing.
-        run: |
-          version="${{ steps.ver.outputs.version }}"
-          # awk, not grep -E: the version is a literal and its dots are ERE
-          # wildcards. `index($0, v) == 1` is "this line starts with exactly
-          # this string", with no escaping to get wrong.
-          if ! awk -v v="## [$version]" 'index($0, v) == 1 { found = 1 } END { exit !found }' CHANGELOG.md; then
-            echo "::error::CHANGELOG.md has no '## [$version]' section — run './gradlew patchChangelog -PchangelogVersion=$version' and commit it before tagging."
-            exit 1
-          fi
-          echo "✓ CHANGELOG.md has a section for $version"
-
-      # Samples are excluded: they are CI-gated on every PR and are not
-      # published, and their RELEASE-mode iOS framework links run the
-      # Kotlin/Native devirtualization pass, which OOMs the 7GB macOS
-      # runner (v0.1.0 attempt 2 died there). -x also drops tasks
-      # reachable only through the excluded ones (the link tasks).
+      # Samples are not published and are CI-gated on every PR. Their RELEASE-mode iOS
+      # framework links run the Kotlin/Native devirtualization pass, which this job does not need.
+      # -x also drops tasks reachable only through the excluded ones (the link tasks).
       - name: Build all artifacts
         run: >
           ./gradlew assemble
@@ -170,39 +168,76 @@ jobs:
           -x :samples:parity-app:check
           -x :samples:parity-android-app:check
 
-      - name: Check Maven Central state
-        # Probe whether this version is already on Maven Central. If it is,
-        # the publish step below skips — Sonatype rejects re-uploads with
-        # "component already exists", which would otherwise turn a re-run
-        # after a partial failure (workflow died after a successful publish)
-        # into a hard failure. All sdk-* artifacts publish together in one
-        # Central Portal deployment, so sdk-core's POM is an accurate proxy
-        # for the whole release.
-        id: mc_check
+      - name: Stage signed artifacts locally
+        env:
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
+        run: ./gradlew publishToMavenLocal --no-configuration-cache --stacktrace
+
+      - name: Refuse a -SNAPSHOT dependency
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: scripts/release-checks.sh no-snapshots "$V"
+
+      - name: Collect every staged artifact for attestation
+        env:
+          V: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.ver.outputs.version }}"
-          # `|| true`: a transient probe failure must not kill the run —
-          # treating it as "not published" just means we attempt the
-          # publish, which is today's behavior.
+          mkdir -p "$RUNNER_TEMP/maven-attestation"
+          find ~/.m2/repository/org/meshtastic -path "*/$V/*" -type f \
+            ! -name '*.asc' ! -name 'maven-metadata*' \
+            -exec cp {} "$RUNNER_TEMP/maven-attestation/" \;
+          ls -1 "$RUNNER_TEMP/maven-attestation"
+
+      - name: Attest the staged artifacts
+        if: env.DRY_RUN != 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/maven-attestation/*
+
+      - name: Check Maven Central state
+        # Sonatype rejects a re-upload, so a re-run after a partial release skips the publish.
+        # Every sdk-* artifact publishes in one Central Portal deployment, so sdk-core stands
+        # for the whole release.
+        id: central
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
           HTTP=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "https://repo1.maven.org/maven2/org/meshtastic/sdk-core/$VERSION/sdk-core-$VERSION.pom" || true)
-          echo "Maven Central POM probe for sdk-core $VERSION: HTTP $HTTP"
-          if [ "$HTTP" = "200" ]; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::v$VERSION is already on Maven Central — publish step will skip (idempotent re-run)."
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
+            "https://repo1.maven.org/maven2/org/meshtastic/sdk-core/$V/sdk-core-$V.pom" || true)
+          echo "Maven Central POM probe for $V: HTTP $HTTP"
+          echo "published=$([ "$HTTP" = 200 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Push the release tag
+        if: env.DRY_RUN != 'true'
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$V" >/dev/null; then
+            echo "v$V already on origin"
+            exit 0
           fi
+          git push origin "v$V"
 
       - name: Publish to Maven Central
-        if: ${{ inputs.dry_run != true && steps.mc_check.outputs.already_published == 'false' }}
+        if: env.DRY_RUN != 'true' && steps.central.outputs.published != 'true'
         env:
           ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
           ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
           ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
           ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
-        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
+        run: ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache --stacktrace
+
+      - name: Create or update the GitHub Release
+        if: env.DRY_RUN != 'true'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          body_path: ${{ runner.temp }}/release-notes.md
 
       - name: Dry-run summary
-        if: ${{ inputs.dry_run == true }}
-        run: echo "Dry run complete; artifacts built but not published."
+        if: env.DRY_RUN == 'true'
+        env:
+          V: ${{ steps.version.outputs.version }}
+        run: echo "dry run passed every gate for $V; nothing was tagged, published or released"

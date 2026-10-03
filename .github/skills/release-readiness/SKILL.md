@@ -18,6 +18,7 @@ Use this skill before final merge recommendations or version tag release candida
 - docs/ci-cd.md
 - docs/versioning.md
 - docs/manual-tests.md
+- RELEASING.md
 
 ## Workflow
 1. Validate local prerequisites and submodule state.
@@ -28,7 +29,7 @@ Use this skill before final merge recommendations or version tag release candida
 6. Produce release verdict with blockers and confidence level.
 
 ## Command Set
-- ./gradlew detekt ktlintCheck
+- ./gradlew detekt spotlessCheck
 - ./gradlew checkKotlinAbi
 - ./gradlew check
 - ./gradlew updateKotlinAbi (intentional API changes only)

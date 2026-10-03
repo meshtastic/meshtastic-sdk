@@ -171,9 +171,9 @@ Workflow:
 ## Changelog
 
 [`CHANGELOG.md`](CHANGELOG.md) is hand-written in
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) form. The JetBrains
-[gradle-changelog-plugin](https://github.com/JetBrains/gradle-changelog-plugin)
-parses and renders it and never generates an entry from a commit.
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) form, and nothing
+generates an entry from a commit. `scripts/changelog.sh` cuts and reads sections
+without re-rendering the file, so prose under any heading survives a release.
 
 Three rules already live elsewhere and are not restated here: constitution
 principle V (a pre-1.0 breaking change MUST add a `### Breaking` section),
@@ -188,15 +188,14 @@ have hit, a security property, a schema migration. Refactors, test-only changes,
 sample-only changes and CI work need none.
 
 **A change that moves any `api/*.api` or `api/*.klib.api` dump always needs an
-entry.** `Breaking` leads the group order because principle V requires that
-group to exist, and because with committed ABI dumps the first thing a consumer
-needs to know is whether recompiling is enough.
+entry.** `### Breaking` comes first in a section because principle V requires
+that group to exist, and because with committed ABI dumps the first thing a
+consumer needs to know is whether recompiling is enough.
 
-Cut the section with `./gradlew patchChangelog`, not by hand. It reads axion's
-resolved version with `-SNAPSHOT` stripped — the **next patch** — so for a minor,
-a major or an rc pass `-PchangelogVersion=x.y.z`. Do not reach for axion's own
-`-Prelease.version` for this: off the default branch it appends the branch name
-as a qualifier, and you get a `## [0.2.0-my-branch]` heading.
+The changelog is also what the GitHub Release page says: `release.yml` puts
+`scripts/changelog.sh notes X.Y.Z` in the release body. A release PR cuts the
+section with `scripts/changelog.sh cut X.Y.Z`, not by hand; releasing is in
+[RELEASING.md](RELEASING.md).
 
 ## SQLDelight schema migrations
 
