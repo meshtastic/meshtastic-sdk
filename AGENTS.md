@@ -18,7 +18,7 @@ Use links above as source of truth; do not restate their contents in PR descript
 ## Environment
 
 - JDK 21.
-- Android SDK API 35 for Android targets (`ANDROID_HOME` set).
+- Android SDK at the `androidCompileSdk` level in `gradle/libs.versions.toml` for Android targets (`ANDROID_HOME` set).
 - Xcode 15+ for iOS targets.
 - No submodules to init — protobuf types come from the published `org.meshtastic:protobufs` Maven artifact, pinned in `gradle/libs.versions.toml` (`meshtasticProtobufs`).
 
@@ -54,7 +54,7 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 - Follow API shape rules in ADR-005.
 - Do not introduce `kotlin.Result<T>` in public API.
 - If public API changes are intentional, include regenerated `api/*.api` files from `updateKotlinAbi`.
-- Every public symbol MUST have a KDoc comment; Dokka coverage is a CI gate (`./gradlew dokkaGenerate` — Dokka V2; the legacy `dokkaHtml` task is removed and errors under V2 mode).
+- Every public symbol MUST have a KDoc comment; Dokka coverage is a CI gate (`./gradlew dokkaGenerate`; Dokka V2 has no `dokkaHtml` task).
 
 ## Workflow Expectations
 
@@ -79,18 +79,19 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 
 ## Agent Tooling In Repo
 
-Slim by design. The full inventory:
+The inventory:
 
 - **This file (`AGENTS.md`)** — guardrails + routing matrix below.
-- **`CLAUDE.md`** — companion pointer file for runners that key off the
-  Claude filename. Identical content to this file (kept in sync).
-- **`GEMINI.md`** — companion pointer file for Gemini runners. Kept in sync.
+- **`CLAUDE.md`** — pointer to this file for runners that key off the
+  Claude filename.
+- **`GEMINI.md`** — Gemini runners' own instruction file, separate from
+  this one.
 - **Skills** (`.github/skills/`) — invokable workflow recipes; one
   `SKILL.md` per pack. See `.github/skills/README.md` for the index.
-- **One agent** (`.github/agents/spec-guard.agent.md`) — full
-  spec-compliance review. Other "agent" workflows are now skills.
-- **One prompt** (`.github/prompts/pre-pr-sanity.prompt.md`) — final
-  pre-PR sweep. Other prompts collapsed into the matching skills.
+- **Agents** (`.github/agents/`) — `spec-guard.agent.md` is the full
+  spec-compliance review; the `speckit.*` agents belong to Spec Kit (`.specify/`).
+- **Prompts** (`.github/prompts/`) — `pre-pr-sanity.prompt.md` is the final
+  pre-PR sweep; the `speckit.*` prompts belong to Spec Kit.
 - **Eval harness** (`.github/evals/`) — scoring smoke check for prompts.
 - **Tooling guardrails** (`.github/tooling/`) — `check.sh` enforces
   schema validity, frontmatter, SHA-pinned actions, and so on.
