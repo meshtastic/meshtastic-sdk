@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- `org.meshtastic:protobufs` 2.7.26 → 2.8.0. `MeshPacket.rx_rssi` is now an `optional int32`, so
+- `org.meshtastic:protobufs` 2.7.26 → 2.8.1. `MeshPacket.rx_rssi` is now an `optional int32`, so
   the generated Kotlin property is `Int?` rather than `Int`. `:core` re-exports the proto types
   via `api`, so consumers reading `rx_rssi` off a raw `MeshPacket` see the nullable type.
 
