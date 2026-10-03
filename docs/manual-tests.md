@@ -389,7 +389,7 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
 
 ## Recording results
 
-For each release candidate, copy this template into `MANUAL-TEST-RESULTS.md` at repo root and fill in:
+For each release, copy this template into `docs/release-history/vX.Y.Z-conformance.md` and fill in:
 
 ```
 # Manual Test Results — vX.Y.Z RC<n>

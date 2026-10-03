@@ -32,9 +32,9 @@ This SDK does **not** include UI components, navigation, or storage policy — s
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("org.meshtastic:sdk-core:0.1.0")
-    implementation("org.meshtastic:sdk-transport-tcp:0.1.0")     // pick a transport
-    implementation("org.meshtastic:sdk-storage-sqldelight:0.1.0") // pick a storage
+    implementation("org.meshtastic:sdk-core:0.2.0")
+    implementation("org.meshtastic:sdk-transport-tcp:0.2.0")     // pick a transport
+    implementation("org.meshtastic:sdk-storage-sqldelight:0.2.0") // pick a storage
 }
 ```
 
@@ -46,7 +46,7 @@ Optionally, depend on `sdk-bom` to align all module versions; see [`bom/README.m
 
 ### Snapshot artifacts
 
-Every push to `main` publishes `0.1.0-SNAPSHOT` (and successor versions) to the Sonatype Central snapshot repository:
+Every push to `main` publishes the patch after the latest release as `-SNAPSHOT` (`0.2.1-SNAPSHOT` after `0.2.0`) to the Sonatype Central snapshot repository:
 
 ```kotlin
 // settings.gradle.kts (or root build.gradle.kts repositories block)
@@ -61,11 +61,11 @@ dependencyResolutionManagement {
 
 // build.gradle.kts
 dependencies {
-    implementation("org.meshtastic:sdk-core:0.1.0-SNAPSHOT")
+    implementation("org.meshtastic:sdk-core:0.2.1-SNAPSHOT")
 }
 ```
 
-Snapshot artifacts are mutable — rebuilt on every commit to `main`. For reproducible builds, depend on a released version (e.g. `org.meshtastic:sdk-core:0.1.0`) rather than a `-SNAPSHOT`.
+Snapshot artifacts are mutable and rebuilt on every commit to `main`. For reproducible builds, depend on a released version (e.g. `org.meshtastic:sdk-core:0.2.0`) rather than a `-SNAPSHOT`.
 
 Roadmap (post-1.0, non-breaking adds): `transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server`, `wasmJs` browser support — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 

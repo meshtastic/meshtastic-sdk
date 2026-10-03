@@ -12,7 +12,7 @@
 | **MINOR** | New public API; new transport module; bumping the `org.meshtastic:protobufs` artifact across a MINOR upstream change (most common — new `PortNum`, new `Config` field). New optional `Builder` method. |
 | **PATCH** | Bug fix; internal refactor; doc-only change; bumping the `org.meshtastic:protobufs` artifact across a PATCH upstream change (additive proto field with default value). |
 
-Snapshot builds (`X.Y.Z-SNAPSHOT`) publish on every push to `main` to the [Central Portal snapshot repository](https://central.sonatype.com/repository/maven-snapshots/); tagged releases publish to Maven Central via manual workflow dispatch.
+Snapshot builds (`X.Y.Z-SNAPSHOT`, the patch after the latest tag) publish on every push to `main` to the [Central Portal snapshot repository](https://central.sonatype.com/repository/maven-snapshots/); releases publish to Maven Central from `release.yml`, as [`RELEASING.md`](../RELEASING.md) describes.
 
 ## Pre-1.0 policy
 
@@ -23,7 +23,7 @@ While version is `0.x.y`:
     - Bump MINOR.
     - Regenerate `api/` files via `./gradlew updateKotlinAbi` in the same commit.
     - Add a `## [0.MINOR.0]` section to `CHANGELOG.md` with `### Breaking` subsection.
-    - Be called out in the GitHub release notes as `**BREAKING**`.
+    - Be called out in the GitHub release notes as `**BREAKING**`. The release workflow adds that line to the notes of any version whose changelog section has `### Breaking`.
 3. **Deprecation is optional** but encouraged for changes a consumer can adapt to: mark with `@Deprecated(level = WARNING)` for one MINOR, then remove in the next.
 4. Kotlin's built-in klib ABI validation runs in PR CI as **hard-gate from Phase 0** (matches `mqtt-client`'s day-1 enforcement). A PR that changes `api/*.api` MUST commit the regenerated dump.
 
@@ -79,33 +79,7 @@ Renovate's `gradle` manager opens a PR when a new `org.meshtastic:protobufs` ver
 
 ## Release workflow
 
-### Tagging
-
-```bash
-git tag -a v0.5.0 -m "Release 0.5.0"
-git push --tags
-```
-
-`axion-release` reads the tag; the resulting `./gradlew currentVersion` returns `0.5.0`.
-
-### Publishing
-
-Vanniktech publishes direct to the Sonatype Central Portal in one shot — there is no separate staging-repository "close-and-release" step.
-
-```bash
-# Snapshots (any non-tag build):
-./gradlew publishToMavenCentral --no-configuration-cache
-
-# Tagged release:
-./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
-```
-
-Driven from a manual `release.yml` GitHub Actions workflow (`workflow_dispatch`) on the tagged commit. Required secrets (vanniktech-standard names):
-
-- `MAVEN_CENTRAL_USERNAME` — Central Portal token username.
-- `MAVEN_CENTRAL_PASSWORD` — Central Portal token password.
-- `SIGNING_IN_MEMORY_KEY` — ASCII-armored GPG private key (`gpg --armor --export-secret-keys $KEY`), newlines preserved.
-- `SIGNING_IN_MEMORY_KEY_PASSWORD` — passphrase for the above.
+How a release is cut, the secrets it uses and the gates it runs are in [`RELEASING.md`](../RELEASING.md).
 
 ### Artifacts published per release (MVP)
 
@@ -119,7 +93,7 @@ Driven from a manual `release.yml` GitHub Actions workflow (`workflow_dispatch`)
 | `org.meshtastic:sdk-storage-sqldelight` | `:storage-sqldelight` |
 | `org.meshtastic:sdk-testing` | `:testing` |
 
-All modules ship at the same version. KMP variants (Android AAR, JVM JAR, iOS Klib + XCFramework via [ADR-007](./decisions/007-ios-distribution.md)) publish under the same coordinates with platform classifiers per Gradle convention.
+All modules ship at the same version. KMP variants (Android AAR, JVM JAR, iOS klibs) publish under per-target coordinates (`sdk-core-jvm`, `sdk-core-iosarm64`, ...) behind the root Gradle module. The `RadioClient` XCFramework that [ADR-007](./decisions/007-ios-distribution.md) describes is not published.
 
 Roadmap artifacts (`sdk-rpc`, `sdk-transport-rpc`, `sdk-host-rpc-server`, `sdk-transport-mqtt-proxy`) ship additively when the wasm/RPC roadmap lands; see [`./future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md).
 
@@ -137,26 +111,7 @@ The BOM is itself versioned and bumped on every release (axion handles this unif
 
 ### Release notes
 
-Generated from `CHANGELOG.md` `## [X.Y.Z]` section + a manually-curated highlight blurb. Format:
-
-```
-## [0.5.0] — 2026-MM-DD
-
-### Added
-- ...
-
-### Changed
-- ...
-
-### Breaking
-- ...   (only pre-1.0; post-1.0 these only appear in MAJOR releases)
-
-### Fixed
-- ...
-
-### Proto
-- Bumped `org.meshtastic:protobufs` to <version> (upstream range <prev>..<sha>).
-```
+A release's GitHub notes are its `CHANGELOG.md` section verbatim, under an install snippet. What goes in that section is in [`CONTRIBUTING.md`](../CONTRIBUTING.md#changelog).
 
 ## Branching
 
@@ -182,7 +137,7 @@ when a real hard minimum is enforced.
 If a release ships a critical defect:
 
 1. Open a hotfix PR; bump PATCH.
-2. Cut a new tag immediately.
+2. Release that patch immediately, per [`RELEASING.md`](../RELEASING.md).
 3. The bad version is **not** unpublished from Maven Central (Central does not support unpublish). Instead, the CHANGELOG marks it `## [0.5.0] — YANKED` with a pointer to `0.5.1` and a brief reason.
 4. README installation snippets always show the latest non-yanked version.
 

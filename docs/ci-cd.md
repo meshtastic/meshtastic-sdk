@@ -1,31 +1,22 @@
 # CI / CD
 
-> **Workflow enablement status:** The PR/CI gates
-> (`ci.yml`, `tooling-check.yml`, `dependency-review.yml`, `docs.yml`) and
-> the tag-triggered release workflow (`release.yml`) are **enabled**;
-> `release.yml` has published to Maven Central (starting with `v0.1.0`).
-> Only the supply-chain scans (`codeql.yml`, `scorecard.yml`) still ship
-> with a `.yml.disabled` suffix, pending enablement. Local equivalents in
-> [`release-runbook.md`](release-runbook.md) and `./gradlew check` remain
-> the source of truth.
-
 > Tooling per [ADR-003](./decisions/003-tooling.md). Release policy per
 > [`versioning.md`](./versioning.md). Release mechanics per
-> [`release-runbook.md`](./release-runbook.md).
+> [`RELEASING.md`](../RELEASING.md).
 
-This document describes what CI **does today** and explicitly flags what's
-on the roadmap. If you're looking for "how do I cut a release?" go to
-[`release-runbook.md`](./release-runbook.md). If you're looking for "what
-runs on every PR?" stay here.
+This document describes what CI does and flags what's on the roadmap. For
+"how do I cut a release?" go to [`RELEASING.md`](../RELEASING.md). For
+"what runs on every PR?" stay here.
 
 ## Workflow inventory (current state)
 
 | File | Trigger | Purpose | Runner |
 |---|---|---|---|
-| [`ci.yml`](../.github/workflows/ci.yml) | `pull_request` to `main`, `push` to `main` | Build + test + lint + checkKotlinAbi + architecture rules across JVM, Android, iOS | `ubuntu-latest` for JVM/Android/api/arch jobs; `macos-latest` for iOS |
+| [`ci.yml`](../.github/workflows/ci.yml) | `pull_request` to `main`, `push` to `main`, `merge_group` | Build + test + lint + checkKotlinAbi + architecture rules across JVM, Android, iOS; coverage; snapshot publish on `push` to `main` | `ubuntu-latest`; `macos-latest` for iOS |
+| [`release.yml`](../.github/workflows/release.yml) | `push` of tag `vX.Y.Z`; `workflow_dispatch` | Gates, signs and publishes a release to Maven Central and creates the GitHub Release ([`RELEASING.md`](../RELEASING.md)) | `ubuntu-latest` |
 | [`tooling-check.yml`](../.github/workflows/tooling-check.yml) | Path-filtered on `.github/**` and `.githooks/**` | Runs `bash .github/tooling/check.sh` — agent-tooling guardrails (CODEOWNERS sync, AGENTS.md, hook policy, action version pinning, schema validation) | `ubuntu-latest` |
-| [`codeql.yml`](../.github/workflows/codeql.yml.disabled) | `push`/`pull_request` to `main`; weekly Mon 06:00 UTC | CodeQL static analysis for `java-kotlin` and `actions` | `ubuntu-latest` |
-| [`scorecard.yml`](../.github/workflows/scorecard.yml.disabled) | `push` to `main`; weekly Mon 06:00 UTC; `branch_protection_rule` | OpenSSF Scorecard supply-chain posture; uploads SARIF | `ubuntu-latest` |
+| [`codeql.yml`](../.github/workflows/codeql.yml) | `push`/`pull_request` to `main`; weekly Mon 06:00 UTC | CodeQL static analysis for `java-kotlin` and `actions` | `ubuntu-latest` |
+| [`scorecard.yml`](../.github/workflows/scorecard.yml) | `push` to `main`; weekly Mon 06:00 UTC; `branch_protection_rule` | OpenSSF Scorecard supply-chain posture; uploads SARIF | `ubuntu-latest` |
 | [`dependency-review.yml`](../.github/workflows/dependency-review.yml) | `pull_request` to `main` | Fails PRs introducing high-severity vulnerable dependencies | `ubuntu-latest` |
 | [`docs.yml`](../.github/workflows/docs.yml) | `push`/`pull_request` to `main` | Builds aggregated Dokka HTML; **deploys to GitHub Pages on `push` to `main` only** (PRs build but do not deploy) | `ubuntu-latest` |
 
@@ -33,16 +24,14 @@ That's the entire inventory at MVP. Everything else listed here is roadmap.
 
 ## Trigger summary
 
-Quick reference: which workflow fires when. The `.yml.disabled` entries
-listed above (release/codeql/scorecard) only fire once their suffix is
-removed; the rest are live today.
+Quick reference: which workflow fires when.
 
 | Event | Workflows |
 |---|---|
-| `pull_request` → `main` | `ci.yml` (all six jobs), `dependency-review.yml`, `codeql.yml`, `docs.yml` (build only), `tooling-check.yml` (path-filtered on `.github/**`/`.githooks/**`) |
-| `push` → `main` (post-merge) | `ci.yml`, `codeql.yml`, `scorecard.yml`, `docs.yml` (build + deploy to Pages), `tooling-check.yml` (path-filtered) |
-| `push` of tag `vX.Y.Z` | none directly — release is `workflow_dispatch` (`release.yml`) after the tag is pushed; see [`release-runbook.md`](release-runbook.md) |
-| `workflow_dispatch` | `release.yml` (manual: `gh workflow run release.yml -f version=X.Y.Z`) |
+| `pull_request` → `main` | `ci.yml` (seven jobs; `publish-snapshot` is skipped), `dependency-review.yml`, `codeql.yml`, `docs.yml` (build only), `tooling-check.yml` (path-filtered on `.github/**`/`.githooks/**`) |
+| `push` → `main` (post-merge) | `ci.yml` (all eight jobs), `codeql.yml`, `scorecard.yml`, `docs.yml` (build + deploy to Pages), `tooling-check.yml` (path-filtered) |
+| `push` of tag `vX.Y.Z` (stable only) | `release.yml` |
+| `workflow_dispatch` | `release.yml` (`gh workflow run release.yml -f version=X.Y.Z [-f dry_run=true]`) |
 | `schedule` (Mon 06:00 UTC) | `codeql.yml`, `scorecard.yml` |
 | `branch_protection_rule` | `scorecard.yml` |
 
@@ -70,9 +59,10 @@ in the same PR.
 
 
 
-Six jobs run in parallel on every PR and on every push to `main`. None
+Seven jobs run in parallel on every PR and on every push to `main`. None
 have `needs:` so contributors see the complete failure picture in one
-turn:
+turn. On a push to `main` an eighth, `publish-snapshot`, runs after the
+test, API, architecture and full-check jobs pass:
 
 | Job | Command | Purpose |
 |---|---|---|
@@ -82,6 +72,8 @@ turn:
 | `api-check` | `./gradlew checkKotlinAbi` | BCV — fails if `api/*.api` drifts from committed dumps |
 | `arch-consistency` | `./gradlew :core:verifyModuleBoundary detekt` | ADR-008 enforcement: `:core` deps + ForbiddenImport rules |
 | `full-check` | `./gradlew check` | Full gate (PR-gated) — runs every applicable task as a safety net |
+| `coverage` | Kover XML report | Uploads coverage to Codecov; the check is named `Coverage (Kover -> Codecov)` |
+| `publish-snapshot` | `publishAllPublicationsToMavenCentralRepository -Prelease.forceSnapshot` | `push` to `main` only: publishes `X.Y.Z-SNAPSHOT` to the Central Portal snapshot repository |
 
 Protobuf types resolve from the published `org.meshtastic:protobufs` Maven
 artifact, so no submodule checkout is needed. All jobs use
@@ -97,16 +89,12 @@ artifact, so no submodule checkout is needed. All jobs use
 
 ### Required checks (branch protection on `main`)
 
-The repo currently has minimal branch protection. Recommended
-configuration when we enable strict protection:
-
-- `test-jvm`
-- `test-android`
-- `test-ios`
-- `api-check`
-- `arch-consistency`
-- DCO (per [ADR-004](./decisions/004-licensing.md), enforced via the
-  GitHub DCO App at the org level — no workflow file needed)
+The `main` ruleset requires eight checks: `test-jvm (17)`, `test-jvm (21)`,
+`test-android`, `test-ios (iosSimulatorArm64)`, `api-check`,
+`arch-consistency`, `full-check` and `Coverage (Kover -> Codecov)`. The
+release workflow reads the same list and refuses a commit where any of
+them did not pass. DCO is enforced separately by the GitHub DCO App
+(see below).
 
 ## `tooling-check.yml` — agent-tooling guardrails
 
@@ -212,29 +200,15 @@ status on every PR; no workflow file is needed. Authors who forget the
 sign-off see a check failure with a fix-up command in the bot's comment.
 See [ADR-004](./decisions/004-licensing.md).
 
-## Release publishing
+## Release publishing (`release.yml`)
 
-## `release.yml` — manual publish (Sonatype Central)
-
-Triggered via `gh workflow run release.yml -f version=X.Y.Z` (or the GitHub
-Actions UI). Workflow is `workflow_dispatch`-only and:
-
-1. Checks out `refs/tags/v${version}` (must be pushed first).
-2. Verifies `./gradlew currentVersion` matches the input.
-3. `assemble`, then `check`, then `publishAndReleaseToMavenCentral` via the
-   vanniktech plugin.
-
-A `dry_run: true` input skips the publish step but still runs the build +
-gate; useful for verifying the pipeline before a real release.
-
-Required repository secrets (vanniktech-standard names):
-
-- `MAVEN_CENTRAL_USERNAME` / `MAVEN_CENTRAL_PASSWORD` — Central Portal token.
-- `SIGNING_IN_MEMORY_KEY` — ASCII-armored GPG private key.
-- `SIGNING_IN_MEMORY_KEY_PASSWORD` — passphrase for the above.
-
-See [`release-runbook.md`](./release-runbook.md) for the end-to-end
-procedure.
+Runs on a pushed stable `vX.Y.Z` tag or on `workflow_dispatch` with
+`version` (and optionally `dry_run`). It refuses a commit off `main`, a
+version with no `CHANGELOG.md` section, and a commit where any required
+check did not pass; builds, checks and stages signed artifacts; refuses a
+`-SNAPSHOT` dependency; then pushes the tag, publishes with
+`publishAndReleaseToMavenCentral` and creates the GitHub Release. The full
+sequence and the secrets are in [`RELEASING.md`](../RELEASING.md).
 
 ## Renovate
 
@@ -250,15 +224,8 @@ GitHub Actions) are managed by Renovate; config at
 These are documented intentions, not current state. Each will get its
 own workflow file when implemented:
 
-- **`release.yml`** — implemented (see above).
-- **`docs.yml`** — implemented (see inventory). Publishes Dokka HTML
-  to GitHub Pages on `push` to `main`. Site URL:
-  `https://meshtastic.github.io/meshtastic-sdk/`.
 - **`hw-loop.yml`** — nightly conformance suite against a self-hosted
   runner with real radios. Post-1.0 only.
-- **Snapshot publishing on `main`** — currently the runbook is manual;
-  a `publish-snapshot` job in `ci.yml` would automate it once we wire
-  the secrets.
 
 ## Related
 
@@ -268,10 +235,9 @@ own workflow file when implemented:
   distribution.
 - [ADR-008](./decisions/008-architecture-enforcement.md) — what the
   `arch-consistency` job enforces.
-- [`release-runbook.md`](./release-runbook.md) — how to actually cut a
-  release today.
-- [`versioning.md`](./versioning.md) — SemVer policy enforced by
-  `checkKotlinAbi` + the manual release workflow.
+- [`RELEASING.md`](../RELEASING.md) says how to cut a release.
+- [`versioning.md`](./versioning.md) is the SemVer policy that
+  `checkKotlinAbi` and the release workflow enforce.
 - [`manual-tests.md`](./manual-tests.md) — what CI cannot test (real
   hardware paths).
 - [`../renovate.json`](../renovate.json) — dependency updater config

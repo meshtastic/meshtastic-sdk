@@ -23,7 +23,7 @@ individual dependency.
 ```kotlin
 dependencies {
     // Import the BOM exactly once.
-    implementation(platform("org.meshtastic:sdk-bom:0.1.0"))
+    implementation(platform("org.meshtastic:sdk-bom:0.2.0"))
 
     // Then list the artifacts you actually need — versionless.
     implementation("org.meshtastic:sdk-core")
@@ -38,7 +38,7 @@ dependencies {
 
 ```groovy
 dependencies {
-    implementation platform('org.meshtastic:sdk-bom:0.1.0')
+    implementation platform('org.meshtastic:sdk-bom:0.2.0')
 
     implementation 'org.meshtastic:sdk-core'
     implementation 'org.meshtastic:sdk-transport-ble'
@@ -56,7 +56,7 @@ dependencies {
     <dependency>
       <groupId>org.meshtastic</groupId>
       <artifactId>sdk-bom</artifactId>
-      <version>0.1.0</version>
+      <version>0.2.0</version>
       <type>pom</type>
       <scope>import</scope>
     </dependency>

@@ -69,6 +69,7 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 - Error mapping and failure semantics: `docs/error-taxonomy.md`
 - CI expectations and local equivalents: `docs/ci-cd.md`
 - Versioning and SemVer/API policy: `docs/versioning.md`
+- Cutting a release (changelog cut, `release.yml` gates, Maven Central): `RELEASING.md`
 - Manual device verification scenarios: `docs/manual-tests.md`
 - Test pyramid + conventions: `docs/testing.md`
 - Logging integration (`LogSink` SAM, `enableFrameLogging` opt-in): `docs/decisions/011-logsink.md`
@@ -108,7 +109,7 @@ The inventory:
 | New transport module (BLE/serial/TCP/MQTT) | skill `transport-module-authoring` |
 | Behavior/protocol/architecture/API changed → docs need to track | skill `docs-sync-guard` |
 | Local or CI gate failed — classify and fix minimally | skill `ci-failure-triage` |
-| Pre-tag readiness sweep (gates, SemVer, ADRs, runbook) | skill `release-readiness` |
+| Pre-release readiness sweep (gates, SemVer, ADRs, `RELEASING.md`) | skill `release-readiness` |
 | Cross-cutting "is this change spec-compliant?" review | agent `spec-guard` |
 | Final pre-PR quality sweep | prompt `pre-pr-sanity` |
 
