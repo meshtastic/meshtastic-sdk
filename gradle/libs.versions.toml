@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.4.10"
+kotlin                      = "2.4.20"
 agp                         = "9.4.1"
 javaVersion                 = "21"
 androidMinSdk               = "26"
@@ -49,7 +49,7 @@ androidxTestRules           = "1.7.0"
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.37.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.14"          # adds Kotlin 2.4.10 support
+skie                        = "0.10.15"          # adds Kotlin 2.4.10 support
 applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
 dokka                       = "2.2.0"
 
