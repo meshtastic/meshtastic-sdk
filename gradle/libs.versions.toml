@@ -20,7 +20,7 @@ wire                        = "7.1.0"            # wire-runtime version (transit
 meshtasticProtobufs         = "2.8.1"
 
 # --- Storage ---
-sqldelight                  = "2.4.0"
+sqldelight                  = "2.4.1"
 
 # --- Transports ---
 kable                       = "0.45.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
