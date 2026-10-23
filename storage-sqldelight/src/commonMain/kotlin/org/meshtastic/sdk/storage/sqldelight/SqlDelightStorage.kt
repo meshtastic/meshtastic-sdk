@@ -41,22 +41,10 @@ internal class SqlDelightStorage(
     private val dispatcher: CoroutineDispatcher = defaultStorageDispatcher,
 ) : DeviceStorage {
 
-    private val db = MeshDatabase(driver).also {
-        // Create schema idempotently: the `sqlite_master` check avoids `table … already exists`
-        // when reopening a previously-initialised database file (node-keyed DBs are reopened on
-        // every reconnect).
-        val alreadyInitialised = driver
-            .executeQuery(
-                identifier = null,
-                sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='session' LIMIT 1",
-                mapper = { cursor -> app.cash.sqldelight.db.QueryResult.Value(cursor.next().value) },
-                parameters = 0,
-            )
-            .value
-        if (!alreadyInitialised) {
-            MeshDatabase.Schema.create(driver)
-        }
-    }
+    // Every platform's `createDriver` builds its driver with `MeshDatabase.Schema`, so the
+    // driver creates a new database or migrates an older one (by `user_version`) before the
+    // first query; nothing to set up here.
+    private val db = MeshDatabase(driver)
     private val q get() = db.meshQueries
 
     // ── Nodes ─────────────────────────────────────────────────────────────────

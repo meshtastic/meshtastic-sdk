@@ -58,6 +58,14 @@ Existing on-disk databases migrate automatically the next time the SDK
 opens them; in-memory databases start at the latest schema. **No
 consumer action is required.**
 
+Every platform driver is built with `MeshDatabase.Schema`, which tracks the
+version in `PRAGMA user_version`. Older JVM builds created the tables
+without setting `user_version`, so their files stayed at 0 and were never
+migrated. When the JVM driver finds such a file (tables present,
+`user_version = 0`), it infers the version from the tables (`messages`
+still present → v1, no `nodes.last_heartbeat_at` → v2, otherwise v3),
+stamps it, and then runs the remaining migrations.
+
 ## Message history is **not** stored
 
 Schema v1 contained an unused `messages` table. Schema v2 (migration
