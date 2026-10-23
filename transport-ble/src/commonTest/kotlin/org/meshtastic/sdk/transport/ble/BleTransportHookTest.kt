@@ -125,15 +125,21 @@ class BleTransportHookTest {
 
 /**
  * Minimal in-memory [Peripheral]: [connect]/[disconnect] flip [state], [read] returns an
- * empty payload (queue drained — satisfies the warmup read), [observe] never emits.
+ * empty payload (queue drained — satisfies the warmup read), [observe] never emits, and
+ * [emitState] lets a test drive Kable's link state (e.g. an unexpected drop).
  * Members [BleTransport] never touches throw [UnsupportedOperationException].
  */
 // ExperimentalUuidApi: on iOS targets Kable's `Identifier` is kotlin.uuid.Uuid (experimental);
 // the override below trips the opt-in only when compiled for those targets.
 @OptIn(ExperimentalKableApi::class, kotlin.uuid.ExperimentalUuidApi::class)
-private class FakePeripheral : Peripheral {
+internal class FakePeripheral : Peripheral {
 
     private val stateFlow = MutableStateFlow<State>(State.Disconnected())
+
+    /** Report [state] as Kable would, e.g. `Disconnecting` when the radio goes out of range. */
+    fun emitState(state: State) {
+        stateFlow.value = state
+    }
 
     override val scope: CoroutineScope = CoroutineScope(SupervisorJob())
 
