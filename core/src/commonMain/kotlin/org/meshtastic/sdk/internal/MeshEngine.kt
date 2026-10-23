@@ -652,6 +652,7 @@ internal class MeshEngine(
             EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
             EngineMessage.Stage1RetryWantConfig -> handleStage1RetryWantConfig()
             is EngineMessage.FrameReaderStopped -> handleFrameReaderStopped(msg)
+            is EngineMessage.ApplyConfigEdits -> applyConfigEdits(msg.configs, msg.moduleConfigs)
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
             is EngineMessage.PostRpc -> handlePostRpc(msg)
             is EngineMessage.PendingResponseTimeout -> handlePendingResponseTimeout(msg)
@@ -2634,12 +2635,23 @@ internal class MeshEngine(
     }
 
     /**
-     * Optimistically update [configBundleState] after a successful `editSettings` commit.
-     *
-     * Merges written [Config] and [ModuleConfig] objects into the existing bundle, replacing
-     * sections that were written while preserving sections that weren't touched.
+     * Optimistically update the local radio's [configBundleState] after a successful
+     * `editSettings` commit. Posted to the actor, because the bundle also lives in the
+     * actor-owned [meshState] and AdminApiImpl runs on the caller's coroutine (ADR-002).
      */
-    internal fun applyConfigEdits(
+    internal fun postConfigEdits(
+        writtenConfigs: List<org.meshtastic.proto.Config>,
+        writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+    ) {
+        if (writtenConfigs.isEmpty() && writtenModuleConfigs.isEmpty()) return
+        inbox.trySend(EngineMessage.ApplyConfigEdits(writtenConfigs, writtenModuleConfigs))
+    }
+
+    /**
+     * Merges written [Config] and [ModuleConfig] objects into the existing bundle, replacing
+     * sections that were written while preserving sections that weren't touched. Actor only.
+     */
+    private fun applyConfigEdits(
         writtenConfigs: List<org.meshtastic.proto.Config>,
         writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
     ) {

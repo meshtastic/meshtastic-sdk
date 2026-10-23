@@ -77,6 +77,9 @@ internal class AdminApiImpl(
         )
     }
 
+    /** True when this API administers the radio we're connected to (not `forNode(remote)`). */
+    private fun isLocalTarget(): Boolean = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
+
     /**
      * Returns `true` when this AdminApi targets the **local** device and that device is in
      * managed mode. Firmware rewrites every phone packet to `from = 0` (MeshService
@@ -87,8 +90,7 @@ internal class AdminApiImpl(
      * (managed-fleet deployments administer remote managed nodes from a managed local node).
      */
     private fun isLocalTargetManaged(): Boolean {
-        val isLocalTarget = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
-        if (!isLocalTarget) return false
+        if (!isLocalTarget()) return false
         val bundle = engine.configBundleState.value ?: return false
         return bundle.configs.any { config ->
             config.security?.is_managed == true
@@ -150,7 +152,8 @@ internal class AdminApiImpl(
                 }.build(),
             )
         }
-        if (result is AdminResult.Success) engine.updateChannelAndPersist(channel)
+        // The cached channel list is the local radio's; don't patch it for a remote node.
+        if (result is AdminResult.Success && isLocalTarget()) engine.updateChannelAndPersist(channel)
         return result
     }
 
@@ -466,7 +469,8 @@ internal class AdminApiImpl(
         if (commit !is AdminResult.Success) return commit.cast()
 
         // Gap G: optimistically update configBundle with written values after successful commit.
-        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        // The cached bundle is the local radio's; a remote node's settings must not land in it.
+        if (isLocalTarget()) engine.postConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
 
         return AdminResult.Success(payload)
     }
@@ -481,7 +485,7 @@ internal class AdminApiImpl(
         }
         commitEditSettings().getOrThrow()
 
-        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        if (isLocalTarget()) engine.postConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
         return payload
     }
 

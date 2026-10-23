@@ -619,6 +619,34 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun setChannelOnARemoteNodeLeavesTheLocalChannelsAlone() = runTest {
+        val channel = Channel.Builder().also { wb ->
+            wb.index = 3
+            wb.role = Channel.Role.SECONDARY
+        }.build()
+        val remote = NodeId(0x22222222)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val before = client.channels.value
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).setChannel(channel) }
+            runCurrent()
+
+            val packet = latestAdminPacket(transport, outboundBefore) { it.set_channel == channel }
+            assertEquals(remote.raw, packet.to)
+            transport.injectRoutingAck(packet.id, fromNode = remote.raw)
+            runCurrent()
+
+            assertIs<AdminResult.Success<Unit>>(deferred.await())
+            assertEquals(before, client.channels.value, "the local radio's channels must not change")
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
     fun setChannelTimeoutReturnsTimeout() = runTest {
         val channel = Channel.Builder().also { wb ->
             wb.index = 1

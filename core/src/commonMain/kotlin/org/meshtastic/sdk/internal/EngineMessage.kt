@@ -76,6 +76,15 @@ internal sealed interface EngineMessage {
     /** A framed packet received from the transport. */
     data class FrameRx(val frame: Frame) : EngineMessage
 
+    /**
+     * Config sections the local radio accepted in a committed `editSettings` / `batch`; the actor
+     * folds them into the cached config bundle (posted by AdminApiImpl, which runs on the caller).
+     */
+    data class ApplyConfigEdits(
+        val configs: List<org.meshtastic.proto.Config>,
+        val moduleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+    ) : EngineMessage
+
     /** Transport connection state changed (posted by the transport-state observer coroutine). */
     data class TransportStateChanged(val state: TransportState) : EngineMessage
 
