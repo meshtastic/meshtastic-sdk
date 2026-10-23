@@ -376,7 +376,7 @@ See [`api-reference.md` §AdminApi](./api-reference.md#adminapi-phase-2) for the
 ## 7. Logging and diagnostics
 
 By default the SDK is silent. Wire a `LogSink` at build time and, for
-deep debugging, opt into `protocolLogging` (with redaction). Full
+deep debugging, opt into `protocolLogging` (packet summaries, no payloads). Full
 guide: [`observability.md`](./observability.md).
 
 ## 8. Testing your integration
@@ -404,7 +404,7 @@ val client = RadioClient.Builder()
 Direct messages between two nodes are encrypted end-to-end with X25519 + AES-CTR keys derived from each peer's `User.public_key`. The SDK does not perform the crypto itself — the firmware does — but it does surface everything you need to verify peers:
 
 - Inbound DM payloads arrive as `MeshPacket` with `decoded.public_key` populated whenever the firmware decrypted them with a known peer key. An empty `public_key` on a `decoded.portnum == TEXT_MESSAGE_APP` packet from a non-broadcast `to` field means the peer's identity could not be verified.
-- The first time a peer's `public_key` is observed (or when it changes), the engine emits `MeshEvent.KeyVerification` with a `KeyVerificationPrompt` describing the new fingerprint. Consumers should surface this to the user (TOFU/SAS-style) and persist the accepted key alongside the `NodeId`.
+- `MeshEvent.KeyVerification` is reserved and not emitted yet. The firmware's key-verification messages arrive as `MeshEvent.Notification` (`ClientNotification.key_verification_number_inform` / `_request` / `_final`); a changed key on file is refused by the node DB (see the NodeChange contract in `api-reference.md`).
 - `MeshEvent.SecurityWarning.DuplicatedPublicKey` and `MeshEvent.SecurityWarning.LowEntropyKey` flag `node_info` records whose `public_key` is suspect; treat the affected `NodeId` as untrusted for DMs until a manual re-verification round trips.
 
 Sending DMs is the same as any other text message — call `client.sendText(...)` with a non-broadcast `to` — but you should refuse the call if the destination's last-seen `public_key` does not match what the user previously verified. The engine will not reject the send for you.

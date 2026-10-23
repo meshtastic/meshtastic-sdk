@@ -2570,12 +2570,11 @@ internal class MeshEngine(
     }
 
     // ---- C-shared-flow emit helpers ----
-    // The hot SharedFlows (`packets`, `nodes`, `events`) all use BufferOverflow.DROP_OLDEST,
-    // which means `tryEmit` is always supposed to return `true`. We still wrap each call site
-    // through these helpers so:
-    //   • a future BufferOverflow change (or a misconfigured custom replay buffer) doesn't
-    //     silently drop data without surfacing a `MeshEvent.PacketsDropped` signal, and
-    //   • all packet-drop accounting flows through one place that subscribers can observe.
+    // `packets` and `nodes` use BufferOverflow.SUSPEND but are emitted with `tryEmit` (the actor
+    // must never suspend on a slow collector), so once a collector is a full buffer behind,
+    // `tryEmit` returns false and the NEW item is dropped. These helpers report every such drop
+    // as `MeshEvent.PacketsDropped` (a `nodes` drop is reported as `DroppedFlow.Events`, as there
+    // is no separate value for it). `events` itself uses DROP_OLDEST.
 
     private fun emitPacketOrLog(packet: MeshPacket) {
         if (!packets.tryEmit(packet)) {

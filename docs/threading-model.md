@@ -119,8 +119,8 @@ whether or not anyone is collecting.
 |---|---|---|---|---|
 | `connection` | `StateFlow<ConnectionState>` | Always current value | n/a | n/a (conflated) |
 | `ownNode` | `StateFlow<NodeInfo?>` | Always current value | n/a | n/a (conflated) |
-| `nodes` | `Flow<NodeChange>` (SharedFlow internally) | 0 (each subscriber is seeded with a `Snapshot`) | 256 | drop-oldest → `MeshEvent.PacketsDropped(Nodes)` |
-| `packets` | `Flow<MeshPacket>` | 0 | 128 | drop-oldest → `MeshEvent.PacketsDropped(Packets)` |
+| `nodes` | `Flow<NodeChange>` (SharedFlow internally) | 0 (each subscriber is seeded with a `Snapshot`) | 256 | new deltas dropped → `MeshEvent.PacketsDropped(Events)` |
+| `packets` | `Flow<MeshPacket>` | 0 | 128 | new packets dropped → `MeshEvent.PacketsDropped(Packets)` |
 | `events` | `Flow<MeshEvent>` | 0 | 64 | drop-oldest → log only (no recursive `Dropped`) |
 
 Late subscribers to `packets` and `events` see only emissions made
@@ -167,9 +167,11 @@ size. Your collector dispatcher does not have to match.
 ### Backpressure and dropped events
 
 The engine never blocks on consumer collection. If your collector is
-slow, the SharedFlow buffers fill and **drop-oldest** semantics kick
-in. You will receive a `MeshEvent.PacketsDropped(flow, droppedCount)`
-on `events` whenever this happens for `packets` or `nodes`.
+slow, the SharedFlow buffer fills and the engine drops the **newest**
+items for that collector (it emits with `tryEmit` and never waits). You
+will receive a `MeshEvent.PacketsDropped(flow, droppedCount)` on
+`events` for every drop on `packets` (`DroppedFlow.Packets`) or `nodes`
+(reported as `DroppedFlow.Events`).
 
 Rules of thumb:
 

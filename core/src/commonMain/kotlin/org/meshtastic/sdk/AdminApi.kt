@@ -325,10 +325,10 @@ public interface AdminApi {
     public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>
 
     /**
-     * Set the device's wall clock to [at] (default: `Clock.System.now()`).
+     * Set the device's wall clock to [at] (`null`: now, from the builder's clock).
      *
-     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, the engine calls this once after
-     * handshake when the device clock skew exceeds 60 s.
+     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, every successful `connect()`
+     * calls this once in the background (best-effort; no skew check).
      */
     public suspend fun setTime(at: Instant? = null): AdminResult<Unit>
 

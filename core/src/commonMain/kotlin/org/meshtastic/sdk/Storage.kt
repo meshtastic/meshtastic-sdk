@@ -77,9 +77,9 @@ public interface StorageProvider {
  * Device storage backend.
  *
  * Stores node information, configuration, channels, and other persistent state keyed by
- * [TransportIdentity]. Implementations must be thread-safe from the perspective of the engine
- * actor (they may use internal locks, but the SDK makes no concurrency assumptions beyond that
- * all calls are serialized by the engine).
+ * [TransportIdentity]. Implementations must tolerate concurrent calls: the engine persists from
+ * separately launched coroutines (handshake commit, config saves, heartbeat flushes), so calls can
+ * overlap and arrive in any order. See `docs/architecture/storage.md`.
  *
  * **Audit trail and factory-reset detection:** The [recordOwnNode] method records the device's
  * NodeNum and firmware version. If the NodeNum changes between calls for the same identity (e.g.,

@@ -104,7 +104,7 @@ Source: [`Node.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt)
 | `ProtocolWarning(message, details)`        | Malformed data, unexpected state, or a recoverable storage retry. May indicate firmware/SDK skew.        | Log; surface only if persistent. |
 | `IdentityRebound(prev, new, reason)`       | The connected device reports a different `NodeNum` than what was persisted (factory reset / radio swap). Emitted **before** storage is wiped and the next `NodeChange.Snapshot`. | Snapshot any in-memory state you care about; warn the user that this transport identity now points at a different physical radio. |
 | `StorageDegraded(reason)`                  | Persistent storage failed (disk full, locked DB, etc.); engine has dropped to in-memory mode for the rest of the session. Emitted **at most once per session**. | Show "session is not being persisted" banner; reconnect to retry. |
-| `KeyVerification(prompt)`                  | Encryption setup wants user confirmation (Phase 1 placeholder).                                          | Show a generic confirm-key UI. |
+| `KeyVerification(prompt)`                  | Reserved, not emitted yet; key-verification messages arrive as `Notification`.                           | Nothing to handle yet. |
 | `PacketsDropped(flow, count)`              | A consumer-facing flow (`packets` or `events`) overflowed its buffer; oldest items dropped.              | You're collecting too slowly — move work off the collector. |
 
 ### Example: collecting events safely

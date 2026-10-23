@@ -79,28 +79,30 @@ construction run.
 
 ## Protocol-level logging
 
-Wire-byte / frame-level dumps are a **separate**, opt-in hook
-controlled by `Builder.protocolLogging(level, redactor)`. `LogLevel.NONE`
-is the default. Enabling this hook emits every encoded `FromRadio` /
-`ToRadio` envelope at the specified level — including pre-shared keys,
-session passkeys, and node positions unless a redactor strips them.
+Packet-level logging is a **separate**, opt-in hook controlled by
+`Builder.protocolLogging(level, redactor)`. `LogLevel.NONE` is the
+default. Enabling it logs one line per inbound (`rx`) and outbound (`tx`)
+mesh packet at the chosen level, tagged `MeshProtocol`: packet id, from,
+to, channel, port, payload size and the `want_ack` / `want_response` /
+`request_id` fields. Payload bytes (text, positions, keys) are never
+logged.
 
 ```kotlin
 val client = RadioClient.Builder()
     .transport(tcp)
     .logger(myLogSink)
     .protocolLogging(
-        level = LogLevel.DEBUG,            // ⚠ raw bytes — dev only
-        redactor = PayloadRedactor.Default // masks PSKs/passkeys/positions
+        level = LogLevel.DEBUG,             // one summary line per packet
+        redactor = PayloadRedactor.Default, // reserved; see below
     )
     .build()
 ```
 
-`PayloadRedactor.Default` is used when `redactor` is omitted, and it is
-the only redactor the SDK ships — there is no pass-through (`None`)
-variant. Even with redaction,
-**do not enable protocol logging in a production build** — the
-encoded envelopes still reveal mesh structure and timing.
+`PayloadRedactor` is reserved for a future payload-logging mode: since
+only headers and sizes are logged, it has nothing to mask today and
+`PayloadRedactor.Default` (the only one) has no effect. Even so,
+**do not enable protocol logging in a production build** — the lines
+still reveal mesh structure, node ids and timing.
 
 ## Engine event surface
 
@@ -112,11 +114,11 @@ lines.
 
 `MeshEvent` is a sealed interface. Current variants:
 
-- `QueueStatusChanged(status)` — firmware queue update.
+- `QueueStatusChanged(status)` — firmware queue update (every `FromRadio.queueStatus`).
 - `Notification(notification)` — `ClientNotification` from device.
 - `TransportError(error)` — recoverable transport failure mid-session.
 - `ProtocolWarning(message)` — protocol-level anomaly (e.g. identity rebind).
-- `KeyVerification(prompt)` — peer key-verification prompt.
+- `KeyVerification(prompt)` — reserved, not emitted yet; key-verification messages arrive as `Notification`.
 - `PacketsDropped(flow, count)` — backpressure on a subscriber-bound flow.
 
 See [`core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt)

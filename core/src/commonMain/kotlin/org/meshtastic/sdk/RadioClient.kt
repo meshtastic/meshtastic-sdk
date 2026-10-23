@@ -134,11 +134,10 @@ public class RadioClient internal constructor(
      * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
      * arrive as [NodeChange.Added] once they are heard.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
-     * apply backpressure to the engine actor; deltas are **never silently dropped** on this
-     * flow. If the engine inbox itself fills as a result, drops surface as
-     * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
+     * **Buffering:** the underlying `MutableSharedFlow` buffers 256 deltas per collector. The
+     * engine never waits for a slow collector: once one is a full buffer behind, new deltas
+     * are dropped for it and each drop is reported as [MeshEvent.PacketsDropped] on [events]
+     * (with `flow = DroppedFlow.Events`). Collect without blocking; see `docs/threading-model.md`.
      */
     public val nodes: Flow<NodeChange> = engine.nodes
         .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
@@ -149,13 +148,11 @@ public class RadioClient internal constructor(
      * The engine decrypts channel payloads transparently; `MeshPacket.decoded` is always
      * non-null on emission. Filter by `decoded.portnum` to match specific app payloads.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 128` with `BufferOverflow.SUSPEND` (per ADR-005 / SPEC §4.4).
-     * Slow collectors apply backpressure to the engine. If the engine inbox itself fills, the
-     * engine drops the **oldest queued frame** and emits
+     * **Buffering:** the underlying `MutableSharedFlow` buffers 128 packets per collector. The
+     * engine never waits for a slow collector: once one is a full buffer behind, new packets
+     * are dropped for it and each drop is reported as
      * [MeshEvent.PacketsDropped][org.meshtastic.sdk.MeshEvent.PacketsDropped] with
-     * `flow = DroppedFlow.Packets` on [events]. Silent loss is forbidden in the public surface
-     * — every drop is observable.
+     * `flow = DroppedFlow.Packets` on [events], so no loss is silent.
      *
      * Populated by the HandshakeMachine after entering [ConnectionState.Connected].
      */
