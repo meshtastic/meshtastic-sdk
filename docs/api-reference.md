@@ -491,7 +491,7 @@ These follow the same naming conventions as `kotlin.Result` extensions but opera
 
 ## `TelemetryApi` *(Phase 2)*
 
-Each `requestX` sends an empty `Telemetry` packet on `TELEMETRY_APP` with `want_response = true` and waits for the matching reply. `observe(node)` is a cold flow over the engine's inbound `packets` filtered by portnum + origin.
+Each `requestX` sends an empty `Telemetry` packet on `TELEMETRY_APP` with `want_response = true` and waits for the matching reply. `observe(node)` is a cold flow over the engine's inbound `packets` filtered by portnum + origin. `observe(NodeId.LOCAL)` matches telemetry from **every** node (in the `requestX` calls `LOCAL` means the local radio); to follow only the local radio, pass its real number from `ownNode`.
 
 ```kotlin
 public interface TelemetryApi {
@@ -501,7 +501,7 @@ public interface TelemetryApi {
     public suspend fun requestAirQuality(node: NodeId = NodeId.LOCAL): AdminResult<AirQualityMetrics>
     public suspend fun requestLocalStats(): AdminResult<LocalStats>
 
-    /** Cold flow of telemetry packets observed for [node]. Single-shot — completes when the flow is cancelled. */
+    /** Cold flow of telemetry packets observed for [node]; [NodeId.LOCAL] matches every node. Completes only when cancelled. */
     public fun observe(node: NodeId): Flow<Telemetry>
 }
 ```
