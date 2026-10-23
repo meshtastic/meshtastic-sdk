@@ -118,7 +118,8 @@ public sealed interface NodeChange {
  */
 public sealed interface MeshEvent {
     /**
-     * Device's transmit queue status changed.
+     * Device's transmit queue status changed: emitted for every `FromRadio.queueStatus` (free
+     * slots, queue length, and the result for `mesh_packet_id`).
      *
      * @param status the wire [QueueStatus] from the device
      */
@@ -139,11 +140,16 @@ public sealed interface MeshEvent {
 
     /**
      * Emitted when the device's MQTT connection state changes to connected.
+     *
+     * Reserved: not emitted yet. The firmware sends no MQTT connection-state message to the
+     * phone; `admin.getDeviceConnectionStatus()` reports it on request.
      */
     public data object MqttConnected : MeshEvent
 
     /**
      * Emitted when the device's MQTT connection drops.
+     *
+     * Reserved: not emitted yet (see [MqttConnected]).
      *
      * @property reason human-readable disconnect reason, if available
      */
@@ -266,7 +272,9 @@ public sealed interface MeshEvent {
     /**
      * Key verification prompt (e.g., "confirm the radio's public key").
      *
-     * Emitted when encryption setup requires user confirmation.
+     * Reserved: not emitted yet, because [KeyVerificationPrompt]'s shape is still to be decided
+     * (see its KDoc). The firmware's key-verification messages arrive today as [Notification]
+     * (`ClientNotification.key_verification_number_inform` / `_request` / `_final`).
      *
      * @param prompt the verification details
      */

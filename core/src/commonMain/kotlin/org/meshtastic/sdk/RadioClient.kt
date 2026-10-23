@@ -724,9 +724,11 @@ public class RadioClient internal constructor(
         /**
          * Enable protocol-level logging.
          *
-         * Routes framed-packet diagnostics through the configured [LogSink]. The [redactor]
-         * masks positions, text payloads, and PSKs. Default: [LogLevel.NONE] (off).
-         * See `docs/security.md`.
+         * Logs one line per inbound (`rx`) and outbound (`tx`) mesh packet through the configured
+         * [LogSink] at [level], tagged `MeshProtocol`: id, from, to, channel, port, payload size
+         * and the ack/response flags. Payload bytes (text, positions, keys) are never logged.
+         * [redactor] is reserved for a future payload-logging mode and currently has no effect.
+         * Default: [LogLevel.NONE] (off). See `docs/security.md`.
          */
         public fun protocolLogging(level: LogLevel, redactor: PayloadRedactor = PayloadRedactor.Default): Builder =
             apply {
@@ -835,6 +837,7 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                protocolLogLevel = protocolLogLevel,
             )
 
             return RadioClient(
@@ -864,14 +867,15 @@ private fun <T> SharedFlow<T>.hide(): Flow<T> = flow { emitAll(this@hide) }
 /**
  * Strategy for redacting sensitive payload data in protocol logs.
  *
- * Applied when [RadioClient.Builder.protocolLogging] is active. The default implementation masks
- * positions, text payloads, and PSKs.
+ * Reserved: [RadioClient.Builder.protocolLogging] logs packet headers and sizes only, never
+ * payload bytes, so there is nothing to redact yet. Members will be added if a payload-logging
+ * mode is introduced.
  *
  * @since 0.1.0
  */
 public interface PayloadRedactor {
     public companion object {
-        /** The default redaction strategy — masks position, text, and key fields. */
+        /** The default redaction strategy (currently a no-op; see [PayloadRedactor]). */
         public val Default: PayloadRedactor = object : PayloadRedactor {}
     }
 }

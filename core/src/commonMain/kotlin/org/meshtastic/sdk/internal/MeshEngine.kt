@@ -50,6 +50,7 @@ import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.LogLevel
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
@@ -97,6 +98,7 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val protocolLogLevel: LogLevel = LogLevel.NONE, // RadioClient.Builder.protocolLogging
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -672,6 +674,7 @@ internal class MeshEngine(
         dispatcher.register(msg.requestId, msg.kind, msg.deferred)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
+        logPacket("tx", outboundPacket)
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = outboundPacket
@@ -1598,6 +1601,7 @@ internal class MeshEngine(
                 // "queue is empty / no tracked packet" heartbeat-ish signal. Looking that up in
                 // [pendingSends] is harmless but meaningless, and incorrectly treating it as a
                 // successful send for a dropped packet would corrupt user-visible state. Guard.
+                events.tryEmit(MeshEvent.QueueStatusChanged(queueStatus))
                 if (queueStatus.mesh_packet_id == 0) return
                 val packetId = MessageId(queueStatus.mesh_packet_id)
                 // `res` is the firmware's enqueue result in the ERRNO namespace
@@ -1684,6 +1688,7 @@ internal class MeshEngine(
         // any frame from a node counts as presence activity.
         if (packet.from != 0) markNodeHeard(NodeId(packet.from))
         if (shouldDropDuplicateInboundPacket(packet)) return
+        logPacket("rx", packet)
         val decoded = packet.decoded
         if (decoded == null) {
             maybeWarnEncryptedPacketSkipped()
@@ -2357,6 +2362,7 @@ internal class MeshEngine(
         pendingSends[wireKey] = msg.stateFlow
         pendingSendTargets[wireKey] = packet.to
 
+        logPacket("tx", packet)
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = packet
@@ -2525,6 +2531,7 @@ internal class MeshEngine(
     internal fun nodeMapSnapshot(): Map<NodeId, NodeInfo> = meshState.nodes
 
     internal fun sendToRadio(msg: ToRadio) {
+        msg.packet?.let { logPacket("tx", it) }
         try {
             val encoded = WireCodec.encodeToRadio(msg)
             outbound.trySend(Frame(encoded.toByteString()))
@@ -2759,6 +2766,30 @@ internal class MeshEngine(
         ackTimeoutJobs.remove(id)?.cancel()
     }
 
+    /**
+     * Protocol logging (`RadioClient.Builder.protocolLogging`): one summary line per mesh packet
+     * at the configured level. Header fields and the payload size only — payload bytes (text,
+     * positions, keys) are never logged, so there is nothing for a PayloadRedactor to mask.
+     */
+    private fun logPacket(direction: String, packet: MeshPacket) {
+        if (protocolLogLevel == LogLevel.NONE || logger === LogSink.Silent) return
+        val decoded = packet.decoded
+        val body = if (decoded != null) {
+            "port=${decoded.portnum} bytes=${decoded.payload.size}" +
+                (if (decoded.want_response) " want_response" else "") +
+                (if (decoded.request_id != 0) " request_id=${decoded.request_id}" else "")
+        } else {
+            "encrypted"
+        }
+        logger.log(
+            protocolLogLevel,
+            PROTOCOL_TAG,
+            "$direction id=${packet.id} from=${NodeId(packet.from)} to=${NodeId(packet.to)} ch=${packet.channel} " +
+                body + (if (packet.want_ack) " want_ack" else ""),
+            null,
+        )
+    }
+
     /** Drops every per-send record kept for [id] (the state flow itself is the caller's). */
     private fun forgetPendingSend(id: MessageId): MutableStateFlow<SendState>? {
         pendingSendTargets.remove(id)
@@ -2790,6 +2821,7 @@ internal class MeshEngine(
 
     private companion object {
         private const val TAG = "MeshEngine"
+        private const val PROTOCOL_TAG = "MeshProtocol"
 
         // Handshake nonces (protocol.md §6).
         const val NONCE_STAGE1 = 69420
