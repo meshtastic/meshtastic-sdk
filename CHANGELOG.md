@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `ChannelHelpers.displayName(channel, loRa)` and `ChannelHelpers.presetDisplayName(preset)`: the
+  name the firmware and the official apps show for a channel. An unnamed channel (the default
+  primary) gets the modem preset's firmware name, e.g. `"LongFast"`, `"LongMod"`, or `"Custom"`
+  off-preset. The firmware hashes this exact name, so it's also what `ChannelSettings.hash()`
+  needs; its KDoc now says so.
+
 ## [0.2.0] — 2026-10-03
 
 The first release on Maven Central since 0.1.0. 0.1.1 was never tagged or published, so this

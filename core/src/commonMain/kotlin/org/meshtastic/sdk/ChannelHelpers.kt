@@ -10,6 +10,7 @@ package org.meshtastic.sdk
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.Config
 
 /**
  * Channel validation and helper utilities.
@@ -81,4 +82,53 @@ public object ChannelHelpers {
             wb.psk = psk.toByteString()
         }.build()
     }
+
+    /**
+     * The name the firmware and the official apps show for [channel]: its own name, or for an
+     * unnamed channel (the default primary) the modem preset's name, e.g. `"LongFast"`, or
+     * `"Custom"` when [loRa] doesn't use a preset.
+     *
+     * Mirrors firmware `Channels::getName`. The result is interop-critical, not cosmetic: the
+     * firmware feeds this exact string into the channel hash, the default frequency slot and the
+     * MQTT topic, so pass it (not the raw empty `settings.name`) to [ChannelSettings.Companion.hash].
+     *
+     * @param loRa the radio's LoRa config, e.g. from `configBundle.configs`
+     * @since 0.3.0
+     */
+    public fun displayName(channel: Channel, loRa: Config.LoRaConfig): String =
+        channel.settings?.name?.takeIf { it.isNotEmpty() }
+            ?: if (loRa.use_preset) presetDisplayName(loRa.modem_preset) else CUSTOM_PRESET_NAME
+
+    /**
+     * The firmware's long display name for [preset] (`DisplayFormatters::getModemPresetDisplayName`),
+     * e.g. `"LongFast"`. Not derived from the enum name: `LONG_MODERATE` is `"LongMod"`, and the
+     * retired `VERY_LONG_SLOW` keeps the `"VLongSlow"` older firmware used.
+     *
+     * The `when` is exhaustive on purpose, so a protobufs bump that adds a preset fails to compile
+     * until its firmware name is copied here.
+     *
+     * @since 0.3.0
+     */
+    public fun presetDisplayName(preset: Config.LoRaConfig.ModemPreset): String = when (preset) {
+        Config.LoRaConfig.ModemPreset.SHORT_TURBO -> "ShortTurbo"
+        Config.LoRaConfig.ModemPreset.SHORT_FAST -> "ShortFast"
+        Config.LoRaConfig.ModemPreset.SHORT_SLOW -> "ShortSlow"
+        Config.LoRaConfig.ModemPreset.MEDIUM_TURBO -> "MediumTurbo"
+        Config.LoRaConfig.ModemPreset.MEDIUM_FAST -> "MediumFast"
+        Config.LoRaConfig.ModemPreset.MEDIUM_SLOW -> "MediumSlow"
+        Config.LoRaConfig.ModemPreset.LONG_TURBO -> "LongTurbo"
+        Config.LoRaConfig.ModemPreset.LONG_FAST -> "LongFast"
+        Config.LoRaConfig.ModemPreset.LONG_MODERATE -> "LongMod"
+        Config.LoRaConfig.ModemPreset.LONG_SLOW -> "LongSlow"
+        Config.LoRaConfig.ModemPreset.VERY_LONG_SLOW -> "VLongSlow"
+        Config.LoRaConfig.ModemPreset.LITE_FAST -> "LiteFast"
+        Config.LoRaConfig.ModemPreset.LITE_SLOW -> "LiteSlow"
+        Config.LoRaConfig.ModemPreset.NARROW_FAST -> "NarrowFast"
+        Config.LoRaConfig.ModemPreset.NARROW_SLOW -> "NarrowSlow"
+        Config.LoRaConfig.ModemPreset.TINY_FAST -> "TinyFast"
+        Config.LoRaConfig.ModemPreset.TINY_SLOW -> "TinySlow"
+    }
+
+    /** Name of an unnamed channel when the radio isn't on a modem preset (firmware `"Custom"`). */
+    public const val CUSTOM_PRESET_NAME: String = "Custom"
 }

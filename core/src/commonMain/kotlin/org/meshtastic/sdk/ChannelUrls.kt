@@ -58,7 +58,9 @@ public fun Channel.Companion.default(): Channel = Channel.Builder().also { wb ->
 /**
  * Computes the firmware-compatible 8-bit channel hash for [name] and [psk].
  *
- * Mirrors the logic in `Channels::generateHash`.
+ * Mirrors the logic in `Channels::generateHash`, which hashes the channel's display name and its
+ * expanded key: for an unnamed channel pass [ChannelHelpers.displayName] (e.g. `"LongFast"`), not
+ * the empty `settings.name`, and pass the 16-byte key a 1-byte PSK stands for, not the 1 byte.
  * @since 0.1.0
  */
 public fun ChannelSettings.Companion.hash(name: String, psk: ByteArray): Int {
