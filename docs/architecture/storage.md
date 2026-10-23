@@ -55,8 +55,8 @@ Per-row contents (SQLDelight backend) are captured in [`Mesh.sq`](../../storage-
 |---|---|---|
 | Nodes (NodeDB cache) | `nodes` | Surface as `RadioClient.nodes` `Flow<NodeChange>` after seed-load. |
 | Channels | `channels` | Restore PSKs + names across reconnects. PSK column holds ciphertext only — wrap via the consumer-supplied `KeyVault` per ADR-005. |
-| Device config bundle | `config_blobs` | Replays `LocalConfig` / `LocalModuleConfig` / `MyNodeInfo` / `DeviceMetadata`. |
-| Session metadata | `sessions` (key-value) | Tracks `(NodeNum, firmwareVersion)` for factory-reset detection. |
+| Device config bundle | `configs` + `session` | `Config` / `ModuleConfig` rows in `configs`; `MyNodeInfo`, `DeviceMetadata` and `DeviceUIConfig` (when the firmware sent one) as `session` keys. `loadConfig()` returns the same `ConfigBundle` that `saveConfig()` stored. |
+| Session metadata | `session` (key-value) | Tracks `(NodeNum, firmwareVersion)` for factory-reset detection. |
 | SQLite tuning | PRAGMAs | See [ADR-014](../decisions/014-storage-pragmas.md). |
 
 ## Schema versioning

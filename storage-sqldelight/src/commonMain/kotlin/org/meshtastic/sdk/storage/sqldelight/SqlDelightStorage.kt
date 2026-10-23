@@ -16,6 +16,7 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
+import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -31,7 +32,7 @@ import kotlin.time.Clock
  *
  * All proto values are stored as raw bytes (via Wire ADAPTER.encode / ADAPTER.decode).
  * Configs and ModuleConfigs are stored as individual rows keyed by section name.
- * MyNodeInfo and DeviceMetadata are stored in the `session` table.
+ * MyNodeInfo, DeviceMetadata and DeviceUIConfig are stored in the `session` table.
  *
  * All suspend methods hop to [dispatcher] so blocking JDBC / Android SQLite / native sqlite3 calls
  * never run on the caller's thread (typically the engine actor on `Dispatchers.Default`). Defaults
@@ -125,6 +126,14 @@ internal class SqlDelightStorage(
                 null
             }
         } ?: DeviceMetadata.Builder().build()
+        val deviceUIConfig: DeviceUIConfig? = q.selectSession(SESSION_KEY_DEVICE_UI).executeAsOneOrNull()?.value_
+            ?.let {
+                try {
+                    DeviceUIConfig.ADAPTER.decode(it)
+                } catch (_: Exception) {
+                    null
+                }
+            }
 
         val allConfigs = q.selectAllConfigs().executeAsList()
         val configs: List<Config> = allConfigs
@@ -152,6 +161,7 @@ internal class SqlDelightStorage(
             metadata = metadata,
             configs = configs,
             moduleConfigs = moduleConfigs,
+            deviceUIConfig = deviceUIConfig,
         )
     }
 
@@ -159,6 +169,12 @@ internal class SqlDelightStorage(
         db.transaction {
             q.upsertSession(SESSION_KEY_MY_INFO, MyNodeInfo.ADAPTER.encode(config.myInfo))
             q.upsertSession(SESSION_KEY_METADATA, DeviceMetadata.ADAPTER.encode(config.metadata))
+            val deviceUI = config.deviceUIConfig
+            if (deviceUI != null) {
+                q.upsertSession(SESSION_KEY_DEVICE_UI, DeviceUIConfig.ADAPTER.encode(deviceUI))
+            } else {
+                q.deleteSession(SESSION_KEY_DEVICE_UI)
+            }
             q.deleteAllConfigs()
             config.configs.forEachIndexed { i, c ->
                 val section = "config:$i"
@@ -292,6 +308,7 @@ internal class SqlDelightStorage(
     private companion object {
         const val SESSION_KEY_MY_INFO = "my_info"
         const val SESSION_KEY_METADATA = "metadata"
+        const val SESSION_KEY_DEVICE_UI = "device_ui_config"
         const val SESSION_KEY_NODE_NUM = "identity_node_num"
         const val SESSION_KEY_FIRMWARE = "firmware_version"
         const val SESSION_KEY_PASSKEY = "session_passkey"

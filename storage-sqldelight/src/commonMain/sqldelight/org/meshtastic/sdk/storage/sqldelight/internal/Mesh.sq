@@ -137,8 +137,8 @@ CREATE TABLE session (
     key TEXT PRIMARY KEY NOT NULL,
     value BLOB
 );
--- Known keys: 'session_passkey', 'last_handshake_epoch', 'firmware_version',
--- 'identity_node_num', 'identity_long_name'.
+-- Known keys: 'my_info', 'metadata', 'device_ui_config', 'identity_node_num',
+-- 'firmware_version', 'session_passkey', 'session_passkey_expires_ms'.
 
 upsertSession:
 INSERT OR REPLACE INTO session(key, value) VALUES (?, ?);
