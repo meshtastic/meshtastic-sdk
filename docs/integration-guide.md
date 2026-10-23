@@ -82,7 +82,7 @@ not use.
 | Requesting BLE runtime permissions | [§4 BLE](#ble) |
 | Starting a foreground service before `connect()` | [§4 BLE](#ble) (Android 14+ requirement) |
 | `UsbManager.requestPermission(...)` flow | [§4 Serial (USB)](#serial-usb) |
-| Wiring `AndroidContextHolder` for SqlDelight storage | [§5 Storage on Android](#5-storage-on-android) |
+| Wiring `AndroidContextHolder` for SqlDelight storage | [§3 Storage on Android](#3-storage-on-android) |
 | Lifecycle-safe `Flow` collection in Fragments / Compose | [Reactive lifecycle management guide](consumer-guides/reactive-lifecycle-management.md) |
 | Deciding what to retry vs surface to the user | [Error-handling guide](consumer-guides/error-handling.md) |
 
@@ -199,8 +199,8 @@ JVM:
 ```kotlin
 import org.meshtastic.sdk.transport.serial.JvmSerialPorts
 
-val ports = JvmSerialPorts.list()                         // List<String>
-val transport = JvmSerialPorts.open(ports.first(), baudRate = 115200)
+val ports = JvmSerialPorts.list()                         // List<SerialPortInfo>
+val transport = JvmSerialPorts.open(ports.first().name, baudRate = 115200)
 ```
 
 Android:
@@ -212,6 +212,7 @@ import org.meshtastic.sdk.transport.serial.AndroidSerialPorts
 AndroidSerialPorts.init(applicationContext)
 
 // After UsbManager.requestPermission(...) succeeds:
+val portName = AndroidSerialPorts.list().first().name   // list(): List<SerialPortInfo>
 val transport = AndroidSerialPorts.open(portName, baudRate = 115200)
 ```
 
@@ -303,8 +304,9 @@ val storage = SqlDelightStorageProvider(baseDir = filesDir.absolutePath)
 ```
 
 `baseDir = ""` selects in-memory mode (handy for tests; lost on close).
-Otherwise the provider creates one SQLite file per `TransportIdentity`
-under `$baseDir/`.
+Otherwise the provider keeps one SQLite file per radio (keyed by its
+NodeNum, so BLE, TCP and serial connections to the same radio share it)
+under `$baseDir/`, plus a `.meshtastic-index` file.
 
 ## 4. Lifecycle, threading, and shutdown
 
@@ -342,7 +344,7 @@ it transitions `Queued → Sent → Acked|Delivered|Failed(reason)`. See
 ```kotlin
 // Read the device config
 when (val result = client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)) {
-    is AdminResult.Success -> println("LoRa region: ${result.value.lora.region}")
+    is AdminResult.Success -> println("LoRa region: ${result.value.lora?.region}")
     AdminResult.Timeout -> println("timed out")
     AdminResult.RateLimited -> println("rate-limited; try again later")
     else -> println("failed: $result")
@@ -378,10 +380,13 @@ guide: [`observability.md`](./observability.md).
 
 ```kotlin
 // testImplementation("org.meshtastic:sdk-testing")
+import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
 
-val transport = FakeRadioTransport()
+// autoHandshake = true answers the handshake so connect() completes without a radio.
+val transport = FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true)
 val client = RadioClient.Builder()
     .transport(transport)
     .storage(InMemoryStorageProvider())

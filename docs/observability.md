@@ -96,8 +96,9 @@ val client = RadioClient.Builder()
     .build()
 ```
 
-`PayloadRedactor.Default` is on unless explicitly overridden; pass
-`PayloadRedactor.None` to disable redaction. Even with redaction,
+`PayloadRedactor.Default` is used when `redactor` is omitted, and it is
+the only redactor the SDK ships — there is no pass-through (`None`)
+variant. Even with redaction,
 **do not enable protocol logging in a production build** — the
 encoded envelopes still reveal mesh structure and timing.
 
