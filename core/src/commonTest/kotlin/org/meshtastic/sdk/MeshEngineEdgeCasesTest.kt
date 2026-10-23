@@ -640,10 +640,10 @@ class MeshEngineEdgeCasesTest {
         // sendText sets want_ack=true; broadcasts await firmware implicit ACK so they stay in Sent.
         assertTrue(handles.all { it.state.value == SendState.Sent })
 
-        // Inject implicit ACKs for all handles.
+        // Inject implicit ACKs (a relay overheard) for all handles: broadcasts are Delivered.
         handles.forEach { transport.injectRoutingAck(requestId = it.id.raw) }
         runCurrent()
-        assertTrue(handles.all { it.state.value == SendState.Acked })
+        assertTrue(handles.all { it.state.value == SendState.Delivered })
 
         client.disconnect()
     }

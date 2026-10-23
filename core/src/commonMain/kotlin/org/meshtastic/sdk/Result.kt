@@ -31,16 +31,20 @@ public sealed interface SendState {
     public data object Sent : SendState
 
     /**
-     * The device received an acknowledgment from the target (unicast only).
+     * The recipient acknowledged the packet (unicast), or the local radio did (packets addressed
+     * to it, e.g. local admin).
      *
-     * (From device-emitted `Routing` ACK.)
+     * (From the `Routing` ACK the recipient sends back.)
      */
     public data object Acked : SendState
 
     /**
-     * A broadcast packet was rebroadcast by another node.
+     * Another node rebroadcast the packet: for a broadcast, the local radio overheard a
+     * neighbour relaying it; for a unicast, a relay was overheard but the recipient's own ACK
+     * didn't arrive within the send timeout.
      *
-     * (From device-emitted `Routing` broadcast ack.)
+     * (From the implicit `Routing` ACK the local radio generates when it overhears its packet
+     * being relayed; firmware `ReliableRouter::perhapsGenerateImplicitAckForOwnOverheard`.)
      */
     public data object Delivered : SendState
 

@@ -212,8 +212,8 @@ public class MessageHandle internal constructor(
 public sealed interface SendState {
     public data object Queued : SendState
     public data object Sent : SendState           // device QueueStatus saw mesh_packet_id
-    public data object Acked : SendState          // unicast routing ACK heard
-    public data object Delivered : SendState      // broadcast: rebroadcast heard
+    public data object Acked : SendState          // the recipient's routing ACK (unicast)
+    public data object Delivered : SendState      // a relay overheard: broadcast, or unicast never confirmed
     public data class Failed(val reason: SendFailure) : SendState
 }
 

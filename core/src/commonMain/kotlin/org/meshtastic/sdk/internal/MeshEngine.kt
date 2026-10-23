@@ -157,6 +157,13 @@ internal class MeshEngine(
     private val activeConnectDeferred = atomic<CompletableDeferred<Unit>?>(null)
 
     private val pendingSends = mutableMapOf<MessageId, MutableStateFlow<SendState>>()
+
+    // Destination node of each in-flight send (by wire id), to tell a unicast's real ACK (from the
+    // recipient) from the implicit ACK our own radio makes when it overhears a relay.
+    private val pendingSendTargets = mutableMapOf<MessageId, Int>()
+
+    // Unicast sends whose relay was overheard but whose recipient hasn't ACKed yet.
+    private val relayedUnicasts = mutableSetOf<MessageId>()
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
 
@@ -514,6 +521,8 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
+        pendingSendTargets.clear()
+        relayedUnicasts.clear()
 
         inbox.close()
         outbound.close()
@@ -1606,7 +1615,7 @@ internal class MeshEngine(
                             AdminResult.NodeUnreachable
                         }
                     dispatcher.tryFail(packetId.raw, rpcResult)
-                    val flow = pendingSends.remove(packetId)
+                    val flow = forgetPendingSend(packetId)
                     ackTimeoutJobs.remove(packetId)?.cancel()
                     if (flow != null) {
                         val current = flow.value
@@ -1838,7 +1847,7 @@ internal class MeshEngine(
             dispatcher.tryFailFromRouting(messageId.raw, errorReason)
         ) {
             // Defensive cleanup if a stale pendingSends entry shared the wire id.
-            pendingSends.remove(messageId)
+            forgetPendingSend(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
             return
         }
@@ -1852,7 +1861,7 @@ internal class MeshEngine(
         // from pendingSends below — guards against any future caller that re-inserts.
         val current = flow.value
         if (current is SendState.Failed || current == SendState.Acked || current == SendState.Delivered) {
-            pendingSends.remove(messageId)
+            forgetPendingSend(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
             return
         }
@@ -1895,14 +1904,26 @@ internal class MeshEngine(
                     else -> SendFailure.Other(errorReason)
                 }
                 flow.value = SendState.Failed(failure)
-                pendingSends.remove(messageId)
+                forgetPendingSend(messageId)
                 ackTimeoutJobs.remove(messageId)?.cancel()
             }
 
             routeReply != null || errorReason == Routing.Error.NONE -> {
-                flow.value = SendState.Acked
-                pendingSends.remove(messageId)
-                ackTimeoutJobs.remove(messageId)?.cancel()
+                val target = pendingSendTargets[messageId]
+                // firmware ReliableRouter::perhapsGenerateImplicitAckForOwnOverheard: when our
+                // radio overhears a neighbour rebroadcasting our packet it sends us a NONE ack
+                // from our own node. For a broadcast that is the delivery signal; for a unicast
+                // it only means "relayed" and the recipient's own ACK (or NAK) is still to come.
+                val fromOwnRadio = packet.from == 0 || packet.from == myNodeNum
+                val unicastToPeer = target != null && target != BROADCAST_ADDR && target != myNodeNum
+                if (routeReply == null && fromOwnRadio && unicastToPeer) {
+                    relayedUnicasts += messageId
+                    logger.debug(TAG) { "Relay heard for id=$messageId; waiting for the recipient's ACK" }
+                } else {
+                    flow.value = if (target == BROADCAST_ADDR) SendState.Delivered else SendState.Acked
+                    forgetPendingSend(messageId)
+                    ackTimeoutJobs.remove(messageId)?.cancel()
+                }
             }
 
             else -> {
@@ -2112,7 +2133,7 @@ internal class MeshEngine(
             if (!terminal) {
                 msg.stateFlow.value = SendState.Failed(failure)
             }
-            pendingSends.remove(msg.id)
+            forgetPendingSend(msg.id)
         }
         preSendQueue.clear()
     }
@@ -2191,6 +2212,8 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
+        pendingSendTargets.clear()
+        relayedUnicasts.clear()
         failPreSendQueueWith(SendFailure.Disconnected)
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
@@ -2308,7 +2331,7 @@ internal class MeshEngine(
             if (!terminal) {
                 logger.warn(TAG) { "Send id=$wireId collides with in-flight wire id; rejecting" }
                 msg.stateFlow.value = SendState.Failed(SendFailure.IdCollision)
-                pendingSends.remove(msg.id)
+                forgetPendingSend(msg.id)
                 return
             }
         }
@@ -2323,6 +2346,7 @@ internal class MeshEngine(
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
+        pendingSendTargets[wireKey] = packet.to
 
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
@@ -2341,7 +2365,7 @@ internal class MeshEngine(
         // MessageHandle.await() would suspend forever.
         if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
-            pendingSends.remove(MessageId(wireId))
+            forgetPendingSend(MessageId(wireId))
             logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
             return
         }
@@ -2365,7 +2389,7 @@ internal class MeshEngine(
         val stateFlow = pendingSends[msg.id] ?: return
         if (stateFlow.value == SendState.Queued) {
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
-            pendingSends.remove(msg.id)
+            forgetPendingSend(msg.id)
         }
         // regardless of state, drop any pending ACK timer so we don't post a stale
         // SendAckTimeout for a handle the user has explicitly cancelled.
@@ -2696,14 +2720,28 @@ internal class MeshEngine(
     // a unicast send timed out waiting for a routing ACK. Mark the handle as Failed
     // (only if it's still in a non-terminal state — a late ACK that won the race takes
     // precedence) and prune our bookkeeping.
+
+    /** Drops every per-send record kept for [id] (the state flow itself is the caller's). */
+    private fun forgetPendingSend(id: MessageId): MutableStateFlow<SendState>? {
+        pendingSendTargets.remove(id)
+        relayedUnicasts.remove(id)
+        return pendingSends.remove(id)
+    }
+
     private fun handleSendAckTimeout(msg: EngineMessage.SendAckTimeout) {
         val flow = pendingSends[msg.id] ?: return
         ackTimeoutJobs.remove(msg.id)
         when (flow.value) {
             SendState.Queued, SendState.Sent -> {
                 logger.debug(TAG) { "ACK timeout for id=${msg.id} (state was ${flow.value})" }
-                flow.value = SendState.Failed(SendFailure.AckTimeout)
-                pendingSends.remove(msg.id)
+                // A unicast that a neighbour relayed but whose recipient never confirmed was
+                // still carried onward: report Delivered (relayed), not a failure.
+                flow.value = if (msg.id in relayedUnicasts) {
+                    SendState.Delivered
+                } else {
+                    SendState.Failed(SendFailure.AckTimeout)
+                }
+                forgetPendingSend(msg.id)
             }
 
             SendState.Acked, SendState.Delivered, is SendState.Failed -> {
