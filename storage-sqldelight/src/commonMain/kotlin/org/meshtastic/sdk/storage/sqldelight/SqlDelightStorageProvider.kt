@@ -121,8 +121,7 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
      * reveals the radio's NodeNum. In deferred mode, reads return empty defaults and writes
      * are buffered into scratch state, then replayed into the real DB at bind time.
      *
-     * No thread-safety primitives: per the [DeviceStorage] contract the engine serialises
-     * every call on its actor, so plain field mutation is sound.
+     * The engine launches storage calls as separate coroutines, so they can overlap; see [lock].
      */
     private inner class NodeKeyedStorage(
         private var inner: DeviceStorage?,
@@ -132,28 +131,43 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
 
         private val scratch = Scratch()
 
-        override suspend fun loadNodes(): Map<NodeId, NodeInfo> = inner?.loadNodes() ?: scratch.nodes.toMap()
+        // ADR-012-style carve-out (storage-internal serialisation, not engine state): calls into
+        // one DeviceStorage can overlap (handshake persist, saveConfig and heartbeat flush are
+        // separate coroutines). Without this, a write racing the first bind could land in
+        // `scratch` after it was replayed and be lost, and the plain scratch collections would be
+        // mutated from several threads. Lock order is always this lock, then `indexMutex`
+        // (inside bindToNode / rebindNodeNum), then the inner storage's own lock.
+        private val lock = Mutex()
 
-        override suspend fun saveNode(node: NodeInfo) {
+        override suspend fun loadNodes(): Map<NodeId, NodeInfo> = lock.withLock {
+            inner?.loadNodes() ?: scratch.nodes.toMap()
+        }
+
+        override suspend fun saveNode(node: NodeInfo): Unit = lock.withLock {
             val i = inner
             if (i != null) i.saveNode(node) else scratch.nodes[NodeId(node.num)] = node
         }
 
-        override suspend fun removeNode(nodeId: NodeId) {
+        override suspend fun removeNode(nodeId: NodeId): Unit = lock.withLock {
             val i = inner
             if (i != null) i.removeNode(nodeId) else scratch.nodes.remove(nodeId)
         }
 
-        override suspend fun loadConfig(): ConfigBundle? = inner?.loadConfig() ?: scratch.config
+        override suspend fun loadConfig(): ConfigBundle? = lock.withLock {
+            val i = inner
+            if (i != null) i.loadConfig() else scratch.config
+        }
 
-        override suspend fun saveConfig(config: ConfigBundle) {
+        override suspend fun saveConfig(config: ConfigBundle): Unit = lock.withLock {
             val i = inner
             if (i != null) i.saveConfig(config) else scratch.config = config
         }
 
-        override suspend fun loadChannels(): List<Channel> = inner?.loadChannels() ?: scratch.channels.toList()
+        override suspend fun loadChannels(): List<Channel> = lock.withLock {
+            inner?.loadChannels() ?: scratch.channels.toList()
+        }
 
-        override suspend fun saveChannels(channels: List<Channel>) {
+        override suspend fun saveChannels(channels: List<Channel>): Unit = lock.withLock {
             val i = inner
             if (i != null) {
                 i.saveChannels(channels)
@@ -163,16 +177,25 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
             }
         }
 
-        override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) {
+        override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String): Unit = lock.withLock {
             val existing = inner
             if (existing == null) {
                 // First bind: open (or adopt) the node-keyed DB, replay scratch, then delegate.
+                // The lock keeps every other call out until `inner` is set, so no write can
+                // reach scratch after the replay. Scratch is only reset once the replay worked;
+                // on failure the DB is closed and the next call stays deferred.
                 val (real, boundDbId) = bindToNode(identity, nodeNum)
-                replayScratchInto(real)
+                try {
+                    replayScratchInto(real)
+                } catch (e: Throwable) {
+                    real.close()
+                    throw e
+                }
+                scratch.reset()
                 inner = real
                 dbId = boundDbId
                 real.recordOwnNode(nodeNum, firmwareVersion)
-                return
+                return@withLock
             }
             // Already bound. Inner.recordOwnNode handles its own factory-reset detection
             // (clears the DB on NodeNum mismatch). We then unconditionally re-anchor the
@@ -182,7 +205,7 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
             dbId?.let { rebindNodeNum(nodeNum, it) }
         }
 
-        override suspend fun clear() {
+        override suspend fun clear(): Unit = lock.withLock {
             val i = inner
             if (i != null) i.clear() else scratch.reset()
         }
@@ -191,20 +214,24 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
             inner?.close()
         }
 
-        override suspend fun saveSessionPasskey(passkey: SessionPasskey) {
+        override suspend fun saveSessionPasskey(passkey: SessionPasskey): Unit = lock.withLock {
             val i = inner
             if (i != null) i.saveSessionPasskey(passkey) else scratch.sessionPasskey = passkey
         }
 
-        override suspend fun loadSessionPasskey(): SessionPasskey? =
-            inner?.loadSessionPasskey() ?: scratch.sessionPasskey
+        override suspend fun loadSessionPasskey(): SessionPasskey? = lock.withLock {
+            val i = inner
+            if (i != null) i.loadSessionPasskey() else scratch.sessionPasskey
+        }
 
-        override suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long) {
+        override suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long): Unit = lock.withLock {
             val i = inner
             if (i != null) i.saveHeartbeat(nodeId, epochMillis) else scratch.heartbeats[nodeId] = epochMillis
         }
 
-        override suspend fun loadHeartbeats(): Map<NodeId, Long> = inner?.loadHeartbeats() ?: scratch.heartbeats.toMap()
+        override suspend fun loadHeartbeats(): Map<NodeId, Long> = lock.withLock {
+            inner?.loadHeartbeats() ?: scratch.heartbeats.toMap()
+        }
 
         private suspend fun replayScratchInto(target: DeviceStorage) {
             scratch.config?.let { target.saveConfig(it) }
@@ -212,7 +239,6 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
             for (node in scratch.nodes.values) target.saveNode(node)
             for ((id, ts) in scratch.heartbeats) target.saveHeartbeat(id, ts)
             scratch.sessionPasskey?.let { target.saveSessionPasskey(it) }
-            scratch.reset()
         }
     }
 

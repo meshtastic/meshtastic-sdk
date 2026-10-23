@@ -124,11 +124,30 @@ See also: [`error-taxonomy.md` § identity rebind](../error-taxonomy.md#identity
 
 ## Thread-safety expectations
 
-Implementations are called only from the engine actor's single writer
-context (see [ADR-002](../decisions/002-architecture.md) and
-[`engine-actor.md`](./engine-actor.md)). They MAY use internal locks for
-their own correctness, but the SDK guarantees no concurrent calls into
-any single `DeviceStorage` instance.
+The engine actor itself is single-writer (see
+[ADR-002](../decisions/002-architecture.md) and
+[`engine-actor.md`](./engine-actor.md)), but it does **not** serialise its
+storage calls. Writes run in coroutines the actor launches so disk I/O never
+blocks it: the post-handshake persist (`recordOwnNode`, `saveNode`,
+`saveHeartbeat`, `saveChannels`, `saveConfig`), the `saveConfig` after a
+config edit or an external config change, and the periodic heartbeat flush.
+These can overlap with each other and with calls the actor makes directly
+(`loadConfig` / `loadHeartbeats` at connect, the final heartbeat flush and
+`close()` at disconnect). There is no ordering guarantee between two launched
+blocks.
+
+So a `DeviceStorage` **must tolerate concurrent calls** from several
+coroutines and threads. Each call should be atomic on its own; a later call
+may still land before an earlier one. Implementations may use internal locks
+for this; that is storage-side code, not engine state, so ADR-002's rule
+against locks does not apply.
+
+The built-in storage does this with a `Mutex` per storage: `SqlDelightStorage`
+runs one call at a time, and the node-keyed wrapper returned by
+`SqlDelightStorageProvider` holds its own lock across the first
+`recordOwnNode`, so a write that races the first bind is either buffered and
+replayed or goes straight to the database, never lost. `close()` is not
+suspending and does not take the lock.
 
 ### Main-safety of suspend methods
 
