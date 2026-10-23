@@ -17,6 +17,9 @@ internal actual fun createDriver(dbPath: String): SqlDriver {
     val ctx = AndroidContextHolder.context
         ?: error("SqlDelightStorageProvider.init(context) must be called before activate()")
     val fileBacked = dbPath != ":memory:"
+    // A bare name puts the file in the app's default databases directory, not in `baseDir`.
+    // Existing installs have their databases there, so keep it; see storage.md. A null name
+    // is an in-memory database.
     val name = if (fileBacked) dbPath.substringAfterLast('/') else null
     // AndroidSqliteDriver.Callback.onConfigure is invoked per-connection by the framework
     // connection pool. Applying PRAGMAs here ensures every connection honours ADR-014,

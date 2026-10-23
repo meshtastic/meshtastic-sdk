@@ -18,9 +18,11 @@ call to `SqlDelightStorageProvider.activate(...)`. There is no `init(...)` metho
 
 Construction: `SqlDelightStorageProvider(baseDir: String = "")`. An empty `baseDir`
 uses an in-memory database (a fresh one per activation, lost on close); a non-empty value
-keeps one SQLite file per radio at `$baseDir/<dbId>.db` (an opaque id) plus a
-`.meshtastic-index` file mapping transport identities and NodeNums to those ids, so the
-same radio reached over BLE, TCP or serial shares one database.
+keeps one SQLite file per radio (an opaque `<dbId>.db`) plus a `.meshtastic-index` file in
+`$baseDir` mapping transport identities and NodeNums to those ids, so the same radio reached
+over BLE, TCP or serial shares one database. On the JVM the database files are
+`$baseDir/<dbId>.db`; on Android and Apple they are in the platform driver's default databases
+directory (see `docs/architecture/storage.md`).
 
 Key packages:
 - `org.meshtastic.sdk.storage.sqldelight` — `SqlDelightStorageProvider`, `AndroidContextHolder` (Android only)

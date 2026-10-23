@@ -18,8 +18,26 @@ aliases **and** NodeNums to opaque per-radio DB ids. The on-disk shape is:
 ```
 <baseDir>/
   .meshtastic-index                ← identity ↔ nodeNum ↔ dbId bindings
-  <dbId>.db                        ← one SQLDelight DB per radio
+  <dbId>.db                        ← one SQLDelight DB per radio (JVM)
 ```
+
+Where the `<dbId>.db` files live depends on the platform driver:
+
+| Platform | Database files |
+|---|---|
+| JVM | `<baseDir>/<dbId>.db` |
+| Android | `AndroidSqliteDriver` opens the bare file name, so the files are in the app's default databases directory (`Context.getDatabasePath("<dbId>.db")`), not in `baseDir`. |
+| Apple (iOS / macOS) | `NativeSqliteDriver` (SQLiter) opens the bare file name in its default `databases` directory under the app's Application Support directory, not in `baseDir`. |
+
+So on Android and Apple, `baseDir` holds only the index. Deleting `baseDir`
+there forgets the bindings but leaves the database files behind; the next
+activation allocates new ones. The dbIds are random 128-bit values, so two
+providers with different `baseDir`s never pick the same file. The location is
+kept as is because moving it would orphan every existing database (the index
+would point at a new, empty file).
+
+`baseDir = ""` selects in-memory mode on every platform: each activation gets
+its own in-memory database, no index and no file.
 
 On `activate(identity)`:
 

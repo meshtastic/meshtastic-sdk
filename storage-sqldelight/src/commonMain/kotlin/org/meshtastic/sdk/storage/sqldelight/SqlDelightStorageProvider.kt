@@ -32,8 +32,12 @@ import kotlin.random.Random
  * ```
  * <baseDir>/
  *   .meshtastic-index         ← identity ↔ nodeNum ↔ opaque-dbId bindings
- *   <dbId>.db                 ← one SQLite DB per radio (opaque filename)
+ *   <dbId>.db                 ← one SQLite DB per radio (opaque filename; JVM only)
  * ```
+ *
+ * On Android and Apple the `<dbId>.db` files are opened by name in the platform driver's
+ * default databases directory (`Context.getDatabasePath` on Android; SQLiter's `databases`
+ * directory under Application Support on Apple), so only the index lives in `baseDir` there.
  *
  * ### Activation flow
  *
@@ -52,7 +56,8 @@ import kotlin.random.Random
  *
  * Pass `baseDir = ""` for in-memory-only mode (every activation returns a fresh in-memory DB).
  *
- * @param baseDir path to the directory where database files and the index live
+ * @param baseDir path to the directory where the index lives (and, on the JVM, the database
+ *   files); `""` selects in-memory mode
  */
 public class SqlDelightStorageProvider(private val baseDir: String = "") : StorageProvider {
 

@@ -85,6 +85,9 @@ If your app targets `targetSdk >= 30`, scoped storage rules apply:
 
 - Direct file I/O to `Environment.getExternalStorageDirectory()` is blocked.
 - Prefer `context.filesDir` (app-private) or `context.cacheDir` for `SqlDelightStorageProvider.baseDir`.
+- `baseDir` holds only the identity index on Android; the per-radio database files are
+  opened by name in the app's default databases directory (`Context.getDatabasePath`).
+  See [`storage.md`](storage.md).
 
 Example:
 

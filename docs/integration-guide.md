@@ -306,7 +306,10 @@ val storage = SqlDelightStorageProvider(baseDir = filesDir.absolutePath)
 `baseDir = ""` selects in-memory mode (handy for tests; lost on close).
 Otherwise the provider keeps one SQLite file per radio (keyed by its
 NodeNum, so BLE, TCP and serial connections to the same radio share it)
-under `$baseDir/`, plus a `.meshtastic-index` file.
+plus a `.meshtastic-index` file in `$baseDir/`. On Android the database
+files go to the app's default databases directory
+(`Context.getDatabasePath`), not `$baseDir/`; see
+[`architecture/storage.md`](architecture/storage.md).
 
 ## 4. Lifecycle, threading, and shutdown
 
