@@ -66,17 +66,16 @@ internal class SqlDelightStorage(
     // ── Nodes ─────────────────────────────────────────────────────────────────
 
     override suspend fun loadNodes(): Map<NodeId, NodeInfo> = serialised {
+        // selectAllNodes skips heartbeat-only rows (no raw_node_info), so every row is a node.
         val rows = q.selectAllNodes().executeAsList()
         buildMap {
             for (row in rows) {
                 val nodeId = NodeId(row.node_num.toInt())
-                val nodeInfo = row.raw_node_info?.let { bytes ->
-                    try {
-                        NodeInfo.ADAPTER.decode(bytes)
-                    } catch (_: Exception) {
-                        null
-                    }
-                } ?: NodeInfo.Builder().also { wb -> wb.num = row.node_num.toInt() }.build()
+                val nodeInfo = try {
+                    NodeInfo.ADAPTER.decode(row.raw_node_info)
+                } catch (_: Exception) {
+                    NodeInfo.Builder().also { wb -> wb.num = row.node_num.toInt() }.build()
+                }
                 put(nodeId, nodeInfo)
             }
         }

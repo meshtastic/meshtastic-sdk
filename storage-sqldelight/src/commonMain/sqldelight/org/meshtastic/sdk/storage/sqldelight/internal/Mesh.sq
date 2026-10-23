@@ -52,8 +52,11 @@ VALUES (:node_num, :user_id, :long_name, :short_name, :hw_model, :is_licensed,
         :raw_node_info,
         (SELECT last_heartbeat_at FROM nodes WHERE node_num = :node_num));
 
+-- Only rows written by saveNode (which always sets raw_node_info). upsertHeartbeat can
+-- create a bare row for a node the NodeDB doesn't know yet; that row holds a heartbeat,
+-- not a node, so it is left out here and still returned by selectAllHeartbeats.
 selectAllNodes:
-SELECT * FROM nodes ORDER BY last_heard_epoch DESC;
+SELECT * FROM nodes WHERE raw_node_info IS NOT NULL ORDER BY last_heard_epoch DESC;
 
 selectNode:
 SELECT * FROM nodes WHERE node_num = ?;
