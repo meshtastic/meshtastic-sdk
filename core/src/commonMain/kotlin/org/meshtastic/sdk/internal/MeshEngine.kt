@@ -277,6 +277,17 @@ internal class MeshEngine(
     private var pendingConnectDeferred: CompletableDeferred<Unit>? = null
 
     private var reconnectJob: Job? = null
+
+    // The coroutine collecting transport.frames(). A transport is collected once per connect
+    // cycle, so auto-reconnect cancels this before reconnecting the transport and starts a new
+    // reader afterwards. [frameReaderGeneration] tags each reader's FrameReaderStopped message.
+    private var frameReaderJob: Job? = null
+    private var frameReaderGeneration: Int = 0
+
+    // Stage 1 retry / timeout timers of the current handshake attempt; cancelled when a new
+    // attempt starts so a timer from an earlier attempt can't hit a later one.
+    private var stage1RetryJob: Job? = null
+    private var stage1TimeoutJob: Job? = null
     private var reconnectAttempt: Int = 0
     private var autoReconnectInProgress: Boolean = false
 
@@ -312,28 +323,7 @@ internal class MeshEngine(
             runEngine()
         }
 
-        // frames(), then forwards each inbound transport frame as a FrameRx message.
-        // Gating on TransportState avoids racing with handleConnect() (the transport's
-        // readChannel is null until connect() completes, and TcpTransport.frames() throws
-        // if collected before then). Failures are surfaced as Disconnect messages so the
-        // coroutine doesn't die silently.
-        scope.launch(CoroutineName("meshtastic-frame-reader")) {
-            try {
-                transport.state.first { it is org.meshtastic.sdk.TransportState.Connected }
-                transport.frames().collect { frame ->
-                    inbox.send(EngineMessage.FrameRx(frame))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
-                inbox.trySend(
-                    EngineMessage.Disconnect(
-                        MeshtasticException.Transport(e.message ?: "frame reader failed", e),
-                    ),
-                )
-            }
-        }
+        startFrameReader(scope)
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
             for (frame in outbound) {
@@ -607,6 +597,10 @@ internal class MeshEngine(
         // cancel the Stage 2 sliding-timeout watchdog so it doesn't post stale timeouts.
         stage2WatchdogJob?.cancel()
         stage2WatchdogJob = null
+        stage1RetryJob?.cancel()
+        stage1RetryJob = null
+        stage1TimeoutJob?.cancel()
+        stage1TimeoutJob = null
         stage2ProgressCounter = 0L
         lastEncryptedSkipWarningAtMs = 0L
         recentInboundPacketKeys.clear()
@@ -641,6 +635,7 @@ internal class MeshEngine(
             EngineMessage.HandshakeStage1SettleComplete -> handleStage1SettleComplete()
             EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
             EngineMessage.Stage1RetryWantConfig -> handleStage1RetryWantConfig()
+            is EngineMessage.FrameReaderStopped -> handleFrameReaderStopped(msg)
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
             is EngineMessage.PostRpc -> handlePostRpc(msg)
             is EngineMessage.PendingResponseTimeout -> handlePendingResponseTimeout(msg)
@@ -833,6 +828,57 @@ internal class MeshEngine(
     }
 
     /**
+     * Collects `transport.frames()` and forwards each inbound frame as a FrameRx message. Gating
+     * on TransportState avoids racing with handleConnect() (the transport's readChannel is null
+     * until connect() completes, and TcpTransport.frames() throws if collected before then).
+     * If the flow throws or ends without the engine cancelling it, the reader posts
+     * [EngineMessage.FrameReaderStopped] so the link loss is handled instead of dying silently.
+     */
+    private fun startFrameReader(scope: CoroutineScope) {
+        frameReaderJob?.cancel()
+        val generation = ++frameReaderGeneration
+        frameReaderJob = scope.launch(CoroutineName("meshtastic-frame-reader")) {
+            val cause = try {
+                transport.state.first { it is org.meshtastic.sdk.TransportState.Connected }
+                transport.frames().collect { frame ->
+                    inbox.send(EngineMessage.FrameRx(frame))
+                }
+                MeshtasticException.Transport("frame stream ended")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
+                MeshtasticException.Transport(e.message ?: "frame reader failed", e)
+            }
+            inbox.trySend(EngineMessage.FrameReaderStopped(generation, cause))
+        }
+    }
+
+    /**
+     * The frame reader stopped on its own. With auto-reconnect on and a session that was up (or
+     * already reconnecting), that's a link loss to recover from; otherwise tear down as before.
+     */
+    private fun handleFrameReaderStopped(msg: EngineMessage.FrameReaderStopped) {
+        if (msg.generation != frameReaderGeneration || disconnecting) return
+        val cause = MeshtasticException.tag(
+            msg.cause,
+            transportIdentity = transport.identity,
+            operation = "transport.frames",
+        )
+        val sessionWasUp = handshakeStage == HandshakeStage.Ready || autoReconnectInProgress
+        if (autoReconnectConfig.enabled && sessionWasUp) {
+            // A transport that also published TransportState.Error has already scheduled a
+            // reconnect (which resets handshakeStage); don't schedule a second attempt.
+            if (autoReconnectInProgress && reconnectJob?.isActive == true) return
+            logger.warn(TAG, cause) { "Frame stream stopped; reconnecting" }
+            events.tryEmit(MeshEvent.TransportError(cause))
+            scheduleReconnect(cause)
+        } else {
+            handleDisconnect(EngineMessage.Disconnect(cause))
+        }
+    }
+
+    /**
      * Begin Stage 1 of the handshake. Extracted from [handleConnect] so the auto-reconnect
      * supervisor can re-enter the handshake without re-running storage activation.
      */
@@ -850,11 +896,13 @@ internal class MeshEngine(
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
         handshakeStage = HandshakeStage.Stage1Draining
 
-        engineScope?.launch {
+        stage1RetryJob?.cancel()
+        stage1TimeoutJob?.cancel()
+        stage1RetryJob = engineScope?.launch {
             delay(STAGE1_RETRY_MS)
             inbox.trySend(EngineMessage.Stage1RetryWantConfig)
         }
-        engineScope?.launch {
+        stage1TimeoutJob = engineScope?.launch {
             delay(STAGE1_TIMEOUT_MS)
             inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining))
         }
@@ -2128,6 +2176,10 @@ internal class MeshEngine(
         ackTimeoutJobs.clear()
         stage2WatchdogJob?.cancel()
         stage2WatchdogJob = null
+        stage1RetryJob?.cancel()
+        stage1RetryJob = null
+        stage1TimeoutJob?.cancel()
+        stage1TimeoutJob = null
         stage2ProgressCounter = 0L
         recentInboundPacketKeys.clear()
         recentInboundPacketKeySet.clear()
@@ -2157,6 +2209,12 @@ internal class MeshEngine(
     private fun handleReconnectTick(msg: EngineMessage.ReconnectTick) {
         if (!autoReconnectInProgress) return
         val scope = engineScope ?: return
+        // Stop reading the old link before it's torn down: the transport gets a new frame
+        // stream per connect cycle, and the old reader would otherwise stay parked on (or fail
+        // on) the dead one. A new reader starts once the transport is connected again.
+        frameReaderGeneration++
+        frameReaderJob?.cancel()
+        frameReaderJob = null
         scope.launch {
             val outcome = try {
                 runCatching { transport.disconnect() }
@@ -2185,6 +2243,7 @@ internal class MeshEngine(
         if (msg.success) {
             logger.info(TAG) { "Auto-reconnect attempt $reconnectAttempt succeeded" }
             livenessBudgetMs = LIVENESS_TIMEOUT_MS
+            engineScope?.let(::startFrameReader)
             startStage1Handshake()
         } else {
             val cause = msg.cause ?: MeshtasticException.tag(
@@ -2358,6 +2417,13 @@ internal class MeshEngine(
         // Stale timer from a stage we've already advanced past — ignore.
         if (handshakeStage != msg.stage) return
         logger.error(TAG) { "Handshake timeout at stage ${msg.stage.toDisplayName()}" }
+
+        // During auto-reconnect a handshake that doesn't finish is one more failed attempt:
+        // back off and retry (scheduleReconnect enforces maxAttempts) instead of tearing down.
+        if (autoReconnectInProgress && !disconnecting) {
+            scheduleReconnect(MeshtasticException.HandshakeTimeout(msg.stage.toDisplayName()))
+            return
+        }
 
         // emit a structured ProtocolWarning so consumers can distinguish
         // "seed never landed" (handshake reached SeedingSession but get_owner_response never

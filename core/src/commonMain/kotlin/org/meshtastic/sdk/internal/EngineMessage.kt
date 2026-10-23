@@ -79,6 +79,13 @@ internal sealed interface EngineMessage {
     /** Transport connection state changed (posted by the transport-state observer coroutine). */
     data class TransportStateChanged(val state: TransportState) : EngineMessage
 
+    /**
+     * The frame reader stopped on its own: `frames()` threw, or completed without the engine
+     * cancelling it (the link went away). Posted by the frame-reader coroutine of [generation]
+     * so a reader replaced by a reconnect can't act on the new cycle.
+     */
+    data class FrameReaderStopped(val generation: Int, val cause: MeshtasticException.Transport) : EngineMessage
+
     // ── Outbound ───────────────────────────────────────────────────────────
 
     /**
