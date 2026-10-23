@@ -25,6 +25,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`Name`, `User`, `Position`, `SignalQuality`, `LastSeen`). Before, only telemetry device metrics
   were merged, so positions, names and last-heard times stayed as the handshake left them, and
   `WentOffline.lastHeard` and `requestNodeInfo()` replies didn't reach the node map.
+- `TelemetryApi.requestDevice()`, `requestEnvironment()`, `requestPower()`, `requestAirQuality()`,
+  `requestLocalStats()`, `requestHealth()`, `requestHost()` and `requestTrafficManagement()` now
+  set the requested variant in the request (an empty `DeviceMetrics`, `EnvironmentMetrics`, …).
+  The firmware's telemetry modules only answer a request carrying their variant, so before this
+  every call ended in `NO_RESPONSE` or a timeout instead of returning data.
 
 ## [0.2.0] — 2026-10-03
 

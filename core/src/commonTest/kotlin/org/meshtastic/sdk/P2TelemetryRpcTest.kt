@@ -179,4 +179,35 @@ class P2TelemetryRpcTest {
         assertEquals(12, received.device_metrics!!.battery_level)
         client.disconnect()
     }
+
+    @Test
+    fun eachRequestSetsTheVariantTheFirmwareAnswers() = runTest {
+        // firmware src/modules/Telemetry/*: each module's allocReply() answers only a request whose
+        // Telemetry.variant is its own arm; an empty Telemetry gets no reply.
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val cases: List<Pair<suspend () -> Any?, (Telemetry) -> Any?>> = listOf(
+            suspend { client.telemetry.requestDevice() } to { t -> t.device_metrics },
+            suspend { client.telemetry.requestEnvironment() } to { t -> t.environment_metrics },
+            suspend { client.telemetry.requestPower() } to { t -> t.power_metrics },
+            suspend { client.telemetry.requestAirQuality() } to { t -> t.air_quality_metrics },
+            suspend { client.telemetry.requestLocalStats() } to { t -> t.local_stats },
+            suspend { client.telemetry.requestHealth() } to { t -> t.health_metrics },
+            suspend { client.telemetry.requestHost() } to { t -> t.host_metrics },
+            suspend { client.telemetry.requestTrafficManagement() } to { t -> t.traffic_management_stats },
+        )
+        for ((request, arm) in cases) {
+            val before = transport.outboundPackets().size
+            backgroundScope.async { request() }
+            runCurrent()
+            val sent = transport.outboundPackets().drop(before)
+                .last { it.decoded?.portnum == org.meshtastic.proto.PortNum.TELEMETRY_APP }
+            val telemetry = Telemetry.ADAPTER.decode(sent.decoded!!.payload)
+            assertNotNull(arm(telemetry), "request carried no matching variant: $telemetry")
+            assertEquals(true, sent.decoded?.want_response)
+        }
+        client.disconnect()
+    }
 }
