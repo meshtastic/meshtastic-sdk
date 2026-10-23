@@ -552,7 +552,7 @@ public sealed interface StoreForwardEvent {
 
 ## Config Builder Extensions *(since 0.2.0)*
 
-Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:
+Extension functions on `AdminApi` that change one config section: each reads the node's current section (`getConfig` / `getModuleConfig`), hands it to the block as the receiver, and writes back what the block returns. The firmware replaces a whole section on `set_config`, so starting from the current section is what keeps the fields you don't touch (for LoRa that includes `tx_enabled`). If the read fails, nothing is written and the failure is returned; a reply without the requested section resolves as `Failed(NO_RESPONSE)`. Each call is two round trips:
 
 ```kotlin
 // Config types (8 extensions)
@@ -583,15 +583,28 @@ suspend fun AdminApi.setStatusMessageConfig(block: ModuleConfig.StatusMessageCon
 suspend fun AdminApi.setTrafficManagementConfig(block: ModuleConfig.TrafficManagementConfig.() -> ModuleConfig.TrafficManagementConfig): AdminResult<Unit>
 ```
 
-Usage:
+Usage (protobufs 2.8 types are builder-only, so change a field through `newBuilder()`):
 ```kotlin
-client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-client.admin.setMqttConfig { copy(enabled = true, address = "mqtt.example.com") }
+client.admin.setLoraConfig {
+    newBuilder().also { wb -> wb.region = Config.LoRaConfig.RegionCode.US }.build()
+}
+client.admin.setMqttConfig {
+    newBuilder().also { wb ->
+        wb.enabled = true
+        wb.address = "mqtt.example.com"
+    }.build()
+}
 
-// Combined with editSettings for atomic batching:
-client.admin.editSettings {
-    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-    setMqttConfig { copy(enabled = true) }
+// Several sections in one atomic transaction: read and write inside batch { }.
+client.admin.batch {
+    val lora = getConfig(AdminMessage.ConfigType.LORA_CONFIG).lora!!
+    setConfig(Config.Builder().also { wb ->
+        wb.lora = lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+    }.build())
+    val mqtt = getModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG).mqtt!!
+    setModuleConfig(ModuleConfig.Builder().also { wb ->
+        wb.mqtt = mqtt.newBuilder().also { it.enabled = true }.build()
+    }.build())
 }
 ```
 

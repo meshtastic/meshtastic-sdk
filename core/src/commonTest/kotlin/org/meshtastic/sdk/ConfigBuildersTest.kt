@@ -602,6 +602,76 @@ class ConfigBuildersTest {
         )
     }
 
+    @Test
+    fun loraBuilderKeepsTheFieldsTheBlockDoesNotTouch() = runTest {
+        val current = Config.LoRaConfig.Builder().also { wb ->
+            wb.use_preset = true
+            wb.modem_preset = Config.LoRaConfig.ModemPreset.LONG_FAST
+            wb.region = Config.LoRaConfig.RegionCode.EU_868
+            wb.hop_limit = 3
+            wb.tx_enabled = true
+        }.build()
+        val admin = CapturingAdminApi().apply {
+            currentConfig = { type ->
+                assertEquals(AdminMessage.ConfigType.LORA_CONFIG, type)
+                AdminResult.Success(Config.Builder().also { wb -> wb.lora = current }.build())
+            }
+        }
+
+        val result = admin.setLoraConfig {
+            newBuilder().also { wb -> wb.region = Config.LoRaConfig.RegionCode.US }.build()
+        }
+
+        assertEquals(AdminResult.Success(Unit), result)
+        val written = admin.configs.single().lora
+        assertEquals(Config.LoRaConfig.RegionCode.US, written?.region)
+        assertEquals(true, written?.tx_enabled, "tx_enabled must survive a region change")
+        assertEquals(3, written?.hop_limit)
+        assertEquals(true, written?.use_preset)
+        assertEquals(Config.LoRaConfig.ModemPreset.LONG_FAST, written?.modem_preset)
+    }
+
+    @Test
+    fun moduleBuilderKeepsTheFieldsTheBlockDoesNotTouch() = runTest {
+        val current = ModuleConfig.MQTTConfig.Builder().also { wb ->
+            wb.address = "mqtt.example.com"
+            wb.username = "mesh"
+        }.build()
+        val admin = CapturingAdminApi().apply {
+            currentModuleConfig =
+                { AdminResult.Success(ModuleConfig.Builder().also { wb -> wb.mqtt = current }.build()) }
+        }
+
+        admin.setMqttConfig { newBuilder().also { wb -> wb.enabled = true }.build() }
+
+        val written = admin.moduleConfigs.single().mqtt
+        assertEquals(true, written?.enabled)
+        assertEquals("mqtt.example.com", written?.address)
+        assertEquals("mesh", written?.username)
+    }
+
+    @Test
+    fun failedReadWritesNothing() = runTest {
+        val admin = CapturingAdminApi().apply { currentConfig = { AdminResult.Timeout } }
+
+        val result = admin.setLoraConfig { newBuilder().also { wb -> wb.tx_enabled = false }.build() }
+
+        assertEquals(AdminResult.Timeout, result)
+        assertTrue(admin.configs.isEmpty())
+    }
+
+    @Test
+    fun replyWithoutTheRequestedSectionWritesNothing() = runTest {
+        val admin = CapturingAdminApi().apply {
+            currentConfig = { AdminResult.Success(emptyConfig(AdminMessage.ConfigType.DEVICE_CONFIG)) }
+        }
+
+        val result = admin.setLoraConfig { this }
+
+        assertEquals(AdminResult.Failed(org.meshtastic.proto.Routing.Error.NO_RESPONSE), result)
+        assertTrue(admin.configs.isEmpty())
+    }
+
     private suspend fun assertConfigWrite(expected: Config, call: suspend CapturingAdminApi.() -> AdminResult<Unit>) {
         val admin = CapturingAdminApi()
         assertEquals(AdminResult.Success(Unit), admin.call())
@@ -614,18 +684,25 @@ private class CapturingAdminApi : AdminApi {
     val configs = mutableListOf<Config>()
     val moduleConfigs = mutableListOf<ModuleConfig>()
 
+    /** What `getConfig` / `getModuleConfig` return; an empty section of the asked type when unset. */
+    var currentConfig: (AdminMessage.ConfigType) -> AdminResult<Config> = { AdminResult.Success(emptyConfig(it)) }
+    var currentModuleConfig: (AdminMessage.ModuleConfigType) -> AdminResult<ModuleConfig> = {
+        AdminResult.Success(emptyModuleConfig(it))
+    }
+
     override fun forNode(dest: NodeId): AdminApi = this
 
     override suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata> = unused()
 
-    override suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config> = unused()
+    override suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config> = currentConfig(type)
 
     override suspend fun setConfig(config: Config): AdminResult<Unit> {
         configs += config
         return AdminResult.Success(Unit)
     }
 
-    override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig> = unused()
+    override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig> =
+        currentModuleConfig(type)
 
     override suspend fun setModuleConfig(config: ModuleConfig): AdminResult<Unit> {
         moduleConfigs += config
@@ -721,3 +798,66 @@ private fun unused(): Nothing = error("unused in ConfigBuildersTest")
 
 private fun bytes(vararg values: Int): ByteString =
     ByteString.of(*ByteArray(values.size) { index -> values[index].toByte() })
+
+/** A [Config] holding an empty section of [type], like a device that has never changed it. */
+internal fun emptyConfig(type: AdminMessage.ConfigType): Config = Config.Builder().also { wb ->
+    when (type) {
+        AdminMessage.ConfigType.DEVICE_CONFIG -> wb.device = Config.DeviceConfig.Builder().build()
+        AdminMessage.ConfigType.POSITION_CONFIG -> wb.position = Config.PositionConfig.Builder().build()
+        AdminMessage.ConfigType.POWER_CONFIG -> wb.power = Config.PowerConfig.Builder().build()
+        AdminMessage.ConfigType.NETWORK_CONFIG -> wb.network = Config.NetworkConfig.Builder().build()
+        AdminMessage.ConfigType.DISPLAY_CONFIG -> wb.display = Config.DisplayConfig.Builder().build()
+        AdminMessage.ConfigType.LORA_CONFIG -> wb.lora = Config.LoRaConfig.Builder().build()
+        AdminMessage.ConfigType.BLUETOOTH_CONFIG -> wb.bluetooth = Config.BluetoothConfig.Builder().build()
+        AdminMessage.ConfigType.SECURITY_CONFIG -> wb.security = Config.SecurityConfig.Builder().build()
+        else -> error("no builder helper for $type")
+    }
+}.build()
+
+/** A [ModuleConfig] holding an empty section of [type]. */
+internal fun emptyModuleConfig(type: AdminMessage.ModuleConfigType): ModuleConfig = ModuleConfig.Builder().also { wb ->
+    when (type) {
+        AdminMessage.ModuleConfigType.MQTT_CONFIG -> wb.mqtt = ModuleConfig.MQTTConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.SERIAL_CONFIG -> wb.serial = ModuleConfig.SerialConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG ->
+            wb.external_notification = ModuleConfig.ExternalNotificationConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG ->
+            wb.store_forward = ModuleConfig.StoreForwardConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.RANGETEST_CONFIG -> wb.range_test = ModuleConfig.RangeTestConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.TELEMETRY_CONFIG -> wb.telemetry = ModuleConfig.TelemetryConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG ->
+            wb.canned_message = ModuleConfig.CannedMessageConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.AUDIO_CONFIG -> wb.audio = ModuleConfig.AudioConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG ->
+            wb.remote_hardware = ModuleConfig.RemoteHardwareConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG ->
+            wb.neighbor_info = ModuleConfig.NeighborInfoConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG ->
+            wb.ambient_lighting = ModuleConfig.AmbientLightingConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG ->
+            wb.detection_sensor = ModuleConfig.DetectionSensorConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG ->
+            wb.paxcounter =
+                ModuleConfig.PaxcounterConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.STATUSMESSAGE_CONFIG ->
+            wb.statusmessage = ModuleConfig.StatusMessageConfig.Builder().build()
+
+        AdminMessage.ModuleConfigType.TRAFFICMANAGEMENT_CONFIG ->
+            wb.traffic_management = ModuleConfig.TrafficManagementConfig.Builder().build()
+
+        else -> error("no builder helper for $type")
+    }
+}.build()

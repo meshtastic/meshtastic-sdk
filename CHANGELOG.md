@@ -35,6 +35,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reply from `TRACEROUTE_APP`. It used to send `Routing.route_request` on `ROUTING_APP`, which no
   firmware module handles, so it always ended in `NO_RESPONSE` or a timeout.
   `FakeRadioTransport.injectRouteReply()` now injects the reply in that firmware form.
+- The config builder helpers (`setLoraConfig { }`, `setDeviceConfig { }`, `setMqttConfig { }` and
+  the other 20) now read the node's current section and hand it to the block, then write back the
+  result. They used to start from a blank section, and since the firmware replaces a whole section
+  on `set_config`, every field the block didn't set was reset: changing only the LoRa region also
+  sent `tx_enabled = false`, `use_preset = false` and `hop_limit = 0`, which stops a configured
+  radio transmitting (`AdminModule::handleSetConfig` stores the LoRa section as sent). If the read
+  fails, nothing is written. Each call now makes two round trips.
+  The KDoc and docs examples used `copy()`, which protobufs 2.8 types no longer have, and called
+  the helpers inside `editSettings { }`, where they don't resolve; both are corrected.
 
 ## [0.2.0] — 2026-10-03
 

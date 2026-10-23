@@ -348,13 +348,17 @@ when (val result = client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)) 
     else -> println("failed: $result")
 }
 
-// Write config using convenience builders (avoids manual proto construction):
-client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
+// Change one field: the helper reads the current section and writes it back with your change.
+client.admin.setLoraConfig {
+    newBuilder().also { wb -> wb.region = Config.LoRaConfig.RegionCode.US }.build()
+}
 
-// Batch multiple writes atomically:
-client.admin.editSettings {
-    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-    setMqttConfig { copy(enabled = true) }
+// Batch multiple writes atomically (read and write inside batch { }):
+client.admin.batch {
+    val lora = getConfig(AdminMessage.ConfigType.LORA_CONFIG).lora!!
+    setConfig(Config.Builder().also { wb ->
+        wb.lora = lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+    }.build())
 }
 
 // Target a remote node:

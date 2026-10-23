@@ -232,6 +232,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.DEVICE_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -253,6 +254,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.LORA_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -274,6 +276,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.BLUETOOTH_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -295,6 +298,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.DISPLAY_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -318,6 +322,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.NETWORK_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -339,6 +344,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.POSITION_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -360,6 +366,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.POWER_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -381,6 +388,7 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
+            answerRead = answerConfigRead(AdminMessage.ConfigType.SECURITY_CONFIG),
             requestMatches = { it.set_config == expected },
         ) { transport, packet ->
             transport.injectRoutingAck(packet.id)
@@ -1477,6 +1485,8 @@ class AdminApiImplComprehensiveTest {
         requestMatches: (AdminMessage) -> Boolean,
         expected: AdminResult<Unit> = AdminResult.Success(Unit),
         assertPacket: (MeshPacket, AdminMessage) -> Unit = { _, _ -> },
+        /** Answers a read the operation makes before its write (the config builder helpers). */
+        answerRead: (suspend TestScope.(FakeRadioTransport, Int) -> Unit)? = null,
         respond: suspend TestScope.(FakeRadioTransport, MeshPacket) -> Unit,
     ) {
         val (transport, client) = connectedClient(storageProvider = storageProvider)
@@ -1486,6 +1496,10 @@ class AdminApiImplComprehensiveTest {
             val outboundBefore = transport.outboundPackets().size
             val deferred = async { call(client.admin) }
             runCurrent()
+            if (answerRead != null) {
+                answerRead(transport, outboundBefore)
+                runCurrent()
+            }
 
             val packet = latestAdminPacket(transport, outboundBefore, requestMatches)
             val admin = adminOf(packet)!!
@@ -1532,6 +1546,16 @@ class AdminApiImplComprehensiveTest {
             runCatching { client.disconnect() }
         }
     }
+
+    /** Answers the builder helper's `get_config_request` for [type] with an empty section. */
+    private fun answerConfigRead(type: AdminMessage.ConfigType): suspend TestScope.(FakeRadioTransport, Int) -> Unit =
+        { transport, outboundBefore ->
+            val read = latestAdminPacket(transport, outboundBefore) { it.get_config_request == type }
+            transport.injectAdminResponse(
+                read.id,
+                AdminMessage.Builder().also { wb -> wb.get_config_response = emptyConfig(type) }.build(),
+            )
+        }
 
     private fun latestAdminPacket(
         transport: FakeRadioTransport,
