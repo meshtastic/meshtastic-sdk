@@ -9,6 +9,7 @@ package org.meshtastic.sdk
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -112,6 +113,25 @@ class AutoReconnectFrameReaderTest {
     }
 
     @Test
+    fun theNextReaderWaitsForTheOldOneToFinish() = runTest {
+        // Like BleTransport: one frames() collector at a time, and the slot is freed only when
+        // the old collection has completed (here after some cleanup time).
+        val inner = FakeRadioTransport(TransportIdentity("fake:single-collector"), autoHandshake = true)
+        val transport = SingleCollectorTransport(inner)
+        val client = buildClient(transport)
+        client.connect()
+        runCurrent()
+
+        inner.simulateError(IllegalStateException("link lost"), recoverable = true)
+        runCurrent()
+        awaitConnected(client)
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        assertEquals(0, transport.refusedCollectors, "a reader started before the old one finished")
+        client.disconnect()
+    }
+
+    @Test
     fun aReconnectHandshakeThatTimesOutIsRetried() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:reconnect-timeout"), autoHandshake = true)
         val silent = SilentAfterFirstConnect(transport)
@@ -180,6 +200,28 @@ class AutoReconnectFrameReaderTest {
                 val forward = launch { source.collect { send(it) } }
                 stop.await()
                 forward.cancel()
+            }
+        }
+    }
+
+    /** Allows one frames() collector at a time; the slot is freed after a slow cleanup. */
+    private class SingleCollectorTransport(private val inner: FakeRadioTransport) : RadioTransport by inner {
+        private var collecting = false
+        var refusedCollectors = 0
+
+        override fun frames(): Flow<Frame> = kotlinx.coroutines.flow.flow {
+            if (collecting) {
+                refusedCollectors++
+                error("frames() already has an active collector")
+            }
+            collecting = true
+            try {
+                emitAll(inner.frames())
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                    kotlinx.coroutines.delay(200)
+                }
+                collecting = false
             }
         }
     }

@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -2253,9 +2254,13 @@ internal class MeshEngine(
         // stream per connect cycle, and the old reader would otherwise stay parked on (or fail
         // on) the dead one. A new reader starts once the transport is connected again.
         frameReaderGeneration++
-        frameReaderJob?.cancel()
+        val oldReader = frameReaderJob
         frameReaderJob = null
         scope.launch {
+            // Wait for the old reader to finish, not just to be cancelled: a transport may allow
+            // one frames() collector at a time and free the slot only when the flow completes
+            // (BleTransport), so a new reader started too early would be refused.
+            oldReader?.cancelAndJoin()
             val outcome = try {
                 runCatching { transport.disconnect() }
                 transport.connect()
