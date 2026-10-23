@@ -41,8 +41,8 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import org.meshtastic.sdk.RadioClient
-import org.meshtastic.sdk.transport.BleTransport
-import org.meshtastic.sdk.storage.InMemoryStorage
+import org.meshtastic.sdk.transport.ble.BleTransport
+import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import javax.inject.Singleton
 
 @Module
@@ -51,8 +51,9 @@ object RadioClientModule {
 
     @Provides
     @Singleton
-    fun provideBleTransport(@ApplicationContext context: Context): BleTransport {
-        return BleTransport(context)
+    fun provideBleTransport(): BleTransport {
+        // Android factory from transport-ble; pass the radio's saved MAC address.
+        return BleTransport(address = "AA:BB:CC:DD:EE:FF")
     }
 
     @Provides
@@ -62,7 +63,7 @@ object RadioClientModule {
     ): RadioClient {
         return RadioClient.Builder()
             .transport(bleTransport)
-            .storage(InMemoryStorage())  // Or your custom StorageProvider
+            .storage(SqlDelightStorageProvider(baseDir = ""))  // "" = in-memory; or your custom StorageProvider
             .build()
     }
 }
@@ -185,10 +186,9 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import org.meshtastic.sdk.RadioClient
-import org.meshtastic.sdk.transport.BleTransport
-import org.meshtastic.sdk.transport.SerialTransport
-import org.meshtastic.sdk.transport.TcpTransport
-import org.meshtastic.sdk.storage.InMemoryStorage
+import org.meshtastic.sdk.transport.ble.BleTransport
+import org.meshtastic.sdk.transport.tcp.TcpTransport
+import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -207,8 +207,9 @@ object TransportModule {
     @Provides
     @Singleton
     @BleTransportQualifier
-    fun provideBleTransport(@ApplicationContext context: Context): BleTransport {
-        return BleTransport(context)
+    fun provideBleTransport(): BleTransport {
+        // Android factory from transport-ble; pass the radio's saved MAC address.
+        return BleTransport(address = "AA:BB:CC:DD:EE:FF")
     }
 
     @Provides
@@ -230,7 +231,7 @@ object RadioClientModule {
     ): RadioClient {
         return RadioClient.Builder()
             .transport(bleTransport)
-            .storage(InMemoryStorage())
+            .storage(SqlDelightStorageProvider(baseDir = ""))
             .build()
     }
 }
@@ -250,10 +251,10 @@ class MeshViewModel @Inject constructor(
 
 ## Persistence and Storage
 
-By default, the module uses `InMemoryStorage()` (data is lost on app restart). For persistence, provide your own `StorageProvider`:
+By default, the module uses `SqlDelightStorageProvider(baseDir = "")`, the in-memory mode (data is lost on app restart). For persistence, provide your own `StorageProvider`:
 
 ```kotlin
-import org.meshtastic.sdk.storage.StorageProvider
+import org.meshtastic.sdk.StorageProvider
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -352,8 +353,8 @@ object TestRadioClientModule {
     fun provideRadioClient(): RadioClient {
         // Return a test stub or FakeRadioTransport-based client
         return RadioClient.Builder()
-            .transport(FakeRadioTransport())
-            .storage(InMemoryStorage())
+            .transport(FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true))
+            .storage(InMemoryStorageProvider())  // from sdk-testing
             .build()
     }
 }

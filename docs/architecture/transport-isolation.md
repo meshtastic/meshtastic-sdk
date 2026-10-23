@@ -33,7 +33,7 @@ The `RadioTransport` interface is defined in `:core`, but concrete transport imp
 |---|:---:|:---:|:---:|---|
 | `:transport-ble` | ✓ | ✓ (macOS only) | ✓ | Single Kable backend for all platforms. |
 | `:transport-tcp` | ✓ | ✓ | ✓ | Ktor sockets work on all JVM + native targets. |
-| `:transport-serial` | ✓ | ✓ | — | Android: usb-serial-for-android via USB OTG. JVM: jSerialComm. Unified via `expect/actual`. iOS: no serial access without MFi accessory. |
+| `:transport-serial` | ✓ | ✓ | — | jSerialComm on both Android (USB OTG) and JVM, sharing a `jvmAndroidMain` source set; `AndroidSerialPorts` / `JvmSerialPorts` front it per platform. iOS: no serial access without MFi accessory. |
 
 ### Error handling differences
 

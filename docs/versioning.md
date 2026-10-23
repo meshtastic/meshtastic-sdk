@@ -89,7 +89,7 @@ How a release is cut, the secrets it uses and the gates it runs are in [`RELEASI
 | `org.meshtastic:sdk-core` | `:core` (re-exports the `org.meshtastic:protobufs` types via `api`) |
 | `org.meshtastic:sdk-transport-ble` | `:transport-ble` |
 | `org.meshtastic:sdk-transport-tcp` | `:transport-tcp` |
-| `org.meshtastic:sdk-transport-serial` | `:transport-serial` (single KMP module covering JVM via jSerialComm and Android via usb-serial-for-android) |
+| `org.meshtastic:sdk-transport-serial` | `:transport-serial` (single KMP module covering JVM and Android, both via jSerialComm) |
 | `org.meshtastic:sdk-storage-sqldelight` | `:storage-sqldelight` |
 | `org.meshtastic:sdk-testing` | `:testing` |
 

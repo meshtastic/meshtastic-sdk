@@ -44,7 +44,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.MeshEvent
-import org.meshtastic.sdk.MeshPacket
+import org.meshtastic.proto.MeshPacket
 import org.meshtastic.sdk.RadioClient
 
 class MeshViewModel(private val client: RadioClient) : ViewModel() {
@@ -185,7 +185,7 @@ fun MeshScreen(viewModel: MeshViewModel) {
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.collectAsState
-import org.meshtastic.sdk.MeshPacket
+import org.meshtastic.proto.MeshPacket
 
 @Composable
 fun MessageList(viewModel: MeshViewModel) {
@@ -383,7 +383,8 @@ fun ConnectWithRetry(viewModel: MeshViewModel) {
 ```kotlin
 import org.junit.Test
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorage
+import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.RadioClient
 import kotlinx.coroutines.test.runTest
 
@@ -391,10 +392,10 @@ class MeshViewModelTest {
 
     @Test
     fun testConnect() = runTest {
-        val transport = FakeRadioTransport()
+        val transport = FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true)
         val client = RadioClient.Builder()
             .transport(transport)
-            .storage(InMemoryStorage())
+            .storage(InMemoryStorageProvider())
             .build()
 
         val viewModel = MeshViewModel(client)

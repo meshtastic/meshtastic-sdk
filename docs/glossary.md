@@ -8,8 +8,8 @@
 |---|---|---|
 | **NodeNum** | Wire-level 32-bit unsigned device identifier. Truncation of the device's 8-byte unique ID; carried in `MeshPacket.from`, `MeshPacket.to`, `NodeInfo.num`. The radio's *primary key* on the mesh. | `protobufs:Mesh.proto` |
 | **NodeId** (SDK) | Public typed wrapper: `value class NodeId(val raw: Int)`. Wraps a device's 32-bit node number; type system makes it harder to confuse with raw `Int`. | `:core` `org.meshtastic.sdk.NodeId` |
-| **Node ID short form** (UI) | 8-char hex string (`"!a1b2c3d4"`) often shown in clients; computed as `'!' + NodeNum.toString(radix=16).padStart(8, '0')`. Not used on the wire; convenience only. | `NodeId.shortForm` extension |
-| **packet_id / PacketId** | 32-bit per-packet identifier set by the originator. Used for ACK/dedup along the mesh. Engine generates per-send via a monotonic + random-bias counter (`protocol.md` §11). | `:core` `org.meshtastic.sdk.PacketId` |
+| **Node ID short form** (UI) | 8-char hex string (`"!a1b2c3d4"`) often shown in clients; computed as `'!' + NodeNum.toString(radix=16).padStart(8, '0')`. Not used on the wire; convenience only. | `NodeId.toDefaultId()` extension (also `NodeId.toString()`) |
+| **packet_id / PacketId** | 32-bit per-packet identifier set by the originator. Used for ACK/dedup along the mesh. Engine generates per-send via a monotonic + random-bias counter (`protocol.md` §11). | `:core` `org.meshtastic.sdk.MessageId` |
 | **request_id / RequestId** | 32-bit identifier on `MeshPacket.decoded` payloads addressed to the phone for request/response correlation. Used by `AdminMessage`, `Routing`, `Position` query, etc. Distinct from `packet_id`. | `:core` `CommandDispatcher` |
 | **MessageId** (SDK) | Public typed wrapper for a host-side outbound packet handle. Equal to the `packet_id` allocated for that send. | `MessageHandle.id` |
 | **TransportIdentity** | Stable cache key derived from a `TransportSpec`. Upper-cases BLE MAC addresses; lower-cases TCP host and HTTP URL; serial device names echo input. Storage is keyed by this. | ADR-005 |

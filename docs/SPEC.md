@@ -110,8 +110,8 @@ meshtastic-sdk/
 │
 ├── transport-ble/                      # Kable.    targets: android, jvm, ios
 ├── transport-tcp/                      # Ktor.     targets: android, jvm, ios
-├── transport-serial/                   # usb-serial-for-android (android) +
-│                                       # jSerialComm (jvm); unified via expect/actual
+├── transport-serial/                   # jSerialComm (android + jvm), shared
+│                                       # jvmAndroidMain source set
 │
 ├── storage-sqldelight/                 # Default real storage.    targets: android, jvm, ios
 │
