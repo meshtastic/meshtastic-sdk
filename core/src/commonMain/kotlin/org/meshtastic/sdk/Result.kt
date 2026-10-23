@@ -24,15 +24,16 @@ public sealed interface SendState {
     public data object Queued : SendState
 
     /**
-     * The device has accepted the packet and started transmission.
-     *
-     * (From `QueueStatus`.)
+     * The packet was handed to the radio; the device's `QueueStatus` confirms it was queued for
+     * transmission (a rejection there turns it into [Failed] with `QueueRejected`).
      */
     public data object Sent : SendState
 
     /**
-     * The recipient acknowledged the packet (unicast), or the local radio did (packets addressed
-     * to it, e.g. local admin).
+     * The recipient acknowledged the packet (unicast), the local radio did (packets addressed
+     * to it, e.g. local admin), or the recipient's reply to a `want_response` request arrived.
+     * A packet sent without `want_ack` and without `want_response` gets no feedback at all, so
+     * it becomes [Acked] as soon as it's handed to the radio.
      *
      * (From the `Routing` ACK the recipient sends back.)
      */
