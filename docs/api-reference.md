@@ -288,6 +288,12 @@ Contract:
 - Every new subscriber receives exactly one `Snapshot` first, then deltas.
 - Deltas MUST NOT drop (`SUSPEND` overflow on the backing flow).
 - `Updated.changed` is the *minimal* set of fields whose value differs from the prior `NodeInfo`. Useful for diffing UI state without re-rendering everything.
+- After the handshake, live traffic keeps entries current, following the firmware's own NodeDB (`NodeDB::updateFrom` / `updatePosition` / `updateUser`):
+  - any decoded packet from a peer refreshes `last_heard` (the packet's `rx_time`, else the host clock), `hops_away`, `via_mqtt`, and `snr` when the radio measured the reception (`rx_rssi` set) → `LastSeen` / `SignalQuality`;
+  - `POSITION_APP` replaces `position` (keeping the previous `time` when the report has none) → `Position`;
+  - `NODEINFO_APP` replaces `user` and records the packet's `channel` → `User` / `Name`. A report that would change a public key already on file, or that advertises the local node's own key, is ignored;
+  - `TELEMETRY_APP` device metrics → `Battery` / `Telemetry`.
+  Only `NODEINFO_APP` adds a node that isn't in the map yet (`Added`); other packets from unknown senders don't. Packets from the local node never touch its `last_heard` or signal fields.
 
 ### Presence tracking *(since 0.2.0)*
 

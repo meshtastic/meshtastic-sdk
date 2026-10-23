@@ -1661,6 +1661,9 @@ internal class MeshEngine(
         // so a route_reply doesn't get mistakenly classified as a generic Acked send.
         dispatcher.tryComplete(packet)
         processRoutingAck(packet)
+        // Live packet → node update: last-heard, signal, position and user info, the way the
+        // firmware's own NodeDB folds them in, so NodeChange subscribers stay current.
+        maybeMergeLivePacket(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
         maybeMergeDeviceMetrics(packet)
@@ -1858,6 +1861,30 @@ internal class MeshEngine(
                 // No oneof arm set — informational, not actionable.
                 logger.debug(TAG) { "Routing payload with no oneof variant for id=$messageId" }
             }
+        }
+    }
+
+    /**
+     * Fold a live packet into the sender's node-DB entry (see [mergeLivePacket]) and emit the
+     * matching [NodeChange.Added] or [NodeChange.Updated].
+     */
+    private fun maybeMergeLivePacket(packet: MeshPacket) {
+        val nodeId = NodeId(packet.from)
+        val existing = meshState.nodes[nodeId]
+        val updated = mergeLivePacket(
+            existing = existing,
+            packet = packet,
+            myNodeNum = myNodeNum,
+            ownPublicKey = ownNode.value?.user?.public_key,
+            nowEpochSeconds = clock.now().epochSeconds,
+        ) ?: return
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (nodeId == NodeId(myNodeNum)) ownNode.value = updated
+        if (existing == null) {
+            emitNodeChangeOrLog(NodeChange.Added(updated))
+        } else {
+            val changed = diffNodeFields(existing, updated)
+            if (changed.isNotEmpty()) emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
         }
     }
 

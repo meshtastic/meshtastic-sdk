@@ -16,6 +16,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   off-preset. The firmware hashes this exact name, so it's also what `ChannelSettings.hash()`
   needs; its KDoc now says so.
 
+### Fixed
+
+- The node DB now follows live traffic after the handshake, as `docs/api-reference.md` already
+  promised: `NODEINFO_APP` packets add or update a node's `user` (with the firmware's public-key
+  checks), `POSITION_APP` packets update its `position`, and every packet from a peer refreshes
+  `last_heard`, `snr`, `hops_away` and `via_mqtt`. `nodes` emits the matching `Added` / `Updated`
+  (`Name`, `User`, `Position`, `SignalQuality`, `LastSeen`). Before, only telemetry device metrics
+  were merged, so positions, names and last-heard times stayed as the handshake left them, and
+  `WentOffline.lastHeard` and `requestNodeInfo()` replies didn't reach the node map.
+
 ## [0.2.0] — 2026-10-03
 
 The first release on Maven Central since 0.1.0. 0.1.1 was never tagged or published, so this
