@@ -78,10 +78,16 @@ package com.example.myapp
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
+import org.meshtastic.sdk.storage.sqldelight.AndroidContextHolder
 
 @HiltAndroidApp
 class MeshApp : Application() {
-    // Hilt sets up dependency injection for all activities, fragments, etc.
+    override fun onCreate() {
+        super.onCreate()
+        // SqlDelightStorageProvider on Android needs a Context, set before the first RadioClient
+        // is built (see integration-guide.md §3). Hilt creates singletons lazily, after this.
+        AndroidContextHolder.context = applicationContext
+    }
 }
 ```
 
@@ -251,7 +257,7 @@ class MeshViewModel @Inject constructor(
 
 ## Persistence and Storage
 
-By default, the module uses `SqlDelightStorageProvider(baseDir = "")`, the in-memory mode (data is lost on app restart). For persistence, provide your own `StorageProvider`:
+By default, the module uses `SqlDelightStorageProvider(baseDir = "")`, the in-memory mode (data is lost on app restart). Both examples rely on `MeshApp.onCreate()` above setting `AndroidContextHolder.context`; without it the provider throws when the client connects. For persistence, provide your own `StorageProvider`:
 
 ```kotlin
 import org.meshtastic.sdk.StorageProvider

@@ -134,10 +134,12 @@ public class RadioClient internal constructor(
      * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
      * arrive as [NodeChange.Added] once they are heard.
      *
-     * **Buffering:** the underlying `MutableSharedFlow` buffers 256 deltas per collector. The
-     * engine never waits for a slow collector: once one is a full buffer behind, new deltas
-     * are dropped for it and each drop is reported as [MeshEvent.PacketsDropped] on [events]
-     * (with `flow = DroppedFlow.Events`). Collect without blocking; see `docs/threading-model.md`.
+     * **Buffering:** the underlying `MutableSharedFlow` has one shared 256-delta buffer. The
+     * engine never waits for a slow collector: once the slowest one is a full buffer behind, a
+     * new delta is dropped for **every** collector and reported as [MeshEvent.PacketsDropped] on
+     * [events] (with `flow = DroppedFlow.Events`). Don't block in collectors; after a drop, resync
+     * from a fresh subscription's [NodeChange.Snapshot] or [nodeSnapshot]. See
+     * `docs/threading-model.md`.
      */
     public val nodes: Flow<NodeChange> = engine.nodes
         .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
@@ -148,9 +150,9 @@ public class RadioClient internal constructor(
      * The engine decrypts channel payloads transparently; `MeshPacket.decoded` is always
      * non-null on emission. Filter by `decoded.portnum` to match specific app payloads.
      *
-     * **Buffering:** the underlying `MutableSharedFlow` buffers 128 packets per collector. The
-     * engine never waits for a slow collector: once one is a full buffer behind, new packets
-     * are dropped for it and each drop is reported as
+     * **Buffering:** the underlying `MutableSharedFlow` has one shared 128-packet buffer. The
+     * engine never waits for a slow collector: once the slowest one is a full buffer behind, a
+     * new packet is dropped for **every** collector and each drop is reported as
      * [MeshEvent.PacketsDropped][org.meshtastic.sdk.MeshEvent.PacketsDropped] with
      * `flow = DroppedFlow.Packets` on [events], so no loss is silent.
      *

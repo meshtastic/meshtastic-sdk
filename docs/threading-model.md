@@ -166,12 +166,14 @@ size. Your collector dispatcher does not have to match.
 
 ### Backpressure and dropped events
 
-The engine never blocks on consumer collection. If your collector is
-slow, the SharedFlow buffer fills and the engine drops the **newest**
-items for that collector (it emits with `tryEmit` and never waits). You
-will receive a `MeshEvent.PacketsDropped(flow, droppedCount)` on
-`events` for every drop on `packets` (`DroppedFlow.Packets`) or `nodes`
-(reported as `DroppedFlow.Events`).
+The engine never blocks on consumer collection. The buffer is shared
+by all collectors of a flow: if the slowest collector falls a full
+buffer behind, the engine drops each **new** item for **every**
+collector (it emits with `tryEmit` and never waits). You will receive a
+`MeshEvent.PacketsDropped(flow, droppedCount)` on `events` for every
+drop on `packets` (`DroppedFlow.Packets`) or `nodes` (reported as
+`DroppedFlow.Events`). After a drop on `nodes`, resync from a new
+subscription's `NodeChange.Snapshot` or `client.nodeSnapshot()`.
 
 Rules of thumb:
 

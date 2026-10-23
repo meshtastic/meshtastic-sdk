@@ -158,6 +158,10 @@ Timeouts are not configurable in 0.x. If consumers need overrides at 1.x.y, that
 | `StorageDegraded(cause)` | Storage backend failed and transitioned to read-through-only mode (writes become no-ops). | Surface to dev tooling; engine continues operating with in-memory-only state. |
 | `CongestionWarning(freeSlots, totalSlots)` | Device outbound queue is critically full (`free ≤ 1`). | Back off sending; consider showing a "mesh congested" indicator. |
 | `ExternalConfigChange(config)` | Unsolicited admin message from firmware changed a config value (e.g., another client or device UI changed a setting). | Refresh any config-dependent UI state. |
+| `KeyVerification(prompt)` | Reserved — not emitted yet (`KeyVerificationPrompt`'s shape is undecided) | Watch `Notification` for `key_verification_*` instead. |
+| `PacketsDropped(flow, count)` | A `packets` or `nodes` collector could not keep up; the engine dropped `count` new items for every collector | Tell user "you missed N messages"; consider increasing host buffering. |
+| `SecurityWarning.DuplicatedPublicKey` | Firmware observed another node broadcasting the *same* public key as one already in its NodeDB — cloned device, or a near-field identity-theft attempt. | Surface prominently to the user; pair with a "verify your contacts" UX. |
+| `SecurityWarning.LowEntropyKey` | Firmware reports the current private key was generated with insufficient entropy (freshly flashed board before RNG warmed up). | Prompt the user to regenerate keys via admin UI. |
 
 ### Identity rebind
 
@@ -170,10 +174,6 @@ have a single ordered signal they can snapshot in-memory state from.
 See [`architecture/storage.md`](./architecture/storage.md#consumer-observable-signal-r-9)
 for the rationale and on-disk behaviour. (Resolved audit finding
 **S-P0-2** / roadmap R-9; previously this rebind was silent.)
-| `KeyVerification(prompt)` | Reserved — not emitted yet (`KeyVerificationPrompt`'s shape is undecided) | Watch `Notification` for `key_verification_*` instead. |
-| `PacketsDropped(flow, count)` | Subscriber to `packets`/`events` flow could not keep up; engine shed `count` items | Tell user "you missed N messages"; consider increasing host buffering. |
-| `SecurityWarning.DuplicatedPublicKey` | Firmware observed another node broadcasting the *same* public key as one already in its NodeDB — cloned device, or a near-field identity-theft attempt. | Surface prominently to the user; pair with a "verify your contacts" UX. |
-| `SecurityWarning.LowEntropyKey` | Firmware reports the current private key was generated with insufficient entropy (freshly flashed board before RNG warmed up). | Prompt the user to regenerate keys via admin UI. |
 
 ### Security warnings
 

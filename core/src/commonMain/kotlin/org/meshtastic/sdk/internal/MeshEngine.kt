@@ -2579,8 +2579,8 @@ internal class MeshEngine(
 
     // ---- C-shared-flow emit helpers ----
     // `packets` and `nodes` use BufferOverflow.SUSPEND but are emitted with `tryEmit` (the actor
-    // must never suspend on a slow collector), so once a collector is a full buffer behind,
-    // `tryEmit` returns false and the NEW item is dropped. These helpers report every such drop
+    // must never suspend on a slow collector), so once the slowest collector is a full buffer
+    // behind, `tryEmit` returns false and the NEW item is dropped for every collector. These helpers report every such drop
     // as `MeshEvent.PacketsDropped` (a `nodes` drop is reported as `DroppedFlow.Events`, as there
     // is no separate value for it). `events` itself uses DROP_OLDEST.
 
