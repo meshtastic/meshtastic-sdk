@@ -2155,6 +2155,9 @@ internal class MeshEngine(
     private fun handleTransportStateChanged(msg: EngineMessage.TransportStateChanged) {
         when (val s = msg.state) {
             is TransportState.Error -> {
+                // Transports report a link loss twice (Error, then frames() ends) through two
+                // coroutines, in either order; once a reconnect is scheduled, ignore the second.
+                if (autoReconnectInProgress && reconnectJob?.isActive == true && s.recoverable) return
                 logger.warn(TAG, s.cause) { "Transport error: ${s.cause.message}" }
                 val cause = MeshtasticException.tag(
                     MeshtasticException.Transport(s.cause.message ?: "transport error", s.cause),

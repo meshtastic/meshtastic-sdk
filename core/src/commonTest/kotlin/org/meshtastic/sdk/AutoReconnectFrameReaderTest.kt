@@ -83,6 +83,35 @@ class AutoReconnectFrameReaderTest {
     }
 
     @Test
+    fun aLinkLossReportedTwiceSchedulesOneReconnect() = runTest {
+        // Real transports publish Error and then end frames(); the engine sees both.
+        for (streamEndsFirst in listOf(false, true)) {
+            val inner =
+                FakeRadioTransport(TransportIdentity("fake:double-report-$streamEndsFirst"), autoHandshake = true)
+            val transport = EndableTransport(inner)
+            val client = buildClient(transport)
+            client.connect()
+            runCurrent()
+
+            if (streamEndsFirst) {
+                transport.endStream()
+                inner.simulateError(IllegalStateException("link lost"), recoverable = true)
+            } else {
+                inner.simulateError(IllegalStateException("link lost"), recoverable = true)
+                transport.endStream()
+            }
+            runCurrent()
+
+            val state = client.connection.value
+            assertTrue(state is ConnectionState.Reconnecting, "was $state")
+            assertEquals(1, state.attempt, "one link loss must be one attempt (streamEndsFirst=$streamEndsFirst)")
+            awaitConnected(client)
+            assertEquals(ConnectionState.Connected, client.connection.value)
+            client.disconnect()
+        }
+    }
+
+    @Test
     fun aReconnectHandshakeThatTimesOutIsRetried() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:reconnect-timeout"), autoHandshake = true)
         val silent = SilentAfterFirstConnect(transport)
