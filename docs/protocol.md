@@ -529,8 +529,8 @@ message Data {
 ```protobuf
 message Routing {
   oneof variant {
-    RouteDiscovery route_request = 1;   // Traceroute outbound
-    RouteDiscovery route_reply   = 2;   // Traceroute response
+    RouteDiscovery route_request = 1;   // Legacy; firmware traceroute doesn't use it
+    RouteDiscovery route_reply   = 2;   // Legacy; firmware traceroute doesn't use it
     Error          error_reason  = 3;   // ACK/NAK; 0 = NONE = ACK
   }
 }

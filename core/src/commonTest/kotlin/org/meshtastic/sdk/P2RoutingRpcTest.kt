@@ -53,10 +53,14 @@ class P2RoutingRpcTest {
         val deferred = async { client.routing.traceRoute(dest, hopLimit = 5) }
         runCurrent()
 
+        // firmware TraceRouteModule is a ProtobufModule<RouteDiscovery> on TRACEROUTE_APP.
         val req = transport.outboundPackets().drop(outboundBefore)
-            .last { it.decoded?.portnum == PortNum.ROUTING_APP }
+            .last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
         assertEquals(dest.raw, req.to)
         assertEquals(5, req.hop_limit)
+        assertEquals(true, req.decoded?.want_response)
+        assertEquals(true, req.want_ack)
+        assertEquals(RouteDiscovery.Builder().build(), RouteDiscovery.ADAPTER.decode(req.decoded!!.payload))
 
         val expected = RouteDiscovery.Builder().also { wb ->
             wb.route = listOf(0x111, 0x222)
@@ -84,12 +88,38 @@ class P2RoutingRpcTest {
         runCurrent()
 
         val req = transport.outboundPackets().drop(outboundBefore)
-            .last { it.decoded?.portnum == PortNum.ROUTING_APP }
+            .last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
         transport.injectRoutingError(requestId = req.id, error = Routing.Error.NO_ROUTE)
         runCurrent()
 
         val result = deferred.await()
         assertEquals(AdminResult.NodeUnreachable, result)
+        client.disconnect()
+    }
+
+    @Test
+    fun traceRouteWaitsPastTheRoutingAckForTheRoute() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val dest = NodeId(0x0badcafe)
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async { client.routing.traceRoute(dest) }
+        runCurrent()
+        val req = transport.outboundPackets().drop(outboundBefore)
+            .last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
+
+        // want_ack: the Routing ACK (NONE) arrives first and must not end the call.
+        transport.injectRoutingError(requestId = req.id, error = Routing.Error.NONE, fromNode = dest.raw)
+        runCurrent()
+        assertEquals(false, deferred.isCompleted)
+
+        val route = RouteDiscovery.Builder().also { wb -> wb.route = listOf(0x333) }.build()
+        transport.injectRouteReply(requestId = req.id, reply = route, fromNode = dest.raw)
+        runCurrent()
+
+        assertEquals(AdminResult.Success(route), deferred.await())
         client.disconnect()
     }
 

@@ -133,20 +133,17 @@ public class FakeRadioTransport(
         injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
-    /** Inject a Routing.route_reply correlated to [requestId]. */
+    /**
+     * Inject a traceroute reply correlated to [requestId]: a `TRACEROUTE_APP` packet carrying
+     * [reply], as the destination's firmware `TraceRouteModule` sends it.
+     */
     public fun injectRouteReply(requestId: Int, reply: org.meshtastic.proto.RouteDiscovery, fromNode: Int = nodeNum) {
-        val payload = okio.ByteString.of(
-            *Routing.ADAPTER.encode(
-                Routing.Builder().also { wb ->
-                    wb.route_reply = reply
-                }.build(),
-            ),
-        )
+        val payload = okio.ByteString.of(*org.meshtastic.proto.RouteDiscovery.ADAPTER.encode(reply))
         val packet = MeshPacket.Builder().also { wb ->
             wb.from = fromNode
             wb.to = 0
             wb.decoded = Data.Builder().also { wb ->
-                wb.portnum = PortNum.ROUTING_APP
+                wb.portnum = PortNum.TRACEROUTE_APP
                 wb.payload = payload
                 wb.request_id = requestId
             }.build()

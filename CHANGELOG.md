@@ -30,6 +30,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   set the requested variant in the request (an empty `DeviceMetrics`, `EnvironmentMetrics`, …).
   The firmware's telemetry modules only answer a request carrying their variant, so before this
   every call ended in `NO_RESPONSE` or a timeout instead of returning data.
+- `RoutingApi.traceRoute()` now sends a real traceroute: a `RouteDiscovery` on `TRACEROUTE_APP`
+  with `want_response` and `want_ack`, which firmware `TraceRouteModule` answers, and it reads the
+  reply from `TRACEROUTE_APP`. It used to send `Routing.route_request` on `ROUTING_APP`, which no
+  firmware module handles, so it always ended in `NO_RESPONSE` or a timeout.
+  `FakeRadioTransport.injectRouteReply()` now injects the reply in that firmware form.
 
 ## [0.2.0] — 2026-10-03
 
