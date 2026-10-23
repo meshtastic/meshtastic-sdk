@@ -8,60 +8,75 @@
 package org.meshtastic.sdk.transport.serial.internal
 
 import kotlinx.coroutines.channels.Channel
-import okio.ByteString
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
- * Verifies the "frames don't vanish silently under backpressure" contract for
- * the serial transport. Drops are counted; the [FrameChannelPublisher]'s
- * `onDrop` callback fires for every overflow and stops firing once the channel
- * is closed.
+ * Verifies the ADR-012 back-pressure contract for the serial reader: a full channel blocks the
+ * publishing thread instead of dropping frames, and cancelling the channel releases it.
  */
 class FrameChannelPublisherTest {
 
-    private fun frame(b: Byte): Frame = Frame(byteArrayOf(b).toByteString())
+    private fun frame(i: Int): Frame = Frame(byteArrayOf(i.toByte()).toByteString())
 
     @Test
-    fun successfulPublishDoesNotIncrementDropCount() {
-        val channel = Channel<Frame>(capacity = 4)
+    fun fullChannelBlocksInsteadOfDropping() = runBlocking {
+        val channel = Channel<Frame>(capacity = 2)
         val publisher = FrameChannelPublisher(channel)
+        val total = 50
+        val producer = thread(name = "publisher-test") {
+            repeat(total) { publisher.publish(frame(it)) }
+        }
 
-        publisher.publish(frame(1))
-        publisher.publish(frame(2))
+        val received = withTimeout(TIMEOUT_MS) {
+            List(total) {
+                delay(1) // slow consumer: the producer must wait, not drop
+                channel.receive()
+            }
+        }
+        producer.join(TIMEOUT_MS)
 
-        assertEquals(0, publisher.dropCount.get())
+        assertEquals(List(total) { frame(it) }, received)
     }
 
     @Test
-    fun overflowIncrementsDropCountAndInvokesCallback() {
-        val channel = Channel<Frame>(capacity = 1)
-        val drops = mutableListOf<Long>()
-        val publisher = FrameChannelPublisher(channel, onDrop = { drops += it })
-
-        publisher.publish(frame(1)) // fills channel
-        publisher.publish(frame(2)) // overflow #1
-        publisher.publish(frame(3)) // overflow #2
-        publisher.publish(frame(4)) // overflow #3
-
-        assertEquals(3L, publisher.dropCount.get())
-        assertEquals(listOf(1L, 2L, 3L), drops)
-    }
-
-    @Test
-    fun closedChannelDoesNotCountAsDrop() {
+    fun closedChannelReturnsFalseWithoutBlocking() {
         val channel = Channel<Frame>(capacity = 1)
         channel.close()
-        val drops = mutableListOf<Long>()
-        val publisher = FrameChannelPublisher(channel, onDrop = { drops += it })
+        val publisher = FrameChannelPublisher(channel)
 
-        publisher.publish(frame(1))
-        publisher.publish(frame(2))
+        assertFalse(publisher.publish(frame(1)))
+        assertFalse(publisher.publish(frame(2)))
+    }
 
-        assertEquals(0L, publisher.dropCount.get())
-        assertTrue(drops.isEmpty())
+    @Test
+    fun cancellingChannelReleasesBlockedPublisher() {
+        val channel = Channel<Frame>(capacity = 1)
+        val publisher = FrameChannelPublisher(channel)
+        assertTrue(publisher.publish(frame(1)))
+
+        var second: Boolean? = null
+        val producer = thread(name = "publisher-test") { second = publisher.publish(frame(2)) }
+        Thread.sleep(PARK_MS)
+        assertTrue(producer.isAlive, "publisher should block on a full channel")
+
+        channel.cancel()
+        producer.join(TIMEOUT_MS)
+
+        assertFalse(producer.isAlive)
+        assertEquals(false, second)
+    }
+
+    private companion object {
+        const val TIMEOUT_MS = 5_000L
+        const val PARK_MS = 100L
     }
 }
