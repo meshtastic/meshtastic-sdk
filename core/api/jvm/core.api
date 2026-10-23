@@ -227,14 +227,17 @@ public final class org/meshtastic/sdk/BatteryStatusKt {
 }
 
 public final class org/meshtastic/sdk/ChannelHelpers {
+	public static final field CUSTOM_PRESET_NAME Ljava/lang/String;
 	public static final field INSTANCE Lorg/meshtastic/sdk/ChannelHelpers;
 	public static final field MAX_NAME_LENGTH I
 	public static final field MAX_PSK_LENGTH I
 	public static final field MIN_PSK_LENGTH I
 	public final fun createSettings (Ljava/lang/String;[B)Lorg/meshtastic/proto/ChannelSettings;
 	public static synthetic fun createSettings$default (Lorg/meshtastic/sdk/ChannelHelpers;Ljava/lang/String;[BILjava/lang/Object;)Lorg/meshtastic/proto/ChannelSettings;
+	public final fun displayName (Lorg/meshtastic/proto/Channel;Lorg/meshtastic/proto/Config$LoRaConfig;)Ljava/lang/String;
 	public final fun findEmptySlot (Ljava/util/List;I)Ljava/lang/Integer;
 	public static synthetic fun findEmptySlot$default (Lorg/meshtastic/sdk/ChannelHelpers;Ljava/util/List;IILjava/lang/Object;)Ljava/lang/Integer;
+	public final fun presetDisplayName (Lorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;)Ljava/lang/String;
 	public final fun validate (Ljava/lang/String;[BLorg/meshtastic/proto/Channel$Role;)Lorg/meshtastic/sdk/ChannelHelpers$ValidationResult;
 	public static synthetic fun validate$default (Lorg/meshtastic/sdk/ChannelHelpers;Ljava/lang/String;[BLorg/meshtastic/proto/Channel$Role;ILjava/lang/Object;)Lorg/meshtastic/sdk/ChannelHelpers$ValidationResult;
 }

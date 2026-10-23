@@ -110,6 +110,17 @@ declaration.
   is additive — existing call sites that pass nothing retain the old
   behaviour. Other transports (TCP, serial) already accepted a
   `CoroutineScope`/parent; this aligns BLE with the same pattern.
+- **2026-10-24:** Connect-cycle and link-loss contract, now written into the
+  `RadioTransport` KDoc. A transport instance is reused across
+  `disconnect(); connect()` cycles (the engine's auto-reconnect), and
+  `frames()` is collected once per cycle. An unexpected link drop must be
+  published as `TransportState.Error(recoverable = true)`; a teardown the
+  caller started with `disconnect()` must not be. The serial transport now
+  follows rule 2 strictly: its reader blocks its own IO thread on a full
+  frame channel (`trySendBlocking`) instead of dropping frames, and its
+  configure/open/flush/wake-byte/close calls run on `Dispatchers.IO` with a
+  timeout, so a port hung in the OS fails `connect()` instead of pinning the
+  caller's thread.
 
 ## References
 

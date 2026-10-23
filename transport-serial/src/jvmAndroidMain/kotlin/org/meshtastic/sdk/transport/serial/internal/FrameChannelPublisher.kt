@@ -7,28 +7,24 @@
  */
 package org.meshtastic.sdk.transport.serial.internal
 
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.channels.trySendBlocking
 import org.meshtastic.sdk.Frame
-import java.util.concurrent.atomic.AtomicLong
 
 /**
- * Non-blocking publisher that pushes a [Frame] into [target] via [Channel.trySend]
- * and tracks overflow drops. Lifted out of `JSerialCommTransport.runReader` so the
- * "frames must not vanish silently under backpressure" contract can be unit-tested.
+ * Pushes frames from the serial reader thread into [target], honouring back-pressure as
+ * ADR-012 requires: when [target] is full, [publish] blocks the calling thread until the
+ * consumer makes room, so no frame is ever dropped.
  *
- * On overflow, [dropCount] is incremented and [onDrop] is invoked with the new
- * total. Drops on a *closed* target channel are ignored (the transport is being
- * torn down — counting them would be misleading).
+ * Blocking is safe here because the only caller is `JSerialCommTransport`'s reader, which runs
+ * on its own [kotlinx.coroutines.Dispatchers.IO] thread, never on the engine dispatcher. A
+ * publisher parked on a full channel is released when the channel is cancelled (the transport
+ * does that on teardown if the reader does not stop on its own).
  */
-internal class FrameChannelPublisher(
-    private val target: Channel<Frame>,
-    val dropCount: AtomicLong = AtomicLong(0),
-    private val onDrop: (Long) -> Unit = {},
-) {
-    fun publish(frame: Frame) {
-        val result = target.trySend(frame)
-        if (result.isFailure && !result.isClosed) {
-            onDrop(dropCount.incrementAndGet())
-        }
-    }
+internal class FrameChannelPublisher(private val target: SendChannel<Frame>) {
+    /**
+     * Deliver [frame], blocking while [target] is full. Returns `false` when [target] is closed
+     * or cancelled, i.e. the transport is being torn down or the collector went away.
+     */
+    fun publish(frame: Frame): Boolean = target.trySendBlocking(frame).isSuccess
 }

@@ -82,7 +82,7 @@ not use.
 | Requesting BLE runtime permissions | [§4 BLE](#ble) |
 | Starting a foreground service before `connect()` | [§4 BLE](#ble) (Android 14+ requirement) |
 | `UsbManager.requestPermission(...)` flow | [§4 Serial (USB)](#serial-usb) |
-| Wiring `AndroidContextHolder` for SqlDelight storage | [§5 Storage on Android](#5-storage-on-android) |
+| Wiring `AndroidContextHolder` for SqlDelight storage | [§3 Storage on Android](#3-storage-on-android) |
 | Lifecycle-safe `Flow` collection in Fragments / Compose | [Reactive lifecycle management guide](consumer-guides/reactive-lifecycle-management.md) |
 | Deciding what to retry vs surface to the user | [Error-handling guide](consumer-guides/error-handling.md) |
 
@@ -199,8 +199,8 @@ JVM:
 ```kotlin
 import org.meshtastic.sdk.transport.serial.JvmSerialPorts
 
-val ports = JvmSerialPorts.list()                         // List<String>
-val transport = JvmSerialPorts.open(ports.first(), baudRate = 115200)
+val ports = JvmSerialPorts.list()                         // List<SerialPortInfo>
+val transport = JvmSerialPorts.open(ports.first().name, baudRate = 115200)
 ```
 
 Android:
@@ -212,6 +212,7 @@ import org.meshtastic.sdk.transport.serial.AndroidSerialPorts
 AndroidSerialPorts.init(applicationContext)
 
 // After UsbManager.requestPermission(...) succeeds:
+val portName = AndroidSerialPorts.list().first().name   // list(): List<SerialPortInfo>
 val transport = AndroidSerialPorts.open(portName, baudRate = 115200)
 ```
 
@@ -303,8 +304,12 @@ val storage = SqlDelightStorageProvider(baseDir = filesDir.absolutePath)
 ```
 
 `baseDir = ""` selects in-memory mode (handy for tests; lost on close).
-Otherwise the provider creates one SQLite file per `TransportIdentity`
-under `$baseDir/`.
+Otherwise the provider keeps one SQLite file per radio (keyed by its
+NodeNum, so BLE, TCP and serial connections to the same radio share it)
+plus a `.meshtastic-index` file in `$baseDir/`. On Android the database
+files go to the app's default databases directory
+(`Context.getDatabasePath`), not `$baseDir/`; see
+[`architecture/storage.md`](architecture/storage.md).
 
 ## 4. Lifecycle, threading, and shutdown
 
@@ -342,19 +347,23 @@ it transitions `Queued → Sent → Acked|Delivered|Failed(reason)`. See
 ```kotlin
 // Read the device config
 when (val result = client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)) {
-    is AdminResult.Success -> println("LoRa region: ${result.value.lora.region}")
+    is AdminResult.Success -> println("LoRa region: ${result.value.lora?.region}")
     AdminResult.Timeout -> println("timed out")
     AdminResult.RateLimited -> println("rate-limited; try again later")
     else -> println("failed: $result")
 }
 
-// Write config using convenience builders (avoids manual proto construction):
-client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
+// Change one field: the helper reads the current section and writes it back with your change.
+client.admin.setLoraConfig {
+    newBuilder().also { wb -> wb.region = Config.LoRaConfig.RegionCode.US }.build()
+}
 
-// Batch multiple writes atomically:
-client.admin.editSettings {
-    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-    setMqttConfig { copy(enabled = true) }
+// Batch multiple writes atomically (read and write inside batch { }):
+client.admin.batch {
+    val lora = getConfig(AdminMessage.ConfigType.LORA_CONFIG).lora!!
+    setConfig(Config.Builder().also { wb ->
+        wb.lora = lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+    }.build())
 }
 
 // Target a remote node:
@@ -367,17 +376,20 @@ See [`api-reference.md` §AdminApi](./api-reference.md#adminapi-phase-2) for the
 ## 7. Logging and diagnostics
 
 By default the SDK is silent. Wire a `LogSink` at build time and, for
-deep debugging, opt into `protocolLogging` (with redaction). Full
+deep debugging, opt into `protocolLogging` (packet summaries, no payloads). Full
 guide: [`observability.md`](./observability.md).
 
 ## 8. Testing your integration
 
 ```kotlin
 // testImplementation("org.meshtastic:sdk-testing")
+import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
 
-val transport = FakeRadioTransport()
+// autoHandshake = true answers the handshake so connect() completes without a radio.
+val transport = FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true)
 val client = RadioClient.Builder()
     .transport(transport)
     .storage(InMemoryStorageProvider())
@@ -392,7 +404,7 @@ val client = RadioClient.Builder()
 Direct messages between two nodes are encrypted end-to-end with X25519 + AES-CTR keys derived from each peer's `User.public_key`. The SDK does not perform the crypto itself — the firmware does — but it does surface everything you need to verify peers:
 
 - Inbound DM payloads arrive as `MeshPacket` with `decoded.public_key` populated whenever the firmware decrypted them with a known peer key. An empty `public_key` on a `decoded.portnum == TEXT_MESSAGE_APP` packet from a non-broadcast `to` field means the peer's identity could not be verified.
-- The first time a peer's `public_key` is observed (or when it changes), the engine emits `MeshEvent.KeyVerification` with a `KeyVerificationPrompt` describing the new fingerprint. Consumers should surface this to the user (TOFU/SAS-style) and persist the accepted key alongside the `NodeId`.
+- `MeshEvent.KeyVerification` is reserved and not emitted yet. The firmware's key-verification messages arrive as `MeshEvent.Notification` (`ClientNotification.key_verification_number_inform` / `_request` / `_final`); a changed key on file is refused by the node DB (see the NodeChange contract in `api-reference.md`).
 - `MeshEvent.SecurityWarning.DuplicatedPublicKey` and `MeshEvent.SecurityWarning.LowEntropyKey` flag `node_info` records whose `public_key` is suspect; treat the affected `NodeId` as untrusted for DMs until a manual re-verification round trips.
 
 Sending DMs is the same as any other text message — call `client.sendText(...)` with a non-broadcast `to` — but you should refuse the call if the destination's last-seen `public_key` does not match what the user previously verified. The engine will not reject the send for you.

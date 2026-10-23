@@ -126,7 +126,7 @@ suspend fun observeAndSend(client: RadioClient) = coroutineScope {
 
 Notes:
 - Wire-generated proto fields are snake_case (e.g. `user.long_name`, not `user.longName`).
-- **On Android**, also set `AndroidContextHolder.context = applicationContext` once in your `Application.onCreate()` before constructing a `SqlDelightStorageProvider` — see the [integration guide](docs/integration-guide.md#5-storage-on-android).
+- **On Android**, also set `AndroidContextHolder.context = applicationContext` once in your `Application.onCreate()` before constructing a `SqlDelightStorageProvider` — see the [integration guide](docs/integration-guide.md#3-storage-on-android).
 - For Android BLE, USB-serial setup, and `SqlDelightStorageProvider` Android `Context` wiring, see the [integration guide](docs/integration-guide.md).
 
 ### Picking a transport
@@ -140,6 +140,7 @@ ships in its own artifact; pull in the one(s) you need.
 // Android: see AndroidManifest checklist + permission notes in the integration guide.
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
 import kotlinx.coroutines.flow.first
@@ -184,18 +185,18 @@ the integration guide.
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| `connect()` throws `MeshtasticException.TransportFailure` on TCP | Host unreachable or firmware TCP API disabled | Verify the radio's IP/hostname and that WiFi/Ethernet is enabled. See [TCP setup](docs/integration-guide.md#tcp). |
+| `connect()` throws `MeshtasticException.Transport` on TCP | Host unreachable or firmware TCP API disabled | Verify the radio's IP/hostname and that WiFi/Ethernet is enabled. See [TCP setup](docs/integration-guide.md#tcp). |
 | `connect()` hangs or fails repeatedly on BLE | Device not bonded with the OS | Pair the radio in your OS Bluetooth settings before `connect()`. See [BLE platform requirements](docs/integration-guide.md#ble). |
-| `JvmSerialPorts.open(...)` throws permission denied | Serial device permission not granted | On Linux, add the user to `dialout`. On Android, request USB permission first. See [Serial (USB)](docs/integration-guide.md#serial-usb). |
-| `sendText` returns `SendFailure` immediately on long messages | Payload exceeds the SDK-enforced 233-byte payload limit (`DATA_PAYLOAD_LEN`) | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#7-sending-messages). |
-| `connect()` throws `MeshtasticException.HandshakeTimeout` | `want_config_id` reply never arrived from the device | Power-cycle the radio, verify firmware ≥ 2.3, then retry. See [Build a `RadioClient`](docs/integration-guide.md#3-build-a-radioclient). |
+| A serial transport's `connect()` (or, on Android, `AndroidSerialPorts.open(...)`) throws `MeshtasticException.Transport` | Serial device permission not granted | On Linux, add the user to `dialout`. On Android, request USB permission first. See [Serial (USB)](docs/integration-guide.md#serial-usb). |
+| `sendText` throws `MeshtasticException.PayloadTooLarge` on long messages (no handle is returned) | The UTF-8 text exceeds the SDK-enforced 233-byte payload limit (`DATA_PAYLOAD_LEN`) | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#5-sending-messages). |
+| `connect()` throws `MeshtasticException.HandshakeTimeout` | `want_config_id` reply never arrived from the device | Power-cycle the radio, verify firmware ≥ 2.3, then retry. See [Build a `RadioClient`](docs/integration-guide.md#2-build-a-radioclient). |
 
 ```kotlin
-// USB-serial — JVM (jSerialComm) and Android (usb-serial-for-android)
+// USB-serial — JVM and Android, both via jSerialComm
 import org.meshtastic.sdk.transport.serial.JvmSerialPorts            // androidMain: AndroidSerialPorts
 
-val portName  = JvmSerialPorts.list().first()           // e.g. "/dev/tty.usbserial-1410"
-val transport = JvmSerialPorts.open(portName, baudRate = 115200)
+val port      = JvmSerialPorts.list().first()           // SerialPortInfo
+val transport = JvmSerialPorts.open(port.name, baudRate = 115200)   // port.name e.g. "/dev/cu.usbserial-1410"
 ```
 
 ```kotlin
@@ -228,7 +229,7 @@ authoritative dependency graph.
 | `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
 | `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on Ktor sockets.                                                |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | iOS targets compile (empty actuals) but no USB-serial API on iOS.     |
-| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
+| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | SQLDelight native driver on iOS, JDBC on JVM, Android driver on Android.                 |
 | `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |
 
 ✓ = supported and exercised in CI; — = not applicable (no platform API for this transport).

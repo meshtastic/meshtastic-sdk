@@ -59,6 +59,10 @@ public interface TelemetryApi {
     /**
      * Cold flow of every [Telemetry] packet observed for [node]. The flow never completes
      * organically — collect inside a `launch { … }` and cancel when done.
+     *
+     * [NodeId.LOCAL] is a wildcard here: it matches telemetry from **every** node, not just the
+     * local radio (unlike the `requestX` methods, where it means the local node). To follow only
+     * the local radio, pass its real number, e.g. `NodeId(client.ownNode.value!!.num)`.
      */
     public fun observe(node: NodeId): Flow<Telemetry>
 }

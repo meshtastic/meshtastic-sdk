@@ -40,9 +40,10 @@ their own picker UI and apply additional filters.
 
 ## Android wiring
 
-On Android the host app is responsible for the `UsbManager.requestPermission(...)` flow;
-`SerialPort.fromAndroidPort(...)` (used internally) opens an already-permissioned
-`UsbDeviceConnection`. Required steps:
+On Android the host app is responsible for the `UsbManager.requestPermission(...)` flow:
+`AndroidSerialPorts.open(portName)` looks the port up with jSerialComm's
+`SerialPort.getCommPort(portName)`, and only permissioned devices show up in `list()` or
+can be opened. Required steps:
 
 1. Call `AndroidSerialPorts.init(applicationContext)` **once** during app startup so
    jSerialComm can resolve the system `UsbManager`.
@@ -64,5 +65,6 @@ connection alive in the background — same constraint as BLE, see
   factory objects exposing `list(): List<SerialPortInfo>` and
   `open(portName, baudRate = 115200): RadioTransport`. The underlying
   `JSerialCommTransport` is `internal` — callers always go through the factory.
-- `org.meshtastic.sdk.transport.serial.SerialPortInfo` — discovery DTO with `name`, `description`,
-  `usbVendorId`, `usbProductId`.
+- `org.meshtastic.sdk.transport.serial.SerialPortInfo` — discovery DTO with `name` (pass it to
+  `open`), `description`, `transport` (`SerialPortTransport`: `Native` / `Usb` / `Bluetooth` /
+  `Unknown`), `usbVendorId`, `usbProductId`, `usbManufacturer`, `usbProduct`, `usbSerialNumber`.

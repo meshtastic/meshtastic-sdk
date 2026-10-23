@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -50,6 +51,7 @@ import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.LogLevel
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
@@ -97,6 +99,7 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val protocolLogLevel: LogLevel = LogLevel.NONE, // RadioClient.Builder.protocolLogging
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -157,6 +160,13 @@ internal class MeshEngine(
     private val activeConnectDeferred = atomic<CompletableDeferred<Unit>?>(null)
 
     private val pendingSends = mutableMapOf<MessageId, MutableStateFlow<SendState>>()
+
+    // Destination node of each in-flight send (by wire id), to tell a unicast's real ACK (from the
+    // recipient) from the implicit ACK our own radio makes when it overhears a relay.
+    private val pendingSendTargets = mutableMapOf<MessageId, Int>()
+
+    // Unicast sends whose relay was overheard but whose recipient hasn't ACKed yet.
+    private val relayedUnicasts = mutableSetOf<MessageId>()
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
 
@@ -277,6 +287,17 @@ internal class MeshEngine(
     private var pendingConnectDeferred: CompletableDeferred<Unit>? = null
 
     private var reconnectJob: Job? = null
+
+    // The coroutine collecting transport.frames(). A transport is collected once per connect
+    // cycle, so auto-reconnect cancels this before reconnecting the transport and starts a new
+    // reader afterwards. [frameReaderGeneration] tags each reader's FrameReaderStopped message.
+    private var frameReaderJob: Job? = null
+    private var frameReaderGeneration: Int = 0
+
+    // Stage 1 retry / timeout timers of the current handshake attempt; cancelled when a new
+    // attempt starts so a timer from an earlier attempt can't hit a later one.
+    private var stage1RetryJob: Job? = null
+    private var stage1TimeoutJob: Job? = null
     private var reconnectAttempt: Int = 0
     private var autoReconnectInProgress: Boolean = false
 
@@ -312,28 +333,7 @@ internal class MeshEngine(
             runEngine()
         }
 
-        // frames(), then forwards each inbound transport frame as a FrameRx message.
-        // Gating on TransportState avoids racing with handleConnect() (the transport's
-        // readChannel is null until connect() completes, and TcpTransport.frames() throws
-        // if collected before then). Failures are surfaced as Disconnect messages so the
-        // coroutine doesn't die silently.
-        scope.launch(CoroutineName("meshtastic-frame-reader")) {
-            try {
-                transport.state.first { it is org.meshtastic.sdk.TransportState.Connected }
-                transport.frames().collect { frame ->
-                    inbox.send(EngineMessage.FrameRx(frame))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
-                inbox.trySend(
-                    EngineMessage.Disconnect(
-                        MeshtasticException.Transport(e.message ?: "frame reader failed", e),
-                    ),
-                )
-            }
-        }
+        startFrameReader(scope)
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
             for (frame in outbound) {
@@ -507,11 +507,18 @@ internal class MeshEngine(
             CancellationException("Engine cancelled before connection completed"),
         )
 
+        // Close the inbox before draining it, so nothing posted from here on is stranded: a
+        // closed inbox makes trySend() fail the handle and submitRpc() return immediately.
+        // Then settle what's still queued: sends fail Disconnected, and RPCs that never reached
+        // the dispatcher complete NodeUnreachable (their callers await the deferred with no
+        // timeout of their own; the timer is only armed once the actor handles PostRpc).
+        inbox.close()
         var drained = inbox.tryReceive()
         while (drained.isSuccess) {
-            val msg = drained.getOrNull()
-            if (msg is EngineMessage.Send) {
-                msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            when (val msg = drained.getOrNull()) {
+                is EngineMessage.Send -> msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+                is EngineMessage.PostRpc -> msg.deferred.complete(AdminResult.NodeUnreachable)
+                else -> Unit
             }
             drained = inbox.tryReceive()
         }
@@ -524,6 +531,8 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
+        pendingSendTargets.clear()
+        relayedUnicasts.clear()
 
         inbox.close()
         outbound.close()
@@ -607,6 +616,10 @@ internal class MeshEngine(
         // cancel the Stage 2 sliding-timeout watchdog so it doesn't post stale timeouts.
         stage2WatchdogJob?.cancel()
         stage2WatchdogJob = null
+        stage1RetryJob?.cancel()
+        stage1RetryJob = null
+        stage1TimeoutJob?.cancel()
+        stage1TimeoutJob = null
         stage2ProgressCounter = 0L
         lastEncryptedSkipWarningAtMs = 0L
         recentInboundPacketKeys.clear()
@@ -641,6 +654,8 @@ internal class MeshEngine(
             EngineMessage.HandshakeStage1SettleComplete -> handleStage1SettleComplete()
             EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
             EngineMessage.Stage1RetryWantConfig -> handleStage1RetryWantConfig()
+            is EngineMessage.FrameReaderStopped -> handleFrameReaderStopped(msg)
+            is EngineMessage.ApplyConfigEdits -> applyConfigEdits(msg.configs, msg.moduleConfigs)
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
             is EngineMessage.PostRpc -> handlePostRpc(msg)
             is EngineMessage.PendingResponseTimeout -> handlePendingResponseTimeout(msg)
@@ -660,6 +675,7 @@ internal class MeshEngine(
         dispatcher.register(msg.requestId, msg.kind, msg.deferred)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
+        logPacket("tx", outboundPacket)
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = outboundPacket
@@ -833,6 +849,57 @@ internal class MeshEngine(
     }
 
     /**
+     * Collects `transport.frames()` and forwards each inbound frame as a FrameRx message. Gating
+     * on TransportState avoids racing with handleConnect() (the transport's readChannel is null
+     * until connect() completes, and TcpTransport.frames() throws if collected before then).
+     * If the flow throws or ends without the engine cancelling it, the reader posts
+     * [EngineMessage.FrameReaderStopped] so the link loss is handled instead of dying silently.
+     */
+    private fun startFrameReader(scope: CoroutineScope) {
+        frameReaderJob?.cancel()
+        val generation = ++frameReaderGeneration
+        frameReaderJob = scope.launch(CoroutineName("meshtastic-frame-reader")) {
+            val cause = try {
+                transport.state.first { it is org.meshtastic.sdk.TransportState.Connected }
+                transport.frames().collect { frame ->
+                    inbox.send(EngineMessage.FrameRx(frame))
+                }
+                MeshtasticException.Transport("frame stream ended")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
+                MeshtasticException.Transport(e.message ?: "frame reader failed", e)
+            }
+            inbox.trySend(EngineMessage.FrameReaderStopped(generation, cause))
+        }
+    }
+
+    /**
+     * The frame reader stopped on its own. With auto-reconnect on and a session that was up (or
+     * already reconnecting), that's a link loss to recover from; otherwise tear down as before.
+     */
+    private fun handleFrameReaderStopped(msg: EngineMessage.FrameReaderStopped) {
+        if (msg.generation != frameReaderGeneration || disconnecting) return
+        val cause = MeshtasticException.tag(
+            msg.cause,
+            transportIdentity = transport.identity,
+            operation = "transport.frames",
+        )
+        val sessionWasUp = handshakeStage == HandshakeStage.Ready || autoReconnectInProgress
+        if (autoReconnectConfig.enabled && sessionWasUp) {
+            // A transport that also published TransportState.Error has already scheduled a
+            // reconnect (which resets handshakeStage); don't schedule a second attempt.
+            if (autoReconnectInProgress && reconnectJob?.isActive == true) return
+            logger.warn(TAG, cause) { "Frame stream stopped; reconnecting" }
+            events.tryEmit(MeshEvent.TransportError(cause))
+            scheduleReconnect(cause)
+        } else {
+            handleDisconnect(EngineMessage.Disconnect(cause))
+        }
+    }
+
+    /**
      * Begin Stage 1 of the handshake. Extracted from [handleConnect] so the auto-reconnect
      * supervisor can re-enter the handshake without re-running storage activation.
      */
@@ -850,11 +917,13 @@ internal class MeshEngine(
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
         handshakeStage = HandshakeStage.Stage1Draining
 
-        engineScope?.launch {
+        stage1RetryJob?.cancel()
+        stage1TimeoutJob?.cancel()
+        stage1RetryJob = engineScope?.launch {
             delay(STAGE1_RETRY_MS)
             inbox.trySend(EngineMessage.Stage1RetryWantConfig)
         }
-        engineScope?.launch {
+        stage1TimeoutJob = engineScope?.launch {
             delay(STAGE1_TIMEOUT_MS)
             inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining))
         }
@@ -1533,6 +1602,7 @@ internal class MeshEngine(
                 // "queue is empty / no tracked packet" heartbeat-ish signal. Looking that up in
                 // [pendingSends] is harmless but meaningless, and incorrectly treating it as a
                 // successful send for a dropped packet would corrupt user-visible state. Guard.
+                events.tryEmit(MeshEvent.QueueStatusChanged(queueStatus))
                 if (queueStatus.mesh_packet_id == 0) return
                 val packetId = MessageId(queueStatus.mesh_packet_id)
                 // `res` is the firmware's enqueue result in the ERRNO namespace
@@ -1558,7 +1628,7 @@ internal class MeshEngine(
                             AdminResult.NodeUnreachable
                         }
                     dispatcher.tryFail(packetId.raw, rpcResult)
-                    val flow = pendingSends.remove(packetId)
+                    val flow = forgetPendingSend(packetId)
                     ackTimeoutJobs.remove(packetId)?.cancel()
                     if (flow != null) {
                         val current = flow.value
@@ -1619,6 +1689,7 @@ internal class MeshEngine(
         // any frame from a node counts as presence activity.
         if (packet.from != 0) markNodeHeard(NodeId(packet.from))
         if (shouldDropDuplicateInboundPacket(packet)) return
+        logPacket("rx", packet)
         val decoded = packet.decoded
         if (decoded == null) {
             maybeWarnEncryptedPacketSkipped()
@@ -1660,7 +1731,11 @@ internal class MeshEngine(
         // request matching this packet's request_id. Must run before processRoutingAck
         // so a route_reply doesn't get mistakenly classified as a generic Acked send.
         dispatcher.tryComplete(packet)
+        maybeResolveByReply(packet)
         processRoutingAck(packet)
+        // Live packet → node update: last-heard, signal, position and user info, the way the
+        // firmware's own NodeDB folds them in, so NodeChange subscribers stay current.
+        maybeMergeLivePacket(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
         maybeMergeDeviceMetrics(packet)
@@ -1787,7 +1862,7 @@ internal class MeshEngine(
             dispatcher.tryFailFromRouting(messageId.raw, errorReason)
         ) {
             // Defensive cleanup if a stale pendingSends entry shared the wire id.
-            pendingSends.remove(messageId)
+            forgetPendingSend(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
             return
         }
@@ -1801,7 +1876,7 @@ internal class MeshEngine(
         // from pendingSends below — guards against any future caller that re-inserts.
         val current = flow.value
         if (current is SendState.Failed || current == SendState.Acked || current == SendState.Delivered) {
-            pendingSends.remove(messageId)
+            forgetPendingSend(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
             return
         }
@@ -1844,20 +1919,56 @@ internal class MeshEngine(
                     else -> SendFailure.Other(errorReason)
                 }
                 flow.value = SendState.Failed(failure)
-                pendingSends.remove(messageId)
+                forgetPendingSend(messageId)
                 ackTimeoutJobs.remove(messageId)?.cancel()
             }
 
             routeReply != null || errorReason == Routing.Error.NONE -> {
-                flow.value = SendState.Acked
-                pendingSends.remove(messageId)
-                ackTimeoutJobs.remove(messageId)?.cancel()
+                val target = pendingSendTargets[messageId]
+                // firmware ReliableRouter::perhapsGenerateImplicitAckForOwnOverheard: when our
+                // radio overhears a neighbour rebroadcasting our packet it sends us a NONE ack
+                // from our own node. For a broadcast that is the delivery signal; for a unicast
+                // it only means "relayed" and the recipient's own ACK (or NAK) is still to come.
+                val fromOwnRadio = packet.from == 0 || packet.from == myNodeNum
+                val unicastToPeer = target != null && target != BROADCAST_ADDR && target != myNodeNum
+                if (routeReply == null && fromOwnRadio && unicastToPeer) {
+                    relayedUnicasts += messageId
+                    logger.debug(TAG) { "Relay heard for id=$messageId; waiting for the recipient's ACK" }
+                } else {
+                    flow.value = if (target == BROADCAST_ADDR) SendState.Delivered else SendState.Acked
+                    forgetPendingSend(messageId)
+                    ackTimeoutJobs.remove(messageId)?.cancel()
+                }
             }
 
             else -> {
                 // No oneof arm set — informational, not actionable.
                 logger.debug(TAG) { "Routing payload with no oneof variant for id=$messageId" }
             }
+        }
+    }
+
+    /**
+     * Fold a live packet into the sender's node-DB entry (see [mergeLivePacket]) and emit the
+     * matching [NodeChange.Added] or [NodeChange.Updated].
+     */
+    private fun maybeMergeLivePacket(packet: MeshPacket) {
+        val nodeId = NodeId(packet.from)
+        val existing = meshState.nodes[nodeId]
+        val updated = mergeLivePacket(
+            existing = existing,
+            packet = packet,
+            myNodeNum = myNodeNum,
+            ownPublicKey = ownNode.value?.user?.public_key,
+            nowEpochSeconds = clock.now().epochSeconds,
+        ) ?: return
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (nodeId == NodeId(myNodeNum)) ownNode.value = updated
+        if (existing == null) {
+            emitNodeChangeOrLog(NodeChange.Added(updated))
+        } else {
+            val changed = diffNodeFields(existing, updated)
+            if (changed.isNotEmpty()) emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
         }
     }
 
@@ -2037,7 +2148,7 @@ internal class MeshEngine(
             if (!terminal) {
                 msg.stateFlow.value = SendState.Failed(failure)
             }
-            pendingSends.remove(msg.id)
+            forgetPendingSend(msg.id)
         }
         preSendQueue.clear()
     }
@@ -2045,6 +2156,9 @@ internal class MeshEngine(
     private fun handleTransportStateChanged(msg: EngineMessage.TransportStateChanged) {
         when (val s = msg.state) {
             is TransportState.Error -> {
+                // Transports report a link loss twice (Error, then frames() ends) through two
+                // coroutines, in either order; once a reconnect is scheduled, ignore the second.
+                if (autoReconnectInProgress && reconnectJob?.isActive == true && s.recoverable) return
                 logger.warn(TAG, s.cause) { "Transport error: ${s.cause.message}" }
                 val cause = MeshtasticException.tag(
                     MeshtasticException.Transport(s.cause.message ?: "transport error", s.cause),
@@ -2101,6 +2215,10 @@ internal class MeshEngine(
         ackTimeoutJobs.clear()
         stage2WatchdogJob?.cancel()
         stage2WatchdogJob = null
+        stage1RetryJob?.cancel()
+        stage1RetryJob = null
+        stage1TimeoutJob?.cancel()
+        stage1TimeoutJob = null
         stage2ProgressCounter = 0L
         recentInboundPacketKeys.clear()
         recentInboundPacketKeySet.clear()
@@ -2112,6 +2230,8 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
+        pendingSendTargets.clear()
+        relayedUnicasts.clear()
         failPreSendQueueWith(SendFailure.Disconnected)
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
@@ -2130,7 +2250,17 @@ internal class MeshEngine(
     private fun handleReconnectTick(msg: EngineMessage.ReconnectTick) {
         if (!autoReconnectInProgress) return
         val scope = engineScope ?: return
+        // Stop reading the old link before it's torn down: the transport gets a new frame
+        // stream per connect cycle, and the old reader would otherwise stay parked on (or fail
+        // on) the dead one. A new reader starts once the transport is connected again.
+        frameReaderGeneration++
+        val oldReader = frameReaderJob
+        frameReaderJob = null
         scope.launch {
+            // Wait for the old reader to finish, not just to be cancelled: a transport may allow
+            // one frames() collector at a time and free the slot only when the flow completes
+            // (BleTransport), so a new reader started too early would be refused.
+            oldReader?.cancelAndJoin()
             val outcome = try {
                 runCatching { transport.disconnect() }
                 transport.connect()
@@ -2158,6 +2288,7 @@ internal class MeshEngine(
         if (msg.success) {
             logger.info(TAG) { "Auto-reconnect attempt $reconnectAttempt succeeded" }
             livenessBudgetMs = LIVENESS_TIMEOUT_MS
+            engineScope?.let(::startFrameReader)
             startStage1Handshake()
         } else {
             val cause = msg.cause ?: MeshtasticException.tag(
@@ -2222,7 +2353,7 @@ internal class MeshEngine(
             if (!terminal) {
                 logger.warn(TAG) { "Send id=$wireId collides with in-flight wire id; rejecting" }
                 msg.stateFlow.value = SendState.Failed(SendFailure.IdCollision)
-                pendingSends.remove(msg.id)
+                forgetPendingSend(msg.id)
                 return
             }
         }
@@ -2237,7 +2368,9 @@ internal class MeshEngine(
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
+        pendingSendTargets[wireKey] = packet.to
 
+        logPacket("tx", packet)
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = packet
@@ -2250,13 +2383,13 @@ internal class MeshEngine(
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // Fire-and-forget broadcasts (want_ack=false, no want_response): auto-resolve to
-        // Acked immediately. No firmware ACK will arrive so without this the
-        // MessageHandle.await() would suspend forever.
-        if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
+        // Fire-and-forget sends (want_ack=false, no want_response), broadcast or unicast:
+        // auto-resolve to Acked once handed to the radio. No firmware ACK or reply will arrive,
+        // so without this MessageHandle.await() would suspend forever and the entry would leak.
+        if (!packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
-            pendingSends.remove(MessageId(wireId))
-            logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
+            forgetPendingSend(MessageId(wireId))
+            logger.debug(TAG) { "Fire-and-forget send auto-acked id=${msg.id}" }
             return
         }
 
@@ -2279,11 +2412,11 @@ internal class MeshEngine(
         val stateFlow = pendingSends[msg.id] ?: return
         if (stateFlow.value == SendState.Queued) {
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
-            pendingSends.remove(msg.id)
+            forgetPendingSend(msg.id)
+            ackTimeoutJobs.remove(msg.id)?.cancel()
         }
-        // regardless of state, drop any pending ACK timer so we don't post a stale
-        // SendAckTimeout for a handle the user has explicitly cancelled.
-        ackTimeoutJobs.remove(msg.id)?.cancel()
+        // Once Sent, the packet is on the radio and cancel() has no effect (MessageHandle KDoc):
+        // keep its ACK timer, which is what settles the handle if no ACK ever arrives.
     }
 
     private fun handleHeartbeatTick() {
@@ -2331,6 +2464,13 @@ internal class MeshEngine(
         // Stale timer from a stage we've already advanced past — ignore.
         if (handshakeStage != msg.stage) return
         logger.error(TAG) { "Handshake timeout at stage ${msg.stage.toDisplayName()}" }
+
+        // During auto-reconnect a handshake that doesn't finish is one more failed attempt:
+        // back off and retry (scheduleReconnect enforces maxAttempts) instead of tearing down.
+        if (autoReconnectInProgress && !disconnecting) {
+            scheduleReconnect(MeshtasticException.HandshakeTimeout(msg.stage.toDisplayName()))
+            return
+        }
 
         // emit a structured ProtocolWarning so consumers can distinguish
         // "seed never landed" (handshake reached SeedingSession but get_owner_response never
@@ -2399,6 +2539,7 @@ internal class MeshEngine(
     internal fun nodeMapSnapshot(): Map<NodeId, NodeInfo> = meshState.nodes
 
     internal fun sendToRadio(msg: ToRadio) {
+        msg.packet?.let { logPacket("tx", it) }
         try {
             val encoded = WireCodec.encodeToRadio(msg)
             outbound.trySend(Frame(encoded.toByteString()))
@@ -2437,12 +2578,11 @@ internal class MeshEngine(
     }
 
     // ---- C-shared-flow emit helpers ----
-    // The hot SharedFlows (`packets`, `nodes`, `events`) all use BufferOverflow.DROP_OLDEST,
-    // which means `tryEmit` is always supposed to return `true`. We still wrap each call site
-    // through these helpers so:
-    //   • a future BufferOverflow change (or a misconfigured custom replay buffer) doesn't
-    //     silently drop data without surfacing a `MeshEvent.PacketsDropped` signal, and
-    //   • all packet-drop accounting flows through one place that subscribers can observe.
+    // `packets` and `nodes` use BufferOverflow.SUSPEND but are emitted with `tryEmit` (the actor
+    // must never suspend on a slow collector), so once the slowest collector is a full buffer
+    // behind, `tryEmit` returns false and the NEW item is dropped for every collector. These helpers report every such drop
+    // as `MeshEvent.PacketsDropped` (a `nodes` drop is reported as `DroppedFlow.Events`, as there
+    // is no separate value for it). `events` itself uses DROP_OLDEST.
 
     private fun emitPacketOrLog(packet: MeshPacket) {
         if (!packets.tryEmit(packet)) {
@@ -2509,12 +2649,23 @@ internal class MeshEngine(
     }
 
     /**
-     * Optimistically update [configBundleState] after a successful `editSettings` commit.
-     *
-     * Merges written [Config] and [ModuleConfig] objects into the existing bundle, replacing
-     * sections that were written while preserving sections that weren't touched.
+     * Optimistically update the local radio's [configBundleState] after a successful
+     * `editSettings` commit. Posted to the actor, because the bundle also lives in the
+     * actor-owned [meshState] and AdminApiImpl runs on the caller's coroutine (ADR-002).
      */
-    internal fun applyConfigEdits(
+    internal fun postConfigEdits(
+        writtenConfigs: List<org.meshtastic.proto.Config>,
+        writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+    ) {
+        if (writtenConfigs.isEmpty() && writtenModuleConfigs.isEmpty()) return
+        inbox.trySend(EngineMessage.ApplyConfigEdits(writtenConfigs, writtenModuleConfigs))
+    }
+
+    /**
+     * Merges written [Config] and [ModuleConfig] objects into the existing bundle, replacing
+     * sections that were written while preserving sections that weren't touched. Actor only.
+     */
+    private fun applyConfigEdits(
         writtenConfigs: List<org.meshtastic.proto.Config>,
         writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
     ) {
@@ -2603,14 +2754,70 @@ internal class MeshEngine(
     // a unicast send timed out waiting for a routing ACK. Mark the handle as Failed
     // (only if it's still in a non-terminal state — a late ACK that won the race takes
     // precedence) and prune our bookkeeping.
+
+    /**
+     * A reply (any non-routing packet whose `request_id` is one of our in-flight sends) settles
+     * that send: e.g. the POSITION_APP / NODEINFO_APP answer to `requestPosition()` /
+     * `requestNodeInfo()`, which are sent with `want_response` and get no separate Routing ACK.
+     */
+    private fun maybeResolveByReply(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.request_id == 0 || decoded.portnum == PortNum.ROUTING_APP) return
+        val id = MessageId(decoded.request_id)
+        val flow = pendingSends[id] ?: return
+        val target = pendingSendTargets[id]
+        // Only the node we asked can answer for it (broadcast requests: anyone).
+        if (target != null && target != BROADCAST_ADDR && target != packet.from) return
+        if (flow.value == SendState.Queued || flow.value == SendState.Sent) flow.value = SendState.Acked
+        forgetPendingSend(id)
+        ackTimeoutJobs.remove(id)?.cancel()
+    }
+
+    /**
+     * Protocol logging (`RadioClient.Builder.protocolLogging`): one summary line per mesh packet
+     * at the configured level. Header fields and the payload size only — payload bytes (text,
+     * positions, keys) are never logged, so there is nothing for a PayloadRedactor to mask.
+     */
+    private fun logPacket(direction: String, packet: MeshPacket) {
+        if (protocolLogLevel == LogLevel.NONE || logger === LogSink.Silent) return
+        val decoded = packet.decoded
+        val body = if (decoded != null) {
+            "port=${decoded.portnum} bytes=${decoded.payload.size}" +
+                (if (decoded.want_response) " want_response" else "") +
+                (if (decoded.request_id != 0) " request_id=${decoded.request_id}" else "")
+        } else {
+            "encrypted"
+        }
+        logger.log(
+            protocolLogLevel,
+            PROTOCOL_TAG,
+            "$direction id=${packet.id} from=${NodeId(packet.from)} to=${NodeId(packet.to)} ch=${packet.channel} " +
+                body + (if (packet.want_ack) " want_ack" else ""),
+            null,
+        )
+    }
+
+    /** Drops every per-send record kept for [id] (the state flow itself is the caller's). */
+    private fun forgetPendingSend(id: MessageId): MutableStateFlow<SendState>? {
+        pendingSendTargets.remove(id)
+        relayedUnicasts.remove(id)
+        return pendingSends.remove(id)
+    }
+
     private fun handleSendAckTimeout(msg: EngineMessage.SendAckTimeout) {
         val flow = pendingSends[msg.id] ?: return
         ackTimeoutJobs.remove(msg.id)
         when (flow.value) {
             SendState.Queued, SendState.Sent -> {
                 logger.debug(TAG) { "ACK timeout for id=${msg.id} (state was ${flow.value})" }
-                flow.value = SendState.Failed(SendFailure.AckTimeout)
-                pendingSends.remove(msg.id)
+                // A unicast that a neighbour relayed but whose recipient never confirmed was
+                // still carried onward: report Delivered (relayed), not a failure.
+                flow.value = if (msg.id in relayedUnicasts) {
+                    SendState.Delivered
+                } else {
+                    SendState.Failed(SendFailure.AckTimeout)
+                }
+                forgetPendingSend(msg.id)
             }
 
             SendState.Acked, SendState.Delivered, is SendState.Failed -> {
@@ -2621,6 +2828,7 @@ internal class MeshEngine(
 
     private companion object {
         private const val TAG = "MeshEngine"
+        private const val PROTOCOL_TAG = "MeshProtocol"
 
         // Handshake nonces (protocol.md §6).
         const val NONCE_STAGE1 = 69420

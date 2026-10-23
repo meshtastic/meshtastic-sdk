@@ -76,8 +76,24 @@ internal sealed interface EngineMessage {
     /** A framed packet received from the transport. */
     data class FrameRx(val frame: Frame) : EngineMessage
 
+    /**
+     * Config sections the local radio accepted in a committed `editSettings` / `batch`; the actor
+     * folds them into the cached config bundle (posted by AdminApiImpl, which runs on the caller).
+     */
+    data class ApplyConfigEdits(
+        val configs: List<org.meshtastic.proto.Config>,
+        val moduleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+    ) : EngineMessage
+
     /** Transport connection state changed (posted by the transport-state observer coroutine). */
     data class TransportStateChanged(val state: TransportState) : EngineMessage
+
+    /**
+     * The frame reader stopped on its own: `frames()` threw, or completed without the engine
+     * cancelling it (the link went away). Posted by the frame-reader coroutine of [generation]
+     * so a reader replaced by a reconnect can't act on the new cycle.
+     */
+    data class FrameReaderStopped(val generation: Int, val cause: MeshtasticException.Transport) : EngineMessage
 
     // ── Outbound ───────────────────────────────────────────────────────────
 

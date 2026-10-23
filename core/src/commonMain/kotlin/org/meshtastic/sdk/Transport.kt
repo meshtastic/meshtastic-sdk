@@ -159,8 +159,19 @@ public sealed interface TransportState {
  * Transports are responsible for physical framing, buffering, and connection lifecycle.
  * The SDK codec handles higher-level protocol framing (sync bytes, length, CRC).
  *
- * **Single collector rule:** [frames] returns a cold flow that the SDK collects exactly once.
- * Transports must not support multiple concurrent collectors (by design; the SDK owns the reader).
+ * **Connect cycles:** one instance lives through many `connect()` / `disconnect()` cycles —
+ * the engine's auto-reconnect calls `disconnect()` then `connect()` on the same instance. A
+ * transport must accept a new [connect] after [disconnect] or after a failed [connect].
+ *
+ * **Single collector rule:** [frames] returns a cold flow that the SDK collects once **per
+ * connect cycle**. Transports must not support multiple concurrent collectors (by design; the SDK
+ * owns the reader).
+ *
+ * **Link loss:** when an established link drops without [disconnect] being called (peer close /
+ * EOF, read failure, unplug, BLE drop), the transport must publish [TransportState.Error] on
+ * [state] (`recoverable = true` unless the failure is known to be permanent) — that is what
+ * starts the engine's auto-reconnect. A link the caller tore down with [disconnect] must not be
+ * reported as an error.
  *
  * **Thread safety:** the SDK's engine actor calls [connect], [disconnect], [send],
  * and collects [frames]/[state] from a single coroutine context at a time. Transport
@@ -224,11 +235,18 @@ public interface RadioTransport {
     /**
      * Observe inbound framed packets.
      *
-     * Returns a cold flow that the SDK collects exactly once (at engine startup).
-     * Each element is a complete frame as received from the device.
+     * Returns a cold flow that the SDK collects once **per connect cycle**, after [state]
+     * reaches [TransportState.Connected]. Each element is a complete frame as received from
+     * the device. A transport may resolve per-cycle resources when collection starts, so a flow
+     * from an earlier cycle is not expected to deliver frames of a later one.
      *
-     * The SDK handles frame buffering, overflow, and backpressure; transports should emit
-     * frames promptly and let the flow system apply backpressure.
+     * The flow must end when its cycle ends: on [disconnect] it completes (or is cancelled), and
+     * on link loss the transport publishes [TransportState.Error] on [state] and then completes
+     * the flow or throws [MeshtasticException.Transport] from it. Completing the flow without
+     * publishing the Error leaves the session looking alive.
+     *
+     * Transports should emit frames promptly and honour back-pressure (suspend or block their
+     * own reader while the collector is busy) rather than dropping frames.
      */
     public fun frames(): Flow<Frame>
 

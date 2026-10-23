@@ -9,19 +9,23 @@ package org.meshtastic.sdk
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlin.test.fail
+import kotlin.time.Duration.Companion.minutes
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RadioClientSendTest {
@@ -419,7 +423,71 @@ class RadioClientSendTest {
 
             val outcome = handle.await()
             assertValue(SendOutcome.Success, outcome, "broadcast await outcome")
-            assertValue(SendState.Acked, handle.state.value, "broadcast terminal state")
+            assertValue(SendState.Delivered, handle.state.value, "broadcast terminal state")
+        }
+    }
+
+    @Test
+    fun sendText_directMessageWaitsPastTheRelayForTheRecipientAck() = runTest {
+        withConnectedClient { client, transport ->
+            val peer = NodeId(0x22222222)
+            val handle = client.sendText("dm", to = peer)
+            runCurrent()
+
+            // Our radio overheard a relay: implicit ACK from our own node. Not delivery yet.
+            transport.injectRoutingAck(requestId = handle.id.raw)
+            runCurrent()
+            assertValue(SendState.Sent, handle.state.value, "after relay heard")
+
+            // The recipient's own ACK.
+            transport.injectRoutingAck(requestId = handle.id.raw, fromNode = peer.raw)
+            runCurrent()
+            assertValue(SendState.Acked, handle.state.value, "after recipient ACK")
+        }
+    }
+
+    @Test
+    fun sendText_directMessageRelayedButNeverConfirmedEndsDelivered() = runTest {
+        withConnectedClient { client, transport ->
+            val handle = client.sendText("dm", to = NodeId(0x22222222))
+            runCurrent()
+            transport.injectRoutingAck(requestId = handle.id.raw)
+            runCurrent()
+
+            advanceTimeBy(10.minutes)
+            runCurrent()
+            assertValue(SendState.Delivered, handle.state.value, "relayed, recipient never confirmed")
+        }
+    }
+
+    @Test
+    fun sendText_directMessageWithNothingHeardTimesOut() = runTest {
+        withConnectedClient { client, _ ->
+            val handle = client.sendText("dm", to = NodeId(0x22222222))
+            runCurrent()
+
+            advanceTimeBy(10.minutes)
+            runCurrent()
+            assertValue(SendState.Failed(SendFailure.AckTimeout), handle.state.value, "nothing heard")
+        }
+    }
+
+    @Test
+    fun sendText_directMessageNakAfterTheRelayStillFails() = runTest {
+        withConnectedClient { client, transport ->
+            val peer = NodeId(0x22222222)
+            val handle = client.sendText("dm", to = peer)
+            runCurrent()
+            transport.injectRoutingAck(requestId = handle.id.raw)
+            runCurrent()
+
+            transport.injectRoutingError(
+                requestId = handle.id.raw,
+                error = Routing.Error.NO_CHANNEL,
+                fromNode = peer.raw,
+            )
+            runCurrent()
+            assertTrue(handle.state.value is SendState.Failed, "was ${handle.state.value}")
         }
     }
 

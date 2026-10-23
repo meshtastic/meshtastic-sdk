@@ -9,7 +9,7 @@ The Meshtastic SDK exposes state as cold flows:
 - `client.nodes` — node changes and snapshot
 - `client.packets` — received mesh packets
 - `client.events` — connection/protocol events
-- `client.nodeDb` — the synced device NodeDB
+- `client.nodeMap()` — the node map (`Map<NodeId, NodeInfo>`), folded from `nodes`
 - `transport.state` — transport-level state changes
 
 **These are cold flows** — each collector gets its own instance from the beginning. If you collect carelessly in Android/Compose lifecycle contexts, you risk:
@@ -161,7 +161,7 @@ In unit tests, use `runTest` (instead of `runBlocking`) and collect flows direct
 @Test
 fun testNodeUpdates() = runTest {
     val client = RadioClient.Builder()
-        .transport(FakeRadioTransport())
+        .transport(FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true))
         .storage(InMemoryStorageProvider())
         .build()
     client.connect()

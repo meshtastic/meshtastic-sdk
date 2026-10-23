@@ -20,7 +20,7 @@ import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 public interface RoutingApi {
 
     /**
-     * Send a `RouteDiscovery` request to [dest] and wait for the route_reply.
+     * Send a traceroute (`TRACEROUTE_APP` `RouteDiscovery`) to [dest] and wait for its reply.
      *
      * @param dest the destination [NodeId].
      * @param hopLimit maximum mesh hops the discovery may traverse. The mesh truncates the

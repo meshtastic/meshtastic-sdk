@@ -24,23 +24,28 @@ public sealed interface SendState {
     public data object Queued : SendState
 
     /**
-     * The device has accepted the packet and started transmission.
-     *
-     * (From `QueueStatus`.)
+     * The packet was handed to the radio; the device's `QueueStatus` confirms it was queued for
+     * transmission (a rejection there turns it into [Failed] with `QueueRejected`).
      */
     public data object Sent : SendState
 
     /**
-     * The device received an acknowledgment from the target (unicast only).
+     * The recipient acknowledged the packet (unicast), the local radio did (packets addressed
+     * to it, e.g. local admin), or the recipient's reply to a `want_response` request arrived.
+     * A packet sent without `want_ack` and without `want_response` gets no feedback at all, so
+     * it becomes [Acked] as soon as it's handed to the radio.
      *
-     * (From device-emitted `Routing` ACK.)
+     * (From the `Routing` ACK the recipient sends back.)
      */
     public data object Acked : SendState
 
     /**
-     * A broadcast packet was rebroadcast by another node.
+     * Another node rebroadcast the packet: for a broadcast, the local radio overheard a
+     * neighbour relaying it; for a unicast, a relay was overheard but the recipient's own ACK
+     * didn't arrive within the send timeout.
      *
-     * (From device-emitted `Routing` broadcast ack.)
+     * (From the implicit `Routing` ACK the local radio generates when it overhears its packet
+     * being relayed; firmware `ReliableRouter::perhapsGenerateImplicitAckForOwnOverheard`.)
      */
     public data object Delivered : SendState
 

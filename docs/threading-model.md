@@ -26,7 +26,7 @@ Read those for *why*. This document is the *what*.
 │ :core engine — single-writer actor                              │
 │   ▸ All state mutations go through one Channel.                 │
 │   ▸ No Mutex / Semaphore / ReentrantLock anywhere on the path.  │
-│   ▸ Engine dispatcher is single-threaded by construction.       │
+│   ▸ The actor channel serialises engine work on any dispatcher. │
 │   ▸ Two atomicfu sites (supervisorJobRef, nextIdCounter) are    │
 │     boundary handles, not state — see inline comments.          │
 └─────────────────────────────────────────────────────────────────┘
@@ -36,9 +36,8 @@ Read those for *why*. This document is the *what*.
 │ Transport modules — bridge native callbacks/threads to flows    │
 │   ▸ TCP : Ktor sockets, fully suspending.                       │
 │   ▸ BLE : Kable/CoreBluetooth callbacks → MutableSharedFlow.    │
-│   ▸ Serial-Android : usb-serial-for-android callbacks → flow.   │
-│   ▸ Serial-JVM : jSerialComm blocking reads on a dedicated      │
-│     thread → Channel → flow.                                    │
+│   ▸ Serial (JVM + Android) : jSerialComm blocking reads on a    │
+│     dedicated thread → Channel → flow.                          │
 │   May use atomics for native-handle ownership; MUST NOT block   │
 │   on the engine dispatcher.                                     │
 └─────────────────────────────────────────────────────────────────┘
@@ -120,14 +119,15 @@ whether or not anyone is collecting.
 |---|---|---|---|---|
 | `connection` | `StateFlow<ConnectionState>` | Always current value | n/a | n/a (conflated) |
 | `ownNode` | `StateFlow<NodeInfo?>` | Always current value | n/a | n/a (conflated) |
-| `nodes` | `Flow<NodeChange>` (SharedFlow internally) | 1 | 256 | drop-oldest → `MeshEvent.PacketsDropped(Nodes)` |
-| `packets` | `Flow<MeshPacket>` | 0 | 128 | drop-oldest → `MeshEvent.PacketsDropped(Packets)` |
+| `nodes` | `Flow<NodeChange>` (SharedFlow internally) | 0 (each subscriber is seeded with a `Snapshot`) | 256 | new deltas dropped → `MeshEvent.PacketsDropped(Events)` |
+| `packets` | `Flow<MeshPacket>` | 0 | 128 | new packets dropped → `MeshEvent.PacketsDropped(Packets)` |
 | `events` | `Flow<MeshEvent>` | 0 | 64 | drop-oldest → log only (no recursive `Dropped`) |
 
 Late subscribers to `packets` and `events` see only emissions made
-**after** they start collecting; for `nodes`, late subscribers receive
-the most recent change but not the full history (use
-`RadioClient.snapshot()` to bootstrap, then collect to follow).
+**after** they start collecting. Every `nodes` subscriber, early or late,
+first receives a `NodeChange.Snapshot` of the current node map, then
+deltas; `RadioClient.nodeSnapshot()` gives a one-shot copy without
+collecting.
 
 ### Dispatcher choice (consumer side)
 
@@ -142,9 +142,10 @@ You may collect on any dispatcher. Common patterns:
 - **JVM headless / CLI / server**: any dispatcher. Recommended pattern
   is one `CoroutineScope` per `RadioClient`, cancelled in lockstep.
 
-The engine's internal dispatcher is **single-thread `Default`-backed**
-on every platform (no `Main` assumption). Your collector dispatcher
-does not have to match.
+The engine runs on the builder's `coroutineContext` (default
+`SupervisorJob() + Dispatchers.Default` on every platform, no `Main`
+assumption); the actor channel serialises its work whatever the pool
+size. Your collector dispatcher does not have to match.
 
 ### Lifecycle and cancellation footguns
 
@@ -165,10 +166,14 @@ does not have to match.
 
 ### Backpressure and dropped events
 
-The engine never blocks on consumer collection. If your collector is
-slow, the SharedFlow buffers fill and **drop-oldest** semantics kick
-in. You will receive a `MeshEvent.PacketsDropped(flow, droppedCount)`
-on `events` whenever this happens for `packets` or `nodes`.
+The engine never blocks on consumer collection. The buffer is shared
+by all collectors of a flow: if the slowest collector falls a full
+buffer behind, the engine drops each **new** item for **every**
+collector (it emits with `tryEmit` and never waits). You will receive a
+`MeshEvent.PacketsDropped(flow, droppedCount)` on `events` for every
+drop on `packets` (`DroppedFlow.Packets`) or `nodes` (reported as
+`DroppedFlow.Events`). After a drop on `nodes`, resync from a new
+subscription's `NodeChange.Snapshot` or `client.nodeSnapshot()`.
 
 Rules of thumb:
 
@@ -209,7 +214,8 @@ The `:testing` module ships:
 
 - **`FakeRadioTransport`** — a scriptable transport for end-to-end
   engine tests; pair with `runTest`.
-- **`TestClock`** — a controllable `kotlinx.datetime.Clock` for tests
+- **`TestClock`** — a controllable `kotlin.time.Clock` (`TestClock(initial: Instant = Instant.fromEpochMilliseconds(0))`,
+  moved with `advance(duration)` / `set(instant)`; independent of `runTest`'s scheduler) for tests
   that exercise timeouts, heartbeats, or session-passkey TTL.
 - **`runTest { advanceTimeBy(…) }`** drives the engine's tick-based
   watchdogs (handshake timeout, sliding Stage 2 progress timer,
@@ -221,10 +227,16 @@ A typical pattern:
 ```kotlin
 @Test
 fun mySendTimesOut() = runTest {
-    val transport = FakeRadioTransport(nodeNum = 0x1234)
+    val transport = FakeRadioTransport(
+        identity = TransportIdentity("fake:test"),
+        autoHandshake = true,                          // lets connect() complete
+        nodeNum = 0x1234,
+    )
     val client = RadioClient.Builder()
         .transport(transport)
-        .clock(TestClock(this))
+        .storage(InMemoryStorageProvider())
+        .coroutineContext(backgroundScope.coroutineContext)   // engine runs on the test scheduler
+        .clock(TestClock())
         .sendTimeout(5.seconds)
         .build()
 
@@ -243,7 +255,9 @@ fun mySendTimesOut() = runTest {
   in your app (transitively pulled in by the SDK). The engine itself
   does not depend on it.
 - **iOS** (`iosArm64`, `iosX64`, `iosSimulatorArm64`): the engine runs
-  on `Dispatchers.Default.limitedParallelism(1)`. Kotlin/Native's
+  on the builder's `coroutineContext` (default `Dispatchers.Default`,
+  a multi-threaded pool on Kotlin/Native); the actor keeps it
+  single-writer. Kotlin/Native's
   `freeze` rules do not apply — the SDK targets the new memory model.
 - **JS / Wasm**: not currently supported. See [`roadmap.md`](roadmap.md).
 

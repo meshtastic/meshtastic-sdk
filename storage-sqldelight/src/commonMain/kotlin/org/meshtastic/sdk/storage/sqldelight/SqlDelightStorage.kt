@@ -9,11 +9,14 @@ package org.meshtastic.sdk.storage.sqldelight
 
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
+import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -29,56 +32,56 @@ import kotlin.time.Clock
  *
  * All proto values are stored as raw bytes (via Wire ADAPTER.encode / ADAPTER.decode).
  * Configs and ModuleConfigs are stored as individual rows keyed by section name.
- * MyNodeInfo and DeviceMetadata are stored in the `session` table.
+ * MyNodeInfo, DeviceMetadata and DeviceUIConfig are stored in the `session` table.
  *
  * All suspend methods hop to [dispatcher] so blocking JDBC / Android SQLite / native sqlite3 calls
  * never run on the caller's thread (typically the engine actor on `Dispatchers.Default`). Defaults
  * to a platform-appropriate IO dispatcher view with parallelism capped to match the small driver
  * connection pool; tests can inject a direct/unconfined dispatcher.
+ *
+ * Calls may arrive concurrently; they run one at a time, in the order they take the internal
+ * lock.
  */
 internal class SqlDelightStorage(
     private val driver: SqlDriver,
     private val dispatcher: CoroutineDispatcher = defaultStorageDispatcher,
 ) : DeviceStorage {
 
-    private val db = MeshDatabase(driver).also {
-        // Create schema idempotently: the `sqlite_master` check avoids `table … already exists`
-        // when reopening a previously-initialised database file (node-keyed DBs are reopened on
-        // every reconnect).
-        val alreadyInitialised = driver
-            .executeQuery(
-                identifier = null,
-                sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='session' LIMIT 1",
-                mapper = { cursor -> app.cash.sqldelight.db.QueryResult.Value(cursor.next().value) },
-                parameters = 0,
-            )
-            .value
-        if (!alreadyInitialised) {
-            MeshDatabase.Schema.create(driver)
-        }
-    }
+    // Every platform's `createDriver` builds its driver with `MeshDatabase.Schema`, so the
+    // driver creates a new database or migrates an older one (by `user_version`) before the
+    // first query; nothing to set up here.
+    private val db = MeshDatabase(driver)
     private val q get() = db.meshQueries
+
+    // ADR-012-style carve-out (storage-internal serialisation, not engine state): the engine
+    // launches storage calls as separate coroutines (handshake persist, saveConfig, heartbeat
+    // flush), so they can overlap. The in-memory JDBC driver keeps a single transaction slot
+    // for all threads, and recordOwnNode's read-then-clear must not interleave with a write.
+    // One call at a time per storage keeps every driver correct.
+    private val mutex = Mutex()
+
+    private suspend inline fun <T> serialised(crossinline block: () -> T): T =
+        mutex.withLock { withContext(dispatcher) { block() } }
 
     // ── Nodes ─────────────────────────────────────────────────────────────────
 
-    override suspend fun loadNodes(): Map<NodeId, NodeInfo> = withContext(dispatcher) {
+    override suspend fun loadNodes(): Map<NodeId, NodeInfo> = serialised {
+        // selectAllNodes skips heartbeat-only rows (no raw_node_info), so every row is a node.
         val rows = q.selectAllNodes().executeAsList()
         buildMap {
             for (row in rows) {
                 val nodeId = NodeId(row.node_num.toInt())
-                val nodeInfo = row.raw_node_info?.let { bytes ->
-                    try {
-                        NodeInfo.ADAPTER.decode(bytes)
-                    } catch (_: Exception) {
-                        null
-                    }
-                } ?: NodeInfo.Builder().also { wb -> wb.num = row.node_num.toInt() }.build()
+                val nodeInfo = try {
+                    NodeInfo.ADAPTER.decode(row.raw_node_info)
+                } catch (_: Exception) {
+                    NodeInfo.Builder().also { wb -> wb.num = row.node_num.toInt() }.build()
+                }
                 put(nodeId, nodeInfo)
             }
         }
     }
 
-    override suspend fun saveNode(node: NodeInfo): Unit = withContext(dispatcher) {
+    override suspend fun saveNode(node: NodeInfo): Unit = serialised {
         val user = node.user
         q.upsertNode(
             node_num = node.num.toLong(),
@@ -99,21 +102,21 @@ internal class SqlDelightStorage(
         )
     }
 
-    override suspend fun removeNode(nodeId: NodeId): Unit = withContext(dispatcher) {
+    override suspend fun removeNode(nodeId: NodeId): Unit = serialised {
         q.deleteNode(nodeId.raw.toLong())
     }
 
     // ── Config ────────────────────────────────────────────────────────────────
 
-    override suspend fun loadConfig(): ConfigBundle? = withContext(dispatcher) {
+    override suspend fun loadConfig(): ConfigBundle? = serialised {
         val myInfoBytes = q.selectSession(SESSION_KEY_MY_INFO).executeAsOneOrNull()?.value_
-            ?: return@withContext null
+            ?: return@serialised null
         val metaBytes = q.selectSession(SESSION_KEY_METADATA).executeAsOneOrNull()?.value_
 
         val myInfo: MyNodeInfo = try {
             MyNodeInfo.ADAPTER.decode(myInfoBytes)
         } catch (_: Exception) {
-            return@withContext null
+            return@serialised null
         }
         val metadata: DeviceMetadata = metaBytes?.let {
             try {
@@ -122,6 +125,14 @@ internal class SqlDelightStorage(
                 null
             }
         } ?: DeviceMetadata.Builder().build()
+        val deviceUIConfig: DeviceUIConfig? = q.selectSession(SESSION_KEY_DEVICE_UI).executeAsOneOrNull()?.value_
+            ?.let {
+                try {
+                    DeviceUIConfig.ADAPTER.decode(it)
+                } catch (_: Exception) {
+                    null
+                }
+            }
 
         val allConfigs = q.selectAllConfigs().executeAsList()
         val configs: List<Config> = allConfigs
@@ -149,13 +160,20 @@ internal class SqlDelightStorage(
             metadata = metadata,
             configs = configs,
             moduleConfigs = moduleConfigs,
+            deviceUIConfig = deviceUIConfig,
         )
     }
 
-    override suspend fun saveConfig(config: ConfigBundle) = withContext(dispatcher) {
+    override suspend fun saveConfig(config: ConfigBundle) = serialised {
         db.transaction {
             q.upsertSession(SESSION_KEY_MY_INFO, MyNodeInfo.ADAPTER.encode(config.myInfo))
             q.upsertSession(SESSION_KEY_METADATA, DeviceMetadata.ADAPTER.encode(config.metadata))
+            val deviceUI = config.deviceUIConfig
+            if (deviceUI != null) {
+                q.upsertSession(SESSION_KEY_DEVICE_UI, DeviceUIConfig.ADAPTER.encode(deviceUI))
+            } else {
+                q.deleteSession(SESSION_KEY_DEVICE_UI)
+            }
             q.deleteAllConfigs()
             config.configs.forEachIndexed { i, c ->
                 val section = "config:$i"
@@ -170,7 +188,7 @@ internal class SqlDelightStorage(
 
     // ── Channels ──────────────────────────────────────────────────────────────
 
-    override suspend fun loadChannels(): List<Channel> = withContext(dispatcher) {
+    override suspend fun loadChannels(): List<Channel> = serialised {
         q.selectAllChannels().executeAsList().mapNotNull { row ->
             row.settings_raw?.let { bytes ->
                 try {
@@ -182,7 +200,7 @@ internal class SqlDelightStorage(
         }
     }
 
-    override suspend fun saveChannels(channels: List<Channel>) = withContext(dispatcher) {
+    override suspend fun saveChannels(channels: List<Channel>) = serialised {
         db.transaction {
             q.deleteAllChannels()
             channels.forEachIndexed { idx, channel ->
@@ -202,7 +220,7 @@ internal class SqlDelightStorage(
 
     // ── Identity / factory-reset detection ───────────────────────────────────
 
-    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) = withContext(dispatcher) {
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) = serialised {
         db.transaction {
             val storedNumBytes = q.selectSession(SESSION_KEY_NODE_NUM).executeAsOneOrNull()?.value_
             if (storedNumBytes != null) {
@@ -237,7 +255,7 @@ internal class SqlDelightStorage(
 
     // ── Session passkey (R-P0-4) ──────────────────────────────────────────────
 
-    override suspend fun saveSessionPasskey(passkey: SessionPasskey) = withContext(dispatcher) {
+    override suspend fun saveSessionPasskey(passkey: SessionPasskey) = serialised {
         db.transaction {
             q.upsertSession(SESSION_KEY_PASSKEY, passkey.bytes.toByteArray())
             q.upsertSession(
@@ -247,30 +265,30 @@ internal class SqlDelightStorage(
         }
     }
 
-    override suspend fun loadSessionPasskey(): SessionPasskey? = withContext(dispatcher) {
+    override suspend fun loadSessionPasskey(): SessionPasskey? = serialised {
         val bytes = q.selectSession(SESSION_KEY_PASSKEY).executeAsOneOrNull()?.value_
-            ?: return@withContext null
+            ?: return@serialised null
         val expiresBytes = q.selectSession(SESSION_KEY_PASSKEY_EXPIRES_MS).executeAsOneOrNull()?.value_
-            ?: return@withContext null
-        val expiresAtMs = expiresBytes.decodeToString().toLongOrNull() ?: return@withContext null
+            ?: return@serialised null
+        val expiresAtMs = expiresBytes.decodeToString().toLongOrNull() ?: return@serialised null
         val now = Clock.System.now().toEpochMilliseconds()
         if (expiresAtMs <= now) {
             db.transaction {
                 q.deleteSession(SESSION_KEY_PASSKEY)
                 q.deleteSession(SESSION_KEY_PASSKEY_EXPIRES_MS)
             }
-            return@withContext null
+            return@serialised null
         }
         SessionPasskey(bytes.toByteString(), expiresAtMs)
     }
 
     // ── Heartbeat persistence (P1-6) ──────────────────────────────────────────
 
-    override suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long): Unit = withContext(dispatcher) {
+    override suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long): Unit = serialised {
         q.upsertHeartbeat(node_num = nodeId.raw.toLong(), last_heartbeat_at = epochMillis)
     }
 
-    override suspend fun loadHeartbeats(): Map<NodeId, Long> = withContext(dispatcher) {
+    override suspend fun loadHeartbeats(): Map<NodeId, Long> = serialised {
         q.selectAllHeartbeats().executeAsList().associate { row ->
             NodeId(row.node_num.toInt()) to row.last_heartbeat_at
         }
@@ -278,7 +296,7 @@ internal class SqlDelightStorage(
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    override suspend fun clear(): Unit = withContext(dispatcher) {
+    override suspend fun clear(): Unit = serialised {
         q.clearAll()
     }
 
@@ -289,6 +307,7 @@ internal class SqlDelightStorage(
     private companion object {
         const val SESSION_KEY_MY_INFO = "my_info"
         const val SESSION_KEY_METADATA = "metadata"
+        const val SESSION_KEY_DEVICE_UI = "device_ui_config"
         const val SESSION_KEY_NODE_NUM = "identity_node_num"
         const val SESSION_KEY_FIRMWARE = "firmware_version"
         const val SESSION_KEY_PASSKEY = "session_passkey"

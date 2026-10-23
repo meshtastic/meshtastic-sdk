@@ -134,11 +134,12 @@ public class RadioClient internal constructor(
      * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
      * arrive as [NodeChange.Added] once they are heard.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
-     * apply backpressure to the engine actor; deltas are **never silently dropped** on this
-     * flow. If the engine inbox itself fills as a result, drops surface as
-     * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
+     * **Buffering:** the underlying `MutableSharedFlow` has one shared 256-delta buffer. The
+     * engine never waits for a slow collector: once the slowest one is a full buffer behind, a
+     * new delta is dropped for **every** collector and reported as [MeshEvent.PacketsDropped] on
+     * [events] (with `flow = DroppedFlow.Events`). Don't block in collectors; after a drop, resync
+     * from a fresh subscription's [NodeChange.Snapshot] or [nodeSnapshot]. See
+     * `docs/threading-model.md`.
      */
     public val nodes: Flow<NodeChange> = engine.nodes
         .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
@@ -149,13 +150,11 @@ public class RadioClient internal constructor(
      * The engine decrypts channel payloads transparently; `MeshPacket.decoded` is always
      * non-null on emission. Filter by `decoded.portnum` to match specific app payloads.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 128` with `BufferOverflow.SUSPEND` (per ADR-005 / SPEC §4.4).
-     * Slow collectors apply backpressure to the engine. If the engine inbox itself fills, the
-     * engine drops the **oldest queued frame** and emits
+     * **Buffering:** the underlying `MutableSharedFlow` has one shared 128-packet buffer. The
+     * engine never waits for a slow collector: once the slowest one is a full buffer behind, a
+     * new packet is dropped for **every** collector and each drop is reported as
      * [MeshEvent.PacketsDropped][org.meshtastic.sdk.MeshEvent.PacketsDropped] with
-     * `flow = DroppedFlow.Packets` on [events]. Silent loss is forbidden in the public surface
-     * — every drop is observable.
+     * `flow = DroppedFlow.Packets` on [events], so no loss is silent.
      *
      * Populated by the HandshakeMachine after entering [ConnectionState.Connected].
      */
@@ -724,9 +723,11 @@ public class RadioClient internal constructor(
         /**
          * Enable protocol-level logging.
          *
-         * Routes framed-packet diagnostics through the configured [LogSink]. The [redactor]
-         * masks positions, text payloads, and PSKs. Default: [LogLevel.NONE] (off).
-         * See `docs/security.md`.
+         * Logs one line per inbound (`rx`) and outbound (`tx`) mesh packet through the configured
+         * [LogSink] at [level], tagged `MeshProtocol`: id, from, to, channel, port, payload size
+         * and the ack/response flags. Payload bytes (text, positions, keys) are never logged.
+         * [redactor] is reserved for a future payload-logging mode and currently has no effect.
+         * Default: [LogLevel.NONE] (off). See `docs/security.md`.
          */
         public fun protocolLogging(level: LogLevel, redactor: PayloadRedactor = PayloadRedactor.Default): Builder =
             apply {
@@ -835,6 +836,7 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                protocolLogLevel = protocolLogLevel,
             )
 
             return RadioClient(
@@ -864,14 +866,15 @@ private fun <T> SharedFlow<T>.hide(): Flow<T> = flow { emitAll(this@hide) }
 /**
  * Strategy for redacting sensitive payload data in protocol logs.
  *
- * Applied when [RadioClient.Builder.protocolLogging] is active. The default implementation masks
- * positions, text payloads, and PSKs.
+ * Reserved: [RadioClient.Builder.protocolLogging] logs packet headers and sizes only, never
+ * payload bytes, so there is nothing to redact yet. Members will be added if a payload-logging
+ * mode is introduced.
  *
  * @since 0.1.0
  */
 public interface PayloadRedactor {
     public companion object {
-        /** The default redaction strategy — masks position, text, and key fields. */
+        /** The default redaction strategy (currently a no-op; see [PayloadRedactor]). */
         public val Default: PayloadRedactor = object : PayloadRedactor {}
     }
 }

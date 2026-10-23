@@ -88,7 +88,7 @@ Roadmap transports (`transport-mqtt-proxy`, `transport-rpc`, `transport-http`) c
 - `session_passkey` is NEVER logged.
 - PKI public keys MAY be logged at `Debug` (they're public).
 - `MeshPacket.decoded.payload` MAY be logged at `Verbose` only. Production consumers should run with `Info` or higher.
-- Frame-level byte dumps are gated behind `LogLevel.Verbose` and the Builder opt-in `Builder.protocolLogging(level, redactor)` (see `SPEC.md` §3.1); off by default.
+- Packet-level logging is the Builder opt-in `Builder.protocolLogging(level, redactor)` (see `SPEC.md` §3.1), off by default. It logs packet headers and payload sizes only, never payload bytes, PSKs or passkeys.
 
 PSK redaction is a code-review invariant: reviewers inspect any new `LogSink.log(...)` call and reject interpolation of `psk` or `session_passkey` field names. Detekt's log-call inspection helps surface obvious cases, but there is no automated rule that proves redaction.
 

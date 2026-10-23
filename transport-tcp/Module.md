@@ -12,8 +12,7 @@ testing, and the JVM `samples/cli` runner.
 |---|---|---|
 | Android | Ktor `aSocket().tcp()` | Android 8.0 (API 26 — repo `androidMinSdk`); requires `INTERNET` permission |
 | JVM (macOS, Linux, Windows) | Ktor `aSocket().tcp()` over NIO | JDK 21 (repo baseline) |
-| iOS (arm64, Simulator arm64) | Ktor `aSocket().tcp()` over POSIX sockets | iOS 13+ |
-| Linux x64 (native) | Ktor `aSocket().tcp()` over POSIX sockets | glibc 2.17+ |
+| iOS (arm64, x64, Simulator arm64) | Ktor `aSocket().tcp()` over POSIX sockets | iOS 13+ |
 
 ## Connection behavior
 

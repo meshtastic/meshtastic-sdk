@@ -19,11 +19,14 @@ import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.Buffer
@@ -36,8 +39,16 @@ import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportSpec
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireFraming
+import kotlin.concurrent.Volatile
 
-/** TCP transport for the Meshtastic PhoneAPI. */
+/**
+ * TCP transport for the Meshtastic PhoneAPI.
+ *
+ * Reusable across `connect()` / `disconnect()` cycles; [frames] is collected once per cycle. When
+ * the link drops (EOF from the peer, a read error, or no inbound bytes for 65 s) [state] becomes
+ * [TransportState.Error] with `recoverable = true` and the cycle's [frames] flow completes.
+ * A [disconnect] is never reported as an error.
+ */
 public class TcpTransport(private val host: String, private val port: Int = 4403) : RadioTransport {
 
     override val identity: TransportIdentity = TransportIdentity.of(TransportSpec.Tcp(host, port))
@@ -48,6 +59,10 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
 
     private var selectorManager: SelectorManager? = null
     private var socket: Socket? = null
+
+    // ADR-012: native-handle ownership — the current cycle's read side. The frames() collector
+    // compares against it to tell link loss from our own disconnect().
+    @Volatile
     private var readChannel: ByteReadChannel? = null
     private var writeChannel: ByteWriteChannel? = null
 
@@ -71,14 +86,20 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
             wc.flush()
 
             _state.value = TransportState.Connected
+        } catch (e: CancellationException) {
+            releaseSocket()
+            if (currentCoroutineContext().isActive) {
+                // Thrown by a closing socket, not by our caller: a connect failure.
+                _state.value = TransportState.Error(e, recoverable = true)
+                throw MeshtasticException.Transport("TCP connect to $host:$port failed: ${e.message}", e)
+            }
+            // The caller was cancelled (or timed out): not a transport failure, so rethrow it
+            // unchanged.
+            _state.value = TransportState.Disconnected
+            throw e
         } catch (e: Exception) {
             _state.value = TransportState.Error(e, recoverable = true)
-            runCatching { socket?.close() }
-            runCatching { selectorManager?.close() }
-            socket = null
-            readChannel = null
-            writeChannel = null
-            selectorManager = null
+            releaseSocket()
             throw MeshtasticException.Transport("TCP connect to $host:$port failed: ${e.message}", e)
         }
     }
@@ -86,13 +107,26 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
     override suspend fun disconnect() {
         withContext(NonCancellable) {
             _state.value = TransportState.Disconnected
-            runCatching { socket?.close() }
-            runCatching { selectorManager?.close() }
-            socket = null
-            readChannel = null
-            writeChannel = null
-            selectorManager = null
+            releaseSocket()
         }
+    }
+
+    private fun releaseSocket() {
+        runCatching { socket?.close() }
+        runCatching { selectorManager?.close() }
+        socket = null
+        readChannel = null
+        writeChannel = null
+        selectorManager = null
+    }
+
+    /**
+     * Report the end of the cycle that owns [ch] as a recoverable [TransportState.Error], unless
+     * [ch] belongs to a cycle [disconnect] already ended (then the failure is our own close).
+     */
+    private fun reportLinkLoss(ch: ByteReadChannel, cause: MeshtasticException) {
+        if (readChannel !== ch) return
+        _state.compareAndSet(TransportState.Connected, TransportState.Error(cause, recoverable = true))
     }
 
     override suspend fun send(frame: Frame) {
@@ -109,7 +143,10 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
     }
 
     /**
-     * Cold flow that reads frames from the TCP socket.
+     * Cold flow that reads frames from the TCP socket for the current connect cycle.
+     *
+     * Throws [MeshtasticException.Transport] if collected before [connect]. On link loss it
+     * publishes a recoverable [TransportState.Error] and completes normally.
      */
     override fun frames(): Flow<Frame> = flow {
         val ch = readChannel ?: throw MeshtasticException.Transport("TCP not connected")
@@ -121,79 +158,99 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
         var bytesRemaining = 0
         val readBuf = ByteArray(READ_CHUNK_BYTES)
 
-        try {
-            while (!ch.isClosedForRead) {
-                val n = withTimeoutOrNull(READ_TIMEOUT_MS) {
-                    ch.readAvailable(readBuf, 0, readBuf.size)
-                } ?: throw MeshtasticException.Transport("TCP read timeout after ${READ_TIMEOUT_MS}ms")
-                if (n < 0) break
-                if (n == 0) continue
+        while (true) {
+            // Only the read is guarded: exceptions thrown downstream of emit() must propagate.
+            val n = try {
+                if (ch.isClosedForRead) {
+                    END_OF_STREAM
+                } else {
+                    withTimeoutOrNull(READ_TIMEOUT_MS) { ch.readAvailable(readBuf, 0, readBuf.size) }
+                        ?: READ_TIMED_OUT
+                }
+            } catch (e: Exception) {
+                // Ktor cancels the socket's channels when the socket closes, so a
+                // CancellationException here is only ours if the collector itself was cancelled.
+                if (e is CancellationException) currentCoroutineContext().ensureActive()
+                reportLinkLoss(ch, MeshtasticException.Transport("TCP read from $host:$port failed: ${e.message}", e))
+                return@flow
+            }
+            when {
+                n == READ_TIMED_OUT -> {
+                    reportLinkLoss(
+                        ch,
+                        MeshtasticException.Transport("TCP read timeout after ${READ_TIMEOUT_MS}ms from $host:$port"),
+                    )
+                    return@flow
+                }
 
-                for (i in 0 until n) {
-                    val b = readBuf[i]
-                    when (fsmState) {
-                        FsmState.SCAN_FOR_START1 -> {
-                            if (b == START1) fsmState = FsmState.EXPECT_START2
+                n < 0 -> {
+                    reportLinkLoss(ch, MeshtasticException.Transport("TCP connection to $host:$port closed by peer"))
+                    return@flow
+                }
+
+                n == 0 -> continue
+            }
+
+            for (i in 0 until n) {
+                val b = readBuf[i]
+                when (fsmState) {
+                    FsmState.SCAN_FOR_START1 -> {
+                        if (b == START1) fsmState = FsmState.EXPECT_START2
+                    }
+
+                    FsmState.EXPECT_START2 -> {
+                        fsmState = when (b) {
+                            START2 -> FsmState.READ_LEN_HI
+                            START1 -> FsmState.EXPECT_START2
+                            else -> FsmState.SCAN_FOR_START1
                         }
+                    }
 
-                        FsmState.EXPECT_START2 -> {
-                            fsmState = when (b) {
-                                START2 -> FsmState.READ_LEN_HI
-                                START1 -> FsmState.EXPECT_START2
-                                else -> FsmState.SCAN_FOR_START1
-                            }
-                        }
+                    FsmState.READ_LEN_HI -> {
+                        lenHi = b.toInt() and 0xFF
+                        fsmState = FsmState.READ_LEN_LO
+                    }
 
-                        FsmState.READ_LEN_HI -> {
-                            lenHi = b.toInt() and 0xFF
-                            fsmState = FsmState.READ_LEN_LO
-                        }
-
-                        FsmState.READ_LEN_LO -> {
-                            val lenLo = b.toInt() and 0xFF
-                            payloadLen = (lenHi shl 8) or lenLo
-                            when {
-                                payloadLen > WireFraming.MAX_PAYLOAD_SIZE -> {
-                                    payloadBuf.clear()
-                                    fsmState = FsmState.SCAN_FOR_START1
-                                }
-
-                                payloadLen == 0 -> {
-                                    val header = byteArrayOf(START1, START2, 0, 0)
-                                    emit(Frame(header.toByteString()))
-                                    fsmState = FsmState.SCAN_FOR_START1
-                                }
-
-                                else -> {
-                                    bytesRemaining = payloadLen
-                                    fsmState = FsmState.READ_PAYLOAD
-                                }
-                            }
-                        }
-
-                        FsmState.READ_PAYLOAD -> {
-                            payloadBuf.writeByte(b.toInt())
-                            if (--bytesRemaining == 0) {
-                                val payload = payloadBuf.readByteArray()
+                    FsmState.READ_LEN_LO -> {
+                        val lenLo = b.toInt() and 0xFF
+                        payloadLen = (lenHi shl 8) or lenLo
+                        when {
+                            payloadLen > WireFraming.MAX_PAYLOAD_SIZE -> {
                                 payloadBuf.clear()
                                 fsmState = FsmState.SCAN_FOR_START1
-
-                                val header = byteArrayOf(
-                                    START1,
-                                    START2,
-                                    (payloadLen shr 8).toByte(),
-                                    (payloadLen and 0xFF).toByte(),
-                                )
-                                emit(Frame((header + payload).toByteString()))
                             }
+
+                            payloadLen == 0 -> {
+                                val header = byteArrayOf(START1, START2, 0, 0)
+                                emit(Frame(header.toByteString()))
+                                fsmState = FsmState.SCAN_FOR_START1
+                            }
+
+                            else -> {
+                                bytesRemaining = payloadLen
+                                fsmState = FsmState.READ_PAYLOAD
+                            }
+                        }
+                    }
+
+                    FsmState.READ_PAYLOAD -> {
+                        payloadBuf.writeByte(b.toInt())
+                        if (--bytesRemaining == 0) {
+                            val payload = payloadBuf.readByteArray()
+                            payloadBuf.clear()
+                            fsmState = FsmState.SCAN_FOR_START1
+
+                            val header = byteArrayOf(
+                                START1,
+                                START2,
+                                (payloadLen shr 8).toByte(),
+                                (payloadLen and 0xFF).toByte(),
+                            )
+                            emit(Frame((header + payload).toByteString()))
                         }
                     }
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            throw e
         }
     }
 
@@ -209,6 +266,10 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
         const val READ_TIMEOUT_MS = 65_000L
 
         const val READ_CHUNK_BYTES = 256
+
+        /** Sentinel read results; `readAvailable` itself returns -1 at end of stream. */
+        const val END_OF_STREAM = -1
+        const val READ_TIMED_OUT = -2
 
         val START1: Byte = WireFraming.MAGIC_0
         val START2: Byte = WireFraming.MAGIC_1

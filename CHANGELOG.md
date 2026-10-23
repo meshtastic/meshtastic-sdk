@@ -8,6 +8,96 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `ChannelHelpers.displayName(channel, loRa)` and `ChannelHelpers.presetDisplayName(preset)`: the
+  name the firmware and the official apps show for a channel. An unnamed channel (the default
+  primary) gets the modem preset's firmware name, e.g. `"LongFast"`, `"LongMod"`, or `"Custom"`
+  off-preset. The firmware hashes this exact name, so it's also what `ChannelSettings.hash()`
+  needs; its KDoc now says so.
+
+### Changed
+
+- A broadcast whose relay was overheard now ends `SendState.Delivered` (as the `Delivered` KDoc
+  always said) instead of `Acked`. A direct message ends `Acked` only on the recipient's own ACK;
+  if only a relay was heard it ends `Delivered`. `await()` returns `SendOutcome.Success` for both.
+- `DeviceStorage` implementations must tolerate concurrent calls; the docs no longer promise that
+  the SDK serialises them (the engine persists from separately launched coroutines).
+- JVM databases without a schema version are stamped with the version their tables match on
+  first open, then migrated in place. No data is lost.
+- On Android and Apple the per-radio database files live in the platform's default databases
+  directory; `baseDir` holds the identity index. The docs now say so.
+- `protocolLogging()` logs one summary line per packet (headers and payload size, never payload
+  bytes). `PayloadRedactor` is documented as reserved: there is nothing to redact yet.
+
+### Fixed
+
+- The node DB now follows live traffic after the handshake, as `docs/api-reference.md` already
+  promised: `NODEINFO_APP` packets add or update a node's `user` (with the firmware's public-key
+  checks), `POSITION_APP` packets update its `position`, and every packet from a peer refreshes
+  `last_heard`, `snr`, `hops_away` and `via_mqtt`. `nodes` emits the matching `Added` / `Updated`
+  (`Name`, `User`, `Position`, `SignalQuality`, `LastSeen`). Before, only telemetry device metrics
+  were merged, so positions, names and last-heard times stayed as the handshake left them, and
+  `WentOffline.lastHeard` and `requestNodeInfo()` replies didn't reach the node map.
+- `TelemetryApi.requestDevice()`, `requestEnvironment()`, `requestPower()`, `requestAirQuality()`,
+  `requestLocalStats()`, `requestHealth()`, `requestHost()` and `requestTrafficManagement()` now
+  set the requested variant in the request (an empty `DeviceMetrics`, `EnvironmentMetrics`, …).
+  The firmware's telemetry modules only answer a request carrying their variant, so before this
+  every call ended in `NO_RESPONSE` or a timeout instead of returning data.
+- `RoutingApi.traceRoute()` now sends a real traceroute: a `RouteDiscovery` on `TRACEROUTE_APP`
+  with `want_response` and `want_ack`, which firmware `TraceRouteModule` answers, and it reads the
+  reply from `TRACEROUTE_APP`. It used to send `Routing.route_request` on `ROUTING_APP`, which no
+  firmware module handles, so it always ended in `NO_RESPONSE` or a timeout.
+  `FakeRadioTransport.injectRouteReply()` now injects the reply in that firmware form.
+- The config builder helpers (`setLoraConfig { }`, `setDeviceConfig { }`, `setMqttConfig { }` and
+  the other 20) now read the node's current section and hand it to the block, then write back the
+  result. They used to start from a blank section, and since the firmware replaces a whole section
+  on `set_config`, every field the block didn't set was reset: changing only the LoRa region also
+  sent `tx_enabled = false`, `use_preset = false` and `hop_limit = 0`, which stops a configured
+  radio transmitting (`AdminModule::handleSetConfig` stores the LoRa section as sent). If the read
+  fails, nothing is written. Each call now makes two round trips.
+  The KDoc and docs examples used `copy()`, which protobufs 2.8 types no longer have, and called
+  the helpers inside `editSettings { }`, where they don't resolve; both are corrected.
+- Auto-reconnect now works: after reconnecting the transport the engine starts a new frame
+  reader (each connect cycle has its own frame stream), so the handshake on the new link can
+  finish. A frame stream that ends or fails while connected is treated as link loss, a
+  handshake that times out during auto-reconnect is retried with backoff, and one link loss
+  schedules one attempt.
+- A direct message is no longer reported as acknowledged when the local radio only overheard a
+  relay (firmware implicit ACK). The recipient's ACK, or NAK, now decides.
+- Sends without `want_ack` and without `want_response` (broadcast or unicast) resolve once handed
+  to the radio, instead of staying `Sent` forever and leaking.
+- The reply to `requestPosition()` / `requestNodeInfo()` (a packet carrying the request's
+  `request_id`) settles that handle as `Acked` instead of ending in `AckTimeout`.
+- `MessageHandle.cancel()` after `Sent` no longer removes the ACK timeout, so the handle still
+  settles.
+- RPCs queued while the engine was busy (for example during `transport.connect()`) no longer hang
+  forever when the session ends; they complete `NodeUnreachable`.
+- `admin.forNode(remote).setChannel()`, `.editSettings { }` and `.batch { }` no longer overwrite
+  the local radio's cached channels and config.
+- `RadioClient.Builder.protocolLogging()` now does something (it was never passed to the engine).
+- `MeshEvent.QueueStatusChanged` is now emitted for every `FromRadio.queueStatus`.
+  `MqttConnected`, `MqttDisconnected` and `KeyVerification` are documented as not emitted yet.
+- TCP, serial and BLE transports report a dropped link (peer close, idle timeout, unplug, BLE
+  disconnect) as `TransportState.Error(recoverable = true)`, so auto-reconnect starts; a
+  `disconnect()` you call is never reported as an error.
+- The serial transport can be connected again after `disconnect()` or a failed `connect()`, no
+  longer drops inbound frames when the consumer is slow, and opens/closes the port on the IO
+  dispatcher with a timeout instead of blocking the caller.
+- `TcpTransport.connect()` and the serial `connect()` rethrow cancellation unchanged instead of
+  wrapping it in `MeshtasticException.Transport`.
+- JVM databases created by earlier releases are migrated when opened: the JVM driver never set
+  `user_version`, so old files kept the dropped `messages` table and lacked
+  `nodes.last_heartbeat_at`, and writes failed.
+- Writes made while a new connection is still learning the radio's NodeNum are no longer lost; the
+  built-in storage tolerates the engine's concurrent calls.
+- `SqlDelightStorageProvider(baseDir = "")` on iOS/macOS uses a real in-memory database instead of
+  a shared file named `:memory:` kept across launches.
+- `ConfigBundle.deviceUIConfig` is saved and returned by `loadConfig()`.
+- `loadNodes()` no longer returns empty `NodeInfo` entries for nodes that only have a heartbeat.
+- Many docs and README snippets now match the API (builder defaults, `AutoReconnectConfig`,
+  `requestNodeInfo`, the send DSL, `setTime`, serial port listing, test fakes, package names).
+
 ## [0.2.0] — 2026-10-03
 
 The first release on Maven Central since 0.1.0. 0.1.1 was never tagged or published, so this

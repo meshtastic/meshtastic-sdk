@@ -1867,6 +1867,8 @@ sealed class org.meshtastic.sdk/TelemetryReading { // org.meshtastic.sdk/Telemet
 }
 
 final object org.meshtastic.sdk/ChannelHelpers { // org.meshtastic.sdk/ChannelHelpers|null[0]
+    final const val CUSTOM_PRESET_NAME // org.meshtastic.sdk/ChannelHelpers.CUSTOM_PRESET_NAME|{}CUSTOM_PRESET_NAME[0]
+        final fun <get-CUSTOM_PRESET_NAME>(): kotlin/String // org.meshtastic.sdk/ChannelHelpers.CUSTOM_PRESET_NAME.<get-CUSTOM_PRESET_NAME>|<get-CUSTOM_PRESET_NAME>(){}[0]
     final const val MAX_NAME_LENGTH // org.meshtastic.sdk/ChannelHelpers.MAX_NAME_LENGTH|{}MAX_NAME_LENGTH[0]
         final fun <get-MAX_NAME_LENGTH>(): kotlin/Int // org.meshtastic.sdk/ChannelHelpers.MAX_NAME_LENGTH.<get-MAX_NAME_LENGTH>|<get-MAX_NAME_LENGTH>(){}[0]
     final const val MAX_PSK_LENGTH // org.meshtastic.sdk/ChannelHelpers.MAX_PSK_LENGTH|{}MAX_PSK_LENGTH[0]
@@ -1875,7 +1877,9 @@ final object org.meshtastic.sdk/ChannelHelpers { // org.meshtastic.sdk/ChannelHe
         final fun <get-MIN_PSK_LENGTH>(): kotlin/Int // org.meshtastic.sdk/ChannelHelpers.MIN_PSK_LENGTH.<get-MIN_PSK_LENGTH>|<get-MIN_PSK_LENGTH>(){}[0]
 
     final fun createSettings(kotlin/String, kotlin/ByteArray = ...): org.meshtastic.proto/ChannelSettings? // org.meshtastic.sdk/ChannelHelpers.createSettings|createSettings(kotlin.String;kotlin.ByteArray){}[0]
+    final fun displayName(org.meshtastic.proto/Channel, org.meshtastic.proto/Config.LoRaConfig): kotlin/String // org.meshtastic.sdk/ChannelHelpers.displayName|displayName(org.meshtastic.proto.Channel;org.meshtastic.proto.Config.LoRaConfig){}[0]
     final fun findEmptySlot(kotlin.collections/List<org.meshtastic.proto/Channel>, kotlin/Int = ...): kotlin/Int? // org.meshtastic.sdk/ChannelHelpers.findEmptySlot|findEmptySlot(kotlin.collections.List<org.meshtastic.proto.Channel>;kotlin.Int){}[0]
+    final fun presetDisplayName(org.meshtastic.proto/Config.LoRaConfig.ModemPreset): kotlin/String // org.meshtastic.sdk/ChannelHelpers.presetDisplayName|presetDisplayName(org.meshtastic.proto.Config.LoRaConfig.ModemPreset){}[0]
     final fun validate(kotlin/String, kotlin/ByteArray, org.meshtastic.proto/Channel.Role = ...): org.meshtastic.sdk/ChannelHelpers.ValidationResult // org.meshtastic.sdk/ChannelHelpers.validate|validate(kotlin.String;kotlin.ByteArray;org.meshtastic.proto.Channel.Role){}[0]
 
     final class ValidationResult { // org.meshtastic.sdk/ChannelHelpers.ValidationResult|null[0]

@@ -8,7 +8,7 @@
 
 | Package | Stability | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
+| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `SessionPasskey`, `AutoReconnectConfig`, `DATA_PAYLOAD_LEN` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android), `JvmSerialPorts` (JVM) |
@@ -66,18 +66,22 @@ RadioClient.Builder()
     .transport(TcpTransport(host = "meshtastic.local", port = 4403))   // required
     .storage(SqlDelightStorageProvider(baseDir = "/var/data"))         // required, no default
     .logger(MyLogSink)                                                 // default: LogSink.Silent
-    .clock(Clock.System)                                               // default
-    .coroutineContext(SupervisorJob() + Dispatchers.Default)           // default: Dispatchers.Default
+    .clock(Clock.System)                                               // default: kotlin.time.Clock.System
+    .coroutineContext(SupervisorJob() + Dispatchers.Default)           // default: SupervisorJob() + Dispatchers.Default
     .autoSyncTimeOnConnect(true)                                       // default: true
-    .disableBleHeartbeat(false)                                        // default: false (BLE only)
+    .disableBleHeartbeat()                                             // default: heartbeats on; no-arg, BLE transports only
     .protocolLogging(LogLevel.NONE, PayloadRedactor.Default)           // default: NONE
-    .sendTimeout(30.seconds)                                           // default: 30 s — applies to MessageHandle.await()
-    .rpcTimeout(10.seconds)                                            // default: 10 s — per-op admin RPC timeout
-    .presenceTimeout(15.minutes)                                       // default: 15 min — node offline threshold
-    .autoReconnect(AutoReconnectConfig())                              // default: disabled; opt-in exponential backoff
+    .sendTimeout(30.seconds)                                           // default: 30 s — per-send ACK wait
+    .rpcTimeout(30.seconds)                                            // default: 30 s — per-call admin/telemetry/routing timeout
+    .presenceTimeout(2.hours)                                          // default: 2 h — node offline threshold
+    .autoReconnect(AutoReconnectConfig())                              // default: AutoReconnectConfig.Disabled
     .skipNodeDb()                                                      // default: off — config-only connect, skips Stage 2
     .build()
 ```
+
+`presenceTimeout` drives `NodeChange.WentOffline` / `CameOnline`; a zero or infinite duration
+turns the presence check off. `AutoReconnectConfig()` with no arguments has `enabled = true`, so
+passing it opts in; leaving out `.autoReconnect(...)` keeps auto-reconnect off.
 
 #### Config-only connect — `skipNodeDb()` *(since 0.3.0)*
 
@@ -101,7 +105,7 @@ node rows from earlier sessions are left untouched but are not loaded into the s
 
 Use it for config editors, provisioning tools and CLI one-shots. Leave it off for chat and map UIs.
 
-`Builder.transport(spec: TransportSpec)` is also available for spec-driven setups, but you must additionally provide a concrete `RadioTransport` — see `samples/cli` for a `TransportSpec → RadioTransport` opener pattern.
+The builder takes only a concrete `RadioTransport` (`transport(transport: RadioTransport)`); there is no `transport(TransportSpec)` overload. For spec-driven setups, map the `TransportSpec` to a transport yourself — see `samples/cli` for a `TransportSpec → RadioTransport` opener pattern.
 
 Kotlin callers can use the `RadioClient { … }` builder-lambda factory instead *(since 0.2.0)*:
 
@@ -119,28 +123,33 @@ val client = RadioClient {
 
 ```kotlin
 public data class AutoReconnectConfig(
-    val initialDelay: Duration = 1.seconds,
-    val maxDelay: Duration = 60.seconds,
-    val multiplier: Double = 2.0,
-    val jitterFactor: Double = 0.15,
-    val maxAttempts: Int = Int.MAX_VALUE,
-)
+    val enabled: Boolean = true,
+    val initialBackoff: Duration = 1.seconds,
+    val maxBackoff: Duration = 60.seconds,
+    val maxAttempts: Int? = null,          // null = retry forever
+    val backoffMultiplier: Double = 2.0,
+    val jitter: Double = 0.2,              // 0.0..1.0
+) {
+    public companion object {
+        public val Disabled: AutoReconnectConfig   // AutoReconnectConfig(enabled = false), the builder default
+    }
+}
 ```
 
-When enabled, the engine automatically reconnects on transport drops, transitioning through `ConnectionState.Reconnecting(cause, attempt)`. Disable by omitting the `.autoReconnect(...)` builder call.
+When enabled, the engine automatically reconnects on transport drops, transitioning through `ConnectionState.Reconnecting(cause, attempt)`. The builder default is `AutoReconnectConfig.Disabled`; omit the `.autoReconnect(...)` call (or pass `Disabled`) to leave reconnects to the host. `Builder.autoReconnect(enabled, initialBackoff, maxBackoff, maxAttempts, backoffMultiplier, jitter)` is an overload that takes the same fields directly.
 
 ### Lifecycle
 
 | Member | Returns | Throws | Notes |
 |---|---|---|---|
 | `connect()` | `Unit` (suspends until `Connected`) | `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`, `FirmwareTooOld`), `CancellationException` | **Not** idempotent — calling `connect()` while already `Connected` throws `AlreadyConnected` (deliberate; silent no-op hides reconnect-loop bugs). |
-| `connectAndAwaitReady()` | `Unit` (suspends until `Connected` with session passkey seeded) | same as `connect()` | Convenience wrapper: calls `connect()`, then awaits the post-handshake admin session passkey seed. Prefer this unless you need to observe handshake progress. |
+| `connectAndAwaitReady(timeout: Duration = 30.seconds)` *(extension)* | `ConfigBundle` | same as `connect()`, plus `HandshakeTimeout` when `timeout` elapses | Convenience wrapper: calls `connect()`, then waits for `Connected` and the first non-null `configBundle`, and returns that bundle. Prefer this unless you need to observe handshake progress. |
 | `disconnect()` | `Unit` | never | Idempotent. Cancels supervisor; resolves all open `MessageHandle`s to `Failed(Disconnected)`. |
 | `withConnection(teardownTimeout: Duration = 10.seconds) { … }` *(extension, since 0.2.0)* | `T` (the block's result) | rethrows from `connect()` / block | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T`. Connects, runs `block`, and **always** disconnects — on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. The structured replacement for the deliberately absent `close()`/`use { }`. |
 | `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
-| `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
-| `channels: StateFlow<List<Channel>>` | — | — | Empty until Stage 1 completes. Reactive view of all device channels. Updated on `setChannel` responses. |
+| `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until the handshake commits (`Connected`); reset to `null` on disconnect and at the start of each reconnect. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
+| `channels: StateFlow<List<Channel>?>` | — | — | `null` until the handshake commits (`Connected`), and reset to `null` on disconnect. Seeded from the device's channel payload; on a reconnect where the device sends no channels it falls back to the persisted set (stays `null` if there is none). Updated in memory (and persisted) when `admin.setChannel` succeeds. |
 
 ### Streams
 
@@ -167,7 +176,7 @@ a flow of the full `Map<NodeId, NodeInfo>`; the underlying
 | `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0): MessageHandle` | handle | same as `send` |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
 | `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
-| `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
+| `requestNodeInfo(node: NodeId): MessageHandle` | handle for the empty `NODEINFO_APP` request (`want_response = true`); the reply arrives on `nodes` | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
 
 ### Send DSL *(since 0.2.0)*
@@ -181,7 +190,7 @@ val handle = client.send {
 }
 ```
 
-The `send { … }` lambda configures a `MeshPacket` builder. Available DSL methods: `text(String)`, `data(PortNum, ByteArray)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck(Boolean)`, `hopLimit(Int)`, `priority(Priority)`.
+`send { … }` is a `suspend` extension on `RadioClient`; the lambda configures a `SendBuilder`. Payload setters (call exactly one, otherwise `build` throws `IllegalStateException`): `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`. Envelope setters: `to(NodeId)` (default `NodeId.BROADCAST`), `channel(ChannelIndex)` (default 0), `wantAck(Boolean)` / `wantAck()` (default `false`), `hopLimit(Int?)` (default `null` = firmware default). After `proto(...)` the envelope setters throw — set those fields on the packet instead. There is no priority setter.
 
 ### Sub-API namespaces
 
@@ -212,8 +221,8 @@ public class MessageHandle internal constructor(
 public sealed interface SendState {
     public data object Queued : SendState
     public data object Sent : SendState           // device QueueStatus saw mesh_packet_id
-    public data object Acked : SendState          // unicast routing ACK heard
-    public data object Delivered : SendState      // broadcast: rebroadcast heard
+    public data object Acked : SendState          // the recipient's routing ACK (unicast)
+    public data object Delivered : SendState      // a relay overheard: broadcast, or unicast never confirmed
     public data class Failed(val reason: SendFailure) : SendState
 }
 
@@ -288,6 +297,12 @@ Contract:
 - Every new subscriber receives exactly one `Snapshot` first, then deltas.
 - Deltas MUST NOT drop (`SUSPEND` overflow on the backing flow).
 - `Updated.changed` is the *minimal* set of fields whose value differs from the prior `NodeInfo`. Useful for diffing UI state without re-rendering everything.
+- After the handshake, live traffic keeps entries current, following the firmware's own NodeDB (`NodeDB::updateFrom` / `updatePosition` / `updateUser`):
+  - any decoded packet from a peer refreshes `last_heard` (the packet's `rx_time`, else the host clock), `hops_away`, `via_mqtt`, and `snr` when the radio measured the reception (`rx_rssi` set) → `LastSeen` / `SignalQuality`;
+  - `POSITION_APP` replaces `position` (keeping the previous `time` when the report has none) → `Position`;
+  - `NODEINFO_APP` replaces `user` and records the packet's `channel` → `User` / `Name`. A report that would change a public key already on file, or that advertises the local node's own key, is ignored;
+  - `TELEMETRY_APP` device metrics → `Battery` / `Telemetry`.
+  Only `NODEINFO_APP` adds a node that isn't in the map yet (`Added`); other packets from unknown senders don't. Packets from the local node never touch its `last_heard` or signal fields.
 
 ### Presence tracking *(since 0.2.0)*
 
@@ -350,6 +365,7 @@ public val ConnectionState.statusMessage: String
 ```kotlin
 public sealed interface TransportSpec {
     public val identity: TransportIdentity
+        get() = TransportIdentity.of(this)
     public data class Ble(val address: String) : TransportSpec
     public data class Tcp(val host: String, val port: Int = 4403) : TransportSpec
     public data class Http(val baseUrl: String) : TransportSpec
@@ -375,29 +391,41 @@ Identity normalisation: BLE address uppercased (canonical MAC form); TCP host + 
 ## `MeshtasticException`
 
 ```kotlin
-public sealed class MeshtasticException(message: String, cause: Throwable? = null)
+public sealed class MeshtasticException(message: String, cause: Throwable?)
     : Exception(message, cause) {
 
     /** The transport identity active when the exception was created (null if pre-connect). */
-    public open val transportIdentity: TransportIdentity? = null
+    public var transportIdentity: TransportIdentity? = null
+        internal set
 
     /** The high-level operation that was in progress (e.g., "connect", "sendText", "admin.setConfig"). */
-    public open val operation: String? = null
+    public var operation: String? = null
+        internal set
+
+    /** Attach context in place and return the same instance. */
+    public fun <T : MeshtasticException> T.withContext(
+        transportIdentity: TransportIdentity? = null,
+        operation: String? = null,
+    ): T
 
     public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
-    public class Protocol(reason: String) : MeshtasticException(reason)
+    public class Protocol(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
+    public class HandshakeTimeout(public val stage: String)
+        : MeshtasticException("Handshake timed out during stage: $stage", null)
     public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null) : MeshtasticException(message, cause)
     public class FirmwareTooOld(public val required: Int, public val present: Int)
-        : MeshtasticException("Firmware requires newer client (need $required, have $present)")
-    public class NotConnected : MeshtasticException("Client not connected")
-    public class AlreadyConnected : MeshtasticException("Client already connected")
-    public class PayloadTooLarge(public val maxBytes: Int) : MeshtasticException("Payload exceeds $maxBytes bytes")
-    public class HandshakeTimeout(public val stage: String)
-        : MeshtasticException("Handshake timed out in $stage")
+        : MeshtasticException("Firmware requires newer client (need $required, have $present)", null)
+    public class NotConnected : MeshtasticException("Client not connected", null)
+    public class AlreadyConnected : MeshtasticException("Client already connected", null)
+    public class PayloadTooLarge(public val maxBytes: Int) : MeshtasticException("Payload exceeds $maxBytes bytes", null)
 
     public companion object {
-        /** Create a tagged exception for structured logging: `MeshtasticException.tag("engine.handshake")`. */
-        public fun tag(operation: String): String = operation
+        /** Attach context to [error] and return it, e.g. `throw MeshtasticException.tag(e, operation = "connect")`. */
+        public fun <T : MeshtasticException> tag(
+            error: T,
+            transportIdentity: TransportIdentity? = null,
+            operation: String? = null,
+        ): T
     }
 }
 ```
@@ -412,13 +440,22 @@ Full mapping from wire-level errors to exceptions vs results lives in [`error-ta
         public val LOCAL: NodeId = NodeId(0)
         public val BROADCAST: NodeId = NodeId(0xFFFFFFFF.toInt())
     }
-    public val shortForm: String get() = "!" + raw.toUInt().toString(radix = 16).padStart(8, '0')
+    override fun toString(): String   // "!aabbccdd"
 }
 @JvmInline public value class ChannelIndex(public val raw: Int) {
     init { require(raw in 0..MAX_CHANNEL_INDEX) }
     public companion object { public const val MAX_CHANNEL_INDEX: Int = 7 }
 }
 @JvmInline public value class MessageId(public val raw: Int)
+
+// NodeIds.kt — formatting and parsing helpers
+public fun NodeId.toHex(): String                                  // "aabbccdd" (8 chars, no prefix)
+public fun NodeId.toDefaultId(): String                            // "!aabbccdd"
+public fun NodeId.Companion.fromHex(text: String): NodeId?         // accepts "aabbccdd", "!aabbccdd", "0xaabbccdd"
+public fun NodeId.Companion.fromDefaultId(id: String): NodeId?
+public val NodeId.isBroadcast: Boolean
+public val NodeId.isUnicast: Boolean                               // neither LOCAL nor BROADCAST
+public fun NodeId.isLocal(own: NodeId? = null): Boolean
 ```
 
 ## `AdminApi` *(Phase 2)*
@@ -450,8 +487,12 @@ public interface AdminApi {
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
     public suspend fun nodeDbReset(): AdminResult<Unit>
 
-    /** See pitfall §19.17. `autoSyncTimeOnConnect=true` calls this once post-handshake on >60s skew. */
-    public suspend fun setTime(at: Instant = Clock.System.now()): AdminResult<Unit>
+    /**
+     * See pitfall §19.17. `at = null` uses the builder's `clock`. Sent as `set_time_only`.
+     * With `autoSyncTimeOnConnect` on (the default), every successful `connect()` launches one
+     * best-effort `setTime()` in the background — unconditionally, with no skew check.
+     */
+    public suspend fun setTime(at: Instant? = null): AdminResult<Unit>
 
     /** Batches multiple writes inside `begin_edit_settings` / `commit_edit_settings`. */
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
@@ -474,18 +515,21 @@ public sealed interface AdminResult<out T> {
 
 ```kotlin
 public fun <T> AdminResult<T>.getOrNull(): T?
-public fun <T> AdminResult<T>.getOrThrow(): T
-public fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R>
-public fun <T, R> AdminResult<T>.fold(onSuccess: (T) -> R, onFailure: (AdminResult<Nothing>) -> R): R
-public fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T>
-public fun <T> AdminResult<T>.onFailure(action: (AdminResult<Nothing>) -> Unit): AdminResult<T>
+public fun <T> AdminResult<T>.getOrElse(default: T): T
+public inline fun <T> AdminResult<T>.getOrElse(block: (AdminResult<T>) -> T): T
+public fun <T> AdminResult<T>.getOrThrow(): T                  // throws AdminResultException.*
+public val <T> AdminResult<T>.isSuccess: Boolean
+public inline fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R>
+public inline fun <T, R> AdminResult<T>.fold(onSuccess: (T) -> R, onFailure: (AdminResult<T>) -> R): R
+public inline fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T>
+public inline fun <T> AdminResult<T>.onFailure(action: (AdminResult<T>) -> Unit): AdminResult<T>
 ```
 
 These follow the same naming conventions as `kotlin.Result` extensions but operate on the `AdminResult` sealed type (per ADR-005: no `kotlin.Result<T>` in the public API).
 
 ## `TelemetryApi` *(Phase 2)*
 
-Each `requestX` sends an empty `Telemetry` packet on `TELEMETRY_APP` with `want_response = true` and waits for the matching reply. `observe(node)` is a cold flow over the engine's inbound `packets` filtered by portnum + origin.
+Each `requestX` sends an empty `Telemetry` packet on `TELEMETRY_APP` with `want_response = true` and waits for the matching reply. `observe(node)` is a cold flow over the engine's inbound `packets` filtered by portnum + origin. `observe(NodeId.LOCAL)` matches telemetry from **every** node (in the `requestX` calls `LOCAL` means the local radio); to follow only the local radio, pass its real number from `ownNode`.
 
 ```kotlin
 public interface TelemetryApi {
@@ -494,8 +538,11 @@ public interface TelemetryApi {
     public suspend fun requestPower(node: NodeId = NodeId.LOCAL): AdminResult<PowerMetrics>
     public suspend fun requestAirQuality(node: NodeId = NodeId.LOCAL): AdminResult<AirQualityMetrics>
     public suspend fun requestLocalStats(): AdminResult<LocalStats>
+    public suspend fun requestHealth(node: NodeId = NodeId.LOCAL): AdminResult<HealthMetrics>
+    public suspend fun requestHost(node: NodeId = NodeId.LOCAL): AdminResult<HostMetrics>
+    public suspend fun requestTrafficManagement(node: NodeId = NodeId.LOCAL): AdminResult<TrafficManagementStats>
 
-    /** Cold flow of telemetry packets observed for [node]. Single-shot — completes when the flow is cancelled. */
+    /** Cold flow of telemetry packets observed for [node]; [NodeId.LOCAL] matches every node. Completes only when cancelled. */
     public fun observe(node: NodeId): Flow<Telemetry>
 }
 ```
@@ -546,7 +593,7 @@ public sealed interface StoreForwardEvent {
 
 ## Config Builder Extensions *(since 0.2.0)*
 
-Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:
+Extension functions on `AdminApi` that change one config section: each reads the node's current section (`getConfig` / `getModuleConfig`), hands it to the block as the receiver, and writes back what the block returns. The firmware replaces a whole section on `set_config`, so starting from the current section is what keeps the fields you don't touch (for LoRa that includes `tx_enabled`). If the read fails, nothing is written and the failure is returned; a reply without the requested section resolves as `Failed(NO_RESPONSE)`. Each call is two round trips:
 
 ```kotlin
 // Config types (8 extensions)
@@ -577,15 +624,28 @@ suspend fun AdminApi.setStatusMessageConfig(block: ModuleConfig.StatusMessageCon
 suspend fun AdminApi.setTrafficManagementConfig(block: ModuleConfig.TrafficManagementConfig.() -> ModuleConfig.TrafficManagementConfig): AdminResult<Unit>
 ```
 
-Usage:
+Usage (protobufs 2.8 types are builder-only, so change a field through `newBuilder()`):
 ```kotlin
-client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-client.admin.setMqttConfig { copy(enabled = true, address = "mqtt.example.com") }
+client.admin.setLoraConfig {
+    newBuilder().also { wb -> wb.region = Config.LoRaConfig.RegionCode.US }.build()
+}
+client.admin.setMqttConfig {
+    newBuilder().also { wb ->
+        wb.enabled = true
+        wb.address = "mqtt.example.com"
+    }.build()
+}
 
-// Combined with editSettings for atomic batching:
-client.admin.editSettings {
-    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-    setMqttConfig { copy(enabled = true) }
+// Several sections in one atomic transaction: read and write inside batch { }.
+client.admin.batch {
+    val lora = getConfig(AdminMessage.ConfigType.LORA_CONFIG).lora!!
+    setConfig(Config.Builder().also { wb ->
+        wb.lora = lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+    }.build())
+    val mqtt = getModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG).mqtt!!
+    setModuleConfig(ModuleConfig.Builder().also { wb ->
+        wb.mqtt = mqtt.newBuilder().also { it.enabled = true }.build()
+    }.build())
 }
 ```
 
@@ -618,13 +678,14 @@ public interface DeviceStorage : AutoCloseable {
     /** Load a previously saved session passkey (null if none persisted). */
     public suspend fun loadSessionPasskey(): SessionPasskey?
 
-    /** Record a heartbeat timestamp for a node (presence tracking). */
-    public suspend fun recordHeartbeat(nodeId: NodeId, epochSeconds: Int)
+    /** Record when a node was last heard (presence tracking). */
+    public suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long)
 
-    /** Load the last heartbeat timestamp for a node (null if never seen). */
-    public suspend fun loadLastHeartbeat(nodeId: NodeId): Int?
+    /** Load every persisted last-heard timestamp (epoch milliseconds), keyed by node. */
+    public suspend fun loadHeartbeats(): Map<NodeId, Long>
 
     public suspend fun clear()
+    override fun close()
 }
 
 public data class ConfigBundle(

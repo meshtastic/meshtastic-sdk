@@ -21,10 +21,12 @@ import kotlin.time.Instant
  *
  * ```kotlin
  * val clock = TestClock(initial = Instant.fromEpochMilliseconds(1_700_000_000_000))
- * val storage = InMemoryStorage(clock = clock)
- * storage.saveNode(node)
- * clock.advance(5.seconds)
- * // storage entries written before advance() have timestamps 5s in the past
+ * val client = RadioClient.Builder()
+ *     .transport(FakeRadioTransport(TransportIdentity("fake:test"), autoHandshake = true))
+ *     .storage(InMemoryStorageProvider())
+ *     .clock(clock)
+ *     .build()
+ * clock.advance(5.seconds) // the engine now sees 5 s more wall-clock time
  * ```
  *
  * Not thread-safe; intended for single-threaded test usage.

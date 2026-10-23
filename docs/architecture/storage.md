@@ -18,8 +18,26 @@ aliases **and** NodeNums to opaque per-radio DB ids. The on-disk shape is:
 ```
 <baseDir>/
   .meshtastic-index                ← identity ↔ nodeNum ↔ dbId bindings
-  <dbId>.db                        ← one SQLDelight DB per radio
+  <dbId>.db                        ← one SQLDelight DB per radio (JVM)
 ```
+
+Where the `<dbId>.db` files live depends on the platform driver:
+
+| Platform | Database files |
+|---|---|
+| JVM | `<baseDir>/<dbId>.db` |
+| Android | `AndroidSqliteDriver` opens the bare file name, so the files are in the app's default databases directory (`Context.getDatabasePath("<dbId>.db")`), not in `baseDir`. |
+| Apple (iOS / macOS) | `NativeSqliteDriver` (SQLiter) opens the bare file name in its default `databases` directory under the app's Application Support directory, not in `baseDir`. |
+
+So on Android and Apple, `baseDir` holds only the index. Deleting `baseDir`
+there forgets the bindings but leaves the database files behind; the next
+activation allocates new ones. The dbIds are random 128-bit values, so two
+providers with different `baseDir`s never pick the same file. The location is
+kept as is because moving it would orphan every existing database (the index
+would point at a new, empty file).
+
+`baseDir = ""` selects in-memory mode on every platform: each activation gets
+its own in-memory database, no index and no file.
 
 On `activate(identity)`:
 
@@ -37,8 +55,8 @@ Per-row contents (SQLDelight backend) are captured in [`Mesh.sq`](../../storage-
 |---|---|---|
 | Nodes (NodeDB cache) | `nodes` | Surface as `RadioClient.nodes` `Flow<NodeChange>` after seed-load. |
 | Channels | `channels` | Restore PSKs + names across reconnects. PSK column holds ciphertext only — wrap via the consumer-supplied `KeyVault` per ADR-005. |
-| Device config bundle | `config_blobs` | Replays `LocalConfig` / `LocalModuleConfig` / `MyNodeInfo` / `DeviceMetadata`. |
-| Session metadata | `sessions` (key-value) | Tracks `(NodeNum, firmwareVersion)` for factory-reset detection. |
+| Device config bundle | `configs` + `session` | `Config` / `ModuleConfig` rows in `configs`; `MyNodeInfo`, `DeviceMetadata` and `DeviceUIConfig` (when the firmware sent one) as `session` keys. `loadConfig()` returns the same `ConfigBundle` that `saveConfig()` stored. |
+| Session metadata | `session` (key-value) | Tracks `(NodeNum, firmwareVersion)` for factory-reset detection. |
 | SQLite tuning | PRAGMAs | See [ADR-014](../decisions/014-storage-pragmas.md). |
 
 ## Schema versioning
@@ -57,6 +75,14 @@ version `n` to `n+1` — and are verified at build time
 Existing on-disk databases migrate automatically the next time the SDK
 opens them; in-memory databases start at the latest schema. **No
 consumer action is required.**
+
+Every platform driver is built with `MeshDatabase.Schema`, which tracks the
+version in `PRAGMA user_version`. Older JVM builds created the tables
+without setting `user_version`, so their files stayed at 0 and were never
+migrated. When the JVM driver finds such a file (tables present,
+`user_version = 0`), it infers the version from the tables (`messages`
+still present → v1, no `nodes.last_heartbeat_at` → v2, otherwise v3),
+stamps it, and then runs the remaining migrations.
 
 ## Message history is **not** stored
 
@@ -116,11 +142,30 @@ See also: [`error-taxonomy.md` § identity rebind](../error-taxonomy.md#identity
 
 ## Thread-safety expectations
 
-Implementations are called only from the engine actor's single writer
-context (see [ADR-002](../decisions/002-architecture.md) and
-[`engine-actor.md`](./engine-actor.md)). They MAY use internal locks for
-their own correctness, but the SDK guarantees no concurrent calls into
-any single `DeviceStorage` instance.
+The engine actor itself is single-writer (see
+[ADR-002](../decisions/002-architecture.md) and
+[`engine-actor.md`](./engine-actor.md)), but it does **not** serialise its
+storage calls. Writes run in coroutines the actor launches so disk I/O never
+blocks it: the post-handshake persist (`recordOwnNode`, `saveNode`,
+`saveHeartbeat`, `saveChannels`, `saveConfig`), the `saveConfig` after a
+config edit or an external config change, and the periodic heartbeat flush.
+These can overlap with each other and with calls the actor makes directly
+(`loadConfig` / `loadHeartbeats` at connect, the final heartbeat flush and
+`close()` at disconnect). There is no ordering guarantee between two launched
+blocks.
+
+So a `DeviceStorage` **must tolerate concurrent calls** from several
+coroutines and threads. Each call should be atomic on its own; a later call
+may still land before an earlier one. Implementations may use internal locks
+for this; that is storage-side code, not engine state, so ADR-002's rule
+against locks does not apply.
+
+The built-in storage does this with a `Mutex` per storage: `SqlDelightStorage`
+runs one call at a time, and the node-keyed wrapper returned by
+`SqlDelightStorageProvider` holds its own lock across the first
+`recordOwnNode`, so a write that races the first bind is either buffered and
+replayed or goes straight to the database, never lost. `close()` is not
+suspending and does not take the lock.
 
 ### Main-safety of suspend methods
 

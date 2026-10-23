@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
@@ -35,6 +36,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -218,17 +220,27 @@ public class BleTransport(
             // A supervised child (state bridge, observe, drain) may have failed while we were
             // connecting and already published Error. Publishing Connected over it would report a
             // healthy link with a dead child, so fail the connect instead.
-            if (errorPublished.value) {
-                throw MeshtasticException.Transport("BLE transport child failed during connect")
+            // Compare-and-set so an Error published concurrently (e.g. the link dropping right
+            // now) is never overwritten.
+            while (true) {
+                val current = _state.value
+                if (errorPublished.value || current is TransportState.Error) {
+                    throw MeshtasticException.Transport("BLE transport child failed during connect")
+                }
+                if (_state.compareAndSet(current, TransportState.Connected)) break
             }
-            _state.value = TransportState.Connected
         } catch (e: CancellationException) {
+            errorPublished.value = true
+            cancelJobs()
             try {
-                peripheral.disconnect()
+                withContext(NonCancellable) { peripheral.disconnect() }
             } catch (_: Exception) { /* idempotent */ }
+            _state.value = TransportState.Disconnected
             throw e
         } catch (e: Exception) {
+            errorPublished.value = true
             _state.value = TransportState.Error(e, recoverable = true)
+            cancelJobs()
             try {
                 peripheral.disconnect()
             } catch (_: Exception) { /* idempotent */ }
@@ -277,22 +289,25 @@ public class BleTransport(
      */
     private fun publishDrainTerminatedError() {
         if (shuttingDown.value) return
-        if (!errorPublished.compareAndSet(expect = false, update = true)) return
         val current = _state.value
-        if (current is TransportState.Connected ||
-            current is TransportState.Bonding ||
-            current is TransportState.Connecting
+        // Check before arming the guard: if the link is already reported down, claiming the
+        // one-per-cycle Error slot here would stop the state bridge from reporting it.
+        if (current !is TransportState.Connected &&
+            current !is TransportState.Bonding &&
+            current !is TransportState.Connecting
         ) {
-            val cause = lastDrainFailure.getAndSet(null)
-            _state.value = TransportState.Error(
-                cause = MeshtasticException.Transport(
-                    cause?.let { "BLE drain terminated: ${it::class.simpleName}: ${it.message}" }
-                        ?: "BLE drain terminated: peripheral not connected",
-                    cause,
-                ),
-                recoverable = true,
-            )
+            return
         }
+        if (!errorPublished.compareAndSet(expect = false, update = true)) return
+        val cause = lastDrainFailure.getAndSet(null)
+        _state.value = TransportState.Error(
+            cause = MeshtasticException.Transport(
+                cause?.let { "BLE drain terminated: ${it::class.simpleName}: ${it.message}" }
+                    ?: "BLE drain terminated: peripheral not connected",
+                cause,
+            ),
+            recoverable = true,
+        )
     }
 
     override suspend fun disconnect() {
@@ -406,7 +421,7 @@ public class BleTransport(
         // Don't let Kable's link-layer state downgrade Bonding; hold Connecting
         // until warmupComplete so the engine's handshake clock doesn't start early.
         val current = _state.value
-        _state.value = when (kableState) {
+        val next = when (kableState) {
             is State.Connected -> when {
                 current is TransportState.Bonding -> current
                 !warmupComplete.value -> current
@@ -419,26 +434,61 @@ public class BleTransport(
                 else -> TransportState.Connecting
             }
 
-            State.Disconnecting -> TransportState.Disconnected
+            // Kable reports a link drop as Disconnecting -> Disconnected (Apple and JS skip
+            // Disconnecting), so both must be able to report it.
+            State.Disconnecting -> linkDownState(current, status = null)
 
-            is State.Disconnected -> {
-                if (current is TransportState.Connected ||
-                    current is TransportState.Bonding ||
-                    (current is TransportState.Connecting && warmupComplete.value)
-                ) {
-                    if (errorPublished.compareAndSet(expect = false, update = true)) {
-                        TransportState.Error(
-                            cause = buildDisconnectError(kableState.status),
-                            recoverable = true,
-                        )
-                    } else {
-                        current
-                    }
-                } else {
-                    TransportState.Disconnected
-                }
+            is State.Disconnected -> linkDownState(current, kableState.status)
+        }
+        when {
+            next == current -> Unit
+
+            next is TransportState.Error -> publishClaimedError(next)
+
+            // Lose to a concurrent writer: its state is newer than the one `next` was derived from.
+            else -> _state.compareAndSet(current, next)
+        }
+    }
+
+    /**
+     * Publish [error], whose one-per-cycle [errorPublished] slot the caller already claimed.
+     * Retries against concurrent writers (e.g. connect() publishing Connected) so the Error is
+     * not lost; gives way only to [disconnect]'s Disconnected or an Error already published.
+     */
+    private fun publishClaimedError(error: TransportState.Error) {
+        while (true) {
+            val current = _state.value
+            if (current is TransportState.Disconnected || current is TransportState.Error) return
+            if (_state.compareAndSet(current, error)) return
+        }
+    }
+
+    /**
+     * What [state] becomes when Kable reports the link going down.
+     *
+     * Our own [disconnect] never gets here (it stops the bridge first and arms [errorPublished]),
+     * so a drop of a link that was up is unexpected and reported once per connect cycle as a
+     * recoverable [TransportState.Error]. An Error already published stays: overwriting it with
+     * Disconnected could hide it from a [state] collector, since a StateFlow conflates.
+     */
+    private fun linkDownState(current: TransportState, status: State.Disconnected.Status?): TransportState = when {
+        current is TransportState.Error -> current
+
+        // Still inside connect()'s warmup: connect() sees the drop itself (warmup read and drain
+        // end, so it publishes Error and fails); don't pre-empt it with Disconnected.
+        current is TransportState.Connecting && !warmupComplete.value -> current
+
+        current is TransportState.Connected ||
+            current is TransportState.Bonding ||
+            current is TransportState.Connecting -> {
+            if (errorPublished.compareAndSet(expect = false, update = true)) {
+                TransportState.Error(cause = buildDisconnectError(status), recoverable = true)
+            } else {
+                current
             }
         }
+
+        else -> TransportState.Disconnected
     }
 
     /**
