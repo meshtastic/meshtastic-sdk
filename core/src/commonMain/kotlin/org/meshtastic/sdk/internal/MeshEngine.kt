@@ -504,11 +504,18 @@ internal class MeshEngine(
             CancellationException("Engine cancelled before connection completed"),
         )
 
+        // Close the inbox before draining it, so nothing posted from here on is stranded: a
+        // closed inbox makes trySend() fail the handle and submitRpc() return immediately.
+        // Then settle what's still queued: sends fail Disconnected, and RPCs that never reached
+        // the dispatcher complete NodeUnreachable (their callers await the deferred with no
+        // timeout of their own; the timer is only armed once the actor handles PostRpc).
+        inbox.close()
         var drained = inbox.tryReceive()
         while (drained.isSuccess) {
-            val msg = drained.getOrNull()
-            if (msg is EngineMessage.Send) {
-                msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            when (val msg = drained.getOrNull()) {
+                is EngineMessage.Send -> msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+                is EngineMessage.PostRpc -> msg.deferred.complete(AdminResult.NodeUnreachable)
+                else -> Unit
             }
             drained = inbox.tryReceive()
         }
@@ -1717,6 +1724,7 @@ internal class MeshEngine(
         // request matching this packet's request_id. Must run before processRoutingAck
         // so a route_reply doesn't get mistakenly classified as a generic Acked send.
         dispatcher.tryComplete(packet)
+        maybeResolveByReply(packet)
         processRoutingAck(packet)
         // Live packet → node update: last-heard, signal, position and user info, the way the
         // firmware's own NodeDB folds them in, so NodeChange subscribers stay current.
@@ -2360,13 +2368,13 @@ internal class MeshEngine(
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // Fire-and-forget broadcasts (want_ack=false, no want_response): auto-resolve to
-        // Acked immediately. No firmware ACK will arrive so without this the
-        // MessageHandle.await() would suspend forever.
-        if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
+        // Fire-and-forget sends (want_ack=false, no want_response), broadcast or unicast:
+        // auto-resolve to Acked once handed to the radio. No firmware ACK or reply will arrive,
+        // so without this MessageHandle.await() would suspend forever and the entry would leak.
+        if (!packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
             forgetPendingSend(MessageId(wireId))
-            logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
+            logger.debug(TAG) { "Fire-and-forget send auto-acked id=${msg.id}" }
             return
         }
 
@@ -2390,10 +2398,10 @@ internal class MeshEngine(
         if (stateFlow.value == SendState.Queued) {
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
             forgetPendingSend(msg.id)
+            ackTimeoutJobs.remove(msg.id)?.cancel()
         }
-        // regardless of state, drop any pending ACK timer so we don't post a stale
-        // SendAckTimeout for a handle the user has explicitly cancelled.
-        ackTimeoutJobs.remove(msg.id)?.cancel()
+        // Once Sent, the packet is on the radio and cancel() has no effect (MessageHandle KDoc):
+        // keep its ACK timer, which is what settles the handle if no ACK ever arrives.
     }
 
     private fun handleHeartbeatTick() {
@@ -2720,6 +2728,24 @@ internal class MeshEngine(
     // a unicast send timed out waiting for a routing ACK. Mark the handle as Failed
     // (only if it's still in a non-terminal state — a late ACK that won the race takes
     // precedence) and prune our bookkeeping.
+
+    /**
+     * A reply (any non-routing packet whose `request_id` is one of our in-flight sends) settles
+     * that send: e.g. the POSITION_APP / NODEINFO_APP answer to `requestPosition()` /
+     * `requestNodeInfo()`, which are sent with `want_response` and get no separate Routing ACK.
+     */
+    private fun maybeResolveByReply(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.request_id == 0 || decoded.portnum == PortNum.ROUTING_APP) return
+        val id = MessageId(decoded.request_id)
+        val flow = pendingSends[id] ?: return
+        val target = pendingSendTargets[id]
+        // Only the node we asked can answer for it (broadcast requests: anyone).
+        if (target != null && target != BROADCAST_ADDR && target != packet.from) return
+        if (flow.value == SendState.Queued || flow.value == SendState.Sent) flow.value = SendState.Acked
+        forgetPendingSend(id)
+        ackTimeoutJobs.remove(id)?.cancel()
+    }
 
     /** Drops every per-send record kept for [id] (the state flow itself is the caller's). */
     private fun forgetPendingSend(id: MessageId): MutableStateFlow<SendState>? {
