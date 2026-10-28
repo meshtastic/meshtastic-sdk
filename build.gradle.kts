@@ -56,7 +56,6 @@ val catalog = extensions
     .getByType<org.gradle.api.artifacts.VersionCatalogsExtension>()
     .named("libs")
 val ktlintVersion = catalog.findVersion("ktlint").get().requiredVersion
-val licenseHeader = rootProject.file("config/spotless/license-header.txt").readText()
 
 spotless {
     val excludes = arrayOf(
@@ -87,7 +86,7 @@ spotless {
                 "ktlint_function_naming_ignore_when_annotated_with" to "Composable",
             ),
         )
-        licenseHeader(licenseHeader)
+        licenseHeaderFile("config/spotless/license-header.txt")
     }
     kotlinGradle {
         target("**/*.gradle.kts")
