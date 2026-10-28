@@ -22,10 +22,6 @@ kotlin {
             api(libs.okio)
         }
         commonTest.dependencies {
-            implementation(libs.kotlinTest)
-            implementation(libs.turbine)
-            implementation(libs.kotestAssertions)
-            implementation(libs.coroutinesTest)
             implementation(project(":testing"))
         }
         androidMain.dependencies {

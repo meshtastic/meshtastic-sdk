@@ -16,10 +16,6 @@ kotlin {
             implementation(libs.sqldelightCoroutinesExt)
             implementation(libs.okio)
         }
-        commonTest.dependencies {
-            implementation(libs.kotlinTest)
-            implementation(libs.coroutinesTest)
-        }
         jvmTest.dependencies {
             implementation(libs.sqldelightSqliteDriver)
         }

@@ -27,10 +27,6 @@ kotlin {
             implementation(libs.kable)
             implementation(libs.atomicfu)
         }
-        commonTest.dependencies {
-            implementation(libs.kotlinTest)
-            implementation(libs.coroutinesTest)
-        }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.junit)
             implementation(libs.androidxTestRunner)

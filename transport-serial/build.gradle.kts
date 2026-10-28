@@ -42,8 +42,5 @@ kotlin {
         getByName("jvmAndroidTest").dependencies {
             implementation(libs.kotlinTest)
         }
-        commonTest.dependencies {
-            implementation(libs.kotlinTest)
-        }
     }
 }
