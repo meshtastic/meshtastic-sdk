@@ -105,6 +105,7 @@ vanniktechMavenPublishPlugin = { module = "com.vanniktech:gradle-maven-publish-p
 dokkaGradlePlugin           = { module = "org.jetbrains.dokka:dokka-gradle-plugin",              version.ref = "dokka" }
 kotlinPowerAssertPlugin     = { module = "org.jetbrains.kotlin:kotlin-power-assert",             version.ref = "kotlin" }
 skieGradlePlugin            = { module = "co.touchlab.skie:gradle-plugin",                       version.ref = "skie" }
+koverGradlePlugin           = { module = "org.jetbrains.kotlinx:kover-gradle-plugin",            version.ref = "kover" }
 
 detektComposeRules          = { module = "io.nlopez.compose.rules:detekt",                       version.ref = "detektComposeRules" }
 

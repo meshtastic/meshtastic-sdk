@@ -26,6 +26,7 @@ dependencies {
     // SKIE — applied by MeshtasticIosFrameworkPlugin to the SDK library modules. Loaded as
     // implementation so the plugin is on the runtime classpath when applied.
     implementation(libs.skieGradlePlugin)
+    implementation(libs.koverGradlePlugin)
 }
 
 gradlePlugin {

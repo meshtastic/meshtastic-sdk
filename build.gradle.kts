@@ -130,13 +130,9 @@ subprojects {
     dependencies.add("detektPlugins", detektComposeRules)
 }
 
+// Every module on meshtastic.kmp.library applies kover; this is the aggregation list.
 val libraryModules =
     setOf("core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
-subprojects {
-    if (name in libraryModules) {
-        apply(plugin = "org.jetbrains.kotlinx.kover")
-    }
-}
 dependencies {
     libraryModules.forEach { kover(project(":$it")) }
 }
