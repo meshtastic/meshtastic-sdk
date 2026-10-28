@@ -14,11 +14,6 @@ kotlin {
         namespace = "org.meshtastic.sdk"
     }
 
-    // Internal :core code freely uses our own experimental marker;
-    // external consumers must opt in explicitly.
-    sourceSets.all {
-    }
-
     sourceSets {
         commonMain.dependencies {
             api(libs.meshtasticProtobufs)
@@ -27,10 +22,6 @@ kotlin {
             api(libs.okio)
         }
         commonTest.dependencies {
-            implementation(libs.kotlinTest)
-            implementation(libs.turbine)
-            implementation(libs.kotestAssertions)
-            implementation(libs.coroutinesTest)
             implementation(project(":testing"))
         }
         androidMain.dependencies {

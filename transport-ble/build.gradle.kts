@@ -21,18 +21,11 @@ kotlin {
         }
     }
 
-    sourceSets.all {
-    }
-
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.kable)
             implementation(libs.atomicfu)
-        }
-        commonTest.dependencies {
-            implementation(libs.kotlinTest)
-            implementation(libs.coroutinesTest)
         }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.junit)

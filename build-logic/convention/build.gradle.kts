@@ -17,15 +17,15 @@ dependencies {
     // Convention plugin applies vanniktech maven-publish AND configures its
     // extension, so its API has to be on the runtime classpath, not just
     // compile.
-    implementation("com.vanniktech:gradle-maven-publish-plugin:${libs.versions.vanniktechMavenPublish.get()}")
+    implementation(libs.vanniktechMavenPublishPlugin)
     // Dokka convention plugin configures DokkaExtension at runtime — needs implementation, not compileOnly.
-    implementation("org.jetbrains.dokka:dokka-gradle-plugin:${libs.versions.dokka.get()}")
+    implementation(libs.dokkaGradlePlugin)
     // Power-Assert — convention plugin reads PowerAssertGradleExtension to scope
     // instrumentation to test source sets. Needs runtime classpath.
-    implementation("org.jetbrains.kotlin:kotlin-power-assert:${libs.versions.kotlin.get()}")
+    implementation(libs.kotlinPowerAssertPlugin)
     // SKIE — applied by MeshtasticIosFrameworkPlugin to the SDK library modules. Loaded as
     // implementation so the plugin is on the runtime classpath when applied.
-    implementation("co.touchlab.skie:gradle-plugin:${libs.versions.skie.get()}")
+    implementation(libs.skieGradlePlugin)
 }
 
 gradlePlugin {
@@ -41,10 +41,6 @@ gradlePlugin {
         register("publishing") {
             id = "meshtastic.publishing"
             implementationClass = "PublishingConventionPlugin"
-        }
-        register("sampleAndroid") {
-            id = "meshtastic.sample.android"
-            implementationClass = "SampleAndroidConventionPlugin"
         }
         register("sampleJvm") {
             id = "meshtastic.sample.jvm"

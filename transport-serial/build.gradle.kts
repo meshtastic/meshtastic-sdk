@@ -18,9 +18,6 @@ plugins {
 }
 
 kotlin {
-    sourceSets.all {
-    }
-
     applyDefaultHierarchyTemplate {
         common {
             group("jvmAndroid") {
@@ -43,9 +40,6 @@ kotlin {
             dependsOn(jvmAndroidMain)
         }
         getByName("jvmAndroidTest").dependencies {
-            implementation(libs.kotlinTest)
-        }
-        commonTest.dependencies {
             implementation(libs.kotlinTest)
         }
     }

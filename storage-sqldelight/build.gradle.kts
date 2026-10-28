@@ -9,19 +9,12 @@ plugins {
 }
 
 kotlin {
-    sourceSets.all {
-    }
-
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.sqldelightRuntime)
             implementation(libs.sqldelightCoroutinesExt)
             implementation(libs.okio)
-        }
-        commonTest.dependencies {
-            implementation(libs.kotlinTest)
-            implementation(libs.coroutinesTest)
         }
         jvmTest.dependencies {
             implementation(libs.sqldelightSqliteDriver)
