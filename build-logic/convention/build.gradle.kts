@@ -42,10 +42,6 @@ gradlePlugin {
             id = "meshtastic.publishing"
             implementationClass = "PublishingConventionPlugin"
         }
-        register("sampleAndroid") {
-            id = "meshtastic.sample.android"
-            implementationClass = "SampleAndroidConventionPlugin"
-        }
         register("sampleJvm") {
             id = "meshtastic.sample.jvm"
             implementationClass = "SampleJvmConventionPlugin"

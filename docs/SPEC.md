@@ -857,7 +857,7 @@ These are the protocol behaviors any working Meshtastic client must honor. They 
 | Tool | Purpose |
 |---|---|
 | Gradle 9.x + Kotlin DSL + version catalog (`gradle/libs.versions.toml`) | Build (Gradle 9.4.1) |
-| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android` |
+| Convention plugins in `build-logic/convention/` | `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.ios.framework`, `meshtastic.sample.jvm` |
 | Kotlin `explicitApi("strict")` on all `:sdk-*` modules (proto types are an external artifact, not an in-tree module) |
 | `org.jetbrains.kotlin.multiplatform` + `com.android.kotlin.multiplatform.library` | New Android KMP library plugin — what MQTTastic uses |
 | Spotless + ktlint + `licenseHeaderFile` | Formatting + GPL-3.0 header enforcement (copy `config/spotless/copyright.kt` from MQTTastic) |
@@ -924,7 +924,7 @@ The Meshtastic org already publishes official KMP libraries under `org.meshtasti
 - [ ] ~~Submodule: `proto/src/protobufs` → `meshtastic/protobufs` `main`.~~ **Superseded by [ADR-015](decisions/015-consume-published-protobufs-artifact.md):** the schema is consumed as the published `org.meshtastic:protobufs` artifact, not vendored as a submodule.
 - [ ] Gradle wrapper (9.x). `settings.gradle.kts` with `pluginManagement` + `dependencyResolutionManagement` (copy from MQTTastic, add multi-module includes).
 - [ ] Add to version catalog the SDK-specific deps not present in MQTTastic: `wire`, `sqldelight`, `kable`, `usb-serial-for-android`, `jSerialComm`, `mokkery`, `turbine`, `kotest`, `power-assert`, `axion-release`.
-- [ ] `build-logic/convention/` plugins: `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`, `meshtastic.sample.android`. Library plugin encodes the MQTTastic `applyDefaultHierarchyTemplate()` + custom intermediate-source-set pattern.
+- [ ] `build-logic/convention/` plugins: `meshtastic.kmp.library`, `meshtastic.android.library`, `meshtastic.publishing`, `meshtastic.proto`, `meshtastic.ios.framework`, `meshtastic.sample.jvm`. Library plugin encodes the MQTTastic `applyDefaultHierarchyTemplate()` + custom intermediate-source-set pattern.
 - [ ] `core/` module compiles empty for `androidTarget`, `jvm`, `iosArm64`, `iosX64`, `iosSimulatorArm64`. `explicitApi("strict")` on. BCV `updateKotlinAbi` committed.
 - [ ] CI matrix builds + `spotlessCheck` + `detekt` + `allTests` + `checkKotlinAbi` + `koverVerify` on Ubuntu (android+jvm) and macOS (iOS).
 - [ ] Vanniktech `publishToMavenCentral()` wired; first publish: `org.meshtastic:sdk-core:0.0.1-SNAPSHOT`.
