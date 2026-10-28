@@ -18,9 +18,6 @@ plugins {
 }
 
 kotlin {
-    sourceSets.all {
-    }
-
     applyDefaultHierarchyTemplate {
         common {
             group("jvmAndroid") {

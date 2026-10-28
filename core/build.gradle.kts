@@ -14,11 +14,6 @@ kotlin {
         namespace = "org.meshtastic.sdk"
     }
 
-    // Internal :core code freely uses our own experimental marker;
-    // external consumers must opt in explicitly.
-    sourceSets.all {
-    }
-
     sourceSets {
         commonMain.dependencies {
             api(libs.meshtasticProtobufs)

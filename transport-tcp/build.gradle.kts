@@ -10,9 +10,6 @@ plugins {
 }
 
 kotlin {
-    sourceSets.all {
-    }
-
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))

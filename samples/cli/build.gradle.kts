@@ -28,8 +28,3 @@ dependencies {
 application {
     mainClass.set("org.meshtastic.cli.CliKt")
 }
-
-kotlin {
-    compilerOptions {
-    }
-}
