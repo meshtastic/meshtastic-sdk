@@ -101,6 +101,10 @@ lifecycleRuntimeCompose     = { module = "org.jetbrains.androidx.lifecycle:lifec
 
 kotlinGradlePlugin          = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin",            version.ref = "kotlin" }
 agpGradlePlugin             = { module = "com.android.tools.build:gradle",                       version.ref = "agp" }
+vanniktechMavenPublishPlugin = { module = "com.vanniktech:gradle-maven-publish-plugin",          version.ref = "vanniktechMavenPublish" }
+dokkaGradlePlugin           = { module = "org.jetbrains.dokka:dokka-gradle-plugin",              version.ref = "dokka" }
+kotlinPowerAssertPlugin     = { module = "org.jetbrains.kotlin:kotlin-power-assert",             version.ref = "kotlin" }
+skieGradlePlugin            = { module = "co.touchlab.skie:gradle-plugin",                       version.ref = "skie" }
 
 detektComposeRules          = { module = "io.nlopez.compose.rules:detekt",                       version.ref = "detektComposeRules" }
 
