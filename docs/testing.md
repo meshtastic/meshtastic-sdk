@@ -36,6 +36,10 @@ be proven against a pure function or a deterministic fake belongs in
 the unit tier; integration tests exist only for behavior that depends
 on the engine actor + transport seam.
 
+Below the pyramid, the convention plugins in `build-logic/` have Gradle
+TestKit tests (`build-logic/convention/src/test/`) that `./gradlew check`
+runs with the rest of the gate.
+
 ## Tier 1 — unit tests (`*/commonTest`, fast, hermetic)
 
 Coverage targets per module:

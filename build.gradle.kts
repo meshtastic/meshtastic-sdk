@@ -136,3 +136,7 @@ val libraryModules =
 dependencies {
     libraryModules.forEach { kover(project(":$it")) }
 }
+
+tasks.named("check") {
+    dependsOn(gradle.includedBuild("build-logic").task(":convention:test"))
+}

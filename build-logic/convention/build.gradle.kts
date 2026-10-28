@@ -27,6 +27,9 @@ dependencies {
     // implementation so the plugin is on the runtime classpath when applied.
     implementation(libs.skieGradlePlugin)
     implementation(libs.koverGradlePlugin)
+
+    testImplementation(gradleTestKit())
+    testImplementation(libs.kotlinTest)
 }
 
 gradlePlugin {
