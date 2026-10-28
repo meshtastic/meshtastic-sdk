@@ -48,15 +48,17 @@ class MeshtasticIosFrameworkPlugin : Plugin<Project> {
         extensions.getByType<VersionCatalogsExtension>().named("libs").findVersion("skie")
             .orElseThrow { IllegalStateException("libs.versions.toml is missing 'skie' version") }
 
-        pluginManager.apply("co.touchlab.skie")
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            pluginManager.apply("co.touchlab.skie")
 
-        extensions.configure<KotlinMultiplatformExtension> {
-            // Apply the framework declaration to each of the iOS targets. The `target` lambda
-            // form is the AGP-9 / KGP-2.3 idiom (cf. JetBrains KMP-App-Template).
-            listOf(iosArm64(), iosX64(), iosSimulatorArm64()).forEach { iosTarget ->
-                iosTarget.binaries.framework {
-                    baseName = "MeshtasticSDK"
-                    isStatic = true
+            extensions.configure<KotlinMultiplatformExtension> {
+                // Apply the framework declaration to each of the iOS targets. The `target` lambda
+                // form is the AGP-9 / KGP-2.3 idiom (cf. JetBrains KMP-App-Template).
+                listOf(iosArm64(), iosX64(), iosSimulatorArm64()).forEach { iosTarget ->
+                    iosTarget.binaries.framework {
+                        baseName = "MeshtasticSDK"
+                        isStatic = true
+                    }
                 }
             }
         }

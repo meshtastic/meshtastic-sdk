@@ -56,7 +56,6 @@ val catalog = extensions
     .getByType<org.gradle.api.artifacts.VersionCatalogsExtension>()
     .named("libs")
 val ktlintVersion = catalog.findVersion("ktlint").get().requiredVersion
-val licenseHeader = rootProject.file("config/spotless/license-header.txt").readText()
 
 spotless {
     val excludes = arrayOf(
@@ -87,7 +86,7 @@ spotless {
                 "ktlint_function_naming_ignore_when_annotated_with" to "Composable",
             ),
         )
-        licenseHeader(licenseHeader)
+        licenseHeaderFile("config/spotless/license-header.txt")
     }
     kotlinGradle {
         target("**/*.gradle.kts")
@@ -131,13 +130,13 @@ subprojects {
     dependencies.add("detektPlugins", detektComposeRules)
 }
 
+// Every module on meshtastic.kmp.library applies kover; this is the aggregation list.
 val libraryModules =
     setOf("core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
-subprojects {
-    if (name in libraryModules) {
-        apply(plugin = "org.jetbrains.kotlinx.kover")
-    }
-}
 dependencies {
     libraryModules.forEach { kover(project(":$it")) }
+}
+
+tasks.named("check") {
+    dependsOn(gradle.includedBuild("build-logic").task(":convention:test"))
 }

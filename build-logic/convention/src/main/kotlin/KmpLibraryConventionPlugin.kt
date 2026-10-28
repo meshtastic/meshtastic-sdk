@@ -24,6 +24,7 @@ class KmpLibraryConventionPlugin : Plugin<Project> {
             apply("org.jetbrains.kotlin.multiplatform")
             apply("org.jetbrains.dokka")
             apply("org.jetbrains.kotlin.plugin.power-assert")
+            apply("org.jetbrains.kotlinx.kover")
         }
 
         extensions.configure<DokkaExtension> {

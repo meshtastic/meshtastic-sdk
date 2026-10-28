@@ -17,14 +17,16 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
         val libs = extensions.getByType<VersionCatalogsExtension>().named("libs")
 
-        pluginManager.apply("com.android.kotlin.multiplatform.library")
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            pluginManager.apply("com.android.kotlin.multiplatform.library")
 
-        extensions.configure<KotlinMultiplatformExtension> {
-            extensions.configure<KotlinMultiplatformAndroidLibraryExtension> {
-                namespace = "org.meshtastic.sdk.${project.name.replace("-", ".")}"
-                compileSdk = libs.findVersion("androidCompileSdk").get().requiredVersion.toInt()
-                minSdk = libs.findVersion("androidMinSdk").get().requiredVersion.toInt()
-                withHostTest {}
+            extensions.configure<KotlinMultiplatformExtension> {
+                extensions.configure<KotlinMultiplatformAndroidLibraryExtension> {
+                    namespace = "org.meshtastic.sdk.${project.name.replace("-", ".")}"
+                    compileSdk = libs.findVersion("androidCompileSdk").get().requiredVersion.toInt()
+                    minSdk = libs.findVersion("androidMinSdk").get().requiredVersion.toInt()
+                    withHostTest {}
+                }
             }
         }
     }
