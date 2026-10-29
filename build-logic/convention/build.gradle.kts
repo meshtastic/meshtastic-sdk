@@ -1,5 +1,7 @@
 // build-logic/convention/build.gradle.kts
 
+import org.gradle.api.attributes.Attribute
+
 plugins {
     `kotlin-dsl`
 }
@@ -30,6 +32,26 @@ dependencies {
 
     testImplementation(gradleTestKit())
     testImplementation(libs.kotlinTest)
+}
+
+// The conventions only compile against KGP/AGP; TestKit fixtures need them loadable. This
+// configuration feeds the plugin-under-test classpath without touching the published jar's scopes.
+val testKitPluginClasspath by configurations.registering {
+    isCanBeConsumed = false
+    isCanBeResolved = true
+    extendsFrom(configurations.compileOnly.get())
+    configurations.runtimeClasspath.get().attributes.let { runtimeAttrs ->
+        attributes {
+            runtimeAttrs.keySet().forEach { key ->
+                @Suppress("UNCHECKED_CAST")
+                attribute(key as Attribute<Any>, runtimeAttrs.getAttribute(key)!!)
+            }
+        }
+    }
+}
+
+tasks.pluginUnderTestMetadata {
+    pluginClasspath.from(testKitPluginClasspath)
 }
 
 gradlePlugin {
