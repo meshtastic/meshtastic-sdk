@@ -43,15 +43,6 @@ allprojects {
     version = resolvedVersion
 }
 
-dependencies {
-    dokka(project(":core"))
-    dokka(project(":transport-ble"))
-    dokka(project(":transport-tcp"))
-    dokka(project(":transport-serial"))
-    dokka(project(":storage-sqldelight"))
-    dokka(project(":testing"))
-}
-
 val catalog = extensions
     .getByType<org.gradle.api.artifacts.VersionCatalogsExtension>()
     .named("libs")
@@ -78,9 +69,14 @@ spotless {
         ".claude/**",
     )
 
+    // Excludes go into the tree so the walk prunes them; targetExclude only subtracts after a full walk.
+    fun sources(vararg patterns: String) = fileTree(rootDir) {
+        include(*patterns)
+        exclude(*excludes)
+    }
+
     kotlin {
-        target("**/*.kt")
-        targetExclude(*excludes)
+        target(sources("**/*.kt"))
         ktlint(ktlintVersion).editorConfigOverride(
             mapOf(
                 "ktlint_function_naming_ignore_when_annotated_with" to "Composable",
@@ -89,22 +85,22 @@ spotless {
         licenseHeaderFile("config/spotless/license-header.txt")
     }
     kotlinGradle {
-        target("**/*.gradle.kts")
-        targetExclude(*excludes)
+        target(sources("**/*.gradle.kts"))
         ktlint(ktlintVersion)
     }
     format("misc") {
         target(
-            "**/*.md",
-            "**/*.yml",
-            "**/*.yaml",
-            "**/*.json",
-            "**/*.toml",
-            ".gitignore",
-            ".gitattributes",
-            ".editorconfig",
+            sources(
+                "**/*.md",
+                "**/*.yml",
+                "**/*.yaml",
+                "**/*.json",
+                "**/*.toml",
+                ".gitignore",
+                ".gitattributes",
+                ".editorconfig",
+            ),
         )
-        targetExclude(*excludes)
         trimTrailingWhitespace()
         endWithNewline()
     }
@@ -130,11 +126,14 @@ subprojects {
     dependencies.add("detektPlugins", detektComposeRules)
 }
 
-// Every module on meshtastic.kmp.library applies kover; this is the aggregation list.
+// Every module on meshtastic.kmp.library; the dokka and kover aggregation list.
 val libraryModules =
     setOf("core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
 dependencies {
-    libraryModules.forEach { kover(project(":$it")) }
+    libraryModules.forEach {
+        dokka(project(":$it"))
+        kover(project(":$it"))
+    }
 }
 
 tasks.named("check") {

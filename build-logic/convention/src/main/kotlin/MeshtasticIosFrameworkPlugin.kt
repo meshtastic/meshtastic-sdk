@@ -7,9 +7,7 @@
  */
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.kotlin.dsl.configure
-import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
 /**
@@ -43,11 +41,6 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
  */
 class MeshtasticIosFrameworkPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {
-        // SKIE pulls its own dependencies; verify the version catalog has it pinned before we
-        // apply (catches "ID typo" failures at configure time, not at compile time).
-        extensions.getByType<VersionCatalogsExtension>().named("libs").findVersion("skie")
-            .orElseThrow { IllegalStateException("libs.versions.toml is missing 'skie' version") }
-
         pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
             pluginManager.apply("co.touchlab.skie")
 
