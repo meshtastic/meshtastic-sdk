@@ -43,15 +43,6 @@ allprojects {
     version = resolvedVersion
 }
 
-dependencies {
-    dokka(project(":core"))
-    dokka(project(":transport-ble"))
-    dokka(project(":transport-tcp"))
-    dokka(project(":transport-serial"))
-    dokka(project(":storage-sqldelight"))
-    dokka(project(":testing"))
-}
-
 val catalog = extensions
     .getByType<org.gradle.api.artifacts.VersionCatalogsExtension>()
     .named("libs")
@@ -135,11 +126,14 @@ subprojects {
     dependencies.add("detektPlugins", detektComposeRules)
 }
 
-// Every module on meshtastic.kmp.library applies kover; this is the aggregation list.
+// Every module on meshtastic.kmp.library; the dokka and kover aggregation list.
 val libraryModules =
     setOf("core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
 dependencies {
-    libraryModules.forEach { kover(project(":$it")) }
+    libraryModules.forEach {
+        dokka(project(":$it"))
+        kover(project(":$it"))
+    }
 }
 
 tasks.named("check") {

@@ -44,7 +44,7 @@ Kotlin 2.2 brings klib ABI validation into KGP itself, deprecating the standalon
 - `./gradlew checkKotlinAbi` — fails if `api/*.api` differs from the current public surface.
 - `./gradlew updateKotlinAbi` — regenerate; commit the result.
 - Per-target `klibApiCheck` runs against each Kotlin/Native and Kotlin/Wasm target's effective ABI, in addition to the JVM `checkKotlinAbi`.
-- Configuration lives in `build-logic/convention/MeshtasticKmpPublishPlugin.kt` (one place, applied to every published module).
+- Configuration lives in `build-logic/convention/src/main/kotlin/PublishingConventionPlugin.kt` (one place, applied to every published module).
 
 ### Proto types and ABI validation
 
