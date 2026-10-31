@@ -32,7 +32,6 @@ import org.meshtastic.sdk.StoreForwardApi
 import org.meshtastic.sdk.StoreForwardEvent
 import org.meshtastic.sdk.StoreForwardStats
 import kotlin.coroutines.CoroutineContext
-import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Instant
 
@@ -41,7 +40,7 @@ internal class StoreForwardApiImpl(
     private val packetsFlow: Flow<MeshPacket>,
     private val rpcTimeout: Duration,
     coroutineContext: CoroutineContext,
-    private val nowProvider: () -> Instant = { Clock.System.now() },
+    private val nowProvider: () -> Instant,
 ) : StoreForwardApi {
 
     private val scope = CoroutineScope(coroutineContext + CoroutineName("meshtastic-store-forward"))
