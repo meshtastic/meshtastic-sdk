@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `org.meshtastic:protobufs` 2.8.2, which only adds fields, so the SDK's API is unchanged.
+
 ## [0.2.0] — 2026-10-03
 
 The first release on Maven Central since 0.1.0. 0.1.1 was never tagged or published, so this
