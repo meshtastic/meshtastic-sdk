@@ -39,7 +39,6 @@ import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.getOrThrow
-import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Instant
 
@@ -57,7 +56,7 @@ import kotlin.time.Instant
 internal class AdminApiImpl(
     private val engine: MeshEngine,
     private val rpcTimeout: Duration,
-    private val nowProvider: () -> Instant = { Clock.System.now() },
+    private val nowProvider: () -> Instant,
     private val targetNode: NodeId? = null,
 ) : AdminApi {
 
