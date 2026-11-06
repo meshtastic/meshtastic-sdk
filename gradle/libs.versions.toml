@@ -11,7 +11,7 @@ androidCompileSdk           = "37"
 androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
-coroutines                  = "1.8.1"            # compile floor: hosts whose runtime pins 1.8.x (ATAK plugins) load bytecode built against it; Gradle resolves consumers' newer pins
+coroutines                  = "1.11.0"            # compile floor: hosts whose runtime pins 1.8.x (ATAK plugins) load bytecode built against it; Gradle resolves consumers' newer pins
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
 atomicfu                    = "0.33.0"
 okio                        = "3.18.2"
