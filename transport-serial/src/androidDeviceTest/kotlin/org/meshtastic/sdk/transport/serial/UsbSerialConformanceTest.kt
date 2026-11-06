@@ -20,7 +20,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -51,7 +50,7 @@ class UsbSerialConformanceTest {
         val info = ports.first()
 
         val manager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-        val device = assertNotNull(manager.deviceList[info.name])
+        val device = checkNotNull(manager.deviceList[info.name]) { "${info.name} vanished after listing" }
         if (!manager.hasPermission(device)) {
             Log.i(TAG, "Requesting USB permission for ${info.name}; tap Allow on the phone")
             assertTrue(
@@ -72,7 +71,7 @@ class UsbSerialConformanceTest {
             Log.i(TAG, "handshake completed in ${System.currentTimeMillis() - startMs}ms")
             assertEquals(ConnectionState.Connected, client.connection.value)
 
-            val bundle = assertNotNull(client.configBundle.value)
+            val bundle = checkNotNull(client.configBundle.value) { "no config bundle after Connected" }
             val myNode = NodeId(bundle.myInfo.my_node_num)
             Log.i(TAG, "own node $myNode firmware ${bundle.metadata.firmware_version}")
             assertTrue(bundle.myInfo.my_node_num != 0)
