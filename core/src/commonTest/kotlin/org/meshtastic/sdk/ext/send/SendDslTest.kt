@@ -16,7 +16,6 @@ import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull

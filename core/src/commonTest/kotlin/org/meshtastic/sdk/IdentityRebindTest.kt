@@ -13,7 +13,6 @@ import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

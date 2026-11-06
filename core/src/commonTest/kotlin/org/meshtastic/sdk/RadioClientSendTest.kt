@@ -17,7 +17,6 @@ import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertFailsWith

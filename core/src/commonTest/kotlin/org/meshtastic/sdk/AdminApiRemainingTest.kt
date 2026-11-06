@@ -28,7 +28,6 @@ import org.meshtastic.proto.SensorConfig
 import org.meshtastic.proto.SharedContact
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

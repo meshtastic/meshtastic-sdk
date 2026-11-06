@@ -22,7 +22,6 @@ import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

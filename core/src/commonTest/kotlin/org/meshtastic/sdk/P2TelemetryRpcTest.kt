@@ -19,7 +19,6 @@ import org.meshtastic.proto.EnvironmentMetrics
 import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

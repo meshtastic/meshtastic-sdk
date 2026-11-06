@@ -22,7 +22,6 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals

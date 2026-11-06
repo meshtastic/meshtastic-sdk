@@ -19,7 +19,6 @@ import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith

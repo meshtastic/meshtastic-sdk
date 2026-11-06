@@ -28,7 +28,6 @@ import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.User
 import org.meshtastic.proto.XModem
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
