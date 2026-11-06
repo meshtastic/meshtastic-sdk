@@ -4,6 +4,9 @@ name: Spec Guard
 tools: [read, search]
 user-invocable: true
 ---
+<!-- Sibling of .claude/agents/spec-guard.md (the Claude Code copy). Same
+     agent, one file per loader. Keep the body below identical to that file's body. -->
+
 You are the specification compliance specialist for this repository.
 
 Your mission is to verify changes against repository source-of-truth documentation and architectural guardrails.

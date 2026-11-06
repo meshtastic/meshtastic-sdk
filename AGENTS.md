@@ -91,6 +91,9 @@ The inventory:
   `SKILL.md` per pack. See `.github/skills/README.md` for the index.
 - **Agents** (`.github/agents/`) — `spec-guard.agent.md` is the full
   spec-compliance review; the `speckit.*` agents belong to Spec Kit (`.specify/`).
+  spec-guard ships once per loader: `.claude/agents/spec-guard.md` is the
+  Claude Code copy (which loads only `.claude/agents/`). Same body in both;
+  a change to one is a change to the other.
 - **Prompts** (`.github/prompts/`) — `pre-pr-sanity.prompt.md` is the final
   pre-PR sweep; the `speckit.*` prompts belong to Spec Kit.
 - **Eval harness** (`.github/evals/`) — scoring smoke check for prompts.
