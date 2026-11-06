@@ -58,8 +58,5 @@ data plane takes an already-open `UsbSerialPort` so the host test drives it with
 
 ### Negative / costs
 - Two Android serial backends to keep in step on wake bytes, control lines and read loops.
-- `AndroidUsbSerialPorts` cannot be exercised without a device beyond the fake-port host
-  test; the manual serial scenarios in `docs/manual-tests.md` cover it.
-
-### Follow-ups
-- [ ] Add the usb-serial-for-android path to the Android serial scenario in `docs/manual-tests.md` once run on a board.
+- `AndroidUsbSerialPorts` cannot be exercised in CI; `UsbSerialConformanceTest`
+  (androidDeviceTest) and scenario A3b in `docs/manual-tests.md` cover it on a board.
