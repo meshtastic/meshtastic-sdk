@@ -175,9 +175,9 @@ public final class org/meshtastic/sdk/AdminResultException$Unauthorized : org/me
 public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public static final field Companion Lorg/meshtastic/sdk/AutoReconnectConfig$Companion;
 	public fun <init> ()V
-	public synthetic fun <init> (ZJJLjava/lang/Integer;DDILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public fun <init> (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DD)V
+	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)V
 	public final fun component1 ()Z
 	public final fun component2 ()Lkotlin/time/Duration;
 	public final fun component2-UwyO8pc ()J
@@ -186,9 +186,10 @@ public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public final fun component4 ()Ljava/lang/Integer;
 	public final fun component5 ()D
 	public final fun component6 ()D
-	public final fun copy (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DD)Lorg/meshtastic/sdk/AutoReconnectConfig;
-	public final fun copy-FbhrOv8 (ZJJLjava/lang/Integer;DD)Lorg/meshtastic/sdk/AutoReconnectConfig;
-	public static synthetic fun copy-FbhrOv8$default (Lorg/meshtastic/sdk/AutoReconnectConfig;ZJJLjava/lang/Integer;DDILjava/lang/Object;)Lorg/meshtastic/sdk/AutoReconnectConfig;
+	public final fun component7 ()Lorg/meshtastic/sdk/ReconnectRecoveryStep;
+	public final fun copy (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/AutoReconnectConfig;
+	public final fun copy-G6guFE4 (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/AutoReconnectConfig;
+	public static synthetic fun copy-G6guFE4$default (Lorg/meshtastic/sdk/AutoReconnectConfig;ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;ILjava/lang/Object;)Lorg/meshtastic/sdk/AutoReconnectConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getBackoffMultiplier ()D
 	public final fun getEnabled ()Z
@@ -198,6 +199,7 @@ public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public final fun getMaxAttempts ()Ljava/lang/Integer;
 	public final fun getMaxBackoff ()Lkotlin/time/Duration;
 	public final fun getMaxBackoff-UwyO8pc ()J
+	public final fun getRecoveryStep ()Lorg/meshtastic/sdk/ReconnectRecoveryStep;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -547,6 +549,29 @@ public final class org/meshtastic/sdk/HandshakeAwaitKt {
 	public static final fun awaitInitialNodeDb (Lorg/meshtastic/sdk/RadioClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class org/meshtastic/sdk/InMemoryStorage : org/meshtastic/sdk/DeviceStorage {
+	public fun <init> ()V
+	public fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun close ()V
+	public fun loadChannels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveConfig (Lorg/meshtastic/sdk/ConfigBundle;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveHeartbeat-TEw7vI0 (IJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveNode (Lorg/meshtastic/proto/NodeInfo;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun saveSessionPasskey (Lorg/meshtastic/sdk/SessionPasskey;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/InMemoryStorageProvider : org/meshtastic/sdk/StorageProvider {
+	public fun <init> ()V
+	public fun activate-153iwNM (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
 public abstract interface class org/meshtastic/sdk/KeyVerificationPrompt {
 }
 
@@ -806,12 +831,12 @@ public final class org/meshtastic/sdk/MeshEvent$StorageDegraded : org/meshtastic
 }
 
 public final class org/meshtastic/sdk/MeshEvent$TransportError : org/meshtastic/sdk/MeshEvent {
-	public fun <init> (Lorg/meshtastic/sdk/MeshtasticException$Transport;)V
-	public final fun component1 ()Lorg/meshtastic/sdk/MeshtasticException$Transport;
-	public final fun copy (Lorg/meshtastic/sdk/MeshtasticException$Transport;)Lorg/meshtastic/sdk/MeshEvent$TransportError;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$TransportError;Lorg/meshtastic/sdk/MeshtasticException$Transport;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$TransportError;
+	public fun <init> (Lorg/meshtastic/sdk/MeshtasticException;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/MeshtasticException;
+	public final fun copy (Lorg/meshtastic/sdk/MeshtasticException;)Lorg/meshtastic/sdk/MeshEvent$TransportError;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/MeshEvent$TransportError;Lorg/meshtastic/sdk/MeshtasticException;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$TransportError;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getError ()Lorg/meshtastic/sdk/MeshtasticException$Transport;
+	public final fun getError ()Lorg/meshtastic/sdk/MeshtasticException;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1303,9 +1328,9 @@ public final class org/meshtastic/sdk/RadioClient {
 public final class org/meshtastic/sdk/RadioClient$Builder {
 	public fun <init> ()V
 	public final fun autoReconnect (Lorg/meshtastic/sdk/AutoReconnectConfig;)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public final fun autoReconnect (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DD)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public final fun autoReconnect-FbhrOv8 (ZJJLjava/lang/Integer;DD)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public static synthetic fun autoReconnect-FbhrOv8$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZJJLjava/lang/Integer;DDILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun autoReconnect (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun autoReconnect-G6guFE4 (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public static synthetic fun autoReconnect-G6guFE4$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun autoSyncTimeOnConnect (Z)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun build ()Lorg/meshtastic/sdk/RadioClient;
 	public final fun clock (Lkotlin/time/Clock;)Lorg/meshtastic/sdk/RadioClient$Builder;
@@ -1364,6 +1389,10 @@ public abstract interface class org/meshtastic/sdk/RadioTransport {
 	public abstract fun getIdentity-4ZdAOzE ()Ljava/lang/String;
 	public abstract fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public abstract interface class org/meshtastic/sdk/ReconnectRecoveryStep {
+	public abstract fun recover (ILorg/meshtastic/sdk/MeshtasticException;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/ResultKt {

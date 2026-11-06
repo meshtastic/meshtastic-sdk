@@ -33,7 +33,6 @@ import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -659,6 +658,79 @@ class HandshakeAndReconnectTest {
 
         assertEquals(listOf(1_000L), transport.reconnectAttemptTimes().map { it - droppedAt })
         assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
+    fun recoveryStepRunsAfterBackoffAndBeforeEachConnect() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:reconnect-recovery"),
+            nowMs = { currentTime },
+            reconnectOutcomes = listOf(ConnectOutcome.Fail("attempt-1"), ConnectOutcome.Success),
+        )
+        val recoveries = mutableListOf<Pair<Int, Long>>()
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(
+                enabled = true,
+                initialBackoff = 1.seconds,
+                maxBackoff = 8.seconds,
+                jitter = 0.0,
+                recoveryStep = { attempt, cause ->
+                    assertIs<MeshtasticException.Transport>(cause)
+                    recoveries += attempt to currentTime
+                },
+            ),
+        )
+        client.connect()
+        runCurrent()
+
+        val droppedAt = currentTime
+        transport.simulateRecoverableError("recovery")
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drainCurrent()
+        advanceTimeBy(2_000L)
+        drainCurrent()
+        awaitConnected(client)
+
+        assertEquals(listOf(1 to 1_000L, 2 to 3_000L), recoveries.map { (n, at) -> n to at - droppedAt })
+        assertEquals(listOf(1_000L, 3_000L), transport.reconnectAttemptTimes().map { it - droppedAt })
+    }
+
+    @Test
+    fun recoveryStepFailureCountsAsFailedAttempt() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:reconnect-recovery-fail"), nowMs = { currentTime })
+        var calls = 0
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(
+                enabled = true,
+                initialBackoff = 1.seconds,
+                maxBackoff = 8.seconds,
+                jitter = 0.0,
+                recoveryStep = { _, _ ->
+                    calls += 1
+                    if (calls == 1) throw IllegalStateException("usb permission pending")
+                },
+            ),
+        )
+        client.connect()
+        runCurrent()
+
+        val droppedAt = currentTime
+        transport.simulateRecoverableError("recovery-fail")
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drainCurrent()
+        assertReconnectState(client.connection.value, attempt = 2)
+        assertEquals(0, transport.reconnectAttemptTimes().size)
+
+        advanceTimeBy(2_000L)
+        drainCurrent()
+        awaitConnected(client)
+
+        assertEquals(2, calls)
+        assertEquals(listOf(3_000L), transport.reconnectAttemptTimes().map { it - droppedAt })
     }
 
     @Test

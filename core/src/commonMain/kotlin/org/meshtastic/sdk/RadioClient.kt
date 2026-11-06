@@ -421,9 +421,11 @@ public class RadioClient internal constructor(
      * forwards to [send]. Exists so callers do not need to import `org.meshtastic.proto.Data`
      * to send a typed application payload.
      *
-     * `hopLimit = null` (the default) leaves the field at the proto-default `0`, which the
-     * firmware interprets as "use the device's configured default hop limit". Set it explicitly
-     * only when you need to override that default for a single packet.
+     * `hopLimit = null` (the default) sends the device's configured `lora.hop_limit` from
+     * [configBundle], or the firmware default of 3 when no bundle has landed yet. The SDK
+     * resolves it on the host because the firmware only substitutes its default for a `0`
+     * on the wire when `want_ack` is set; with `want_ack` off a `0` goes out as a packet that
+     * no node relays. Set it explicitly only to override the device default for one packet.
      *
      * Example:
      * ```kotlin
@@ -466,7 +468,7 @@ public class RadioClient internal constructor(
             wb.to = to.raw
             wb.channel = channel.raw
             wb.want_ack = wantAck
-            wb.hop_limit = hopLimit ?: 0
+            wb.hop_limit = hopLimit ?: defaultHopLimit()
             wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
                 wb.portnum = portnum
                 wb.payload = payload.toByteString()
@@ -575,11 +577,27 @@ public class RadioClient internal constructor(
         engine.sendToRadio(frame)
     }
 
+    /**
+     * The hop limit a convenience send uses when the caller passes `null`: the device's
+     * `lora.hop_limit` once the handshake has delivered it, else the firmware default.
+     */
+    internal fun defaultHopLimit(): Int {
+        val configured = engine.configBundleState.value
+            ?.configs
+            ?.firstNotNullOfOrNull { it.lora }
+            ?.hop_limit
+            ?: 0
+        return if (configured > 0) configured else FIRMWARE_DEFAULT_HOP_LIMIT
+    }
+
     // ── Builder ─────────────────────────────────────────────────────────────
 
     public companion object {
         /** Indicates a reaction (emoji) rather than a standalone text message. */
         private const val EMOJI_INDICATOR: Int = 1
+
+        /** `HOP_RELIABLE` in `firmware:src/mesh/MeshTypes.h`, what the firmware uses for `lora.hop_limit = 0`. */
+        private const val FIRMWARE_DEFAULT_HOP_LIMIT: Int = 3
 
         /** Create a new [Builder]. */
         public fun Builder(): Builder = Builder()
@@ -786,6 +804,7 @@ public class RadioClient internal constructor(
             maxAttempts: Int? = null,
             backoffMultiplier: Double = 2.0,
             jitter: Double = 0.2,
+            recoveryStep: ReconnectRecoveryStep? = null,
         ): Builder = apply {
             autoReconnectConfig = AutoReconnectConfig(
                 enabled = enabled,
@@ -794,6 +813,7 @@ public class RadioClient internal constructor(
                 maxAttempts = maxAttempts,
                 backoffMultiplier = backoffMultiplier,
                 jitter = jitter,
+                recoveryStep = recoveryStep,
             )
         }
 
