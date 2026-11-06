@@ -23,6 +23,15 @@ plugins {
 }
 
 kotlin {
+    // Real-hardware conformance for AndroidUsbSerialPorts (androidDeviceTest): a radio on the
+    // phone's USB-C, run on demand with `:transport-serial:connectedAndroidTest`; assume-skips
+    // with nothing attached.
+    extensions.configure<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
+        withDeviceTest {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
+    }
+
     applyDefaultHierarchyTemplate {
         common {
             group("jvmAndroid") {
@@ -53,6 +62,12 @@ kotlin {
         getByName("androidHostTest").dependencies {
             implementation(libs.kotlinTest)
             implementation(libs.coroutinesTest)
+            implementation(libs.usbSerialForAndroid)
+        }
+        getByName("androidDeviceTest").dependencies {
+            implementation(libs.junit)
+            implementation(libs.androidxTestRunner)
+            implementation(libs.androidxTestRules)
             implementation(libs.usbSerialForAndroid)
         }
     }
