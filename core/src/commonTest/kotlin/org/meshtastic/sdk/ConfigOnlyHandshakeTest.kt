@@ -31,7 +31,6 @@ import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -86,8 +86,7 @@ internal class AdminApiImpl(
      * (managed-fleet deployments administer remote managed nodes from a managed local node).
      */
     private fun isLocalTargetManaged(): Boolean {
-        val isLocalTarget = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
-        if (!isLocalTarget) return false
+        if (!isLocalTarget()) return false
         val bundle = engine.configBundleState.value ?: return false
         return bundle.configs.any { config ->
             config.security?.is_managed == true
@@ -101,8 +100,13 @@ internal class AdminApiImpl(
         )
     }
 
+    private fun isLocalTarget(): Boolean = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
+
     override suspend fun setConfig(config: Config): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_config = config }.build())
+    }.also { result ->
+        // The device acked the write, so configBundle reflects it without a round trip.
+        if (result is AdminResult.Success && isLocalTarget()) engine.applyConfigEdits(listOf(config), emptyList())
     }
 
     override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig> =
@@ -117,6 +121,8 @@ internal class AdminApiImpl(
 
     override suspend fun setModuleConfig(config: ModuleConfig): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_module_config = config }.build())
+    }.also { result ->
+        if (result is AdminResult.Success && isLocalTarget()) engine.applyConfigEdits(emptyList(), listOf(config))
     }
 
     override suspend fun getOwner(): AdminResult<User> = retryOnSessionExpiry {

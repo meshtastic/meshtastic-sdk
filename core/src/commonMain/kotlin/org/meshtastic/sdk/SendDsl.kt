@@ -85,8 +85,9 @@ public class SendBuilder internal constructor() {
     public fun wantAck(): Unit = wantAck(true)
 
     /**
-     * Override the per-packet hop limit. `null` (the default) leaves the proto-default
-     * `0` so the firmware applies its configured global default.
+     * Override the per-packet hop limit. `null` (the default) sends the device's configured
+     * `lora.hop_limit`, or 3 before the handshake has delivered it; see the `hopLimit`
+     * parameter of [RadioClient.send] for why the SDK resolves it rather than sending `0`.
      */
     public fun hopLimit(hops: Int?) {
         checkNotProtoOnly("hopLimit(Int)")
@@ -144,7 +145,7 @@ public class SendBuilder internal constructor() {
         }
     }
 
-    internal fun build(): MeshPacket {
+    internal fun build(defaultHopLimit: Int): MeshPacket {
         check(payloadCallSites > 0) {
             "send { ... } requires exactly one of text(), data(), position(), or proto(); none was called."
         }
@@ -158,7 +159,7 @@ public class SendBuilder internal constructor() {
             wb.to = to.raw
             wb.channel = channel.raw
             wb.want_ack = wantAck
-            wb.hop_limit = hopLimit ?: 0
+            wb.hop_limit = hopLimit ?: defaultHopLimit
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = portnum
                 wb.payload = payload
@@ -187,5 +188,5 @@ public class SendBuilder internal constructor() {
  */
 public suspend fun RadioClient.send(block: SendBuilder.() -> Unit): MessageHandle {
     val builder = SendBuilder().apply(block)
-    return send(builder.build())
+    return send(builder.build(defaultHopLimit = defaultHopLimit()))
 }

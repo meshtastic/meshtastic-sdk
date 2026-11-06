@@ -37,29 +37,6 @@ public final class org/meshtastic/sdk/testing/FramesKt {
 	public static final fun toFrame (Lorg/meshtastic/proto/FromRadio;)Lorg/meshtastic/sdk/Frame;
 }
 
-public final class org/meshtastic/sdk/testing/InMemoryStorage : org/meshtastic/sdk/DeviceStorage {
-	public fun <init> ()V
-	public fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun close ()V
-	public fun loadChannels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun saveConfig (Lorg/meshtastic/sdk/ConfigBundle;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun saveHeartbeat-TEw7vI0 (IJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun saveNode (Lorg/meshtastic/proto/NodeInfo;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun saveSessionPasskey (Lorg/meshtastic/sdk/SessionPasskey;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-}
-
-public final class org/meshtastic/sdk/testing/InMemoryStorageProvider : org/meshtastic/sdk/StorageProvider {
-	public fun <init> ()V
-	public fun activate-153iwNM (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-}
-
 public final class org/meshtastic/sdk/testing/TestClock : kotlin/time/Clock {
 	public fun <init> ()V
 	public fun <init> (Lkotlin/time/Instant;)V

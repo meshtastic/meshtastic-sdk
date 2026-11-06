@@ -42,7 +42,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.transport.BleTransport
-import org.meshtastic.sdk.storage.InMemoryStorage
+import org.meshtastic.sdk.InMemoryStorageProvider
 import javax.inject.Singleton
 
 @Module
@@ -62,7 +62,7 @@ object RadioClientModule {
     ): RadioClient {
         return RadioClient.Builder()
             .transport(bleTransport)
-            .storage(InMemoryStorage())  // Or your custom StorageProvider
+            .storage(InMemoryStorageProvider())  // Or your custom StorageProvider
             .build()
     }
 }
@@ -188,7 +188,7 @@ import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.transport.BleTransport
 import org.meshtastic.sdk.transport.SerialTransport
 import org.meshtastic.sdk.transport.TcpTransport
-import org.meshtastic.sdk.storage.InMemoryStorage
+import org.meshtastic.sdk.InMemoryStorageProvider
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
@@ -230,7 +230,7 @@ object RadioClientModule {
     ): RadioClient {
         return RadioClient.Builder()
             .transport(bleTransport)
-            .storage(InMemoryStorage())
+            .storage(InMemoryStorageProvider())
             .build()
     }
 }
@@ -250,10 +250,10 @@ class MeshViewModel @Inject constructor(
 
 ## Persistence and Storage
 
-By default, the module uses `InMemoryStorage()` (data is lost on app restart). For persistence, provide your own `StorageProvider`:
+By default, the module uses `InMemoryStorageProvider()` (data is lost on app restart). For persistence, provide your own `StorageProvider`:
 
 ```kotlin
-import org.meshtastic.sdk.storage.StorageProvider
+import org.meshtastic.sdk.StorageProvider
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -353,7 +353,7 @@ object TestRadioClientModule {
         // Return a test stub or FakeRadioTransport-based client
         return RadioClient.Builder()
             .transport(FakeRadioTransport())
-            .storage(InMemoryStorage())
+            .storage(InMemoryStorageProvider())
             .build()
     }
 }

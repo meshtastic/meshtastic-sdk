@@ -877,18 +877,16 @@ internal class MeshEngine(
         autoReconnectInProgress = false
 
         if (msg.cause != null) {
-            val transportError = msg.cause.let {
-                if (it is MeshtasticException.Transport) {
-                    it
-                } else {
+            // Typed causes (HandshakeTimeout, StorageUnavailable) reach observers as themselves.
+            events.tryEmit(
+                MeshEvent.TransportError(
                     MeshtasticException.tag(
-                        MeshtasticException.Transport(it.message ?: "disconnect", it),
+                        msg.cause,
                         transportIdentity = transport.identity,
                         operation = "engine.disconnect",
-                    )
-                }
-            }
-            events.tryEmit(MeshEvent.TransportError(transportError))
+                    ),
+                ),
+            )
         }
         supervisorJobRef.value?.cancel()
     }
@@ -2047,7 +2045,8 @@ internal class MeshEngine(
             is TransportState.Error -> {
                 logger.warn(TAG, s.cause) { "Transport error: ${s.cause.message}" }
                 val cause = MeshtasticException.tag(
-                    MeshtasticException.Transport(s.cause.message ?: "transport error", s.cause),
+                    s.cause as? MeshtasticException
+                        ?: MeshtasticException.Transport(s.cause.message ?: "transport error", s.cause),
                     transportIdentity = transport.identity,
                     operation = "transport.observe",
                 )
@@ -2132,6 +2131,7 @@ internal class MeshEngine(
         val scope = engineScope ?: return
         scope.launch {
             val outcome = try {
+                autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
                 runCatching { transport.disconnect() }
                 transport.connect()
                 EngineMessage.ReconnectAttemptResult(success = true, cause = null)

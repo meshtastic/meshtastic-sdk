@@ -12,6 +12,8 @@ import org.gradle.kotlin.dsl.configure
 import org.gradle.kotlin.dsl.dependencies
 import org.gradle.kotlin.dsl.getByType
 import org.jetbrains.dokka.gradle.DokkaExtension
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.dsl.KotlinJvmCompilerOptions
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 import org.jetbrains.kotlin.powerassert.gradle.PowerAssertGradleExtension
 import java.net.URI
@@ -109,6 +111,9 @@ class KmpLibraryConventionPlugin : Plugin<Project> {
 
             // -Xjvm-expose-boxed: emit non-mangled boxed accessors for value classes
             // so Java callers can use NodeId/ChannelIndex/MessageId without hashed names.
+            // jvmTarget + -Xjdk-release: the toolchain is JDK 21 but published bytecode is
+            // JDK 17 and uses only JDK 17 APIs, so JDK 17 hosts can run it.
+            val jvmTarget = libs.findVersion("jvmTarget").get().requiredVersion
             targets.matching {
                 val type = it.platformType.name
                 type == "jvm" || type == "androidJvm"
@@ -116,7 +121,9 @@ class KmpLibraryConventionPlugin : Plugin<Project> {
                 compilations.configureEach {
                     compileTaskProvider.configure {
                         compilerOptions {
+                            (this as? KotlinJvmCompilerOptions)?.jvmTarget?.set(JvmTarget.fromTarget(jvmTarget))
                             freeCompilerArgs.add("-Xjvm-expose-boxed")
+                            freeCompilerArgs.add("-Xjdk-release=$jvmTarget")
                         }
                     }
                 }

@@ -13,7 +13,6 @@ kotlin {
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.sqldelightRuntime)
-            implementation(libs.sqldelightCoroutinesExt)
             implementation(libs.okio)
         }
         jvmTest.dependencies {

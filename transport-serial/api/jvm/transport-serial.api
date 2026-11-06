@@ -6,6 +6,13 @@ public final class org/meshtastic/sdk/transport/serial/JvmSerialPorts {
 	public static synthetic fun open$default (Lorg/meshtastic/sdk/transport/serial/JvmSerialPorts;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/RadioTransport;
 }
 
+public final class org/meshtastic/sdk/transport/serial/SerialFrameAssembler {
+	public fun <init> (Lkotlin/jvm/functions/Function1;)V
+	public final fun feed (B)V
+	public final fun feed ([BI)V
+	public static synthetic fun feed$default (Lorg/meshtastic/sdk/transport/serial/SerialFrameAssembler;[BIILjava/lang/Object;)V
+}
+
 public final class org/meshtastic/sdk/transport/serial/SerialPortInfo {
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/sdk/transport/serial/SerialPortTransport;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lorg/meshtastic/sdk/transport/serial/SerialPortTransport;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V

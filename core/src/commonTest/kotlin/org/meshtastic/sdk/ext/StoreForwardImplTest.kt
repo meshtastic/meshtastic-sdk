@@ -15,12 +15,12 @@ import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.sdk.AdminResult
+import org.meshtastic.sdk.InMemoryStorageProvider
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.StoreForwardEvent
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

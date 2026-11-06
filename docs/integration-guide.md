@@ -215,6 +215,27 @@ AndroidSerialPorts.init(applicationContext)
 val transport = AndroidSerialPorts.open(portName, baudRate = 115200)
 ```
 
+Android on usb-serial-for-android (the driver stack Meshtastic-Android uses), for hosts that
+already carry it or need its probe table. The library is `compileOnly` in the SDK because it
+is published on JitPack, so add both the dependency and the repository:
+
+```kotlin
+// settings.gradle.kts
+dependencyResolutionManagement.repositories {
+    maven("https://jitpack.io") { content { includeGroup("com.github.mik3y") } }
+}
+// build.gradle.kts
+implementation("com.github.mik3y:usb-serial-for-android:3.11.0")
+```
+
+```kotlin
+import org.meshtastic.sdk.transport.serial.AndroidUsbSerialPorts
+
+val ports = AndroidUsbSerialPorts.list(context)          // devices a driver claims, permission or not
+// After UsbManager.requestPermission(device, ...) succeeds:
+val transport = AndroidUsbSerialPorts.open(context, ports.first().name)
+```
+
 #### AndroidManifest.xml setup
 
 ```xml
@@ -250,7 +271,7 @@ You are responsible for:
    </resources>
    ```
 
-2. **Requesting permission** — before calling `AndroidSerialPorts.open(...)`:
+2. **Requesting permission** — before calling `AndroidSerialPorts.open(...)` or `AndroidUsbSerialPorts.open(...)`:
 
    ```kotlin
    val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -375,7 +396,7 @@ guide: [`observability.md`](./observability.md).
 ```kotlin
 // testImplementation("org.meshtastic:sdk-testing")
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorageProvider
+import org.meshtastic.sdk.InMemoryStorageProvider
 
 val transport = FakeRadioTransport()
 val client = RadioClient.Builder()

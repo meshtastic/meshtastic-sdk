@@ -211,11 +211,18 @@ public sealed interface MeshEvent {
     public data class LockdownStatusChanged(val status: org.meshtastic.proto.LockdownStatus) : MeshEvent
 
     /**
-     * A transport-level error occurred.
+     * The session dropped, or is about to, because of [error].
      *
-     * @param error the transport exception
+     * Usually a [MeshtasticException.Transport] (socket closed, GATT error, USB unplug, the
+     * liveness watchdog), but the engine passes other failures through as their own type,
+     * so a [MeshtasticException.HandshakeTimeout] that unwinds a session or a
+     * [MeshtasticException.StorageUnavailable] arrives as itself rather than as a
+     * `Transport` whose message you would have to parse. Pair with
+     * [ConnectionState.Reconnecting] to learn whether the engine is retrying.
+     *
+     * @param error the failure that ended the session
      */
-    public data class TransportError(val error: MeshtasticException.Transport) : MeshEvent
+    public data class TransportError(val error: MeshtasticException) : MeshEvent
 
     /**
      * Protocol-level warning (malformed data, unexpected state, etc.).

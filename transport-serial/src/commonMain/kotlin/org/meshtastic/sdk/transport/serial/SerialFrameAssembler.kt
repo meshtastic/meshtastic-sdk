@@ -5,7 +5,7 @@
  * Licensed under the GPL-3.0-or-later license (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.html)
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-package org.meshtastic.sdk.transport.serial.internal
+package org.meshtastic.sdk.transport.serial
 
 import okio.Buffer
 import okio.ByteString.Companion.toByteString
@@ -16,11 +16,20 @@ import org.meshtastic.sdk.WireFraming
  * Re-sync state machine for the Meshtastic serial wire framing
  * (`protocol.md §2`: START1=0x94, START2=0xC3, big-endian uint16 length).
  *
- * Pure Kotlin, no I/O — fed one byte at a time and emits each completed
- * [Frame] back through a callback. Identical state machine to TcpTransport;
- * factored here so jvm + android serial can share it.
+ * Pure Kotlin, no I/O: feed it bytes as they arrive and it calls [onFrame] with each
+ * completed [Frame], header included, ready for `RadioTransport.frames()`. A payload
+ * length over `WireFraming.MAX_PAYLOAD_SIZE` drops the header and resumes scanning, so a
+ * stream resynchronizes after garbage without the caller's help. Not thread-safe: feed it
+ * from one reader.
+ *
+ * Public so a host that owns its own byte stream, such as a custom USB or Bluetooth SPP
+ * bridge, can build a [org.meshtastic.sdk.RadioTransport] on the same framing the bundled
+ * serial transports use.
+ *
+ * @param onFrame called synchronously from [feed] for every completed frame
+ * @since 0.3.0
  */
-internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
+public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
 
     private enum class State { SCAN_FOR_START1, EXPECT_START2, READ_LEN_HI, READ_LEN_LO, READ_PAYLOAD }
 
@@ -30,7 +39,8 @@ internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
     private var bytesRemaining = 0
     private val payloadBuf = Buffer()
 
-    fun feed(byte: Byte) {
+    /** Feed one byte; emits through `onFrame` when it completes a frame. */
+    public fun feed(byte: Byte) {
         when (state) {
             State.SCAN_FOR_START1 -> if (byte == START1) state = State.EXPECT_START2
 
@@ -55,8 +65,9 @@ internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                     }
 
                     payloadLen == 0 -> {
-                        onFrame(Frame(byteArrayOf(START1, START2, 0, 0).toByteString()))
+                        // Reset before the callback so a throwing onFrame leaves the FSM scanning.
                         state = State.SCAN_FOR_START1
+                        onFrame(Frame(byteArrayOf(START1, START2, 0, 0).toByteString()))
                     }
 
                     else -> {
@@ -77,14 +88,15 @@ internal class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                         (payloadLen shr 8).toByte(),
                         (payloadLen and 0xFF).toByte(),
                     )
-                    onFrame(Frame((header + payload).toByteString()))
                     state = State.SCAN_FOR_START1
+                    onFrame(Frame((header + payload).toByteString()))
                 }
             }
         }
     }
 
-    fun feed(bytes: ByteArray, length: Int = bytes.size) {
+    /** Feed the first [length] bytes of [bytes], a read buffer straight from the port. */
+    public fun feed(bytes: ByteArray, length: Int = bytes.size) {
         for (i in 0 until length) feed(bytes[i])
     }
 

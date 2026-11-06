@@ -83,6 +83,15 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
   3. Run `samples/cli/build/install/cli/bin/cli info --transport=serial:ttyUSB0`.
 - **Expected:** Connected within 30 s.
 
+#### A3b — Cold connect over Android USB serial (usb-serial-for-android) completes
+- **Transport:** Serial Android, `AndroidUsbSerialPorts`
+- **Steps:**
+  1. Plug a radio into the phone's USB-C (OTG). Dismiss the app chooser Android raises for the attached device; picking an app hands it the device.
+  2. With the phone on adb, run `./gradlew :transport-serial:connectedAndroidTest` (`UsbSerialConformanceTest`).
+  3. Tap Allow on the USB permission dialog from `org.meshtastic.sdk.transport.serial.test`.
+- **Expected:** `list(context)` shows the radio; Connected within 30 s; `configBundle` set; a text to the own node resolves `Success`; Disconnected after.
+- **Note:** a Seeed T1000-E reports its USB product name as `T1000-E-BOOT` while running firmware; that is the descriptor, not DFU mode.
+
 #### A4 — Disconnect/reconnect cycle is clean
 - **Transport:** any
 - **Steps:**
