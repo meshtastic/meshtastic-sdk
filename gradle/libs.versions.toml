@@ -4,13 +4,14 @@
 # --- Kotlin & build ---
 kotlin                      = "2.4.10"
 agp                         = "9.5.0"
-javaVersion                 = "21"
+javaVersion                 = "21"               # toolchain
+jvmTarget                   = "17"               # published bytecode and JDK API level
 androidMinSdk               = "26"
 androidCompileSdk           = "37"
 androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
-coroutines                  = "1.11.0"           # stable (was 1.11.0-rc02); matches Meshtastic-Android
+coroutines                  = "1.8.1"            # compile floor: hosts whose runtime pins 1.8.x (ATAK plugins) load bytecode built against it; Gradle resolves consumers' newer pins
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
 atomicfu                    = "0.33.0"
 okio                        = "3.18.2"
@@ -26,6 +27,7 @@ sqldelight                  = "2.4.1"
 kable                       = "0.45.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
 ktor                        = "3.6.1"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
+usbSerialForAndroid         = "3.11.0"           # JitPack only; compileOnly in transport-serial, matches Meshtastic-Android
 
 # --- TUI (samples/cli) ---
 mosaic                      = "0.18.0"
@@ -82,6 +84,7 @@ sqldelightGradlePlugin      = { module = "app.cash.sqldelight:gradle-plugin",   
 kable                       = { module = "com.juul.kable:kable-core",                            version.ref = "kable" }
 ktorNetwork                 = { module = "io.ktor:ktor-network",                                 version.ref = "ktor" }
 jSerialComm                 = { module = "com.fazecast:jSerialComm",                             version.ref = "jSerialComm" }
+usbSerialForAndroid         = { module = "com.github.mik3y:usb-serial-for-android",             version.ref = "usbSerialForAndroid" }
 
 mosaicRuntime               = { module = "com.jakewharton.mosaic:mosaic-runtime",                 version.ref = "mosaic" }
 mosaicTerminal              = { module = "com.jakewharton.mosaic:mosaic-terminal",                version.ref = "mosaic" }

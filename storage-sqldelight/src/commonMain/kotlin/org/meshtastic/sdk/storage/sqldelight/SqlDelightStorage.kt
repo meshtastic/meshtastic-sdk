@@ -297,9 +297,12 @@ internal class SqlDelightStorage(
 }
 
 /**
- * Shared view of `Dispatchers.IO` (JVM/Android/native) for SQLite work. `limitedParallelism`
- * (stable since coroutines 1.9) caps concurrent blocking DB calls so storage can't starve other
- * IO consumers (transports, file writes). The value roughly matches the small per-driver
- * connection pool. Declared `expect` because `Dispatchers.IO` is not visible from commonMain.
+ * Dispatcher for blocking SQLite work: a fixed pool of [STORAGE_PARALLELISM] threads, sized to
+ * the small per-driver connection pool, so storage cannot starve transports or file writes.
+ * A pool rather than `Dispatchers.IO.limitedParallelism(n)`: the SDK compiles against
+ * coroutines 1.8.1, where that overload does not exist. Declared `expect` because the pool
+ * constructors are per platform.
  */
 internal expect val defaultStorageDispatcher: CoroutineDispatcher
+
+internal const val STORAGE_PARALLELISM: Int = 4

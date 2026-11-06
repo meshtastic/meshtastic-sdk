@@ -33,6 +33,12 @@ class KmpLibraryConventionTest {
     }
 
     @Test
+    fun `jvm bytecode and JDK API level follow the catalog jvmTarget`() {
+        assertEquals("17", config.getValue("jvmTarget"))
+        assertTrue("-Xjdk-release=17" in config.getValue("jvmFreeArgs").split(","), config.toString())
+    }
+
+    @Test
     fun `power assert is scoped to test source sets`() {
         val sets = config.getValue("powerAssertSourceSets").split(",")
         assertTrue("commonTest" in sets && "jvmTest" in sets, sets.toString())
@@ -61,6 +67,7 @@ class KmpLibraryConventionTest {
                             val jvmCompile = tasks.named("compileKotlinJvm").get() as KotlinCompile
                             emit("jvmToolchain", jvmCompile.kotlinJavaToolchain.javaVersion.get().majorVersion)
                             emit("allWarningsAsErrors", jvmCompile.compilerOptions.allWarningsAsErrors.get())
+                            emit("jvmTarget", jvmCompile.compilerOptions.jvmTarget.get().target)
                             emit("jvmFreeArgs", jvmCompile.compilerOptions.freeCompilerArgs.get().joinToString(","))
                             emit(
                                 "powerAssertSourceSets",
