@@ -344,7 +344,7 @@ public sealed interface SendFailure {
 public sealed interface MeshEvent {
     public data class QueueStatusChanged(val status: QueueStatus) : MeshEvent
     public data class Notification(val notification: ClientNotification) : MeshEvent
-    public data class TransportError(val error: MeshtasticException.Transport) : MeshEvent
+    public data class TransportError(val error: MeshtasticException) : MeshEvent
     public data class ProtocolWarning(val message: String, val details: Map<String, Any?> = emptyMap()) : MeshEvent
     public data class KeyVerification(val prompt: KeyVerificationPrompt) : MeshEvent
     /** Engine-side backpressure: the named flow dropped `count` items. See §4.4. */
@@ -691,7 +691,7 @@ public data class SessionPasskey(
 )
 ```
 
-**No in-memory default.** `:testing` provides one explicitly named `InMemoryStorage` for tests. Production callers must wire `:storage-sqldelight` or roll their own.
+**No implicit default.** `Builder.storage(...)` is required. `:core` ships `InMemoryStorageProvider` (RAM only, nothing survives the process) for hosts that want no persistence; `:storage-sqldelight` is the persistent backend, or roll your own.
 
 ### 3.4 Transport contract
 

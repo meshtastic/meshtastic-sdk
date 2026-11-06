@@ -40,8 +40,8 @@ dependencies {
 
 > Released versions are published to Maven Central. For bleeding-edge builds from `main`, use the snapshot repository below.
 
-Available transport modules: `transport-ble`, `transport-tcp`, `transport-serial` (single multiplatform module covering JVM and Android).
-Available storage modules: `storage-sqldelight`. Or roll your own `StorageProvider`.
+Available transport modules: `transport-ble`, `transport-tcp`, `transport-serial` (single multiplatform module covering JVM and Android; on Android, jSerialComm or usb-serial-for-android).
+Available storage modules: `storage-sqldelight`, or `InMemoryStorageProvider` from `core` when nothing needs to survive the process. Or roll your own `StorageProvider`.
 Optionally, depend on `sdk-bom` to align all module versions; see [`bom/README.md`](bom/README.md) for usage and [`docs/versioning.md`](docs/versioning.md#bom) for the versioning policy.
 
 ### Snapshot artifacts
@@ -191,8 +191,8 @@ the integration guide.
 | `connect()` throws `MeshtasticException.HandshakeTimeout` | `want_config_id` reply never arrived from the device | Power-cycle the radio, verify firmware ≥ 2.3, then retry. See [Build a `RadioClient`](docs/integration-guide.md#3-build-a-radioclient). |
 
 ```kotlin
-// USB-serial — JVM (jSerialComm) and Android (usb-serial-for-android)
-import org.meshtastic.sdk.transport.serial.JvmSerialPorts            // androidMain: AndroidSerialPorts
+// USB-serial — JVM (jSerialComm); Android: AndroidSerialPorts (jSerialComm) or AndroidUsbSerialPorts (usb-serial-for-android)
+import org.meshtastic.sdk.transport.serial.JvmSerialPorts
 
 val portName  = JvmSerialPorts.list().first()           // e.g. "/dev/tty.usbserial-1410"
 val transport = JvmSerialPorts.open(portName, baudRate = 115200)
@@ -227,7 +227,7 @@ authoritative dependency graph.
 | `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
 | `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
 | `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on Ktor sockets.                                                |
-| `transport-serial`         | ✓   | ✓                     | —         | —             | —       | iOS targets compile (empty actuals) but no USB-serial API on iOS.     |
+| `transport-serial`         | ✓   | ✓                     | —         | —             | —       | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, host adds it). iOS targets compile (empty actuals) but no USB-serial API on iOS. |
 | `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
 | `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |
 
@@ -277,6 +277,7 @@ Requirements:
   [Android setup checklist](docs/integration-guide.md#android-setup-checklist).
 - **iOS 14+** for the BLE/TCP transports.
 - **JDK 17+** runtime for JVM consumers (bytecode is JDK 17, toolchain is JDK 21).
+- **kotlinx-coroutines 1.8.1+** at runtime. The SDK compiles against 1.8.1 so a host whose runtime pins it, such as an ATAK plugin, can load the artifacts; a newer pin in your build wins at resolution.
 
 Local commands: see [`docs/ci-cd.md`](docs/ci-cd.md#local-equivalents).
 

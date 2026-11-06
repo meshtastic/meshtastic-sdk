@@ -383,7 +383,7 @@ fun ConnectWithRetry(viewModel: MeshViewModel) {
 ```kotlin
 import org.junit.Test
 import org.meshtastic.sdk.testing.FakeRadioTransport
-import org.meshtastic.sdk.testing.InMemoryStorage
+import org.meshtastic.sdk.InMemoryStorageProvider
 import org.meshtastic.sdk.RadioClient
 import kotlinx.coroutines.test.runTest
 
@@ -394,7 +394,7 @@ class MeshViewModelTest {
         val transport = FakeRadioTransport()
         val client = RadioClient.Builder()
             .transport(transport)
-            .storage(InMemoryStorage())
+            .storage(InMemoryStorageProvider())
             .build()
 
         val viewModel = MeshViewModel(client)

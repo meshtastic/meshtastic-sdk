@@ -36,31 +36,6 @@ final class org.meshtastic.sdk.testing/FakeRadioTransport : org.meshtastic.sdk/R
     final suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.testing/FakeRadioTransport.send|send(org.meshtastic.sdk.Frame){}[0]
 }
 
-final class org.meshtastic.sdk.testing/InMemoryStorage : org.meshtastic.sdk/DeviceStorage { // org.meshtastic.sdk.testing/InMemoryStorage|null[0]
-    constructor <init>() // org.meshtastic.sdk.testing/InMemoryStorage.<init>|<init>(){}[0]
-
-    final fun close() // org.meshtastic.sdk.testing/InMemoryStorage.close|close(){}[0]
-    final suspend fun clear() // org.meshtastic.sdk.testing/InMemoryStorage.clear|clear(){}[0]
-    final suspend fun loadChannels(): kotlin.collections/List<org.meshtastic.proto/Channel> // org.meshtastic.sdk.testing/InMemoryStorage.loadChannels|loadChannels(){}[0]
-    final suspend fun loadConfig(): org.meshtastic.sdk/ConfigBundle? // org.meshtastic.sdk.testing/InMemoryStorage.loadConfig|loadConfig(){}[0]
-    final suspend fun loadHeartbeats(): kotlin.collections/Map<org.meshtastic.sdk/NodeId, kotlin/Long> // org.meshtastic.sdk.testing/InMemoryStorage.loadHeartbeats|loadHeartbeats(){}[0]
-    final suspend fun loadNodes(): kotlin.collections/Map<org.meshtastic.sdk/NodeId, org.meshtastic.proto/NodeInfo> // org.meshtastic.sdk.testing/InMemoryStorage.loadNodes|loadNodes(){}[0]
-    final suspend fun loadSessionPasskey(): org.meshtastic.sdk/SessionPasskey? // org.meshtastic.sdk.testing/InMemoryStorage.loadSessionPasskey|loadSessionPasskey(){}[0]
-    final suspend fun recordOwnNode(org.meshtastic.sdk/NodeId, kotlin/String) // org.meshtastic.sdk.testing/InMemoryStorage.recordOwnNode|recordOwnNode(org.meshtastic.sdk.NodeId;kotlin.String){}[0]
-    final suspend fun removeNode(org.meshtastic.sdk/NodeId) // org.meshtastic.sdk.testing/InMemoryStorage.removeNode|removeNode(org.meshtastic.sdk.NodeId){}[0]
-    final suspend fun saveChannels(kotlin.collections/List<org.meshtastic.proto/Channel>) // org.meshtastic.sdk.testing/InMemoryStorage.saveChannels|saveChannels(kotlin.collections.List<org.meshtastic.proto.Channel>){}[0]
-    final suspend fun saveConfig(org.meshtastic.sdk/ConfigBundle) // org.meshtastic.sdk.testing/InMemoryStorage.saveConfig|saveConfig(org.meshtastic.sdk.ConfigBundle){}[0]
-    final suspend fun saveHeartbeat(org.meshtastic.sdk/NodeId, kotlin/Long) // org.meshtastic.sdk.testing/InMemoryStorage.saveHeartbeat|saveHeartbeat(org.meshtastic.sdk.NodeId;kotlin.Long){}[0]
-    final suspend fun saveNode(org.meshtastic.proto/NodeInfo) // org.meshtastic.sdk.testing/InMemoryStorage.saveNode|saveNode(org.meshtastic.proto.NodeInfo){}[0]
-    final suspend fun saveSessionPasskey(org.meshtastic.sdk/SessionPasskey) // org.meshtastic.sdk.testing/InMemoryStorage.saveSessionPasskey|saveSessionPasskey(org.meshtastic.sdk.SessionPasskey){}[0]
-}
-
-final class org.meshtastic.sdk.testing/InMemoryStorageProvider : org.meshtastic.sdk/StorageProvider { // org.meshtastic.sdk.testing/InMemoryStorageProvider|null[0]
-    constructor <init>() // org.meshtastic.sdk.testing/InMemoryStorageProvider.<init>|<init>(){}[0]
-
-    final suspend fun activate(org.meshtastic.sdk/TransportIdentity): org.meshtastic.sdk/DeviceStorage // org.meshtastic.sdk.testing/InMemoryStorageProvider.activate|activate(org.meshtastic.sdk.TransportIdentity){}[0]
-}
-
 final class org.meshtastic.sdk.testing/TestClock : kotlin.time/Clock { // org.meshtastic.sdk.testing/TestClock|null[0]
     constructor <init>(kotlin.time/Instant = ...) // org.meshtastic.sdk.testing/TestClock.<init>|<init>(kotlin.time.Instant){}[0]
 

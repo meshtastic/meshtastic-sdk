@@ -699,6 +699,12 @@ on receive: hops_away := p.hop_start - p.hop_limit
 on relay:   p.hop_limit -= 1
 ```
 
+A packet from the phone carries its own `hop_limit`. Firmware (`Router::sendLocal`) replaces a
+`0` with `config.lora.hop_limit` only when `want_ack` is set; with `want_ack` off a `0` is
+sent as-is and no node relays it. The SDK therefore fills `hop_limit` on the host for the
+typed `send(portnum, …)` overloads and the `send { }` DSL: the device's `lora.hop_limit` from
+the config bundle, else 3 (`HOP_RELIABLE`). A raw `send(MeshPacket)` goes out as built.
+
 ### `want_ack`
 
 - Setting `want_ack = true` on an outbound `MeshPacket` causes the destination node to emit a `ROUTING_APP` packet back to the sender containing `Routing.error_reason = NONE` (success) or one of the error codes.

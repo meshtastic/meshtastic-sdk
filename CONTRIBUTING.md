@@ -85,7 +85,7 @@ The version is pinned in `gradle/libs.versions.toml` under `agp = "9.1.1"` (or l
 
 ### JDK 21 requirement
 
-JDK 21 is the compile-time target. You can use any JDK 21+ toolchain (Temurin, Adoptium, etc.); IDEs typically auto-download it. If building from the CLI:
+JDK 21 is the build toolchain; the published JVM and Android bytecode targets JDK 17 (`jvmTarget` in `gradle/libs.versions.toml`, enforced with `-Xjdk-release=17`, so a JDK 18+ API fails to compile). You can use any JDK 21+ toolchain (Temurin, Adoptium, etc.); IDEs typically auto-download it. If building from the CLI:
 
 ```bash
 sdk install java 21-tem   # sdkman

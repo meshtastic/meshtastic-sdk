@@ -50,7 +50,7 @@ Coverage targets per module:
 | Engine actor contract | `:core` | [`EngineTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/EngineTest.kt) | Turbine on `events` flow |
 | BLE frame stripping | `:transport-ble` | [`FrameStripTest`](../transport-ble/src/commonTest/kotlin/org/meshtastic/sdk/transport/ble/FrameStripTest.kt) | property-style edge cases |
 | BLE drain coordinator | `:transport-ble` | [`DrainCoordinatorTest`](../transport-ble/src/commonTest/kotlin/org/meshtastic/sdk/transport/ble/internal/DrainCoordinatorTest.kt) | virtual-time `runTest` |
-| Serial frame assembly | `:transport-serial` | [`SerialFrameAssemblerTest`](../transport-serial/src/commonTest/kotlin/org/meshtastic/sdk/transport/serial/internal/SerialFrameAssemblerTest.kt) | byte-stream fuzz vectors |
+| Serial frame assembly | `:transport-serial` | [`SerialFrameAssemblerTest`](../transport-serial/src/commonTest/kotlin/org/meshtastic/sdk/transport/serial/SerialFrameAssemblerTest.kt) | byte-stream fuzz vectors |
 
 ### Required additions (open work — see Track D)
 
@@ -132,7 +132,7 @@ same fixtures we use internally. Add it to `commonTest`:
 ```kotlin
 // build.gradle.kts
 kotlin.sourceSets.commonTest.dependencies {
-    implementation(project(":testing"))   // FakeRadioTransport, InMemoryStorage(Provider)
+    implementation(project(":testing"))   // FakeRadioTransport, TestClock; InMemoryStorageProvider comes with :core
     implementation(libs.turbine)
     implementation(libs.coroutinesTest)
 }
@@ -143,7 +143,7 @@ Two fixtures ship today:
 | Fixture | Purpose | Source |
 |---|---|---|
 | [`FakeRadioTransport`](../testing/src/commonMain/kotlin/org/meshtastic/sdk/testing/FakeRadioTransport.kt) | Script-driven `RadioTransport`. Pre-load frames, inject at runtime, record outbound frames, optionally `autoHandshake = true` to short-circuit Stage 1/2 + admin `getOwner` so `RadioClient.connect()` resolves to `Connected` without a real radio. | `:testing` |
-| [`InMemoryStorage`](../testing/src/commonMain/kotlin/org/meshtastic/sdk/testing/InMemoryStorage.kt) / `InMemoryStorageProvider` | RAM-backed `DeviceStorage` + `StorageProvider`. Mirrors the SQLDelight backend's contract (including identity-rebind clearing in `recordOwnNode`), with no JDBC / JNI. | `:testing` |
+| [`InMemoryStorage`](../core/src/commonMain/kotlin/org/meshtastic/sdk/InMemoryStorage.kt) / `InMemoryStorageProvider` | RAM-backed `DeviceStorage` + `StorageProvider`. Mirrors the SQLDelight backend's contract (including identity-rebind clearing in `recordOwnNode`), with no JDBC / JNI. Lives in `:core` (`org.meshtastic.sdk`) since 0.3.0 so production hosts can use it too; `:testing` keeps deprecated aliases. | `:core` |
 
 #### Engine logic example — `FakeRadioTransport`
 

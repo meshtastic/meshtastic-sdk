@@ -8,9 +8,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking
+
+- `MeshEvent.TransportError.error` is a `MeshtasticException`, no longer narrowed to
+  `MeshtasticException.Transport`. A `HandshakeTimeout` or `StorageUnavailable` that ends a
+  session now arrives as its own type instead of a `Transport` wrapper whose message had to be
+  parsed. Source-compatible for code that reads `error.message`; binary-incompatible.
+- `InMemoryStorage` and `InMemoryStorageProvider` moved from `:testing`
+  (`org.meshtastic.sdk.testing`) to `:core` (`org.meshtastic.sdk`). `:testing` keeps deprecated
+  typealiases, so sources compile; binaries built against the old classes do not link.
+- `AutoReconnectConfig` gained a seventh constructor parameter, `recoveryStep`. Named and
+  default-argument call sites are unaffected; binaries built against the six-parameter
+  constructor do not link.
+- Published JVM and Android bytecode is JDK 17 (class file 61) and compiled with
+  `-Xjdk-release=17`, as the README and constitution already stated; 0.2.0 shipped JDK 21
+  bytecode. JDK 17 hosts can now load the artifacts.
+
+### Added
+
+- `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
+  after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
+  permission or power-cycling a radio. Throwing counts as a failed attempt.
+- `AndroidUsbSerialPorts` in `:transport-serial`: an Android serial backend on
+  usb-serial-for-android, the driver stack Meshtastic-Android ships, with its probe table for
+  the RAK4631, T-Beam v1.1 and nRF52840 CDC boards. The library is `compileOnly` because it is
+  published on JitPack, so a host adds it and the repository itself.
+- `SerialFrameAssembler` is public (`org.meshtastic.sdk.transport.serial`) so a host with its
+  own byte stream can build a `RadioTransport` on the same framing.
+- `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
+  coroutines-test dependencies.
+
 ### Changed
 
 - `org.meshtastic:protobufs` 2.8.2, which only adds fields, so the SDK's API is unchanged.
+- kotlinx-coroutines is compiled against 1.8.1, the floor a host can run the SDK on, down from
+  1.11.0. Bytecode built against 1.9+ calls `Job.cancel$default` and `SendChannel.close$default`
+  statics that 1.8.x does not have, so on a 1.8.1 runtime `:core` failed at 351 call sites;
+  the SDK's own suite now compiles and passes against 1.8.1. Consumers on a newer pin keep
+  it: Gradle resolves the highest version.
+- `:storage-sqldelight` runs its SQLite work on a fixed four-thread pool instead of
+  `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
+  no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
+  coroutines 1.11 into the storage POM.
+
+### Fixed
+
+- A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
+  `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
+  its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out
+  with zero hops and nothing relayed them.
+- `AdminApi.setConfig` and `setModuleConfig` update `configBundle` once the device acks the
+  write, as `editSettings` already did. Remote-node writes leave the local bundle alone.
 
 ## [0.2.0] — 2026-10-03
 

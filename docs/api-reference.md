@@ -8,12 +8,12 @@
 
 | Package | Stability | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `ConfigBundle`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
+| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
-| `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android), `JvmSerialPorts` (JVM) |
+| `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
 | `org.meshtastic.sdk.storage.sqldelight` | Public | `SqlDelightStorageProvider`, `AndroidContextHolder` (Android) |
-| `org.meshtastic.sdk.testing` | Public (test fixtures) | `FakeRadioTransport`, `InMemoryStorage`, `InMemoryStorageProvider` |
+| `org.meshtastic.sdk.testing` | Public (test fixtures) | `FakeRadioTransport`, `TestClock`; `InMemoryStorage` and `InMemoryStorageProvider` are deprecated aliases of the `:core` classes |
 | `org.meshtastic.proto.*` | Public (re-export) | All Wire-generated protobuf types |
 | `org.meshtastic.sdk.internal.*` | Internal (Kotlin `internal` modifier) | Engine, FSM, codec — not part of API surface |
 
@@ -119,15 +119,23 @@ val client = RadioClient {
 
 ```kotlin
 public data class AutoReconnectConfig(
-    val initialDelay: Duration = 1.seconds,
-    val maxDelay: Duration = 60.seconds,
-    val multiplier: Double = 2.0,
-    val jitterFactor: Double = 0.15,
-    val maxAttempts: Int = Int.MAX_VALUE,
+    val enabled: Boolean = true,
+    val initialBackoff: Duration = 1.seconds,
+    val maxBackoff: Duration = 60.seconds,
+    val maxAttempts: Int? = null,
+    val backoffMultiplier: Double = 2.0,
+    val jitter: Double = 0.2,
+    val recoveryStep: ReconnectRecoveryStep? = null,   // since 0.3.0
 )
+
+public fun interface ReconnectRecoveryStep {
+    public suspend fun recover(attempt: Int, cause: MeshtasticException)
+}
 ```
 
 When enabled, the engine automatically reconnects on transport drops, transitioning through `ConnectionState.Reconnecting(cause, attempt)`. Disable by omitting the `.autoReconnect(...)` builder call.
+
+`recoveryStep` runs after each backoff delay and before `transport.connect()`: re-request a USB permission, power-cycle a radio, wait for the Bluetooth adapter. Throwing counts as a failed attempt and schedules the next backoff. It prepares the transport the client was built with; it cannot swap in another.
 
 ### Lifecycle
 
@@ -181,7 +189,9 @@ val handle = client.send {
 }
 ```
 
-The `send { … }` lambda configures a `MeshPacket` builder. Available DSL methods: `text(String)`, `data(PortNum, ByteArray)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck(Boolean)`, `hopLimit(Int)`, `priority(Priority)`.
+The `send { … }` lambda configures a `MeshPacket` builder. Available DSL methods: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck(Boolean)`, `hopLimit(Int?)`.
+
+`hopLimit` left unset, like `hopLimit = null` on the typed `send(portnum, …)` overloads, sends the device's `lora.hop_limit` from `configBundle` (the firmware default, 3, before the bundle lands). The SDK resolves it on the host because firmware only substitutes its default for a `0` on the wire when `want_ack` is set. `send(packet: MeshPacket)` and `proto(...)` go out as given.
 
 ### Sub-API namespaces
 
@@ -245,7 +255,7 @@ public sealed interface SendOutcome {
 public sealed interface MeshEvent {
     public data class QueueStatusChanged(val status: QueueStatus) : MeshEvent
     public data class Notification(val notification: ClientNotification) : MeshEvent
-    public data class TransportError(val error: MeshtasticException.Transport) : MeshEvent
+    public data class TransportError(val error: MeshtasticException) : MeshEvent   // Transport, HandshakeTimeout, StorageUnavailable, … as themselves
     public data class ProtocolWarning(val message: String, val details: Map<String, String> = emptyMap()) : MeshEvent
     public data class KeyVerification(val prompt: KeyVerificationPrompt) : MeshEvent
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
@@ -634,7 +644,13 @@ public data class ConfigBundle(
     public val moduleConfigs: List<ModuleConfig>,
     public val deviceUIConfig: DeviceUIConfig? = null,
 )
+
+/** RAM only; nothing survives the process. No driver, files or Context. (since 0.3.0) */
+public class InMemoryStorage : DeviceStorage
+public class InMemoryStorageProvider : StorageProvider
 ```
+
+`:core` ships `InMemoryStorageProvider` for one-shot tools, gateways that rebuild state from the handshake, and hosts that have not chosen a persistent backend. `:storage-sqldelight` is the persistent default.
 
 ## Transport
 

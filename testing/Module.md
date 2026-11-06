@@ -14,4 +14,4 @@ Add as a `testImplementation` dependency:
     }
 
 Key packages:
-- `org.meshtastic.sdk.testing` — `FakeRadioTransport` (in-memory `RadioTransport` whose `frames()` flow is driven by tests), `InMemoryStorage` (volatile `DeviceStorage`), `InMemoryStorageProvider` (zero-config `StorageProvider` for tests), and `TestClock` (deterministic `kotlin.time.Clock` for time-sensitive tests — advance virtual time without `runTest`'s scheduler)
+- `org.meshtastic.sdk.testing` — `FakeRadioTransport` (in-memory `RadioTransport` whose `frames()` flow is driven by tests) and `TestClock` (deterministic `kotlin.time.Clock` for time-sensitive tests — advance virtual time without `runTest`'s scheduler). `InMemoryStorage` and `InMemoryStorageProvider` live in `:core` as `org.meshtastic.sdk.InMemoryStorage(Provider)` since 0.3.0; the aliases here are deprecated.

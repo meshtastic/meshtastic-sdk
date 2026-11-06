@@ -19,7 +19,7 @@ flowchart TB
 
     storageSql[":storage-sqldelight"]:::pub
 
-    testing[":testing<br/>(InMemoryStorage, fakes)"]:::pub
+    testing[":testing<br/>(FakeRadioTransport, TestClock)"]:::pub
     bom[":bom<br/>(version alignment)"]:::pub
 
     extProtobufs[("org.meshtastic:protobufs<br/>(published artifact)")]:::external
@@ -58,7 +58,7 @@ flowchart TB
 
 **iOS posture:** the iOS targets of `:transport-serial` ship as headers/empty actuals only — iOS does not expose USB-serial without an MFi accessory + bespoke framing, so consumers should not attempt `JvmSerialPorts` / `AndroidSerialPorts` on Apple targets. All other transports (BLE, TCP) work on iOS. `:transport-ble` ships a JVM artifact in addition to Android/iOS — Kable's JVM backend powers macOS/Linux/Windows hosts; treat it as best-effort across desktop OSes.
 **JVM posture:** BLE is available via `Kable`'s JVM backend (macOS/Linux/Windows); treat as best-effort on desktop OSes (same as line above). Serial uses jSerialComm.
-**Android posture:** serial uses usb-serial-for-android via the same `:transport-serial` artifact (single KMP module, two engines wired via expect/actual).
+**Android posture:** `:transport-serial` offers two Android backends from one artifact: `AndroidSerialPorts` on jSerialComm (bundled, [ADR-010](../decisions/010-jserialcomm-jvm-serial.md)) and `AndroidUsbSerialPorts` on usb-serial-for-android (`compileOnly`, the host adds the library and the JitPack repository, [ADR-016](../decisions/016-usb-serial-for-android-backend.md)).
 
 ## Sample apps (out of band, not published)
 
