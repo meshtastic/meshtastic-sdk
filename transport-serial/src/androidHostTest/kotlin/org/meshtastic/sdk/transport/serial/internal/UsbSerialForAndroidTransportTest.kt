@@ -117,6 +117,29 @@ class UsbSerialForAndroidTransportTest {
     }
 
     @Test
+    fun configurationFailureClosesThePort(): Unit = runBlocking {
+        val port = FakePort().apply { failSetParameters = IOException("control transfer failed") }
+        val transport = transport(port)
+
+        assertFailsWith<MeshtasticException.Transport> { transport.connect() }
+
+        assertTrue(port.closed)
+        assertIs<TransportState.Error>(transport.state.value)
+    }
+
+    @Test
+    fun readFailureDuringDisconnectKeepsDisconnected(): Unit = runBlocking {
+        val port = FakePort()
+        val transport = transport(port)
+        transport.connect()
+        port.failReadsOnceClosed = true
+
+        transport.disconnect()
+
+        assertEquals(TransportState.Disconnected, transport.state.value)
+    }
+
+    @Test
     fun openFailureSurfacesAsTransportException(): Unit = runBlocking {
         val transport = UsbSerialForAndroidTransport(
             openPort = { throw IOException("permission") },
@@ -149,12 +172,18 @@ class UsbSerialForAndroidTransportTest {
 
         @Volatile
         var failNextRead: IOException? = null
+        var failSetParameters: IOException? = null
+
+        /** A real port throws on read once closed; the reader may be mid-read when disconnect closes it. */
+        @Volatile
+        var failReadsOnceClosed = false
 
         override fun read(dest: ByteArray, timeout: Int): Int {
             failNextRead?.let {
                 failNextRead = null
                 throw it
             }
+            if (failReadsOnceClosed && closed) throw IOException("port closed")
             val chunk = reads.poll(timeout.toLong(), TimeUnit.MILLISECONDS) ?: return 0
             chunk.copyInto(dest)
             return chunk.size
@@ -169,6 +198,7 @@ class UsbSerialForAndroidTransportTest {
         override fun write(src: ByteArray, length: Int, timeout: Int) = write(src.copyOf(length), timeout)
 
         override fun setParameters(baudRate: Int, dataBits: Int, stopBits: Int, parity: Int) {
+            failSetParameters?.let { throw it }
             parameters.clear()
             parameters += listOf(baudRate, dataBits, stopBits, parity)
         }

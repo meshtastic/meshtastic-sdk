@@ -65,8 +65,9 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                     }
 
                     payloadLen == 0 -> {
-                        onFrame(Frame(byteArrayOf(START1, START2, 0, 0).toByteString()))
+                        // Reset before the callback so a throwing onFrame leaves the FSM scanning.
                         state = State.SCAN_FOR_START1
+                        onFrame(Frame(byteArrayOf(START1, START2, 0, 0).toByteString()))
                     }
 
                     else -> {
@@ -87,8 +88,8 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                         (payloadLen shr 8).toByte(),
                         (payloadLen and 0xFF).toByte(),
                     )
-                    onFrame(Frame((header + payload).toByteString()))
                     state = State.SCAN_FOR_START1
+                    onFrame(Frame((header + payload).toByteString()))
                 }
             }
         }

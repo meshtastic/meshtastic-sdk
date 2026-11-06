@@ -11,6 +11,7 @@ import org.meshtastic.sdk.Frame
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class SerialFrameAssemblerTest {
 
@@ -53,6 +54,23 @@ class SerialFrameAssemblerTest {
         val a = SerialFrameAssembler { out += it }
         for (b in frame(byteArrayOf(9, 9, 9))) a.feed(b)
         assertEquals(1, out.size)
+    }
+
+    @Test
+    fun keepsParsingAfterCallbackThrows() {
+        val out = mutableListOf<Frame>()
+        var throwOnce = true
+        val a = SerialFrameAssembler {
+            if (throwOnce) {
+                throwOnce = false
+                error("consumer failed")
+            }
+            out += it
+        }
+        assertFailsWith<IllegalStateException> { a.feed(frame(byteArrayOf(1, 2))) }
+        a.feed(frame(byteArrayOf(3)))
+        assertEquals(1, out.size)
+        assertContentEquals(frame(byteArrayOf(3)), out.single().bytes.toByteArray())
     }
 
     @Test

@@ -157,7 +157,7 @@ class HandshakeIntegrationTest {
         )
         val client = RadioClient.Builder()
             .transport(transport)
-            .storageProvider(InMemoryStorageProvider())
+            .storage(InMemoryStorageProvider())
             .build()
 
         client.connection.test {

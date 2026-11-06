@@ -83,17 +83,23 @@ internal class UsbSerialForAndroidTransport(
         try {
             val opened = withContext(ioDispatcher) {
                 openPort().also { p ->
-                    p.setParameters(
-                        baudRate,
-                        UsbSerialPort.DATABITS_8,
-                        UsbSerialPort.STOPBITS_1,
-                        UsbSerialPort.PARITY_NONE,
-                    )
-                    // Native USB-CDC boards (RAK4631, nRF52840) wait for the host to assert DTR/RTS before
-                    // they answer the wake bytes; bridge chips (CP210x, CH34x, FTDI) tolerate it.
-                    p.dtr = true
-                    p.rts = true
-                    p.write(WAKE_BYTES, WRITE_TIMEOUT_MS)
+                    try {
+                        p.setParameters(
+                            baudRate,
+                            UsbSerialPort.DATABITS_8,
+                            UsbSerialPort.STOPBITS_1,
+                            UsbSerialPort.PARITY_NONE,
+                        )
+                        // Native USB-CDC boards (RAK4631, nRF52840) wait for the host to assert DTR/RTS before
+                        // they answer the wake bytes; bridge chips (CP210x, CH34x, FTDI) tolerate it.
+                        p.dtr = true
+                        p.rts = true
+                        p.write(WAKE_BYTES, WRITE_TIMEOUT_MS)
+                    } catch (e: IOException) {
+                        // Not yet published as `port`, so cleanup() cannot release it.
+                        runCatching { p.close() }
+                        throw e
+                    }
                 }
             }
             port = opened
@@ -143,7 +149,8 @@ internal class UsbSerialForAndroidTransport(
         } catch (e: IOException) {
             if (cleanedUp.get()) return
             logger.log(LogLevel.WARN, TAG, "USB serial read failed: ${e.message}", e)
-            _state.value = TransportState.Error(e, recoverable = true)
+            // A disconnect that raced the read has already published Disconnected; keep it.
+            _state.compareAndSet(TransportState.Connected, TransportState.Error(e, recoverable = true))
             frameChannel.close()
         }
     }

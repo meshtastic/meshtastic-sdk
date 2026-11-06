@@ -253,7 +253,7 @@ class MeshViewModel @Inject constructor(
 By default, the module uses `InMemoryStorageProvider()` (data is lost on app restart). For persistence, provide your own `StorageProvider`:
 
 ```kotlin
-import org.meshtastic.sdk.storage.StorageProvider
+import org.meshtastic.sdk.StorageProvider
 
 @Module
 @InstallIn(SingletonComponent::class)
