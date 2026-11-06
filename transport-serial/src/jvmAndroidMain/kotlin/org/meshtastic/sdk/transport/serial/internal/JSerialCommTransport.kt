@@ -30,6 +30,7 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireFraming
+import org.meshtastic.sdk.transport.serial.SerialFrameAssembler
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean

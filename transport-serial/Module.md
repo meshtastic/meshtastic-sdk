@@ -13,7 +13,7 @@ blocking-IO threading contract jSerialComm requires.
 | JVM — macOS | jSerialComm bundled `.dylib` (x86_64 + arm64) | macOS 10.15+ |
 | JVM — Linux | jSerialComm bundled `.so` (x86_64, arm, arm64) | glibc 2.17+ (effectively any modern distro) |
 | JVM — Windows | jSerialComm bundled `.dll` (x86_64, arm64) | Windows 10+ |
-| Android | jSerialComm Android backend over `UsbDeviceConnection` | Android 8.0 (API 26 — repo `androidMinSdk`); requires USB Host hardware |
+| Android | jSerialComm Android backend over `UsbDeviceConnection` (`AndroidSerialPorts`), or usb-serial-for-android (`AndroidUsbSerialPorts`, host supplies the library; [ADR-016](../docs/decisions/016-usb-serial-for-android-backend.md)) | Android 8.0 (API 26 — repo `androidMinSdk`); requires USB Host hardware |
 | iOS | — | Not supported (no general-purpose serial access without an MFi accessory) |
 
 ## Serial line configuration
@@ -64,5 +64,14 @@ connection alive in the background — same constraint as BLE, see
   factory objects exposing `list(): List<SerialPortInfo>` and
   `open(portName, baudRate = 115200): RadioTransport`. The underlying
   `JSerialCommTransport` is `internal` — callers always go through the factory.
+- `org.meshtastic.sdk.transport.serial.AndroidUsbSerialPorts` — the usb-serial-for-android
+  backend: `list(context)` and `open(context, device | deviceName, baudRate = 115200)`. The
+  library is `compileOnly` here (JitPack only), so the host adds
+  `com.github.mik3y:usb-serial-for-android` and the JitPack repository; the probe table carries
+  the RAK4631, T-Beam v1.1 and nRF52840 CDC entries Meshtastic-Android adds, and the port is
+  opened with DTR/RTS asserted, which native USB-CDC boards need before they answer.
+- `org.meshtastic.sdk.transport.serial.SerialFrameAssembler` — the public framing state machine
+  (START1/START2/length, resync on garbage) both backends feed, for hosts bringing their own
+  byte stream.
 - `org.meshtastic.sdk.transport.serial.SerialPortInfo` — discovery DTO with `name`, `description`,
   `usbVendorId`, `usbProductId`.

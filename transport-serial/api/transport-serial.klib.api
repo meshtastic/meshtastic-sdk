@@ -19,6 +19,13 @@ final enum class org.meshtastic.sdk.transport.serial/SerialPortTransport : kotli
     final fun values(): kotlin/Array<org.meshtastic.sdk.transport.serial/SerialPortTransport> // org.meshtastic.sdk.transport.serial/SerialPortTransport.values|values#static(){}[0]
 }
 
+final class org.meshtastic.sdk.transport.serial/SerialFrameAssembler { // org.meshtastic.sdk.transport.serial/SerialFrameAssembler|null[0]
+    constructor <init>(kotlin/Function1<org.meshtastic.sdk/Frame, kotlin/Unit>) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.<init>|<init>(kotlin.Function1<org.meshtastic.sdk.Frame,kotlin.Unit>){}[0]
+
+    final fun feed(kotlin/Byte) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.feed|feed(kotlin.Byte){}[0]
+    final fun feed(kotlin/ByteArray, kotlin/Int = ...) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.feed|feed(kotlin.ByteArray;kotlin.Int){}[0]
+}
+
 final class org.meshtastic.sdk.transport.serial/SerialPortInfo { // org.meshtastic.sdk.transport.serial/SerialPortInfo|null[0]
     constructor <init>(kotlin/String, kotlin/String? = ..., org.meshtastic.sdk.transport.serial/SerialPortTransport = ..., kotlin/Int? = ..., kotlin/Int? = ..., kotlin/String? = ..., kotlin/String? = ..., kotlin/String? = ...) // org.meshtastic.sdk.transport.serial/SerialPortInfo.<init>|<init>(kotlin.String;kotlin.String?;org.meshtastic.sdk.transport.serial.SerialPortTransport;kotlin.Int?;kotlin.Int?;kotlin.String?;kotlin.String?;kotlin.String?){}[0]
 

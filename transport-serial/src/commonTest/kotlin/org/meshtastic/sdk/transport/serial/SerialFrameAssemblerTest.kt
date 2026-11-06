@@ -5,7 +5,7 @@
  * Licensed under the GPL-3.0-or-later license (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.html)
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-package org.meshtastic.sdk.transport.serial.internal
+package org.meshtastic.sdk.transport.serial
 
 import org.meshtastic.sdk.Frame
 import kotlin.test.Test
