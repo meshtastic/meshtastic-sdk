@@ -10,6 +10,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking
 
+- `SendFailure.RateLimited` is a new case, and a send the device refuses with
+  `Routing.Error.RATE_LIMIT_EXCEEDED` now fails with it instead of
+  `SendFailure.Other(RATE_LIMIT_EXCEEDED)`. Firmware answers that way to a second text message
+  inside two seconds. An exhaustive `when` over `SendFailure` needs the new branch, and code
+  matching `Other` for this error no longer sees it. Admin calls still return
+  `AdminResult.RateLimited`.
 - `MeshEvent.TransportError.error` is a `MeshtasticException`, no longer narrowed to
   `MeshtasticException.Transport`. A `HandshakeTimeout` or `StorageUnavailable` that ends a
   session now arrives as its own type instead of a `Transport` wrapper whose message had to be
