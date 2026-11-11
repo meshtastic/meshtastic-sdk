@@ -1619,6 +1619,13 @@ public final class org/meshtastic/sdk/SendFailure$QueueRejected : org/meshtastic
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/SendFailure$RateLimited : org/meshtastic/sdk/SendFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/SendFailure$RateLimited;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/SendFailure$Timeout : org/meshtastic/sdk/SendFailure {
 	public static final field INSTANCE Lorg/meshtastic/sdk/SendFailure$Timeout;
 	public fun equals (Ljava/lang/Object;)Z

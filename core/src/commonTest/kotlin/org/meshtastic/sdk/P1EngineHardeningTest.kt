@@ -135,6 +135,7 @@ class P1EngineHardeningTest {
         assertMapping(Routing.Error.MAX_RETRANSMIT, SendFailure.MaxRetransmit)
         assertMapping(Routing.Error.TIMEOUT, SendFailure.Timeout)
         assertMapping(Routing.Error.DUTY_CYCLE_LIMIT, SendFailure.DutyCycleLimit)
+        assertMapping(Routing.Error.RATE_LIMIT_EXCEEDED, SendFailure.RateLimited)
         // Unmapped value still lands in Other with the raw enum preserved.
         val handle = client.send(unicastWantAckPacket(toNodeNum = 0x22222222))
         runCurrent()

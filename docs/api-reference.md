@@ -232,6 +232,7 @@ public sealed interface SendFailure {
     public data object MaxRetransmit : SendFailure
     public data object Timeout : SendFailure
     public data object DutyCycleLimit : SendFailure
+    public data object RateLimited : SendFailure                // Routing.RATE_LIMIT_EXCEEDED
     public data object Disconnected : SendFailure               // transport dropped mid-send
     public data object Cancelled : SendFailure                  // MessageHandle.cancel() called pre-Sent
     public data object IdCollision : SendFailure                // outbound packet id clashed with an in-flight one
