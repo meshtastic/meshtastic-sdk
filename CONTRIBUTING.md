@@ -46,6 +46,7 @@ git push --force-with-lease
 | Android Gradle Plugin (AGP) | **9.0+** (required for Kotlin 2.0 compatibility and KMP support; see **Build requirements** below) |
 | Gradle | 8.4+ (bundled; see `gradle/wrapper/gradle-wrapper.properties`) |
 | Android SDK | API 36 platform (only needed for Android targets); set `ANDROID_HOME` |
+| Node.js | 20+ on `PATH` (only needed for the `js` target; Gradle does not download it) |
 | Xcode | 15+ with iOS 14+ SDK (only needed for iOS targets, mac only) |
 | Git | Any modern version |
 
@@ -112,6 +113,7 @@ The version is pinned in `gradle/libs.versions.toml` (`meshtasticProtobufs`).
 | Full check | `./gradlew check` |
 | JVM tests | `./gradlew jvmTest` |
 | iOS sim tests (mac) | `./gradlew iosSimulatorArm64Test` |
+| JS tests (needs `node` on `PATH`) | `./gradlew jsNodeTest` |
 | API surface check | `./gradlew checkKotlinAbi` |
 | API surface dump (after intended change) | `./gradlew updateKotlinAbi` |
 | Lint | `./gradlew detekt spotlessCheck` |
