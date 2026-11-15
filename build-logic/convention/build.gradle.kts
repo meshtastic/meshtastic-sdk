@@ -76,5 +76,9 @@ gradlePlugin {
             id = "meshtastic.ios.framework"
             implementationClass = "MeshtasticIosFrameworkPlugin"
         }
+        register("jsLibrary") {
+            id = "meshtastic.js.library"
+            implementationClass = "JsLibraryConventionPlugin"
+        }
     }
 }
