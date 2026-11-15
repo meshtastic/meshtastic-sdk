@@ -101,8 +101,8 @@ class TelemetryApiObserveTest {
             }.build(),
             Telemetry.Builder().also { wb ->
                 wb.power_metrics = PowerMetrics.Builder().also { wb ->
-                    wb.ch1_voltage = 4.2f
-                    wb.ch1_current = 0.48f
+                    wb.ch1_voltage = 4.25f
+                    wb.ch1_current = 0.5f
                 }.build()
             }.build(),
         )
@@ -130,7 +130,7 @@ class TelemetryApiObserveTest {
 
         val expected = DeviceMetrics.Builder().also { wb ->
             wb.battery_level = 90
-            wb.voltage = 4.1f
+            wb.voltage = 4.125f
             wb.uptime_seconds = 600
         }.build()
         val received = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
@@ -155,9 +155,9 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val expected = EnvironmentMetrics.Builder().also { wb ->
-            wb.temperature = 23.4f
+            wb.temperature = 23.5f
             wb.relative_humidity = 56.0f
-            wb.barometric_pressure = 1008.7f
+            wb.barometric_pressure = 1008.75f
         }.build()
         val received = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
         runCurrent()
@@ -181,8 +181,8 @@ class TelemetryApiObserveTest {
         runCurrent()
 
         val expected = PowerMetrics.Builder().also { wb ->
-            wb.ch1_voltage = 4.18f
-            wb.ch1_current = 0.42f
+            wb.ch1_voltage = 4.1875f
+            wb.ch1_current = 0.4375f
             wb.ch2_voltage = 5.0f
         }.build()
         val received = backgroundScope.async { client.telemetry.observe(NodeId.LOCAL).first() }
@@ -244,7 +244,7 @@ class TelemetryApiObserveTest {
 
         val expected = Telemetry.Builder().also { wb ->
             wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->
-                wb.temperature = 18.2f
+                wb.temperature = 18.25f
             }.build()
         }.build()
         transport.injectTelemetryResponse(requestId = 0, telemetry = expected, fromNode = node.raw)
