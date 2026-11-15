@@ -55,7 +55,7 @@ class TelemetryApiTest {
 
         val expected = DeviceMetrics.Builder().also { wb ->
             wb.battery_level = 87
-            wb.voltage = 4.1f
+            wb.voltage = 4.125f
             wb.uptime_seconds = 3600
         }.build()
         transport.injectTelemetryResponse(
@@ -89,7 +89,7 @@ class TelemetryApiTest {
         val expected = EnvironmentMetrics.Builder().also { wb ->
             wb.temperature = 21.5f
             wb.relative_humidity = 62.0f
-            wb.barometric_pressure = 1013.2f
+            wb.barometric_pressure = 1013.25f
         }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
@@ -148,8 +148,8 @@ class TelemetryApiTest {
 
         val request = transport.lastTelemetryRequest(outboundBefore)
         val expected = PowerMetrics.Builder().also { wb ->
-            wb.ch1_voltage = 4.18f
-            wb.ch1_current = 0.42f
+            wb.ch1_voltage = 4.1875f
+            wb.ch1_current = 0.4375f
             wb.ch2_voltage = 5.0f
         }.build()
         transport.injectTelemetryResponse(
@@ -213,7 +213,7 @@ class TelemetryApiTest {
         val expected = HealthMetrics.Builder().also { wb ->
             wb.heart_bpm = 72
             wb.spO2 = 98
-            wb.temperature = 36.7f
+            wb.temperature = 36.75f
         }.build()
         transport.injectTelemetryResponse(
             requestId = request.id,
@@ -304,13 +304,13 @@ class TelemetryApiTest {
         val expected = listOf(
             Telemetry.Builder().also { wb ->
                 wb.environment_metrics = EnvironmentMetrics.Builder().also { wb ->
-                    wb.temperature = 19.8f
+                    wb.temperature = 19.75f
                 }.build()
             }.build(),
             Telemetry.Builder().also { wb ->
                 wb.power_metrics = PowerMetrics.Builder().also { wb ->
-                    wb.ch1_voltage = 4.05f
-                    wb.ch1_current = 0.31f
+                    wb.ch1_voltage = 4.0625f
+                    wb.ch1_current = 0.3125f
                 }.build()
             }.build(),
         )

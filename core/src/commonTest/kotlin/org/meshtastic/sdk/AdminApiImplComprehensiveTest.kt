@@ -1074,7 +1074,7 @@ class AdminApiImplComprehensiveTest {
         val params = HamParameters.Builder().also { wb ->
             wb.call_sign = "KD2ABC"
             wb.tx_power = 20
-            wb.frequency = 146.52f
+            wb.frequency = 146.5f
             wb.short_name = "KD"
         }.build()
         assertAckedOperation(
