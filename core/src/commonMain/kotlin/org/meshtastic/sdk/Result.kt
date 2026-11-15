@@ -82,6 +82,13 @@ public sealed interface SendFailure {
     public data object DutyCycleLimit : SendFailure
 
     /**
+     * The device refused the packet because the client sent on this port too soon after the last
+     * one (from `Routing.Error.RATE_LIMIT_EXCEEDED`). Firmware allows one text message every two
+     * seconds. Nothing was transmitted; wait and send again.
+     */
+    public data object RateLimited : SendFailure
+
+    /**
      * Transport disconnected before the packet could be sent.
      */
     public data object Disconnected : SendFailure

@@ -59,6 +59,7 @@ public sealed interface SendFailure {
     public data object MaxRetransmit : SendFailure              // Routing.MAX_RETRANSMIT
     public data object Timeout : SendFailure                    // engine timeout (no Routing reply)
     public data object DutyCycleLimit : SendFailure             // Routing.DUTY_CYCLE_LIMIT_REACHED
+    public data object RateLimited : SendFailure                // Routing.RATE_LIMIT_EXCEEDED
     public data object Disconnected : SendFailure               // transport dropped mid-send
     public data object Cancelled : SendFailure                  // MessageHandle.cancel() pre-Sent
     public data object IdCollision : SendFailure                // outbound packet id clashed with in-flight
@@ -92,7 +93,7 @@ The Wire-generated `Routing.Error` enum (from `meshtastic/protobufs:mesh.proto`)
 | `PKI_UNKNOWN_PUBKEY` | `Other(PKI_UNKNOWN_PUBKEY)` |
 | `ADMIN_BAD_SESSION_KEY` | `Other(ADMIN_BAD_SESSION_KEY)` (admin paths intercept; see below) |
 | `ADMIN_PUBLIC_KEY_UNAUTHORIZED` | `Other(ADMIN_PUBLIC_KEY_UNAUTHORIZED)` (admin paths intercept) |
-| `RATE_LIMIT_EXCEEDED` | `Other(RATE_LIMIT_EXCEEDED)` (admin paths intercept → `AdminResult.RateLimited`) |
+| `RATE_LIMIT_EXCEEDED` | `RateLimited` (admin paths raise `AdminResult.RateLimited`) |
 | (any new value the proto schema adds) | `Other(value)` — forward-compatible without a code change |
 
 `SendFailure.Unknown` is reserved for engine-internal anomalies (encoded `MeshPacket` with no decoded payload, etc.) and should never appear in production.

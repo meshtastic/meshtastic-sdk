@@ -33,6 +33,7 @@ below is a terminal `Failed` reason. Source of truth:
 | `MaxRetransmit`                 | Device exhausted retransmit budget (`Routing.Error.MAX_RETRANSMIT`).                          | Yes — wait, then resend; the mesh was busy. |
 | `Timeout`                       | Admin RPC timed out waiting for a response.                                                   | Yes — usually a transient device hiccup. |
 | `DutyCycleLimit`                | Region's duty-cycle ceiling blocked transmission.                                             | Yes, after backoff (seconds–minutes). |
+| `RateLimited`                   | The device refused a send that followed the last one on its port too closely (`Routing.Error.RATE_LIMIT_EXCEEDED`); firmware allows one text every two seconds. | Yes, after a few seconds. |
 | `Disconnected`                  | Transport went away mid-send.                                                                 | Reconnect, then resend. |
 | `HandshakeFailed`               | Sends queued before `Connected` are failed with this when the handshake itself fails.         | Reconnect, then resend. |
 | `Cancelled`                     | `MessageHandle.cancel()` was called before the packet left the host queue.                    | No — caller asked. |
@@ -62,7 +63,8 @@ suspend fun sendWithRetry(client: RadioClient, text: String, maxAttempts: Int = 
                 SendFailure.MaxRetransmit,
                 SendFailure.Timeout,
                 SendFailure.AckTimeout,
-                SendFailure.DutyCycleLimit -> {
+                SendFailure.DutyCycleLimit,
+                SendFailure.RateLimited -> {
                     if (attempt >= maxAttempts) error("gave up after $attempt: $reason")
                     delay((1L shl attempt).seconds) // 2s, 4s, 8s …
                 }
@@ -238,7 +240,7 @@ A short cheat sheet for "do I retry, surface, or both?":
   `StorageUnavailable` from `connect()`) — surface to user; offer a
   retry button rather than auto-retrying.
 - **In-flight transients** (`MaxRetransmit`, `Timeout`, `AckTimeout`,
-  `DutyCycleLimit`) — auto-retry with exponential backoff (cap the
+  `DutyCycleLimit`, `RateLimited`) — auto-retry with exponential backoff (cap the
   attempt count); only surface after the budget is exhausted.
 - **Connectivity loss** (`Disconnected`, `HandshakeFailed` on a send,
   `TransportError` event, `ConnectionState.Reconnecting`) — wait for

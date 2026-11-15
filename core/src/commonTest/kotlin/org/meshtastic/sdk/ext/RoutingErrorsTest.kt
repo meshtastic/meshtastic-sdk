@@ -33,6 +33,7 @@ class RoutingErrorsTest {
     @Test fun sendFailureHumanMessages() {
         assertTrue("route" in SendFailure.NoRoute.humanMessage().lowercase())
         assertTrue("disconnect" in SendFailure.Disconnected.humanMessage().lowercase())
+        assertTrue("rate limit" in SendFailure.RateLimited.humanMessage().lowercase())
         assertTrue("channel" in SendFailure.Other(Routing.Error.NO_CHANNEL).humanMessage().lowercase())
         assertTrue("oops" in SendFailure.Unknown("oops").humanMessage())
     }

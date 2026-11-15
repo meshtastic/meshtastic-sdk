@@ -1839,6 +1839,8 @@ internal class MeshEngine(
 
                     Routing.Error.DUTY_CYCLE_LIMIT -> SendFailure.DutyCycleLimit
 
+                    Routing.Error.RATE_LIMIT_EXCEEDED -> SendFailure.RateLimited
+
                     else -> SendFailure.Other(errorReason)
                 }
                 flow.value = SendState.Failed(failure)

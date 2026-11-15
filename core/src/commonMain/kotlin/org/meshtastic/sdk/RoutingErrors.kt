@@ -100,6 +100,7 @@ public fun SendFailure.humanMessage(): String = when (this) {
     SendFailure.MaxRetransmit -> "Device exhausted its retransmit budget."
     SendFailure.Timeout -> "Operation timed out waiting for a response."
     SendFailure.DutyCycleLimit -> "Duty-cycle limit hit; wait before retrying."
+    SendFailure.RateLimited -> Routing.Error.RATE_LIMIT_EXCEEDED.actionableMessage()
     SendFailure.Disconnected -> "Transport disconnected before send completed."
     SendFailure.HandshakeFailed -> "Send aborted because the handshake never completed."
     SendFailure.Cancelled -> "Send was cancelled before transmission."
