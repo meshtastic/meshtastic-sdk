@@ -276,7 +276,7 @@ public sealed interface MeshEvent {
 public enum class DroppedFlow { Packets, Events }
 ```
 
-`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for the engine clearing storage after a NodeNum change (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads. *(since 0.2.0)* `MqttProxyMessage` carries the device's `mqttClientProxyMessage` traffic for hosts implementing the device-as-MQTT-proxy side channel; `XmodemPacket` carries raw `XModem` file-transfer packets; `FileInfoReceived` carries an `org.meshtastic.proto.FileInfo` advertisement (the variant is named `FileInfoReceived` — not `FileInfo` — to avoid clashing with the proto type). *(since 0.3.0)* `LockdownStatusChanged` carries the device's `LockdownStatus` report from hardened (`MESHTASTIC_LOCKDOWN`) firmware builds — sent right after `config_complete_id` and after each `AdminApi.lockdown` command — and is the source of truth for lockdown availability (no firmware-version capability flag — lockdown is a build-time firmware option).
+`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for a NodeNum change: `reason` is `"identity_mismatch"` when the engine cleared storage and `"node_renumbered"` when the same `MyNodeInfo.device_id` came back under a new NodeNum and storage was kept (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads. *(since 0.2.0)* `MqttProxyMessage` carries the device's `mqttClientProxyMessage` traffic for hosts implementing the device-as-MQTT-proxy side channel; `XmodemPacket` carries raw `XModem` file-transfer packets; `FileInfoReceived` carries an `org.meshtastic.proto.FileInfo` advertisement (the variant is named `FileInfoReceived` — not `FileInfo` — to avoid clashing with the proto type). *(since 0.3.0)* `LockdownStatusChanged` carries the device's `LockdownStatus` report from hardened (`MESHTASTIC_LOCKDOWN`) firmware builds — sent right after `config_complete_id` and after each `AdminApi.lockdown` command — and is the source of truth for lockdown availability (no firmware-version capability flag — lockdown is a build-time firmware option).
 
 ## `NodeChange`
 
@@ -622,6 +622,16 @@ public interface DeviceStorage : AutoCloseable {
      * `MeshEvent.IdentityRebound(previous, current)`.
      */
     public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String)
+
+    /**
+     * As above, plus the validated `MyNodeInfo.device_id`. On a NodeNum change with an equal stored
+     * id (same device, renumbered) implementations keep their state, remove the previous own-node
+     * row and persist the new tuple. Default body delegates to the two-argument overload. (since 0.3.0)
+     */
+    public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?)
+
+    /** The device id persisted by the overload above, or null. Default body returns null. (since 0.3.0) */
+    public suspend fun loadOwnDeviceId(): ByteString?
 
     /** Save the admin session passkey for session resumption. */
     public suspend fun saveSessionPasskey(passkey: SessionPasskey)

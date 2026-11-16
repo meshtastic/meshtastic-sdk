@@ -92,6 +92,30 @@ The SqlDelight implementation honours all three; the engine then
 rebuilds `MeshState` from the fresh handshake payload, so consumers
 never observe stale NodeDB rows leaked across an identity boundary.
 
+### Renumbered device (same `device_id`)
+
+Firmware 2.8 derives `my_node_num` from the public key, so a device that
+upgrades or regenerates its key reports a new NodeNum while staying the
+same hardware. `MyNodeInfo.device_id` is the stable hardware identifier.
+The engine passes it to the three-argument
+`recordOwnNode(nodeNum, firmwareVersion, deviceId)` only when it is
+trustworthy: exactly 16 bytes and not all zero. Firmware leaves it empty
+on hardware without a unique id and zeroes it for unauthenticated clients
+in lockdown mode.
+
+When the NodeNum differs and the trusted incoming id equals the stored
+one, storage is **not** cleared: the row for the previous own NodeNum is
+removed, the new tuple is stored, and the fresh handshake supplies the new
+own-node row. In every other case (no stored id, no trusted incoming id,
+or different ids) the behaviour is the clear described above. A database
+that holds no device id is treated as having none, so the first connect
+that records one still clears on a NodeNum change.
+
+`SqlDelightStorage` keeps the id in the `session` table under
+`identity_device_id`; `InMemoryStorage` keeps it in a field. An
+implementation that overrides neither new `DeviceStorage` member keeps
+clearing on every NodeNum change.
+
 ### Consumer-observable signal (R-9)
 
 When the engine detects that the device reports a different `NodeNum`
@@ -105,10 +129,14 @@ care about between observing the event and the next snapshot emission.
 
 Detection is performed by the engine actor: at `connect()` time, the
 engine calls `storage.loadConfig()` once and remembers the previously
-recorded `MyNodeInfo.my_node_num`. When Stage 2 of the handshake
+recorded `MyNodeInfo.my_node_num`, plus `storage.loadOwnDeviceId()` for
+the previous hardware id. When Stage 2 of the handshake
 commits the new `MyNodeInfo`, the engine compares the two values
 synchronously on the actor and emits the event before any state
-mutation that consumers can observe.
+mutation that consumers can observe. `reason` is `"identity_mismatch"`
+when storage is cleared and `"node_renumbered"` when the same trusted
+`device_id` came back under a new NodeNum and storage was kept.
+Session passkeys are dropped in both cases.
 
 [rebind]: ../../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt
 

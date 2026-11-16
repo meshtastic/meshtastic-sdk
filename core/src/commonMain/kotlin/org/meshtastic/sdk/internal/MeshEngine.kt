@@ -175,6 +175,9 @@ internal class MeshEngine(
     // we can synchronously detect identity rebinds on Stage 2 commit (before storage is cleared).
     private var previousMyNodeNum: Int? = null
 
+    // Hardware id persisted with previousMyNodeNum; null when storage holds none (never logged).
+    private var previousDeviceId: okio.ByteString? = null
+
     /**
      * Per-node admin session passkeys, keyed by the node num that issued them. Each node
      * (local device and every remote admin target) hands out its **own** passkey in its admin
@@ -582,6 +585,7 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Idle
         myNodeNum = 0
         previousMyNodeNum = null
+        previousDeviceId = null
         sessionPasskeys.clear()
         handshakePacketBuffer.clear()
         pendingNodes.clear()
@@ -794,6 +798,14 @@ internal class MeshEngine(
             throw e
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to load previous identity for rebind detection" }
+            null
+        }
+        previousDeviceId = try {
+            trustedDeviceIdOrNull(storage?.loadOwnDeviceId())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG, e) { "Failed to load previous device id for rebind detection" }
             null
         }
 
@@ -1218,11 +1230,13 @@ internal class MeshEngine(
                     // any consumer-observable state (NodeChange.Snapshot below) and BEFORE the
                     // async storage.recordOwnNode → clear() runs.
                     val prev = previousMyNodeNum
+                    val incomingDeviceId = trustedDeviceIdOrNull(myInfo.device_id)
                     if (prev != null && prev != myInfo.my_node_num) {
+                        val renumbered = incomingDeviceId != null && incomingDeviceId == previousDeviceId
                         logger.warn(TAG) {
                             "Identity rebind detected — previous=0x${prev.toString(
                                 16,
-                            )} new=0x${myInfo.my_node_num.toString(16)}"
+                            )} new=0x${myInfo.my_node_num.toString(16)} renumbered=$renumbered"
                         }
                         // passkeys issued under the previous identity are meaningless now.
                         sessionPasskeys.clear()
@@ -1230,15 +1244,12 @@ internal class MeshEngine(
                             MeshEvent.IdentityRebound(
                                 previousNodeNum = NodeId(prev),
                                 newNodeNum = NodeId(myInfo.my_node_num),
-                                // populate reason so host UX can choose
-                                // copy. Without the firmware specifically signalling "factory
-                                // reset", we report "identity_mismatch" — the NodeNum changed
-                                // under an identity that the host persisted.
-                                reason = "identity_mismatch",
+                                reason = if (renumbered) REASON_NODE_RENUMBERED else REASON_IDENTITY_MISMATCH,
                             ),
                         )
                     }
                     previousMyNodeNum = myInfo.my_node_num.takeIf { it != 0 }
+                    previousDeviceId = incomingDeviceId ?: previousDeviceId.takeIf { prev == myInfo.my_node_num }
 
                     myNodeNum = myInfo.my_node_num
                     meshState = meshState.withMyInfo(myInfo)
@@ -1288,7 +1299,11 @@ internal class MeshEngine(
                         val s = storage ?: return@launch
                         try {
                             if (myInfo != null) {
-                                s.recordOwnNode(NodeId(myInfo.my_node_num), firmwareVersion)
+                                s.recordOwnNode(
+                                    NodeId(myInfo.my_node_num),
+                                    firmwareVersion,
+                                    trustedDeviceIdOrNull(myInfo.device_id),
+                                )
                             }
                             for ((nodeId, node) in nodesSnapshot) {
                                 s.saveNode(node)
@@ -2623,6 +2638,8 @@ internal class MeshEngine(
 
     private companion object {
         private const val TAG = "MeshEngine"
+        private const val REASON_IDENTITY_MISMATCH = "identity_mismatch"
+        private const val REASON_NODE_RENUMBERED = "node_renumbered"
 
         // Handshake nonces (protocol.md §6).
         const val NONCE_STAGE1 = 69420

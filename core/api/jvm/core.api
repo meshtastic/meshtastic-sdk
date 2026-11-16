@@ -478,7 +478,9 @@ public abstract interface class org/meshtastic/sdk/DeviceStorage : java/lang/Aut
 	public abstract fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadOwnDeviceId (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recordOwnNode-HXU1dws (ILjava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -486,6 +488,11 @@ public abstract interface class org/meshtastic/sdk/DeviceStorage : java/lang/Aut
 	public abstract fun saveHeartbeat-TEw7vI0 (IJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun saveNode (Lorg/meshtastic/proto/NodeInfo;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun saveSessionPasskey (Lorg/meshtastic/sdk/SessionPasskey;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/DeviceStorage$DefaultImpls {
+	public static fun loadOwnDeviceId (Lorg/meshtastic/sdk/DeviceStorage;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun recordOwnNode-HXU1dws (Lorg/meshtastic/sdk/DeviceStorage;ILjava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/DeviceVersion : java/lang/Comparable {
@@ -557,7 +564,9 @@ public final class org/meshtastic/sdk/InMemoryStorage : org/meshtastic/sdk/Devic
 	public fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadOwnDeviceId (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recordOwnNode-HXU1dws (ILjava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

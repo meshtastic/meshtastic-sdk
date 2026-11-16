@@ -10,6 +10,7 @@ package org.meshtastic.sdk.storage.sqldelight
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import okio.ByteString
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import okio.SYSTEM
@@ -47,8 +48,10 @@ import kotlin.random.Random
  *    - Otherwise allocate a fresh opaque `dbId`, create `<dbId>.db`, replay scratch.
  *    - Persist both `identity → dbId` and `nodeNum → dbId` bindings atomically.
  * 3. If a later `recordOwnNode` reports a *different* `nodeNum` (factory reset / radio swap),
- *    the inner storage's own factory-reset logic clears the DB; the provider updates the
- *    `nodeNum → dbId` binding so the old NodeNum no longer resolves to this DB.
+ *    the inner storage's own factory-reset logic clears the DB, unless the same hardware
+ *    device id is reported (the device renumbered), in which case the DB is kept. Either way
+ *    the provider updates the `nodeNum → dbId` binding so the old NodeNum no longer resolves
+ *    to this DB.
  *
  * Pass `baseDir = ""` for in-memory-only mode (every activation returns a fresh in-memory DB).
  *
@@ -164,6 +167,12 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
         }
 
         override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) {
+            recordOwnNode(nodeNum, firmwareVersion, null)
+        }
+
+        override suspend fun loadOwnDeviceId(): ByteString? = inner?.loadOwnDeviceId()
+
+        override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?) {
             val existing = inner
             if (existing == null) {
                 // First bind: open (or adopt) the node-keyed DB, replay scratch, then delegate.
@@ -171,14 +180,14 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
                 replayScratchInto(real)
                 inner = real
                 dbId = boundDbId
-                real.recordOwnNode(nodeNum, firmwareVersion)
+                real.recordOwnNode(nodeNum, firmwareVersion, deviceId)
                 return
             }
             // Already bound. Inner.recordOwnNode handles its own factory-reset detection
             // (clears the DB on NodeNum mismatch). We then unconditionally re-anchor the
             // provider-level nodeNum→dbId binding to the current NodeNum, pruning any stale
             // entries that pointed at this dbId.
-            existing.recordOwnNode(nodeNum, firmwareVersion)
+            existing.recordOwnNode(nodeNum, firmwareVersion, deviceId)
             dbId?.let { rebindNodeNum(nodeNum, it) }
         }
 

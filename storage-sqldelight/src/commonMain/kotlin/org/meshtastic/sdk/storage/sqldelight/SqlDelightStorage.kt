@@ -10,6 +10,7 @@ package org.meshtastic.sdk.storage.sqldelight
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
+import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
@@ -202,38 +203,53 @@ internal class SqlDelightStorage(
 
     // ── Identity / factory-reset detection ───────────────────────────────────
 
-    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) = withContext(dispatcher) {
-        db.transaction {
-            val storedNumBytes = q.selectSession(SESSION_KEY_NODE_NUM).executeAsOneOrNull()?.value_
-            if (storedNumBytes != null) {
-                val stored = storedNumBytes.decodeToString().toIntOrNull()
-                if (stored != null && stored != nodeNum.raw) {
-                    q.clearAll()
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) {
+        recordOwnNode(nodeNum, firmwareVersion, null)
+    }
+
+    override suspend fun loadOwnDeviceId(): ByteString? = withContext(dispatcher) {
+        q.selectSession(SESSION_KEY_DEVICE_ID).executeAsOneOrNull()?.value_?.toByteString()
+    }
+
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?) =
+        withContext(dispatcher) {
+            db.transaction {
+                val storedNumBytes = q.selectSession(SESSION_KEY_NODE_NUM).executeAsOneOrNull()?.value_
+                if (storedNumBytes != null) {
+                    val stored = storedNumBytes.decodeToString().toIntOrNull()
+                    if (stored != null && stored != nodeNum.raw) {
+                        val storedId = q.selectSession(SESSION_KEY_DEVICE_ID).executeAsOneOrNull()?.value_
+                        if (deviceId != null && storedId != null && deviceId == storedId.toByteString()) {
+                            q.deleteNode(stored.toLong())
+                        } else {
+                            q.clearAll()
+                        }
+                    }
+                }
+                q.upsertSession(SESSION_KEY_NODE_NUM, nodeNum.raw.toString().encodeToByteArray())
+                if (deviceId != null) q.upsertSession(SESSION_KEY_DEVICE_ID, deviceId.toByteArray())
+                q.upsertSession(SESSION_KEY_FIRMWARE, firmwareVersion.encodeToByteArray())
+                q.selectNode(nodeNum.raw.toLong()).executeAsOneOrNull()?.let {
+                    q.upsertNode(
+                        node_num = it.node_num,
+                        user_id = it.user_id,
+                        long_name = it.long_name,
+                        short_name = it.short_name,
+                        hw_model = it.hw_model,
+                        is_licensed = it.is_licensed,
+                        role = it.role,
+                        public_key = it.public_key,
+                        last_heard_epoch = it.last_heard_epoch,
+                        snr = it.snr,
+                        rssi = it.rssi,
+                        hops_away = it.hops_away,
+                        via_mqtt = it.via_mqtt,
+                        is_self = 1L,
+                        raw_node_info = it.raw_node_info,
+                    )
                 }
             }
-            q.upsertSession(SESSION_KEY_NODE_NUM, nodeNum.raw.toString().encodeToByteArray())
-            q.upsertSession(SESSION_KEY_FIRMWARE, firmwareVersion.encodeToByteArray())
-            q.selectNode(nodeNum.raw.toLong()).executeAsOneOrNull()?.let {
-                q.upsertNode(
-                    node_num = it.node_num,
-                    user_id = it.user_id,
-                    long_name = it.long_name,
-                    short_name = it.short_name,
-                    hw_model = it.hw_model,
-                    is_licensed = it.is_licensed,
-                    role = it.role,
-                    public_key = it.public_key,
-                    last_heard_epoch = it.last_heard_epoch,
-                    snr = it.snr,
-                    rssi = it.rssi,
-                    hops_away = it.hops_away,
-                    via_mqtt = it.via_mqtt,
-                    is_self = 1L,
-                    raw_node_info = it.raw_node_info,
-                )
-            }
         }
-    }
 
     // ── Session passkey (R-P0-4) ──────────────────────────────────────────────
 
@@ -290,6 +306,7 @@ internal class SqlDelightStorage(
         const val SESSION_KEY_MY_INFO = "my_info"
         const val SESSION_KEY_METADATA = "metadata"
         const val SESSION_KEY_NODE_NUM = "identity_node_num"
+        const val SESSION_KEY_DEVICE_ID = "identity_device_id"
         const val SESSION_KEY_FIRMWARE = "firmware_version"
         const val SESSION_KEY_PASSKEY = "session_passkey"
         const val SESSION_KEY_PASSKEY_EXPIRES_MS = "session_passkey_expires_ms"

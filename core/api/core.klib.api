@@ -211,6 +211,8 @@ abstract interface org.meshtastic.sdk/DeviceStorage : kotlin/AutoCloseable { // 
     abstract suspend fun saveHeartbeat(org.meshtastic.sdk/NodeId, kotlin/Long) // org.meshtastic.sdk/DeviceStorage.saveHeartbeat|saveHeartbeat(org.meshtastic.sdk.NodeId;kotlin.Long){}[0]
     abstract suspend fun saveNode(org.meshtastic.proto/NodeInfo) // org.meshtastic.sdk/DeviceStorage.saveNode|saveNode(org.meshtastic.proto.NodeInfo){}[0]
     abstract suspend fun saveSessionPasskey(org.meshtastic.sdk/SessionPasskey) // org.meshtastic.sdk/DeviceStorage.saveSessionPasskey|saveSessionPasskey(org.meshtastic.sdk.SessionPasskey){}[0]
+    open suspend fun loadOwnDeviceId(): okio/ByteString? // org.meshtastic.sdk/DeviceStorage.loadOwnDeviceId|loadOwnDeviceId(){}[0]
+    open suspend fun recordOwnNode(org.meshtastic.sdk/NodeId, kotlin/String, okio/ByteString?) // org.meshtastic.sdk/DeviceStorage.recordOwnNode|recordOwnNode(org.meshtastic.sdk.NodeId;kotlin.String;okio.ByteString?){}[0]
 }
 
 abstract interface org.meshtastic.sdk/KeyVerificationPrompt // org.meshtastic.sdk/KeyVerificationPrompt|null[0]
@@ -1294,8 +1296,10 @@ final class org.meshtastic.sdk/InMemoryStorage : org.meshtastic.sdk/DeviceStorag
     final suspend fun loadConfig(): org.meshtastic.sdk/ConfigBundle? // org.meshtastic.sdk/InMemoryStorage.loadConfig|loadConfig(){}[0]
     final suspend fun loadHeartbeats(): kotlin.collections/Map<org.meshtastic.sdk/NodeId, kotlin/Long> // org.meshtastic.sdk/InMemoryStorage.loadHeartbeats|loadHeartbeats(){}[0]
     final suspend fun loadNodes(): kotlin.collections/Map<org.meshtastic.sdk/NodeId, org.meshtastic.proto/NodeInfo> // org.meshtastic.sdk/InMemoryStorage.loadNodes|loadNodes(){}[0]
+    final suspend fun loadOwnDeviceId(): okio/ByteString? // org.meshtastic.sdk/InMemoryStorage.loadOwnDeviceId|loadOwnDeviceId(){}[0]
     final suspend fun loadSessionPasskey(): org.meshtastic.sdk/SessionPasskey? // org.meshtastic.sdk/InMemoryStorage.loadSessionPasskey|loadSessionPasskey(){}[0]
     final suspend fun recordOwnNode(org.meshtastic.sdk/NodeId, kotlin/String) // org.meshtastic.sdk/InMemoryStorage.recordOwnNode|recordOwnNode(org.meshtastic.sdk.NodeId;kotlin.String){}[0]
+    final suspend fun recordOwnNode(org.meshtastic.sdk/NodeId, kotlin/String, okio/ByteString?) // org.meshtastic.sdk/InMemoryStorage.recordOwnNode|recordOwnNode(org.meshtastic.sdk.NodeId;kotlin.String;okio.ByteString?){}[0]
     final suspend fun removeNode(org.meshtastic.sdk/NodeId) // org.meshtastic.sdk/InMemoryStorage.removeNode|removeNode(org.meshtastic.sdk.NodeId){}[0]
     final suspend fun saveChannels(kotlin.collections/List<org.meshtastic.proto/Channel>) // org.meshtastic.sdk/InMemoryStorage.saveChannels|saveChannels(kotlin.collections.List<org.meshtastic.proto.Channel>){}[0]
     final suspend fun saveConfig(org.meshtastic.sdk/ConfigBundle) // org.meshtastic.sdk/InMemoryStorage.saveConfig|saveConfig(org.meshtastic.sdk.ConfigBundle){}[0]
