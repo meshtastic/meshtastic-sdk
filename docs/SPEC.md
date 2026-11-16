@@ -318,7 +318,7 @@ public sealed interface SendOutcome {
 
 public sealed interface SendState {
     public data object Queued : SendState
-    public data object Sent : SendState                                // device accepted
+    public data object Sent : SendState                                // device accepted; final when no ack and no response was requested
     public data object Acked : SendState                               // unicast: ACK sent by the destination (final)
     public data object Delivered : SendState                           // relayed: ACK from a node other than the destination; broadcast ceiling
     public data class Failed(val reason: SendFailure) : SendState
@@ -800,7 +800,7 @@ All state mutation happens on the engine coroutine. No `Mutex`, no atomics-on-st
 | Handshake FSM | Stage 1 → 100 ms settle → heartbeat → 100 ms settle → Stage 2 → seed `session_passkey` via `get_owner_request`. The FSM is implemented inline in `MeshEngine` (not a standalone class as originally planned) using the `HandshakeStage` enum + per-stage envelope processors. Stage 1 has a one-shot retry at the half-budget mark. Stage 2 uses a sliding-timeout watchdog (progress counter + hard cap) instead of a fixed deadline. |
 | `MeshState` | Immutable snapshot: `Map<NodeId, NodeInfo>`, `ownNode`, `channels`, `ConfigBundle`, monotonic version counter. Single-writer (engine actor). Replaced on mutation, never mutated in place. |
 | `CommandDispatcher` | Registers `(requestId, ResponseKind, CompletableDeferred)` triples. Completes or times out on matching inbound packets. Handles routing-error classification for RPC calls. |
-| Send tracking | Tracks outbound `MessageHandle`s via `pendingSends: Map<MessageId, MutableStateFlow<SendState>>`. Updates from `QueueStatus` (Queued→Sent), `Routing` ACK/NAK (Sent→Delivered→Acked/Failed; the ACK sender versus the send destination picks Acked or Delivered). Per-send ACK timeout via `ackTimeoutJobs`. Fire-and-forget broadcast auto-acks. No mesh-delivery retry on SDK side. |
+| Send tracking | Tracks outbound `MessageHandle`s via `pendingSends: Map<MessageId, MutableStateFlow<SendState>>`. Updates from `QueueStatus` (Queued→Sent), `Routing` ACK/NAK (Sent→Delivered→Acked/Failed; the ACK sender versus the send destination picks Acked or Delivered). Per-send ACK timeout via `ackTimeoutJobs`. A send with `want_ack = false` and no `want_response` (broadcast or unicast) ends in `Sent`, releases tracking at the device's `QueueStatus` (a rejection still fails it) and arms no ACK timeout. No mesh-delivery retry on SDK side. |
 | Presence tracker | `lastHeartbeatAt: Map<NodeId, Long>` + `offlineNodes: Set<NodeId>`. Marks nodes heard on every inbound frame. Periodic tick scans for `presenceTimeout` expiry, emits `NodeChange.WentOffline`/`CameOnline`. Heartbeats persisted via `DeviceStorage` for survival across process death. |
 | Reconnect supervisor | Exponential-backoff reconnect on recoverable transport errors. Configurable via `AutoReconnectConfig` (disabled by default pre-1.0). Resets session state, re-enters Stage 1 handshake. |
 | Liveness watchdog | Budget-based watchdog (default 60 s = 2 × heartbeat interval). Reset on every decoded `FromRadio`; decremented on periodic ticks. Budget exhaustion → `TransportError` + teardown. Detects half-open TCP sockets / NAT timeouts. |

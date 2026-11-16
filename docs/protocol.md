@@ -715,6 +715,8 @@ the config bundle, else 3 (`HOP_RELIABLE`). A raw `send(MeshPacket)` goes out as
 
 The SDK matches a `ROUTING_APP` reply to a send by `Data.request_id` and compares the reply packet's `from` with the send's destination. `from == destination` gives `Acked`; any other sender gives `Delivered`, and a broadcast can only reach `Delivered`. `Delivered` does not end tracking of a unicast send: until the ACK timeout the destination's ACK upgrades it to `Acked` and the destination's NAK fails it, and the timeout then drops the entry without failing. A NAK from any other node after `Delivered` is ignored.
 
+A send with `want_ack = false` and no `want_response` gets no `ROUTING_APP` reply; the device reports only `QueueStatus` for the enqueue. The SDK ends such a send (broadcast or unicast) in `Sent`, arms no ACK timeout, and a `QueueStatus` rejection still fails it.
+
 ### Retries — the SDK MUST NOT do them
 
 The device-side `ReliableRouter` / `NextHopRouter` performs retries (exponential backoff, several attempts). After the device gives up, it emits a `ROUTING_APP` `MAX_RETRANSMIT` error response. **The host SDK MUST NOT implement a separate retry timer**; doing so would cause duplicate transmissions on the air and undermine the device's retry accounting.

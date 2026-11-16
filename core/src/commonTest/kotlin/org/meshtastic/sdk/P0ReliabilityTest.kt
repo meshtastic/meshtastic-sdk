@@ -97,27 +97,27 @@ class P0ReliabilityTest {
         client.disconnect()
     }
 
-    // ── R-P0-6: fire-and-forget broadcasts (want_ack=false) auto-resolve ──────
+    // ── R-P0-6: broadcasts without want_ack end in Sent ──────
 
     @Test
-    fun testFireAndForgetBroadcastAutoResolves() = runTest {
+    fun testNoAckBroadcastEndsInSent() = runTest {
         val client = buildClient(sendTimeout = 1.seconds)
         client.connect()
 
         val handle = client.send(broadcastPacket()) // want_ack=false
         runCurrent()
 
-        // Fire-and-forget broadcasts auto-resolve to Acked once the device accepts the packet.
-        assertEquals(SendState.Acked, handle.state.value)
+        // A broadcast that requests no ack ends in Sent once the device accepts the packet.
+        assertEquals(SendState.Sent, handle.state.value)
 
         advanceTimeBy(5_000) // far past the 1s sendTimeout
         runCurrent()
 
-        // Must not degrade to Failed — the auto-resolve is terminal.
+        // Must not degrade to Failed - Sent is final for a send that requests no ack.
         assertEquals(
-            SendState.Acked,
+            SendState.Sent,
             handle.state.value,
-            "Fire-and-forget broadcasts must not be subject to ACK timeouts",
+            "Sends that request no ack must not be subject to ACK timeouts",
         )
 
         client.disconnect()

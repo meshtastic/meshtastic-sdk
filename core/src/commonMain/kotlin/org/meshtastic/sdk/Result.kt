@@ -26,7 +26,9 @@ public sealed interface SendState {
     /**
      * The device has accepted the packet and started transmission.
      *
-     * (From `QueueStatus`.)
+     * (From `QueueStatus`.) For a send that requests no ack (`want_ack = false`) and no response,
+     * nothing comes back from the mesh, so this is its final state: the most that can be known is
+     * that the device took the packet. For every other send it is an intermediate state.
      */
     public data object Sent : SendState
 
@@ -159,7 +161,8 @@ public sealed interface SendFailure {
  */
 public sealed interface SendOutcome {
     /**
-     * Packet was delivered or acknowledged.
+     * The send finished without failing: it was acknowledged ([SendState.Acked]), relayed
+     * ([SendState.Delivered]), or it requested no ack and the device accepted it ([SendState.Sent]).
      */
     public data object Success : SendOutcome
 

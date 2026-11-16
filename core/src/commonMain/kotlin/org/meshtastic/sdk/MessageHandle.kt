@@ -33,13 +33,19 @@ public class MessageHandle internal constructor(
     internal val packet: MeshPacket? = null,
     internal val resendFn: ((MeshPacket) -> MessageHandle)? = null,
 ) {
+    // False for a send that requests neither an ack nor a response: nothing comes back for it, so
+    // Sent is its final state. True for every send the device or the destination answers. Set once
+    // by RadioClient.send before the engine sees the send.
+    internal var expectsAck: Boolean = true
+
     /**
      * The current delivery state.
      *
      * Transitions: [SendState.Queued] → [SendState.Sent] → [SendState.Delivered] (relayed) →
      * [SendState.Acked] (destination confirmed), or → [SendState.Failed]. [SendState.Delivered] may
-     * be skipped, and a unicast send may end in it when the destination never confirms. Never goes
-     * backward.
+     * be skipped, and a unicast send may end in it when the destination never confirms. A send that
+     * requests neither an ack (`want_ack = false`) nor a response (`want_response = false`) gets
+     * nothing back from the mesh and ends in [SendState.Sent]. Never goes backward.
      *
      * **Lifetime / terminal-on-disconnect:** the underlying [kotlinx.coroutines.flow.MutableStateFlow]
      * is owned by the engine session that created this handle. When that session ends — either via
@@ -54,9 +60,10 @@ public class MessageHandle internal constructor(
 
     /**
      * Suspend until this send is [Acked][SendState.Acked], [Delivered][SendState.Delivered] or
-     * [Failed][SendState.Failed]. Returns at the first of these, so a later move from
+     * [Failed][SendState.Failed]; a send that requests no ack and no response is also finished at
+     * [Sent][SendState.Sent]. Returns at the first of these, so a later move from
      * [Delivered][SendState.Delivered] to [Acked][SendState.Acked] or [Failed][SendState.Failed]
-     * shows only in [state].
+     * shows only in [state]. A send that does request an ack is not finished at [Sent][SendState.Sent].
      *
      * Returns immediately if already in a terminal state.
      *
@@ -71,10 +78,11 @@ public class MessageHandle internal constructor(
      */
     public suspend fun await(): SendOutcome {
         val terminal = _state.first { s ->
-            s is SendState.Acked || s is SendState.Delivered || s is SendState.Failed
+            s is SendState.Acked || s is SendState.Delivered || s is SendState.Failed ||
+                (s is SendState.Sent && !expectsAck)
         }
         return when (terminal) {
-            is SendState.Acked, is SendState.Delivered -> SendOutcome.Success
+            is SendState.Acked, is SendState.Delivered, is SendState.Sent -> SendOutcome.Success
 
             is SendState.Failed -> SendOutcome.Failure(terminal.reason)
 

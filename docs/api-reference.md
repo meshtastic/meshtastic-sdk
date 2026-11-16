@@ -221,7 +221,7 @@ public class MessageHandle internal constructor(
 ```kotlin
 public sealed interface SendState {
     public data object Queued : SendState
-    public data object Sent : SendState           // device QueueStatus saw mesh_packet_id
+    public data object Sent : SendState           // device accepted; final when no ack and no response was requested
     public data object Acked : SendState          // unicast: ACK sent by the destination (final)
     public data object Delivered : SendState      // relayed: ACK from a node other than the destination; broadcast ceiling
     public data class Failed(val reason: SendFailure) : SendState
@@ -248,7 +248,7 @@ public sealed interface SendOutcome {
 }
 ```
 
-`MessageHandle.await()` collapses the `SendState` machine to a `SendOutcome`: any of `Acked`/`Delivered` becomes `SendOutcome.Success` (`await()` returns at the first; a unicast `Delivered` can still upgrade to `Acked` in `state` until the ACK timeout); `Failed(reason)` becomes `SendOutcome.Failure(reason)`. `PayloadTooLarge` is intentionally absent — see invariant 4 above; it's thrown synchronously by `send()`.
+`MessageHandle.await()` collapses the `SendState` machine to a `SendOutcome`: any of `Acked`/`Delivered`, or `Sent` for a send that requested no ack and no response (`want_ack = false`, `want_response = false`), becomes `SendOutcome.Success` (`await()` returns at the first; a unicast `Delivered` can still upgrade to `Acked` in `state` until the ACK timeout); `Failed(reason)` becomes `SendOutcome.Failure(reason)`. `PayloadTooLarge` is intentionally absent — see invariant 4 above; it's thrown synchronously by `send()`.
 
 ## `MeshEvent`
 

@@ -321,6 +321,7 @@ public class RadioClient internal constructor(
             packet = packet,
             resendFn = { pkt -> send(pkt) },
         )
+        handle.expectsAck = packet.want_ack || packet.decoded?.want_response == true
         engine.trySend(packet, id, stateFlow)
         return handle
     }
@@ -758,8 +759,8 @@ public class RadioClient internal constructor(
          * Unicast packets sent with `wantAck = true` are placed in `SendState.Sent` after the
          * device acknowledges queuing, then the engine waits up to [duration] for a routing ACK
          * back from the destination. If none arrives the handle transitions to
-         * `SendState.Failed(SendFailure.AckTimeout)`. Broadcasts never receive a routing ACK and
-         * are not affected by this timeout.
+         * `SendState.Failed(SendFailure.AckTimeout)`. Sends that request no ack and no response
+         * end in `SendState.Sent` and are not affected by this timeout.
          *
          * Default: 30 seconds.
          *

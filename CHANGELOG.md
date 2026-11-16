@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   A unicast send that gets a relay ack first moves from `Delivered` to `Acked` when the
   destination's ack arrives before the ACK timeout, or to `Failed` when the destination NAKs;
   `MessageHandle.await()` returns `Success` at the first of `Delivered` and `Acked`.
+  A send that requests no acknowledgement (`want_ack = false` and no `want_response`, broadcast
+  or unicast) used to be set to `Acked` or left tracked; it now ends in `Sent`, so code that waited
+  for `Acked` on such a send must accept `Sent`.
 - `SendFailure.RateLimited` is a new case, and a send the device refuses with
   `Routing.Error.RATE_LIMIT_EXCEEDED` now fails with it instead of
   `SendFailure.Other(RATE_LIMIT_EXCEEDED)`. Firmware answers that way to a second text message

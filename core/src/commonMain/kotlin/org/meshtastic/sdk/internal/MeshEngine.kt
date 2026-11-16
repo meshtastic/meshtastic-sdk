@@ -160,6 +160,10 @@ internal class MeshEngine(
 
     // Destination of each dispatched send, to tell the addressee's ack from a relay's.
     private val pendingDestinations = mutableMapOf<MessageId, Int>()
+
+    // Sends that request no ack and no response. Their state is Sent and final; they stay tracked
+    // only until the device's QueueStatus, so a queue rejection can still fail them.
+    private val noAckSends = mutableSetOf<MessageId>()
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
 
@@ -523,11 +527,13 @@ internal class MeshEngine(
         //         to the pendingSends sweep below, but explicit so the intent is documented).
         failPreSendQueueWith(SendFailure.Disconnected)
 
-        for ((_, stateFlow) in pendingSends) {
-            stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+        for ((id, stateFlow) in pendingSends) {
+            // A no-ack send already ended in Sent; the session ending does not undo that.
+            if (id !in noAckSends) stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
         pendingDestinations.clear()
+        noAckSends.clear()
 
         inbox.close()
         outbound.close()
@@ -1547,7 +1553,9 @@ internal class MeshEngine(
                 // so ERRNO values must never be decoded as Routing.Error.
                 if (queueStatus.res == 0 || queueStatus.res == ERRNO_SHOULD_RELEASE) {
                     pendingSends[packetId]?.value = SendState.Sent
+                    if (noAckSends.remove(packetId)) pendingSends.remove(packetId)
                 } else {
+                    noAckSends.remove(packetId)
                     // The firmware rejected the packet at its transmit queue. Fast-fail
                     // the handle / pending RPC instead of letting the caller wait out the
                     // full ACK timer for a packet that never left the device.
@@ -2129,11 +2137,13 @@ internal class MeshEngine(
         livenessWatchdogJob = null
 
         // Fail in-flight sends — their wire IDs won't survive the device-side session restart.
-        for ((_, stateFlow) in pendingSends) {
-            stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+        for ((id, stateFlow) in pendingSends) {
+            // A no-ack send already ended in Sent; the session ending does not undo that.
+            if (id !in noAckSends) stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
         pendingDestinations.clear()
+        noAckSends.clear()
         failPreSendQueueWith(SendFailure.Disconnected)
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
@@ -2274,14 +2284,12 @@ internal class MeshEngine(
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // Fire-and-forget broadcasts (want_ack=false, no want_response): auto-resolve to
-        // Acked immediately. No firmware ACK will arrive so without this the
-        // MessageHandle.await() would suspend forever.
-        if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
-            msg.stateFlow.value = SendState.Acked
-            pendingSends.remove(MessageId(wireId))
-            pendingDestinations.remove(MessageId(wireId))
-            logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
+        // No ack and no response requested (broadcast or unicast): the firmware reports nothing
+        // back except QueueStatus, so Sent is the final state and no ACK timeout is armed.
+        if (!packet.want_ack && !wantsResponse) {
+            noAckSends.add(wireKey)
+            pendingDestinations.remove(wireKey)
+            logger.debug(TAG) { "No ack requested; Sent is final id=${msg.id}" }
             return
         }
 
