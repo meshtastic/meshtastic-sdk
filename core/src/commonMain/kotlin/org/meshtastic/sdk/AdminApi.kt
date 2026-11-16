@@ -305,14 +305,16 @@ public interface AdminApi {
     /**
      * Wipe the device's NodeDB, forcing a fresh discovery cycle on the mesh.
      *
-     * The firmware always preserves favorite-marked entries during the wipe (this is
-     * firmware-enforced behavior). The `nodedb_reset` proto field uses proto3 semantics where
-     * only `true` can be encoded — a "wipe everything including favorites" mode is not
-     * available through this command.
+     * @param preserveFavorites when `true` (default), favorite-marked nodes survive the wipe. When
+     *   `false`, favorites are wiped too, except on devices whose role is `CLIENT_BASE`, `ROUTER`
+     *   or `ROUTER_LATE`: firmware keeps their favorites regardless, so they can still preserve
+     *   hop counts through favorited relays.
      *
-     * The device will reboot after the reset completes.
+     * The device reboots after the reset completes.
+     *
+     * @since 0.1.0 (`preserveFavorites` since 0.3.0)
      */
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
 
     // ── Time ────────────────────────────────────────────────────────────────
 
@@ -368,6 +370,22 @@ public interface AdminEdit {
     public suspend fun setChannel(channel: Channel)
     public suspend fun setFavorite(node: NodeId, favorite: Boolean)
     public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+
+    /**
+     * Set a fixed position. Firmware applies it in memory, enables GPS and broadcasts the position
+     * immediately; only the write to flash waits for `commit_edit_settings`.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun setFixedPosition(position: Position)
+
+    /**
+     * Clear the fixed position. Firmware clears it in memory immediately; only the write to flash
+     * waits for `commit_edit_settings`.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun removeFixedPosition()
 }
 
 /**

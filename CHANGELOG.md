@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking
 
+- `AdminEdit` gained `setFixedPosition` and `removeFixedPosition`. A class that implements the
+  interface must add them; callers are unaffected. `nodeDbReset()` is now
+  `nodeDbReset(preserveFavorites)` with a default, so sources compile; binaries built against the
+  no-argument method do not link.
 - `SendFailure.RateLimited` is a new case, and a send the device refuses with
   `Routing.Error.RATE_LIMIT_EXCEEDED` now fails with it instead of
   `SendFailure.Other(RATE_LIMIT_EXCEEDED)`. Firmware answers that way to a second text message
@@ -32,6 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `AdminApi.nodeDbReset(preserveFavorites)`: `false` sends `nodedb_reset = false`, which wipes
+  favorites too unless the device role is `CLIENT_BASE`, `ROUTER` or `ROUTER_LATE`. The default
+  `true` keeps the old behavior.
+- `AdminEdit.setFixedPosition` and `AdminEdit.removeFixedPosition`, so a fixed position can be
+  written inside `editSettings`.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
@@ -59,6 +68,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A `setModuleConfig` or `editSettings` write of the `tak` or `mesh_beacon` module section now
+  updates `configBundle`; it was dropped because those sections had no merge key.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out

@@ -13,11 +13,14 @@ import org.meshtastic.proto.Config.DeviceConfig
 import org.meshtastic.proto.Config.DisplayConfig
 import org.meshtastic.proto.Config.LoRaConfig
 import org.meshtastic.proto.Config.PowerConfig
+import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.ModuleConfig.MQTTConfig
 import org.meshtastic.proto.ModuleConfig.TelemetryConfig
+import org.meshtastic.proto.Team
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ConfigMergeTest {
 
@@ -154,5 +157,99 @@ class ConfigMergeTest {
             }.build().sectionKey(),
         )
         assertEquals(null, ModuleConfig.Builder().build().sectionKey())
+    }
+
+    @Test
+    fun sectionKey_everyModuleConfigArmHasADistinctKey() {
+        val arms: List<ModuleConfig> = listOf(
+            ModuleConfig.Builder().also { wb -> wb.mqtt = MQTTConfig.Builder().build() }.build(),
+            ModuleConfig.Builder().also { wb -> wb.serial = ModuleConfig.SerialConfig.Builder().build() }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.external_notification = ModuleConfig.ExternalNotificationConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.store_forward = ModuleConfig.StoreForwardConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.range_test = ModuleConfig.RangeTestConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb -> wb.telemetry = TelemetryConfig.Builder().build() }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.canned_message = ModuleConfig.CannedMessageConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb -> wb.audio = ModuleConfig.AudioConfig.Builder().build() }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.remote_hardware = ModuleConfig.RemoteHardwareConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.neighbor_info = ModuleConfig.NeighborInfoConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.ambient_lighting = ModuleConfig.AmbientLightingConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.detection_sensor = ModuleConfig.DetectionSensorConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.paxcounter = ModuleConfig.PaxcounterConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.statusmessage = ModuleConfig.StatusMessageConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.traffic_management = ModuleConfig.TrafficManagementConfig.Builder().build()
+            }.build(),
+            ModuleConfig.Builder().also { wb -> wb.tak = ModuleConfig.TAKConfig.Builder().build() }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.mesh_beacon = ModuleConfig.MeshBeaconConfig.Builder().build()
+            }.build(),
+        )
+        val keys = arms.map { it.sectionKey() }
+        assertTrue(keys.all { it != null }, "arms without a key: ${arms.filterIndexed { i, _ -> keys[i] == null }}")
+        assertEquals(arms.size, keys.toSet().size)
+    }
+
+    @Test
+    fun sectionKey_everyConfigArmHasADistinctKey() {
+        val arms: List<Config> = listOf(
+            Config.Builder().also { wb -> wb.device = DeviceConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.position = Config.PositionConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.power = PowerConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.network = Config.NetworkConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.display = DisplayConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.lora = LoRaConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.bluetooth = BluetoothConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.security = Config.SecurityConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.sessionkey = Config.SessionkeyConfig.Builder().build() }.build(),
+            Config.Builder().also { wb -> wb.device_ui = DeviceUIConfig.Builder().build() }.build(),
+        )
+        val keys = arms.map { it.sectionKey() }
+        assertTrue(keys.all { it != null }, "arms without a key: ${arms.filterIndexed { i, _ -> keys[i] == null }}")
+        assertEquals(arms.size, keys.toSet().size)
+    }
+
+    @Test
+    fun mergeModuleConfigs_replacesTakAndMeshBeaconSections() {
+        val existing = listOf(
+            ModuleConfig.Builder().also { wb ->
+                wb.tak = ModuleConfig.TAKConfig.Builder().also { wb -> wb.team = Team.White }.build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.mesh_beacon = ModuleConfig.MeshBeaconConfig.Builder().also { wb -> wb.flags = 1 }.build()
+            }.build(),
+        )
+        val written = listOf(
+            ModuleConfig.Builder().also { wb ->
+                wb.tak = ModuleConfig.TAKConfig.Builder().also { wb -> wb.team = Team.Yellow }.build()
+            }.build(),
+            ModuleConfig.Builder().also { wb ->
+                wb.mesh_beacon = ModuleConfig.MeshBeaconConfig.Builder().also { wb -> wb.flags = 2 }.build()
+            }.build(),
+        )
+        val merged = mergeModuleConfigs(existing, written)
+
+        assertEquals(2, merged.size)
+        assertEquals(Team.Yellow, merged[0].tak?.team)
+        assertEquals(2, merged[1].mesh_beacon?.flags)
     }
 }

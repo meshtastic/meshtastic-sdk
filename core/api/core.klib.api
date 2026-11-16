@@ -153,7 +153,7 @@ abstract interface org.meshtastic.sdk/AdminApi { // org.meshtastic.sdk/AdminApi|
     abstract suspend fun keyVerification(org.meshtastic.proto/KeyVerificationAdmin): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.keyVerification|keyVerification(org.meshtastic.proto.KeyVerificationAdmin){}[0]
     abstract suspend fun listChannels(): org.meshtastic.sdk/AdminResult<kotlin.collections/List<org.meshtastic.proto/Channel>> // org.meshtastic.sdk/AdminApi.listChannels|listChannels(){}[0]
     abstract suspend fun lockdown(org.meshtastic.proto/LockdownAuth): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.lockdown|lockdown(org.meshtastic.proto.LockdownAuth){}[0]
-    abstract suspend fun nodeDbReset(): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.nodeDbReset|nodeDbReset(){}[0]
+    abstract suspend fun nodeDbReset(kotlin/Boolean = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.nodeDbReset|nodeDbReset(kotlin.Boolean){}[0]
     abstract suspend fun otaRequest(org.meshtastic.proto/AdminMessage.OTAEvent): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.otaRequest|otaRequest(org.meshtastic.proto.AdminMessage.OTAEvent){}[0]
     abstract suspend fun reboot(kotlin.time/Duration = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.reboot|reboot(kotlin.time.Duration){}[0]
     abstract suspend fun rebootOta(kotlin.time/Duration = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.rebootOta|rebootOta(kotlin.time.Duration){}[0]
@@ -188,9 +188,11 @@ abstract interface org.meshtastic.sdk/AdminBatchScope : org.meshtastic.sdk/Admin
 }
 
 abstract interface org.meshtastic.sdk/AdminEdit { // org.meshtastic.sdk/AdminEdit|null[0]
+    abstract suspend fun removeFixedPosition() // org.meshtastic.sdk/AdminEdit.removeFixedPosition|removeFixedPosition(){}[0]
     abstract suspend fun setChannel(org.meshtastic.proto/Channel) // org.meshtastic.sdk/AdminEdit.setChannel|setChannel(org.meshtastic.proto.Channel){}[0]
     abstract suspend fun setConfig(org.meshtastic.proto/Config) // org.meshtastic.sdk/AdminEdit.setConfig|setConfig(org.meshtastic.proto.Config){}[0]
     abstract suspend fun setFavorite(org.meshtastic.sdk/NodeId, kotlin/Boolean) // org.meshtastic.sdk/AdminEdit.setFavorite|setFavorite(org.meshtastic.sdk.NodeId;kotlin.Boolean){}[0]
+    abstract suspend fun setFixedPosition(org.meshtastic.proto/Position) // org.meshtastic.sdk/AdminEdit.setFixedPosition|setFixedPosition(org.meshtastic.proto.Position){}[0]
     abstract suspend fun setIgnored(org.meshtastic.sdk/NodeId, kotlin/Boolean) // org.meshtastic.sdk/AdminEdit.setIgnored|setIgnored(org.meshtastic.sdk.NodeId;kotlin.Boolean){}[0]
     abstract suspend fun setModuleConfig(org.meshtastic.proto/ModuleConfig) // org.meshtastic.sdk/AdminEdit.setModuleConfig|setModuleConfig(org.meshtastic.proto.ModuleConfig){}[0]
     abstract suspend fun setOwner(org.meshtastic.proto/User) // org.meshtastic.sdk/AdminEdit.setOwner|setOwner(org.meshtastic.proto.User){}[0]

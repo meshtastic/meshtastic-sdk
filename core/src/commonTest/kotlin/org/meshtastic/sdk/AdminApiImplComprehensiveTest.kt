@@ -985,6 +985,62 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun nodeDbResetWithoutPreservingFavoritesEncodesFalseOnTheWire() = runTest {
+        assertAckedOperation(
+            call = { it.nodeDbReset(preserveFavorites = false) },
+            requestMatches = { it.nodedb_reset == false },
+            assertPacket = { packet, _ ->
+                assertTrue(packet.decoded!!.payload.size > 0, "an explicit false must still occupy the oneof arm")
+            },
+        ) { transport, packet ->
+            transport.injectRoutingAck(packet.id)
+        }
+    }
+
+    @Test
+    fun editSettingsSendsFixedPositionBetweenBeginAndCommit() = runTest {
+        val position = Position.Builder().also { wb ->
+            wb.latitude_i = 377749000
+            wb.longitude_i = -1224194000
+        }.build()
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async {
+                client.admin.editSettings {
+                    setFixedPosition(position)
+                    removeFixedPosition()
+                }
+            }
+            runCurrent()
+            transport.injectRoutingAck(
+                latestAdminPacket(transport, outboundBefore) {
+                    it.begin_edit_settings == true
+                }.id,
+            )
+            runCurrent()
+            transport.injectRoutingAck(
+                latestAdminPacket(transport, outboundBefore) {
+                    it.commit_edit_settings == true
+                }.id,
+            )
+            runCurrent()
+
+            assertIs<AdminResult.Success<Unit>>(deferred.await())
+            val admins = transport.outboundPackets().drop(outboundBefore).mapNotNull { adminOf(it) }
+            val begin = admins.indexOfFirst { it.begin_edit_settings == true }
+            val set = admins.indexOfFirst { it.set_fixed_position == position }
+            val remove = admins.indexOfFirst { it.remove_fixed_position == true }
+            val commit = admins.indexOfFirst { it.commit_edit_settings == true }
+            assertTrue(begin in 0..<set && set < remove && remove < commit, "order was $begin $set $remove $commit")
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
     fun setOwnerTimeoutReturnsTimeout() = runTest {
         val user = User.Builder().also { wb ->
             wb.id = "!00000001"

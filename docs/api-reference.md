@@ -459,13 +459,28 @@ public interface AdminApi {
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
+
+    public suspend fun setFixedPosition(position: Position): AdminResult<Unit>
+    public suspend fun removeFixedPosition(): AdminResult<Unit>
 
     /** See pitfall §19.17. `autoSyncTimeOnConnect=true` calls this once post-handshake on >60s skew. */
     public suspend fun setTime(at: Instant = Clock.System.now()): AdminResult<Unit>
 
     /** Batches multiple writes inside `begin_edit_settings` / `commit_edit_settings`. */
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
+}
+
+/** Receiver of `editSettings`; `setFixedPosition` / `removeFixedPosition` are @since 0.3.0. */
+public interface AdminEdit {
+    public suspend fun setConfig(config: Config)
+    public suspend fun setModuleConfig(config: ModuleConfig)
+    public suspend fun setOwner(user: User)
+    public suspend fun setChannel(channel: Channel)
+    public suspend fun setFavorite(node: NodeId, favorite: Boolean)
+    public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+    public suspend fun setFixedPosition(position: Position)
+    public suspend fun removeFixedPosition()
 }
 
 public sealed interface AdminResult<out T> {

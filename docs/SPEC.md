@@ -567,7 +567,7 @@ public interface AdminApi {
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
 
     // ── Time ──
     public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>

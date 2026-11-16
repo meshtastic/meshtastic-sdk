@@ -440,8 +440,8 @@ internal class AdminApiImpl(
         submitAdminAck(msg)
     }
 
-    override suspend fun nodeDbReset(): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.nodedb_reset = true }.build())
+    override suspend fun nodeDbReset(preserveFavorites: Boolean): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage.Builder().also { wb -> wb.nodedb_reset = preserveFavorites }.build())
     }
 
     override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> {
@@ -644,6 +644,16 @@ internal class AdminApiImpl(
             }
             enqueueOrThrow(msg)
         }
+        override suspend fun setFixedPosition(position: Position) = enqueueOrThrow(
+            AdminMessage.Builder().also { wb ->
+                wb.set_fixed_position = position
+            }.build(),
+        )
+        override suspend fun removeFixedPosition() = enqueueOrThrow(
+            AdminMessage.Builder().also { wb ->
+                wb.remove_fixed_position = true
+            }.build(),
+        )
         override suspend fun setIgnored(node: NodeId, ignored: Boolean) {
             val msg = if (ignored) {
                 AdminMessage.Builder().also { wb -> wb.set_ignored_node = node.raw }.build()

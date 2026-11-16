@@ -50,6 +50,8 @@ internal fun ModuleConfig.sectionKey(): String? = when {
     paxcounter != null -> "paxcounter"
     statusmessage != null -> "statusmessage"
     traffic_management != null -> "traffic_management"
+    tak != null -> "tak"
+    mesh_beacon != null -> "mesh_beacon"
     else -> null
 }
 
