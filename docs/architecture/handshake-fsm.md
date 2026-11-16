@@ -63,7 +63,7 @@ One heartbeat goes out between the Stage 1 settle and the Stage 2 request, follo
 A failure always returns to `Idle`. Reconnecting is off by default: the engine projects `Disconnected` and the host decides what to do. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that reconnects after a recoverable `TransportState.Error`, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each attempt is projected as `Reconnecting(cause, attempt)`.
 
 Causes that DO NOT auto-reconnect:
-- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.MIN_SUPPORTED`, 2.5.14; checked when the Stage 1 `metadata` frame arrives; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
+- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
 - A non-recoverable transport error and an explicit `disconnect()`.
 
 Causes that DO auto-reconnect:

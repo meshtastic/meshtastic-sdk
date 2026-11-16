@@ -318,6 +318,7 @@ internal class MeshEngine(
      * [SETTLE_BUFFER_CAP].
      */
     private val settleBuffer = ArrayDeque<FromRadio>(SETTLE_BUFFER_CAP)
+    private var firmwareUpdateAdvised = false
 
     /**
      * `FromRadio.packet` frames (text messages, telemetry, waypoints, …) that arrive while the
@@ -728,6 +729,7 @@ internal class MeshEngine(
         offlineNodes.clear()
         lastCongestionLevel.clear()
         lastMqttConnected = null
+        firmwareUpdateAdvised = false
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
@@ -1435,8 +1437,9 @@ internal class MeshEngine(
 
     /**
      * Ends the connect with [MeshtasticException.FirmwareTooOld] when [reported] parses below
-     * [DeviceVersion.MIN_SUPPORTED]. A blank or unparseable version only warns: a missing
-     * version is not an old one.
+     * [DeviceVersion.ABS_MIN_SUPPORTED]. Below [DeviceVersion.MIN_SUPPORTED] it connects and emits
+     * one [MeshEvent.ProtocolWarning] per session. A blank or unparseable version only warns: a
+     * missing version is not an old one.
      */
     private fun enforceFirmwareFloor(reported: String) {
         val present = DeviceVersion(reported).asInt
@@ -1444,10 +1447,28 @@ internal class MeshEngine(
             logger.warn(TAG) { "Device reported no parseable firmware version ('$reported'); skipping the floor check" }
             return
         }
-        val required = DeviceVersion.MIN_SUPPORTED.asInt
-        if (present >= required) return
+        val required = DeviceVersion.ABS_MIN_SUPPORTED.asInt
+        if (present >= required) {
+            val recommended = DeviceVersion.MIN_SUPPORTED
+            if (present < recommended.asInt && !firmwareUpdateAdvised) {
+                firmwareUpdateAdvised = true
+                logger.warn(TAG) { "Firmware $reported is below the recommended ${recommended.versionString}" }
+                events.tryEmit(
+                    MeshEvent.ProtocolWarning(
+                        "firmware should be updated",
+                        details = mapOf(
+                            "present" to reported,
+                            "recommended" to recommended.versionString,
+                        ),
+                    ),
+                )
+            }
+            return
+        }
 
-        logger.error(TAG) { "Firmware $reported is below the supported floor ${DeviceVersion.MIN_SUPPORTED.versionString}" }
+        logger.error(TAG) {
+            "Firmware $reported is below the supported floor ${DeviceVersion.ABS_MIN_SUPPORTED.versionString}"
+        }
         val cause = MeshtasticException.tag(
             MeshtasticException.FirmwareTooOld(required = required, present = present),
             transportIdentity = transport.identity,

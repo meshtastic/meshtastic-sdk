@@ -73,10 +73,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
   coroutines 1.11 into the storage POM.
 - `connect()` throws `MeshtasticException.FirmwareTooOld` when the device reports firmware below
-  2.5.14 (`DeviceVersion.MIN_SUPPORTED`), instead of continuing into a handshake it may not
-  complete. Auto-reconnect does not retry it. A missing or unparseable version still connects.
-  No new API: the exception was already declared, so this needs no code change unless a host
-  connects to firmware older than 2.5.14.
+  2.3.15 (`DeviceVersion.ABS_MIN_SUPPORTED`), instead of continuing into a handshake it may
+  not complete. Auto-reconnect does not retry it. Firmware from 2.3.15 up to 2.5.13 (below
+  `DeviceVersion.MIN_SUPPORTED`, 2.5.14) still connects and emits one
+  `MeshEvent.ProtocolWarning` per session recommending an update, with `present` and
+  `recommended` in `details`. A missing or unparseable version still connects. No new API: the
+  exception was already declared, so this needs no code change unless a host connects to
+  firmware older than 2.3.15.
 
 ### Fixed
 

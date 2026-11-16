@@ -1329,7 +1329,7 @@ class AdminApiImplComprehensiveTest {
             frames = handshakeFrames(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
                     wb.metadata = DeviceMetadata.Builder().also { wb ->
-                        wb.firmware_version = "2.7.0"
+                        wb.firmware_version = "2.5.0"
                     }.build()
                 }.build(),
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
@@ -1394,7 +1394,7 @@ class AdminApiImplComprehensiveTest {
             frames = handshakeFrames(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
                     wb.metadata = DeviceMetadata.Builder().also { wb ->
-                        wb.firmware_version = "2.7.0"
+                        wb.firmware_version = "2.5.0"
                     }.build()
                 }.build(),
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
