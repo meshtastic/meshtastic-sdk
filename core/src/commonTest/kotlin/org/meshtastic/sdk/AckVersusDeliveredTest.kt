@@ -337,6 +337,39 @@ class AckVersusDeliveredTest {
     }
 
     @Test
+    fun dm_lateQueueStatusDoesNotPullDeliveredBackToSent() = runTest {
+        withClient { client, transport ->
+            val handle = client.sendText("hi", to = destination)
+            runCurrent()
+            transport.injectRoutingAck(handle.id.raw, fromNode = transport.nodeNum)
+            runCurrent()
+            assertEquals(SendState.Delivered, handle.state.value)
+
+            transport.injectFrame(queueStatus(handle.id.raw, res = 0))
+            runCurrent()
+
+            assertEquals(SendState.Delivered, handle.state.value)
+        }
+    }
+
+    @Test
+    fun sendWithoutWantAck_cancelAfterDispatchDoesNotReportCancelled() = runTest {
+        withClient { client, transport ->
+            val handle = client.send(noAckPacket(to = destination.raw))
+            runCurrent()
+            assertEquals(SendState.Queued, handle.state.value)
+
+            handle.cancel()
+            runCurrent()
+            assertEquals(SendState.Queued, handle.state.value)
+
+            transport.injectFrame(queueStatus(handle.id.raw, res = 0))
+            runCurrent()
+            assertEquals(SendState.Sent, handle.state.value)
+        }
+    }
+
+    @Test
     fun dm_relayAckedThenDisconnect_staysDelivered() = runTest {
         withClient { client, transport ->
             val handle = client.sendText("hi", to = destination)

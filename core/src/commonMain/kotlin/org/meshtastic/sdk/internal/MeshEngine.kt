@@ -1559,7 +1559,9 @@ internal class MeshEngine(
                 // namespaces collide at >= 32 (BAD_REQUEST = 32, NOT_AUTHORIZED = 33, …),
                 // so ERRNO values must never be decoded as Routing.Error.
                 if (queueStatus.res == 0 || queueStatus.res == ERRNO_SHOULD_RELEASE) {
-                    pendingSends[packetId]?.value = SendState.Sent
+                    // Only a send still waiting on the device moves; a late QueueStatus must not
+                    // pull a Delivered send back.
+                    pendingSends[packetId]?.let { if (it.value == SendState.Queued) it.value = SendState.Sent }
                     if (noAckSends.remove(packetId)) {
                         pendingSends.remove(packetId)
                         ackTimeoutJobs.remove(packetId)?.cancel()
@@ -2331,7 +2333,8 @@ internal class MeshEngine(
 
     private fun handleCancelHandle(msg: EngineMessage.CancelHandle) {
         val stateFlow = pendingSends[msg.id] ?: return
-        if (stateFlow.value == SendState.Queued) {
+        // A no-ack send is Queued while awaiting QueueStatus but is already on the wire.
+        if (stateFlow.value == SendState.Queued && msg.id !in noAckSends) {
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
             pendingSends.remove(msg.id)
         }
