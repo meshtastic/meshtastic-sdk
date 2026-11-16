@@ -59,6 +59,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Live mesh traffic now updates the node DB. Every decoded packet creates or refreshes its
+  sender (`last_heard`, `snr`, `hops_away`, `via_mqtt`), `NODEINFO_APP` merges the sender's
+  `user` and `POSITION_APP` its `position`, each emitting one `NodeChange.Added` or
+  `NodeChange.Updated`. Before, peers only changed through `FromRadio.node_info` and device
+  metrics from already-known nodes.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out

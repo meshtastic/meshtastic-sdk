@@ -396,6 +396,16 @@ The firmware emits these `FromRadio` payloads in this order (`firmware:src/mesh/
 6. On TCP/Serial close, the device resets its `config_nonce` to `0` and clears all session state. On reconnection, both stages are mandatory.
 7. While the device is mid-handshake, queued outbound packets in the device router are NOT dropped — they will be sent after `config_complete_id`. However, the device WILL drop incoming `MqttClientProxyMessage` from the phone during handshake with a warning log.
 
+### Node DB after the handshake
+
+After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
+
+- **`FromRadio.node_info`** replaces the node's entry.
+- **Every decoded `MeshPacket` with `from != 0`** creates or refreshes the sender (firmware `NodeDB::updateFrom`): `last_heard` from `rx_time`, or the engine clock when `rx_time` is 0; `snr` only when `transport_mechanism` is `TRANSPORT_LORA` and `rx_rssi` is present; `via_mqtt`; `hops_away = hop_start - hop_limit` only when `hop_start != 0` and `hop_start >= hop_limit`, otherwise unchanged. Packets from our own node refresh only `last_heard`. Encrypted packets (no `decoded`) never touch the DB.
+- **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
+- **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
+- **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
+
 ### Generating the nonce
 
 For the canonical two-stage flow use the well-known nonces `69420` / `69421`. For diagnostic / legacy single-stage handshakes a random non-zero uint32 per cycle keeps logs unambiguous; randomness is not a protocol requirement.
