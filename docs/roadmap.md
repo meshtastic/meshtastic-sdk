@@ -50,7 +50,7 @@ No symbol in the main source sets currently has Stub status.
 | R-16 | `TransportSpec.Http` | public | Missing: the spec shape exists in [`Transport.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) but there is no HTTP transport module (`transport-http` is commented out in `settings.gradle.kts`) | post-1.0 | [`protocol.md`](./protocol.md), [`future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md) |
 | R-17 | `MeshEvent.KeyVerification` | public | No-op (declared, never emitted by the engine) | 2 | [`Node.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt) |
 | R-18 | `MeshtasticException.FirmwareTooOld` | public | No-op (declared, never thrown; the reconnect policy only checks for it) | 2 | [`MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/MeshtasticException.kt) |
-| R-19 | `Storage.saveSessionPasskey` / `loadSessionPasskey` | public | No-op (implemented by the storage backends; the engine keeps passkeys in memory and never calls them) | n/a (host-facing) | [`Storage.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Storage.kt) |
+| R-19 | `Storage.saveSessionPasskey` / `loadSessionPasskey` | public | Unused by the engine (the storage backends implement both; the engine keeps passkeys in memory and never calls them) | n/a (host-facing) | [`Storage.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Storage.kt) |
 | R-20 | Firmware update (`FirmwareApi`, XModem) | none | Missing: omitted from the MVP | 6 | [`SPEC.md`](./SPEC.md) (line 637 and the checklist at line 1011) |
 
 ## How to add to this list
