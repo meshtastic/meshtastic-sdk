@@ -562,6 +562,8 @@ public interface AdminApi {
     // ── Display ──
     public suspend fun setScale(scale: Int): AdminResult<Unit>
     public suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit>
+    public suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit>
+    public suspend fun requestDisplayFrame(): AdminResult<Unit>
 
     // ── Lifecycle ──
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>

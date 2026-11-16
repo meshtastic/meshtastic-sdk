@@ -686,6 +686,10 @@ private class CapturingAdminApi : AdminApi {
 
     override suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit> = unused()
 
+    override suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit> = unused()
+
+    override suspend fun requestDisplayFrame(): AdminResult<Unit> = unused()
+
     override suspend fun addContact(contact: SharedContact): AdminResult<Unit> = unused()
 
     override suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit> = unused()
