@@ -18,7 +18,7 @@ and [ADR-012](../decisions/012-transport-threading.md) for the threading contrac
 | Requires hardware | None (just a routable host) | BLE radio on host **and** device | USB host port + USB-serial bridge IC |
 | Multiple devices per host | Yes — one `RadioClient` per `(host, port)` | Yes — one `RadioClient` per peripheral | Yes — one `RadioClient` per port |
 | Bonding / pairing | None | Yes — surfaced as [`TransportState.Bonding`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) on first encrypted read | None |
-| Auto-discovery | None (host:port supplied by user) | Kable `Scanner` filtered on `BleConstants.MESH_SERVICE_UUID` | OS port enumeration via `JvmSerialPorts.list()` / `AndroidSerialPorts.list()` |
+| Auto-discovery | mDNS `_meshtastic._tcp` via `TcpDiscovery.discover()`: `JvmTcpDiscovery` (JmDNS), `AndroidTcpDiscovery` (`NsdManager`), `IosTcpDiscovery` (`NSNetServiceBrowser`); a known host:port still works without it | Kable `Scanner` filtered on `BleConstants.MESH_SERVICE_UUID` | OS port enumeration via `JvmSerialPorts.list()` / `AndroidSerialPorts.list()` |
 | Idle behavior | **15 min** firmware-side idle close (`protocol.md` §1A) | Link kept alive by GATT; OS may drop on radio reset | None — link dies only on cable detach |
 | Wake-byte preamble | Yes (4× `0x94`) | Not applicable (GATT message boundaries) | Yes (4× `0x94`) |
 | Module docs | [`transport-tcp/Module.md`](../../transport-tcp/Module.md) | [`transport-ble/Module.md`](../../transport-ble/Module.md) | [`transport-serial/Module.md`](../../transport-serial/Module.md) |

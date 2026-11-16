@@ -9,7 +9,7 @@
 | Package | Stability | Contents |
 |---|---|---|
 | `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
-| `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
+| `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport`, `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio`, `JvmTcpDiscovery` (JVM), `AndroidTcpDiscovery` (Android), `IosTcpDiscovery` (iOS) |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
 | `org.meshtastic.sdk.storage.sqldelight` | Public | `SqlDelightStorageProvider`, `AndroidContextHolder` (Android) |

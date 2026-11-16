@@ -1,6 +1,7 @@
 // transport-tcp/build.gradle.kts
 //
-// TCP/4403 PhoneAPI transport via ktor-network sockets.
+// TCP/4403 PhoneAPI transport via ktor-network sockets, plus mDNS discovery:
+// JmDNS on the JVM, NsdManager on Android, NSNetServiceBrowser on iOS.
 
 plugins {
     id("meshtastic.kmp.library")
@@ -14,6 +15,9 @@ kotlin {
         commonMain.dependencies {
             api(project(":core"))
             implementation(libs.ktorNetwork)
+        }
+        jvmMain.dependencies {
+            implementation(libs.jmdns)
         }
     }
 }
