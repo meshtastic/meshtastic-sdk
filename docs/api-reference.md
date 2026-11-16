@@ -600,6 +600,52 @@ client.admin.editSettings {
 }
 ```
 
+## LoRa regions and frequency slots *(since 0.3.0)*
+
+Pure functions in `org.meshtastic.sdk` that answer what a `Config.LoRaConfig` means on the air: how many frequency slots the band has, which slot the primary channel uses, and the center frequency. No engine state and no I/O; float math is single-precision, as on the device.
+
+```kotlin
+public data class LoRaRegionInfo(
+    val region: RegionCode, val freqStartMHz: Float, val freqEndMHz: Float, val dutyCyclePercent: Float,
+    val powerLimitDbm: Int, val freqSwitching: Boolean, val wideLora: Boolean, val spacingMHz: Float,
+    val paddingMHz: Float, val audioPermitted: Boolean, val licensedOnly: Boolean,
+    val defaultPreset: ModemPreset, val overrideSlot: Int,
+) {
+    companion object {
+        val all: List<LoRaRegionInfo>                      // firmware order, UNSET last
+        fun forRegion(code: RegionCode): LoRaRegionInfo    // no row -> the UNSET row, as firmware does
+    }
+}
+
+public data class ModemParams(val bandwidthKHz: Float, val spreadFactor: Int, val codingRate: Int)
+public fun ModemPreset.modemParams(wideLora: Boolean = false): ModemParams
+
+public object LoRaFrequency {
+    fun bandwidthKHzForCode(code: Int): Float
+    fun slotWidthMHz(region: LoRaRegionInfo, bandwidthKHz: Float): Float
+    fun numChannels(region: LoRaRegionInfo, bandwidthKHz: Float): Int
+    fun resolveSlot(region: LoRaRegionInfo, numChannels: Int, channelName: String, channelNum: Int = 0): Int?
+    fun hashedChannelName(channelName: String, usePreset: Boolean, preset: ModemPreset): String
+    fun centerFrequencyMHz(region: LoRaRegionInfo, bandwidthKHz: Float, slot: Int, frequencyOffsetMHz: Float = 0f): Float
+    fun plan(config: Config.LoRaConfig, primaryChannelName: String): LoRaFrequencyPlan
+}
+
+public data class LoRaFrequencyPlan(
+    val region: LoRaRegionInfo, val bandwidthKHz: Float, val numChannels: Int, val slot: Int?, val frequencyMHz: Float?,
+)
+```
+
+```kotlin
+val plan = LoRaFrequency.plan(lora, primaryChannelName = channel.settings.name)
+// US, LongFast, name "LongFast": numChannels = 104, slot = 20, frequencyMHz = 906.875
+```
+
+- Slots are 1-based, like `LoRaConfig.channel_num`. `slot` is `null` with `override_frequency` set or when the band has no slots; `frequencyMHz` is then the override plus `frequency_offset`, or `null` without one.
+- An `UNSET` region, and any `RegionCode` firmware has no row for, resolves to the `UNSET` row: zero slots, no frequency.
+- `numChannels` is not clamped to one. A bandwidth far wider than the band rounds to 0; `plan` avoids that for `use_preset = false` by substituting the region default preset's bandwidth, as firmware does.
+- A preset the region does not offer is not substituted. The device clamps it when the config is applied, so a stored config is already legal.
+- A caller holding region data from elsewhere can build a `LoRaRegionInfo` and pass it to the `LoRaFrequency` functions directly.
+
 ## Storage
 
 ```kotlin

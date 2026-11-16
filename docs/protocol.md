@@ -1133,6 +1133,22 @@ Each `ChannelSettings` carries:
 | `EU_N_868` | Europe | 868 MHz | Narrow presets |
 | `UNSET` | — | — | Device refuses TX until set |
 
+### Frequency slots
+
+Firmware (`RadioInterface::applyModemConfig`, `frequencySlotCount` and `resolveFrequencySlot` in `src/mesh/RadioInterface.cpp`; `modemPresetToParams` and `bwCodeToKHz` in `src/mesh/MeshRadio.h`) derives the radio frequency from the region row and modem bandwidth `bw` in kHz, all in `float`:
+
+```
+slotWidth = spacing + 2 * padding + bw / 1000                     // MHz
+numSlots  = round((freqEnd - freqStart + spacing) / slotWidth)    // half away from zero; 0 for UNSET
+slot      = channel_num            if 1 <= channel_num <= numSlots
+          = region.overrideSlot    else if 1 <= overrideSlot <= numSlots
+          = djb2(name) % numSlots + 1                             // name: UTF-8 bytes, hash = hash * 33 + byte, seed 5381
+freq      = freqStart + bw / 2000 + padding + (slot - 1) * slotWidth + frequency_offset
+freq      = override_frequency + frequency_offset                 // when override_frequency != 0
+```
+
+`name` is the primary channel name; when empty it is the preset display name (`LongFast`, `LongMod`, ...), or `Custom` when `use_preset` is false. `bw` is the preset bandwidth (wide regions use the 812.5 / 1625 / 406.25 kHz variants) or `bwCodeToKHz(bandwidth)` with `use_preset` false, where a custom bandwidth wider than the band falls back to the region default preset's. `spacing` and `padding` come from the region profile. The SDK implements this as `LoRaFrequency`.
+
 ### Modem presets
 
 `LoRaConfig.modem_preset` (enum `ModemPreset`) — combinations of bandwidth / spreading factor / coding rate. Listed fastest → slowest:
