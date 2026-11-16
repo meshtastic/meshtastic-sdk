@@ -9,6 +9,11 @@ public final class org/meshtastic/sdk/transport/ble/BleConstants {
 	public final fun getTORADIO_UUID ()Lkotlin/uuid/Uuid;
 }
 
+public final class org/meshtastic/sdk/transport/ble/BleScanner {
+	public static final field INSTANCE Lorg/meshtastic/sdk/transport/ble/BleScanner;
+	public final fun scan ()Lkotlinx/coroutines/flow/Flow;
+}
+
 public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtastic/sdk/RadioTransport {
 	public fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;)V
 	public synthetic fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -20,5 +25,19 @@ public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtasti
 	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun shutdown ()V
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleTransportFactoryKt {
+	public static final fun BleTransport (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lkotlin/coroutines/CoroutineContext;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static synthetic fun BleTransport$default (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lkotlin/coroutines/CoroutineContext;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+}
+
+public final class org/meshtastic/sdk/transport/ble/DiscoveredRadio {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddress ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getRssi ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 

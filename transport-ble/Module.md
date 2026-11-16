@@ -63,8 +63,14 @@ for the transport ↔ engine threading contract.
 
 ## Key packages
 
-- `org.meshtastic.sdk.transport.ble` — `BleTransport(peripheral: Peripheral, address: String)`. Caller
-  obtains `Peripheral` from a Kable `Scanner` filtered on `BleConstants.MESH_SERVICE_UUID`;
+- `org.meshtastic.sdk.transport.ble` — `BleTransport(peripheral: Peripheral, address: String)`;
   `address` is the storage identity (Android MAC, iOS CoreBluetooth UUID).
+- `org.meshtastic.sdk.transport.ble.BleScanner` — `scan(): Flow<DiscoveredRadio>`, a cold scan filtered on
+  `BleConstants.MESH_SERVICE_UUID` that stops when the collector cancels. Every advertisement is
+  emitted (no dedup), so a UI keeps RSSI current by keying on `DiscoveredRadio.address`. The caller
+  holds the permissions (Android 12+ `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`, older Android location, iOS
+  `NSBluetoothAlwaysUsageDescription`); a missing one fails the flow with `MeshtasticException.Transport`.
+  `BleTransport(radio: DiscoveredRadio)` connects to a result on every target (Android also applies
+  its MTU and connection-priority tuning); on Android `BleTransport(address = radio.address)` works too.
 - `org.meshtastic.sdk.transport.ble.BleConstants` — service / characteristic UUIDs as `kotlin.uuid.Uuid`
   and pre-built Kable `Characteristic` handles.

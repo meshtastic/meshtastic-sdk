@@ -10,7 +10,7 @@
 |---|---|---|
 | `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
-| `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
+| `org.meshtastic.sdk.transport.ble` | Public | `BleTransport`, `BleConstants`, `BleScanner` (`scan(): Flow<DiscoveredRadio>`, finds radios by the mesh service UUID; the caller holds the BLE permissions), `DiscoveredRadio`; `BleTransport(radio)` connects to a scan result on every target |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
 | `org.meshtastic.sdk.storage.sqldelight` | Public | `SqlDelightStorageProvider`, `AndroidContextHolder` (Android) |
 | `org.meshtastic.sdk.testing` | Public (test fixtures) | `FakeRadioTransport`, `TestClock`; `InMemoryStorage` and `InMemoryStorageProvider` are deprecated aliases of the `:core` classes |

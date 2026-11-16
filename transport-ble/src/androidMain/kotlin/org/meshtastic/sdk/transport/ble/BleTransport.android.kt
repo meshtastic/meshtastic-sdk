@@ -58,6 +58,12 @@ public fun BleTransport(address: String, builderAction: PeripheralBuilder.() -> 
         peripheral = Peripheral(address.toIdentifier(), builderAction),
         address = address,
     )
+    applyPlatformTuning(transport)
+    return transport
+}
+
+/** Android tuning shared by the address factory and the scanned-radio factory. */
+internal actual fun applyPlatformTuning(transport: BleTransport) {
     transport.postConnectHook = { connected ->
         val android = connected as? AndroidPeripheral
         if (android != null) {
@@ -71,7 +77,6 @@ public fun BleTransport(address: String, builderAction: PeripheralBuilder.() -> 
             }
         }
     }
-    return transport
 }
 
 /** Run a best-effort GATT tuning call: cancellation propagates, everything else is ignored. */
