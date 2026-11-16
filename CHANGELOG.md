@@ -43,6 +43,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
+- Typed `MeshPacket` payload accessors for more portnums: `asAlertText`, `asRangeTestText`,
+  `asDetectionSensorText`, `asPaxcount`, `asRemoteHardware`, `asNodeStatus`, `asMapReport`,
+  `asMeshBeacon`, `asRemoteShell`, `asPowerStress`, `asKeyVerification` and `asAtakPacket`.
+  Each returns `null` for another portnum or a payload that fails to decode.
 
 ### Changed
 
