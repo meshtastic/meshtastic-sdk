@@ -17,13 +17,16 @@
 - **Missing** — referenced in docs/code comments only; not in the API
   surface.
 
+No symbol in the main source sets currently has Stub status.
+
 ## Inventory
 
 > **Tooling deferral:** migrate public event/result `data class`es to
 > [Poko](https://github.com/drewhamilton/Poko) `@Poko` classes (drops `copy`/`componentN`
-> ABI lock-in, keeps `equals`/`hashCode`/`toString`) once Poko supports Kotlin 2.3.21+ —
+> ABI lock-in, keeps `equals`/`hashCode`/`toString`) once Poko supports the pinned Kotlin
+> version (`kotlin` in [`gradle/libs.versions.toml`](../gradle/libs.versions.toml), currently 2.4.10) —
 > 0.23.1 fails with `NoClassDefFoundError: org/jetbrains/kotlin/extensions/ExtensionPointDescriptor`
-> against the 2.3.x compiler. Until then the data-class policy in
+> against the 2.3.x compiler and has not been tried against 2.4.x. Until then the data-class policy in
 > [`api-reference.md`](./api-reference.md#api-conventions) applies.
 
 
@@ -35,7 +38,7 @@
 | R-4 | ~~`Builder.clock(Clock)` injection~~ | ~~public, no-op~~ | **Done** — Sprint 5. `Clock` is now a `fun interface` returning `Instant`; wired into `AdminApi.setTime(at = null)` and the post-handshake auto-sync trigger. | — | — |
 | R-5 | `Builder.protocolLogging(level, redactor)` | public | No-op (stored, unused) | 2 | [`RadioClient.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) — engine frame-handling instrumentation |
 | R-6 | `Builder.autoSyncTimeOnConnect(...)` | public | **Partial** — Sprint 5 fires a single fire-and-forget `AdminApi.setTime()` after handshake. Future iteration will gate on observed device skew (currently unconditional). | 2 | [`RadioClient.connect`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) |
-| R-7 | `TransportSpec`-driven transport factory lookup | public | Stub (Builder errors at `build()` if no concrete transport supplied) | 2 | [`RadioClient.Builder.build()`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) |
+| R-7 | `TransportSpec`-driven transport factory lookup | none | Missing: `Builder` has only `transport(RadioTransport)`; `build()` requires a transport instance and `TransportSpec` only derives a `TransportIdentity` | 2 | [`RadioClient.Builder.build()`](../core/src/commonMain/kotlin/org/meshtastic/sdk/RadioClient.kt) |
 | R-8 | ~~Exponential-backoff reconnect after `TransportError`~~ | ~~internal~~ | **Done** — `Builder.autoReconnect(AutoReconnectConfig())` ships opt-in exponential backoff with jitter + `ConnectionState.Reconnecting`. | — | — |
 | R-9 | ~~Identity-rebind `MeshEvent.ProtocolWarning`~~ | ~~observable~~ | **Done** — engine emits [`MeshEvent.IdentityRebound`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt) before clearing storage; see [`architecture/storage.md`](./architecture/storage.md#consumer-observable-signal-r-9) | — | — |
 | R-10 | Message history persistence in storage | none | Missing — `messages` table dropped in schema v2 (consumer concern) | — (consumer-owned) | [`architecture/storage.md`](./architecture/storage.md#message-history-is-not-stored), `migration_1__2.sqm` |
@@ -44,6 +47,11 @@
 | R-13 | ~~Channel/PSK management (read/list/set channels)~~ | ~~depends on R-1~~ | **Done** — Sprint 5. `AdminApi.getChannel / setChannel / listChannels` ship via the same `CommandDispatcher` path. PSK derivation stays in firmware; SDK ferries `Channel` proto messages. | — | — |
 | R-14 | ~~StoreForwardApi~~ | ~~public~~ | **Done** — `client.storeForward` ships `requestHistory`, `requestStats`, `servers` StateFlow, `events` cold Flow. | — | — |
 | R-15 | ~~Presence tracking (WentOffline / CameOnline)~~ | ~~public~~ | **Done** — `Builder.presenceTimeout(Duration)` enables per-node heartbeat-based presence; `NodeChange.WentOffline` / `CameOnline` emitted. | — | — |
+| R-16 | `TransportSpec.Http` | public | Missing: the spec shape exists in [`Transport.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) but there is no HTTP transport module (`transport-http` is commented out in `settings.gradle.kts`) | post-1.0 | [`protocol.md`](./protocol.md), [`future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md) |
+| R-17 | `MeshEvent.KeyVerification` | public | No-op (declared, never emitted by the engine) | 2 | [`Node.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt) |
+| R-18 | `MeshtasticException.FirmwareTooOld` | public | No-op (declared, never thrown; the reconnect policy only checks for it) | 2 | [`MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/MeshtasticException.kt) |
+| R-19 | `Storage.saveSessionPasskey` / `loadSessionPasskey` | public | No-op (implemented by the storage backends; the engine keeps passkeys in memory and never calls them) | n/a (host-facing) | [`Storage.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Storage.kt) |
+| R-20 | Firmware update (`FirmwareApi`, XModem) | none | Missing: omitted from the MVP | 6 | [`SPEC.md`](./SPEC.md) (line 637 and the checklist at line 1011) |
 
 ## How to add to this list
 

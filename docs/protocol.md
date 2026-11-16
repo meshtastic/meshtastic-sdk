@@ -221,7 +221,7 @@ ESP32-based devices with WiFi (or Ethernet) expose a REST API used by browser-ba
 
 ### Polling pattern
 
-The SDK polls `GET /api/v1/fromradio?all=true` periodically (typically 1–5 seconds depending on UI responsiveness needs). The empty body sentinel signals "queue drained, no need to re-poll until next user action or wakeup." Future firmware revisions are expected to add a `chunked=true` long-polling mode (per docs).
+The SDK does not implement an HTTP transport. A client of the device HTTP API polls `GET /api/v1/fromradio?all=true` periodically (typically 1–5 seconds depending on UI responsiveness needs). The empty body sentinel signals "queue drained, no need to re-poll until next user action or wakeup." Future firmware revisions are expected to add a `chunked=true` long-polling mode (per docs).
 
 ### Reference implementation
 
