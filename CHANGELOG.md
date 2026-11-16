@@ -59,6 +59,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep-alive heartbeats carry a nonce that counts up from 2 instead of a constant `0`. Firmware's
+  BLE write handlers drop a ToRadio write byte-identical to the previous one, so consecutive
+  nonce-0 heartbeats on an idle link were silently dropped. The nonce never takes `0` or `1`
+  (`1` makes firmware broadcast NodeInfo) and wraps back to `2`.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out

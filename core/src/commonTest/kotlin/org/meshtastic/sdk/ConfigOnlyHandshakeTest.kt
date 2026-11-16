@@ -76,7 +76,7 @@ class ConfigOnlyHandshakeTest {
 
         val outbound = transport.outboundToRadio()
         val stage1Index = outbound.indexOfFirst { it.want_config_id == NONCE_STAGE1 }
-        val heartbeatIndex = outbound.indexOfFirst { it.heartbeat?.nonce == 0 }
+        val heartbeatIndex = outbound.indexOfFirst { it.heartbeat?.nonce == 2 }
         assertTrue(stage1Index >= 0, "Stage 1 nonce must be sent")
         assertTrue(heartbeatIndex > stage1Index, "settle heartbeat must still follow Stage 1")
     }
