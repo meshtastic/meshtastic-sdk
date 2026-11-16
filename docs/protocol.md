@@ -389,6 +389,14 @@ Under `69421`, Stage 2 sends rows 1 to 3, then row 9 (`OTHER_NODEINFOS` × N), t
 
 ### Node DB after the handshake
 
+After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
+
+- **`FromRadio.node_info`** replaces the node's entry.
+- **Every decoded `MeshPacket` with `from != 0`** creates or refreshes the sender (firmware `NodeDB::updateFrom`): `last_heard` from `rx_time`, or the engine clock when `rx_time` is 0; `snr` only when `transport_mechanism` is `TRANSPORT_LORA` and `rx_rssi` is present; `via_mqtt`; `hops_away = hop_start - hop_limit` only when `hop_start != 0` and `hop_start >= hop_limit`, otherwise unchanged. Packets from our own node refresh only `last_heard`. Encrypted packets (no `decoded`) never touch the DB.
+- **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
+- **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
+- **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
+
 A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
 
 After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
