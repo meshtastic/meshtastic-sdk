@@ -3674,8 +3674,10 @@ internal class MeshEngine(
         // records a slow `deviceLogs` collector can fall behind by before the oldest are dropped.
         const val DEVICE_LOG_BUFFER = 64
 
-        // maximum frames buffered during the inter-stage settle window.
+        // (node, offered key) pairs remembered so a repeated mismatch is reported once.
         const val MAX_REPORTED_KEY_MISMATCHES = 256
+
+        // maximum frames buffered during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64
 
         // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
