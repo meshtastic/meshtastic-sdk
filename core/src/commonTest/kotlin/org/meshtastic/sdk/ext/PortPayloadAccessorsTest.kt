@@ -83,6 +83,12 @@ class PortPayloadAccessorsTest {
         assertNull(pkt(PortNum.TELEMETRY_APP, Paxcount.ADAPTER.encode(msg)).asPaxcount())
     }
 
+    @Test fun paxcountEmptyPayloadIsAllDefaults() {
+        val decoded = pkt(PortNum.PAXCOUNTER_APP, ByteArray(0)).asPaxcount()
+        assertEquals(Paxcount.Builder().build(), decoded)
+        assertNull(pkt(PortNum.TEXT_MESSAGE_APP, ByteArray(0)).asPaxcount())
+    }
+
     @Test fun paxcountGarbageReturnsNull() {
         assertNull(pkt(PortNum.PAXCOUNTER_APP, garbage).asPaxcount())
     }
