@@ -59,6 +59,7 @@ import org.meshtastic.sdk.CongestionLevel
 import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
+import org.meshtastic.sdk.DeviceVersion
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
@@ -1372,7 +1373,10 @@ internal class MeshEngine(
         when {
             myInfo != null -> pendingMyInfo = myInfo
 
-            metadata != null -> pendingMetadata = metadata
+            metadata != null -> {
+                pendingMetadata = metadata
+                enforceFirmwareFloor(metadata.firmware_version)
+            }
 
             channel != null -> {
                 pendingChannels.removeAll { it.index == channel.index }
@@ -1427,6 +1431,35 @@ internal class MeshEngine(
             // Python client, which skips bytes it can't frame/parse.
             else -> logger.debug(TAG) { "Stage 1: ignoring unrecognized FromRadio" }
         }
+    }
+
+    /**
+     * Ends the connect with [MeshtasticException.FirmwareTooOld] when [reported] parses below
+     * [DeviceVersion.MIN_SUPPORTED]. A blank or unparseable version only warns: a missing
+     * version is not an old one.
+     */
+    private fun enforceFirmwareFloor(reported: String) {
+        val present = DeviceVersion(reported).asInt
+        if (present == 0) {
+            logger.warn(TAG) { "Device reported no parseable firmware version ('$reported'); skipping the floor check" }
+            return
+        }
+        val required = DeviceVersion.MIN_SUPPORTED.asInt
+        if (present >= required) return
+
+        logger.error(TAG) { "Firmware $reported is below the supported floor ${DeviceVersion.MIN_SUPPORTED.versionString}" }
+        val cause = MeshtasticException.tag(
+            MeshtasticException.FirmwareTooOld(required = required, present = present),
+            transportIdentity = transport.identity,
+            operation = "handshake",
+        )
+        events.tryEmit(MeshEvent.TransportError(cause))
+        handshakeStage = HandshakeStage.Idle
+        failPreSendQueueWith(SendFailure.HandshakeFailed)
+        val deferred = pendingConnectDeferred
+        pendingConnectDeferred = null
+        deferred?.completeExceptionally(cause)
+        supervisorJobRef.value?.cancel()
     }
 
     private fun handleStage1SettleComplete() {

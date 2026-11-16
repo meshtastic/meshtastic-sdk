@@ -141,6 +141,57 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun firmwareBelowFloorFailsConnectWithoutReconnecting() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:fw-too-old"),
+            nowMs = { currentTime },
+            firmwareVersion = "2.5.13.abcdef0",
+        )
+        val client = buildClient(transport, autoReconnect = AutoReconnectConfig(enabled = true))
+        val errors = mutableListOf<MeshEvent.TransportError>()
+        backgroundScope.launch { client.events.collect { if (it is MeshEvent.TransportError) errors += it } }
+        runCurrent()
+
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        repeat(4) {
+            advanceTimeBy(150L)
+            drainCurrent()
+        }
+
+        val error = assertIs<MeshtasticException.FirmwareTooOld>(connectJob.await().exceptionOrNull())
+        assertEquals(20514, error.required)
+        assertEquals(20513, error.present)
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals(1, errors.size)
+        assertIs<MeshtasticException.FirmwareTooOld>(errors.single().error)
+
+        advanceTimeBy(120_000L)
+        drainCurrent()
+        assertTrue(transport.reconnectAttemptTimes().isEmpty(), "FirmwareTooOld must not be retried")
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun firmwareAtOrAboveFloorOrUnreadableStillConnects() = runTest {
+        for (version in listOf("2.5.14", "2.8.3", "2.8.3.68f47ef", "garbage", "")) {
+            val transport = ScriptedTransport(
+                identity = TransportIdentity("fake:fw-ok-$version"),
+                nowMs = { currentTime },
+                firmwareVersion = version,
+            )
+            val client = buildClient(transport)
+            val connectJob = backgroundScope.async { client.connect() }
+            repeat(4) {
+                advanceTimeBy(150L)
+                drainCurrent()
+            }
+            connectJob.await()
+            assertEquals(ConnectionState.Connected, client.connection.value, "version '$version'")
+            client.disconnect()
+        }
+    }
+
+    @Test
     fun stage2WatchdogSlidesWhileProgressFramesArrive() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:stage2-sliding"),
@@ -1579,6 +1630,7 @@ class HandshakeAndReconnectTest {
         var autoCompleteStage1: Boolean = true,
         var autoCompleteStage2: Boolean = true,
         var nodeNum: Int = DEFAULT_NODE_NUM,
+        var firmwareVersion: String? = null,
         var autoRespondGetOwner: Boolean = true,
         private val sessionPasskey: ByteArray = SEEDED_PASSKEY,
         private val replaceInboundOnConnect: Boolean = false,
@@ -1753,6 +1805,15 @@ class HandshakeAndReconnectTest {
                     }.build(),
                 ),
             )
+            firmwareVersion?.let { version ->
+                inbound.tryEmit(
+                    encodeFromRadioFrame(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.metadata = DeviceMetadata.Builder().also { md -> md.firmware_version = version }.build()
+                        }.build(),
+                    ),
+                )
+            }
             inbound.tryEmit(
                 encodeFromRadioFrame(
                     org.meshtastic.proto.FromRadio.Builder().also { wb ->

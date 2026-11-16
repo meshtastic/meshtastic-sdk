@@ -120,9 +120,12 @@ A release's GitHub notes are its `CHANGELOG.md` section verbatim, under an insta
 
 | SDK version | Proto artifact | Minimum firmware | Kotlin | Gradle | Android `minSdk` | iOS deployment |
 |---|---|---|---|---|---|---|
-| `0.x.y` | `meshtasticProtobufs` in `gradle/libs.versions.toml`; the changelog names each bump | No hard minimum; features gate on proto fields, such as `DeviceMetadata.hasPKC` for PKI and `ClientNotification` variants for security warnings. The practical floor follows the pinned proto artifact. | latest stable at release | 9.x | 26 | iOS 14 |
+| `0.x.y` | `meshtasticProtobufs` in `gradle/libs.versions.toml`; the changelog names each bump | `2.5.14` (`DeviceVersion.MIN_SUPPORTED`); `connect()` throws `FirmwareTooOld` below it. Newer features gate on proto fields (e.g. `DeviceMetadata.hasPKC` for PKI, `ClientNotification` variants for security warnings). | latest stable at release | 9.x | 26 | iOS 14 |
 
-The SDK accepts additive proto fields and doesn't fail on a firmware version mismatch. `MeshtasticException.FirmwareTooOld` is reserved for an opt-in check (see [`error-taxonomy.md`](./error-taxonomy.md)).
+The SDK is forward-compatible for additive proto fields. The only firmware check is the
+floor: a `firmware_version` that parses below `2.5.14` fails the connect with
+`MeshtasticException.FirmwareTooOld` (see `docs/error-taxonomy.md`); a version that is
+missing or does not parse never fails it.
 
 ## Yanking a release
 

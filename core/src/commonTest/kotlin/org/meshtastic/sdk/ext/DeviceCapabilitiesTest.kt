@@ -21,6 +21,13 @@ class DeviceCapabilitiesTest {
         assertEquals(0, DeviceVersion("invalid").asInt)
     }
 
+    @Test fun parsesFirmwareStringsWithBuildSuffix() {
+        assertEquals(20803, DeviceVersion("2.8.3").asInt)
+        assertEquals(20803, DeviceVersion("2.8.3.68f47ef").asInt)
+        assertEquals(0, DeviceVersion("").asInt)
+        assertEquals(20514, DeviceVersion.MIN_SUPPORTED.asInt)
+    }
+
     @Test fun comparesVersions() {
         assertTrue(DeviceVersion("2.7.18") > DeviceVersion("2.7.12"))
         assertTrue(DeviceVersion("3.0.0") > DeviceVersion("2.99.99"))
