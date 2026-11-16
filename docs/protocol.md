@@ -685,7 +685,7 @@ The recipient's `MeshPacket.public_key` field MAY carry the sender's public key 
 **The X25519 keypair lives on the device, not on the phone.** Both encryption (`encryptCurve25519`) and decryption (`decryptCurve25519`) happen inside the firmware (`firmware:src/mesh/CryptoEngine.cpp:106-178`). The phone:
 
 - Receives PKI direct messages already-decrypted in `MeshPacket.decoded` (the firmware decrypts before forwarding via PhoneAPI).
-- Sends PKI direct messages by setting `pki_encrypted = true` (or simply addressing a unicast packet to a node whose `User.public_key` the device has cached); the device performs the encryption.
+- Sends PKI direct messages by setting `pki_encrypted = true` and the recipient's key (or simply addressing a unicast packet to a node whose `User.public_key` the device has cached); the device performs the encryption.
 - Caches *public* keys for other nodes via `User.public_key` from `NODEINFO_APP` packets — these are ordinary NodeDB data, persisted with the rest of the cache.
 
 Consequently the SDK does **not** define a `KeyMaterialStore` interface — there is no private key for the host to store. The local node's public key is exposed via `ownNode.user.public_key` for out-of-band display/QR verification (see below).
@@ -694,7 +694,23 @@ Consequently the SDK does **not** define a `KeyMaterialStore` interface — ther
 
 ### Key verification
 
-Numeric out-of-band key verification is **not implemented in firmware**. Hosts may surface the local public key as a string/QR for manual verification. The SDK should expose `localUser.publicKey` as an opaque `ByteArray`.
+Firmware runs numeric key verification (`firmware:src/modules/KeyVerificationModule.cpp`) over `KEY_VERIFICATION_APP`, driven by `AdminMessage.key_verification` (`KeyVerificationAdmin`) and reported to the phone as `ClientNotification` payloads. The SDK maps each payload to `MeshEvent.KeyVerification` (and still emits the raw `MeshEvent.Notification`):
+
+| Step | Device sends | `KeyVerificationPrompt` | Host replies with `AdminApi.keyVerification` |
+| --- | --- | --- | --- |
+| Responder receives the request | `key_verification_number_inform` (security number) | `ShowSecurityNumber` | nothing; the user reads the number to the initiator |
+| Initiator receives the response | `key_verification_number_request` | `EnterSecurityNumber` | `PROVIDE_SECURITY_NUMBER` with the `nonce` and the typed number |
+| Both receive the final hash | `key_verification_final` (`isSender` tells the side) | `ConfirmVerification` | `DO_VERIFY` or `DO_NOT_VERIFY` with the `nonce` |
+
+The host starts the exchange with `INITIATE_VERIFICATION` and the peer's `remote_nodenum`. `ClientNotification` payload variants beyond these (`duplicated_public_key`, `low_entropy_key`) surface as `MeshEvent.SecurityWarning`.
+
+### Public key in outbound DMs
+
+Firmware encrypts a unicast with its own NodeDB key for the destination (`firmware:src/mesh/Router.cpp:1318-1323`) and treats a phone-supplied `MeshPacket.public_key` only as a check: if `pki_encrypted` is set and `public_key` is non-zero and differs from the stored key, the send fails with `PKI_FAILED` (`Router.cpp:1344-1347`); an all-zero `public_key` is accepted. With no stored key the send fails with `PKI_SEND_FAIL_PUBLIC_KEY` (`Router.cpp:1340-1342`, `res = 39` in `QueueStatus`). `pki_encrypted` on a send firmware will not PKI-encrypt (licensed owner, for one: `Router.cpp:1178`) fails with `PKI_FAILED` (`Router.cpp:1361-1363`). A plain unicast to a node with a stored key is PKI-encrypted without any flag (`wouldEncryptWithPKC`, `Router.cpp:1170-1196`). `sendDirectMessageEncrypted` sets `pki_encrypted` and the key the SDK has stored for the recipient, as the Android app does (`CommandSenderImpl.kt:601-624`).
+
+### Key mismatch
+
+A `NODEINFO_APP` whose `public_key` differs from the stored 32-byte key is dropped by firmware (`firmware:src/mesh/NodeDB.cpp:4057-4061`, log only, no `ClientNotification`) and by the SDK. The SDK emits `MeshEvent.SecurityWarning.PublicKeyMismatch(node, offeredKey)` once per node and offered key (the last 256 pairs are remembered).
 
 ---
 

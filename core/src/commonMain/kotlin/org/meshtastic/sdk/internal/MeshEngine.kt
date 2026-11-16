@@ -52,6 +52,7 @@ import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.KeyVerificationPrompt
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
@@ -1636,6 +1637,9 @@ internal class MeshEngine(
                 val placeholder = user != null && user.long_name.isEmpty() && user.short_name.isEmpty() &&
                     user.public_key.size == 0
                 val keyMismatch = user != null && knownKey != null && knownKey.size == 32 && user.public_key != knownKey
+                if (user != null && keyMismatch && !placeholder) {
+                    announceKeyMismatch(nodeId, user.public_key)
+                }
                 if (user != null && !placeholder && !keyMismatch) {
                     val id = "!" + packet.from.toUInt().toString(16).padStart(8, '0')
                     wb.user = user.newBuilder().also { ub -> ub.id = id }.build()
@@ -1660,6 +1664,17 @@ internal class MeshEngine(
             val changed = diffNodeFields(existing, updated)
             if (changed.isNotEmpty()) emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
         }
+    }
+
+    // Bounded, insertion-ordered: the oldest (node, key) pair is forgotten first.
+    private val reportedKeyMismatches = LinkedHashSet<Pair<Int, ByteString>>()
+
+    private fun announceKeyMismatch(nodeId: NodeId, offered: ByteString) {
+        if (!reportedKeyMismatches.add(nodeId.raw to offered)) return
+        if (reportedKeyMismatches.size > MAX_REPORTED_KEY_MISMATCHES) {
+            reportedKeyMismatches.remove(reportedKeyMismatches.first())
+        }
+        events.tryEmit(MeshEvent.SecurityWarning.PublicKeyMismatch(nodeId, offered))
     }
 
     private fun mergePosition(wb: NodeInfo.Builder, previous: Position?, pos: Position) {
@@ -1781,6 +1796,39 @@ internal class MeshEngine(
 
                 cn.low_entropy_key != null ->
                     events.tryEmit(MeshEvent.SecurityWarning.LowEntropyKey)
+
+                cn.key_verification_number_request != null -> cn.key_verification_number_request!!.let { r ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.EnterSecurityNumber(r.nonce, r.remote_longname),
+                        ),
+                    )
+                }
+
+                cn.key_verification_number_inform != null -> cn.key_verification_number_inform!!.let { i ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.ShowSecurityNumber(
+                                i.nonce,
+                                i.remote_longname,
+                                i.security_number,
+                            ),
+                        ),
+                    )
+                }
+
+                cn.key_verification_final != null -> cn.key_verification_final!!.let { f ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.ConfirmVerification(
+                                f.nonce,
+                                f.remote_longname,
+                                f.isSender,
+                                f.verification_characters,
+                            ),
+                        ),
+                    )
+                }
             }
             true
         }
@@ -2744,6 +2792,7 @@ internal class MeshEngine(
         const val STAGE2_HARD_CAP_MS = 60_000L
 
         // maximum frames buffered during the inter-stage settle window.
+        const val MAX_REPORTED_KEY_MISMATCHES = 256
         const val SETTLE_BUFFER_CAP = 64
 
         // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
