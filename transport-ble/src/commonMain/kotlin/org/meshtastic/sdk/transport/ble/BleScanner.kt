@@ -40,8 +40,9 @@ public object BleScanner {
      * [BleConstants.MESH_SERVICE_UUID], and cancelling the collector stops it.
      *
      * Not deduplicated: every advertisement the platform delivers is emitted, so a UI can fold the
-     * flow into a map keyed by [DiscoveredRadio.address] and keep RSSI current. BlueZ on the JVM
-     * delivers a radio once per scan and without an RSSI. The flow keeps no per-radio
+     * flow into a map keyed by [DiscoveredRadio.address] and keep RSSI current. On BlueZ the
+     * first emissions are the devices the host already knows, bonded ones included, with a `null`
+     * RSSI; treat a radio as present only once it arrives with a reading. The flow keeps no per-radio
      * state and adds no buffer, so memory stays constant however long it is collected, and a slow
      * collector backpressures the platform scan callback rather than queueing. Apply `conflate()`
      * or a sampler downstream when updates arrive faster than they are rendered.

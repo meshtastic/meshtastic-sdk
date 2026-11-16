@@ -21,7 +21,9 @@ import com.juul.kable.PlatformAdvertisement
  * @property name Advertised local name (for example `Meshtastic_ab12`), or `null` when this
  *   advertisement did not carry one.
  * @property rssi Received signal strength in dBm (negative; closer to zero is stronger), or `null`
- *   when the platform reports none for this advertisement, as BlueZ on the JVM does.
+ *   when the platform reports none. BlueZ emits every device the host already knows at scan
+ *   start with no reading, whether or not it is on air, so `null` there means "not heard in this
+ *   scan yet".
  * @property address Stable platform identifier: the Bluetooth MAC address on Android, the
  *   CoreBluetooth peripheral UUID string on iOS, and on the JVM the Kable identifier's string form
  *   (on Linux a BlueZ object path, not a bare MAC). It is the value the platform `BleTransport`
