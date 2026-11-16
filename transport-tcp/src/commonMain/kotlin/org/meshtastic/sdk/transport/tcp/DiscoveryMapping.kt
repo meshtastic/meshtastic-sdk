@@ -7,6 +7,9 @@
  */
 package org.meshtastic.sdk.transport.tcp
 
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+
 private const val IPV4_OCTETS = 4
 private const val MAX_PORT = 65_535
 private const val AF_INET_DARWIN = 2
@@ -105,4 +108,32 @@ internal fun parseDarwinSockaddr(bytes: ByteArray): String? {
 
         else -> null
     }
+}
+
+/**
+ * Drops a `Found` that repeats the last one reported for the same service name. Platform browsers
+ * re-announce a resolved service unchanged; only a changed radio is a new event. Single-collector
+ * state, so it needs no synchronization.
+ */
+internal class DiscoveryEventFilter {
+    private val reported = HashMap<String, DiscoveredTcpRadio>()
+
+    /** Returns [event] when it should reach the collector, else `null`. */
+    fun accept(event: TcpDiscoveryEvent): TcpDiscoveryEvent? = when (event) {
+        is TcpDiscoveryEvent.Found ->
+            if (reported[event.radio.serviceName] == event.radio) {
+                null
+            } else {
+                reported[event.radio.serviceName] = event.radio
+                event
+            }
+
+        is TcpDiscoveryEvent.Lost -> if (reported.remove(event.serviceName) != null) event else null
+    }
+}
+
+/** Applies a fresh [DiscoveryEventFilter] to each collection. */
+internal fun Flow<TcpDiscoveryEvent>.distinctDiscoveryEvents(): Flow<TcpDiscoveryEvent> = flow {
+    val filter = DiscoveryEventFilter()
+    collect { event -> filter.accept(event)?.let { emit(it) } }
 }

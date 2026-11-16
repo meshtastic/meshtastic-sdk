@@ -149,4 +149,28 @@ class DiscoveryMappingTest {
         assertNull(parseDarwinSockaddr(byteArrayOf(28, 30, 0, 0, 0, 0, 0, 0, 0, 0)))
         assertNull(parseDarwinSockaddr(ByteArray(1)))
     }
+
+    @Test
+    fun filterDropsRepeatedFoundAndPassesChanges() {
+        val filter = DiscoveryEventFilter()
+        val radio = DiscoveredTcpRadio("Meshtastic", listOf("192.168.1.10"), 4403, emptyMap())
+        val moved = radio.copy(addresses = listOf("192.168.1.11"))
+
+        assertNotNull(filter.accept(TcpDiscoveryEvent.Found(radio)))
+        assertNull(filter.accept(TcpDiscoveryEvent.Found(radio)))
+        assertNotNull(filter.accept(TcpDiscoveryEvent.Found(moved)))
+        assertNull(filter.accept(TcpDiscoveryEvent.Found(moved)))
+    }
+
+    @Test
+    fun filterReportsLostOnceAndFoundAgainAfterIt() {
+        val filter = DiscoveryEventFilter()
+        val radio = DiscoveredTcpRadio("Meshtastic", listOf("192.168.1.10"), 4403, emptyMap())
+
+        assertNull(filter.accept(TcpDiscoveryEvent.Lost("Meshtastic")))
+        assertNotNull(filter.accept(TcpDiscoveryEvent.Found(radio)))
+        assertNotNull(filter.accept(TcpDiscoveryEvent.Lost("Meshtastic")))
+        assertNull(filter.accept(TcpDiscoveryEvent.Lost("Meshtastic")))
+        assertNotNull(filter.accept(TcpDiscoveryEvent.Found(radio)))
+    }
 }

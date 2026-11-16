@@ -64,7 +64,7 @@ public class JvmTcpDiscovery(private val bindAddress: InetAddress? = null) : Tcp
             runCatching { jmdns.removeServiceListener(type, listener) }
             runCatching { jmdns.close() }
         }
-    }.flowOn(Dispatchers.IO)
+    }.flowOn(Dispatchers.IO).distinctDiscoveryEvents()
 
     private fun ServiceInfo.toRadio(): DiscoveredTcpRadio? {
         val txt = HashMap<String, ByteArray?>()

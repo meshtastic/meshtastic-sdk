@@ -134,7 +134,7 @@ public class AndroidTcpDiscovery(context: Context) : TcpDiscovery {
             infoCallbacks.clear()
             runCatching { nsdManager.stopServiceDiscovery(listener) }
         }
-    }
+    }.distinctDiscoveryEvents()
 }
 
 @Suppress("DEPRECATION")

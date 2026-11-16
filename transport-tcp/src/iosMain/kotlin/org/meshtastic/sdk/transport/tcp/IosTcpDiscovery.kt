@@ -65,7 +65,7 @@ public class IosTcpDiscovery : TcpDiscovery {
                 delegate.stopResolving()
             }
         }
-    }
+    }.distinctDiscoveryEvents()
 }
 
 private class BrowserDelegate(private val scope: ProducerScope<TcpDiscoveryEvent>) :
