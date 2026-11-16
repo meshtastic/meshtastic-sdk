@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -25,6 +26,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
@@ -134,6 +136,57 @@ class HandshakeAndReconnectTest {
         assertEquals("Stage 2", timeout.stage)
         assertEquals(ConnectionState.Disconnected, client.connection.value)
         assertTrue(currentTime - stage2StartedAt >= STAGE2_PROGRESS_TICK_MS)
+    }
+
+    @Test
+    fun firmwareBelowFloorFailsConnectWithoutReconnecting() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:fw-too-old"),
+            nowMs = { currentTime },
+            firmwareVersion = "2.5.13.abcdef0",
+        )
+        val client = buildClient(transport, autoReconnect = AutoReconnectConfig(enabled = true))
+        val errors = mutableListOf<MeshEvent.TransportError>()
+        backgroundScope.launch { client.events.collect { if (it is MeshEvent.TransportError) errors += it } }
+        runCurrent()
+
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        repeat(4) {
+            advanceTimeBy(150L)
+            drainCurrent()
+        }
+
+        val error = assertIs<MeshtasticException.FirmwareTooOld>(connectJob.await().exceptionOrNull())
+        assertEquals(20514, error.required)
+        assertEquals(20513, error.present)
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals(1, errors.size)
+        assertIs<MeshtasticException.FirmwareTooOld>(errors.single().error)
+
+        advanceTimeBy(120_000L)
+        drainCurrent()
+        assertTrue(transport.reconnectAttemptTimes().isEmpty(), "FirmwareTooOld must not be retried")
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun firmwareAtOrAboveFloorOrUnreadableStillConnects() = runTest {
+        for (version in listOf("2.5.14", "2.8.3", "2.8.3.68f47ef", "garbage", "")) {
+            val transport = ScriptedTransport(
+                identity = TransportIdentity("fake:fw-ok-$version"),
+                nowMs = { currentTime },
+                firmwareVersion = version,
+            )
+            val client = buildClient(transport)
+            val connectJob = backgroundScope.async { client.connect() }
+            repeat(4) {
+                advanceTimeBy(150L)
+                drainCurrent()
+            }
+            connectJob.await()
+            assertEquals(ConnectionState.Connected, client.connection.value, "version '$version'")
+            client.disconnect()
+        }
     }
 
     @Test
@@ -1348,6 +1401,7 @@ class HandshakeAndReconnectTest {
         var autoCompleteStage1: Boolean = true,
         var autoCompleteStage2: Boolean = true,
         var nodeNum: Int = DEFAULT_NODE_NUM,
+        var firmwareVersion: String? = null,
         var autoRespondGetOwner: Boolean = true,
         private val sessionPasskey: ByteArray = SEEDED_PASSKEY,
     ) : RadioTransport {
@@ -1531,6 +1585,15 @@ class HandshakeAndReconnectTest {
                     }.build(),
                 ),
             )
+            firmwareVersion?.let { version ->
+                inbound.tryEmit(
+                    encodeFromRadioFrame(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.metadata = DeviceMetadata.Builder().also { md -> md.firmware_version = version }.build()
+                        }.build(),
+                    ),
+                )
+            }
             inbound.tryEmit(
                 encodeFromRadioFrame(
                     org.meshtastic.proto.FromRadio.Builder().also { wb ->

@@ -56,6 +56,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
   coroutines 1.11 into the storage POM.
+- `connect()` throws `MeshtasticException.FirmwareTooOld` when the device reports firmware below
+  2.5.14 (`DeviceVersion.MIN_SUPPORTED`), instead of continuing into a handshake it may not
+  complete. Auto-reconnect does not retry it. A missing or unparseable version still connects.
+  No new API: the exception was already declared, so this needs no code change unless a host
+  connects to firmware older than 2.5.14.
 
 ### Fixed
 
