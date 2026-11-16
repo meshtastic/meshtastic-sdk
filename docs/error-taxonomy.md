@@ -77,7 +77,7 @@ The Wire-generated `Routing.Error` enum (from `meshtastic/protobufs:mesh.proto`)
 
 | `Routing.Error` | `SendFailure` |
 |---|---|
-| `NONE` | `Acked` (or `Delivered` for broadcast) — not a failure |
+| `NONE` | `Acked` when sent by the destination, otherwise `Delivered` (always `Delivered` for broadcast) — not a failure |
 | `NO_ROUTE` | `NoRoute` |
 | `GOT_NAK` | `NoRoute` (explicit neighbor NAK ≈ no route) |
 | `TIMEOUT` | `Timeout` |

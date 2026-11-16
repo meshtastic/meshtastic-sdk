@@ -708,8 +708,12 @@ the config bundle, else 3 (`HOP_RELIABLE`). A raw `send(MeshPacket)` goes out as
 ### `want_ack`
 
 - Setting `want_ack = true` on an outbound `MeshPacket` causes the destination node to emit a `ROUTING_APP` packet back to the sender containing `Routing.error_reason = NONE` (success) or one of the error codes.
-- Relays implicitly ACK by retransmitting (the sender hears its own packet relayed = implicit ACK).
+- Relays implicitly ACK by retransmitting (the sender hears its own packet relayed = implicit ACK). The device reports that to the phone as a `ROUTING_APP NONE` whose sender is the local node; for a DM the destination's own ACK follows later.
 - `want_ack` is automatically cleared by the device for broadcast packets to prevent ack storms.
+
+### ACK correlation
+
+The SDK matches a `ROUTING_APP` reply to a send by `Data.request_id` and compares the reply packet's `from` with the send's destination. `from == destination` gives `Acked`; any other sender gives `Delivered`, and a broadcast can only reach `Delivered`. `Delivered` does not end tracking of a unicast send: until the ACK timeout the destination's ACK upgrades it to `Acked` and the destination's NAK fails it, and the timeout then drops the entry without failing. A NAK from any other node after `Delivered` is ignored.
 
 ### Retries — the SDK MUST NOT do them
 
@@ -737,7 +741,8 @@ The reference Android impl tracks these states in its persisted message store; t
 |---|---|
 | `Queued` | Locally queued; not yet handed to the device (offline, or device queue full). |
 | `Enroute` | Handed to the device; awaiting ACK/NAK. |
-| `Delivered` | Destination ACKed via `ROUTING_APP NONE`. |
+| `Delivered` | A relay ACKed (`ROUTING_APP NONE` from a node other than the destination). |
+| `Acked` | The destination ACKed (`ROUTING_APP NONE` whose sender is the destination). |
 | `Failed(reason)` | NAKed (`Routing.error_reason != NONE`), or host-side timeout, or device emitted `MAX_RETRANSMIT`. |
 
 > Android additionally has `SfppRouting` and `SfppConfirmed` for store-and-forward; the SDK can model these as additional sealed variants.

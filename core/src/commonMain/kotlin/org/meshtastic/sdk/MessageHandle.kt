@@ -36,8 +36,10 @@ public class MessageHandle internal constructor(
     /**
      * The current delivery state.
      *
-     * Transitions: [SendState.Queued] → [SendState.Sent] → [SendState.Acked] /
-     * [SendState.Delivered] / [SendState.Failed]. Never goes backward.
+     * Transitions: [SendState.Queued] → [SendState.Sent] → [SendState.Delivered] (relayed) →
+     * [SendState.Acked] (destination confirmed), or → [SendState.Failed]. [SendState.Delivered] may
+     * be skipped, and a unicast send may end in it when the destination never confirms. Never goes
+     * backward.
      *
      * **Lifetime / terminal-on-disconnect:** the underlying [kotlinx.coroutines.flow.MutableStateFlow]
      * is owned by the engine session that created this handle. When that session ends — either via
@@ -51,8 +53,10 @@ public class MessageHandle internal constructor(
     public val state: StateFlow<SendState> = _state.asStateFlow()
 
     /**
-     * Suspend until this send reaches a terminal state ([Acked][SendState.Acked],
-     * [Delivered][SendState.Delivered], or [Failed][SendState.Failed]).
+     * Suspend until this send is [Acked][SendState.Acked], [Delivered][SendState.Delivered] or
+     * [Failed][SendState.Failed]. Returns at the first of these, so a later move from
+     * [Delivered][SendState.Delivered] to [Acked][SendState.Acked] or [Failed][SendState.Failed]
+     * shows only in [state].
      *
      * Returns immediately if already in a terminal state.
      *

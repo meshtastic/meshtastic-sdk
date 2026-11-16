@@ -157,6 +157,9 @@ internal class MeshEngine(
     private val activeConnectDeferred = atomic<CompletableDeferred<Unit>?>(null)
 
     private val pendingSends = mutableMapOf<MessageId, MutableStateFlow<SendState>>()
+
+    // Destination of each dispatched send, to tell the addressee's ack from a relay's.
+    private val pendingDestinations = mutableMapOf<MessageId, Int>()
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
 
@@ -524,6 +527,7 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
+        pendingDestinations.clear()
 
         inbox.close()
         outbound.close()
@@ -1557,6 +1561,7 @@ internal class MeshEngine(
                         }
                     dispatcher.tryFail(packetId.raw, rpcResult)
                     val flow = pendingSends.remove(packetId)
+                    pendingDestinations.remove(packetId)
                     ackTimeoutJobs.remove(packetId)?.cancel()
                     if (flow != null) {
                         val current = flow.value
@@ -1786,20 +1791,19 @@ internal class MeshEngine(
         ) {
             // Defensive cleanup if a stale pendingSends entry shared the wire id.
             pendingSends.remove(messageId)
+            pendingDestinations.remove(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
             return
         }
 
         val flow = pendingSends[messageId] ?: return
 
-        // ignore duplicate routing ACKs. Once a handle reaches a terminal state
-        // (Acked/Delivered/Failed) the engine has already settled the user-visible outcome;
-        // a second device-emitted Routing reply (legitimate retry, mesh echo, or relayed ack)
-        // must not flip the state again. Defensive even though terminal entries are removed
-        // from pendingSends below — guards against any future caller that re-inserts.
+        // Acked and Failed are final: a later Routing reply must not flip them. Delivered (a relay's
+        // ack) stays tracked so a unicast send can still be upgraded by the addressee's ack.
         val current = flow.value
-        if (current is SendState.Failed || current == SendState.Acked || current == SendState.Delivered) {
+        if (current is SendState.Failed || current == SendState.Acked) {
             pendingSends.remove(messageId)
+            pendingDestinations.remove(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
             return
         }
@@ -1820,6 +1824,12 @@ internal class MeshEngine(
                 // discovery. Explicit no-op so the Routing.Error fall-through doesn't mark
                 // an unrelated handle as Acked.
                 logger.debug(TAG) { "Ignoring Routing.route_request for id=$messageId" }
+            }
+
+            // After a relay ack only the addressee's own NAK is a verdict on the send.
+            errorReason != null && errorReason != Routing.Error.NONE && current == SendState.Delivered &&
+                packet.from != pendingDestinations[messageId] -> {
+                logger.debug(TAG) { "Ignoring $errorReason after relay ack for id=$messageId" }
             }
 
             errorReason != null && errorReason != Routing.Error.NONE -> {
@@ -1845,13 +1855,23 @@ internal class MeshEngine(
                 }
                 flow.value = SendState.Failed(failure)
                 pendingSends.remove(messageId)
+                pendingDestinations.remove(messageId)
                 ackTimeoutJobs.remove(messageId)?.cancel()
             }
 
             routeReply != null || errorReason == Routing.Error.NONE -> {
-                flow.value = SendState.Acked
-                pendingSends.remove(messageId)
-                ackTimeoutJobs.remove(messageId)?.cancel()
+                val destination = pendingDestinations[messageId] ?: 0
+                val isBroadcast = destination == BROADCAST_ADDR
+                if (!isBroadcast && destination != 0 && packet.from == destination) {
+                    flow.value = SendState.Acked
+                } else {
+                    flow.value = SendState.Delivered
+                }
+                if (flow.value == SendState.Acked || isBroadcast) {
+                    pendingSends.remove(messageId)
+                    pendingDestinations.remove(messageId)
+                    ackTimeoutJobs.remove(messageId)?.cancel()
+                }
             }
 
             else -> {
@@ -2113,6 +2133,7 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
+        pendingDestinations.clear()
         failPreSendQueueWith(SendFailure.Disconnected)
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
@@ -2239,6 +2260,7 @@ internal class MeshEngine(
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
+        pendingDestinations[wireKey] = packet.to
 
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
@@ -2258,6 +2280,7 @@ internal class MeshEngine(
         if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
             pendingSends.remove(MessageId(wireId))
+            pendingDestinations.remove(MessageId(wireId))
             logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
             return
         }
@@ -2613,9 +2636,16 @@ internal class MeshEngine(
                 logger.debug(TAG) { "ACK timeout for id=${msg.id} (state was ${flow.value})" }
                 flow.value = SendState.Failed(SendFailure.AckTimeout)
                 pendingSends.remove(msg.id)
+                pendingDestinations.remove(msg.id)
             }
 
-            SendState.Acked, SendState.Delivered, is SendState.Failed -> {
+            SendState.Delivered -> {
+                // Relay-acked and the addressee never confirmed; the outcome stays Delivered.
+                pendingSends.remove(msg.id)
+                pendingDestinations.remove(msg.id)
+            }
+
+            SendState.Acked, is SendState.Failed -> {
                 // Race resolved in favor of the real result; nothing to do.
             }
         }

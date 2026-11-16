@@ -642,7 +642,7 @@ class MeshEngineEdgeCasesTest {
         // Inject implicit ACKs for all handles.
         handles.forEach { transport.injectRoutingAck(requestId = it.id.raw) }
         runCurrent()
-        assertTrue(handles.all { it.state.value == SendState.Acked })
+        assertTrue(handles.all { it.state.value == SendState.Delivered })
 
         client.disconnect()
     }

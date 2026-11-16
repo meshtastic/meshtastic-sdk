@@ -184,7 +184,7 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
 - **Steps:**
   1. Identify second radio's NodeId.
   2. `client.sendText("hi", to = otherNode)`.
-- **Expected:** `Queued → Sent → Acked`.
+- **Expected:** `Queued → Sent → (Delivered on a relay's implicit ack) → Acked` once the destination answers.
 
 #### C3 — Cancel pre-Sent fails handle as `Cancelled`
 - **Transport:** Serial (easier to predict timing) or any

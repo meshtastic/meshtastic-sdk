@@ -46,9 +46,9 @@
 | **Stage 1 / Stage 2 handshake** | Two-pass config exchange: Stage 1 emits configs/channels/file_info; Stage 2 emits NodeDB. See `architecture/handshake-fsm.md`. |
 | **Heartbeat** | `Heartbeat { uint32 nonce = 1 }` sent phone → device on a per-transport schedule. Nonce must change every send to defeat firmware memcmp dedup. `protocol.md` §16. |
 | **QueueStatus** | `FromRadio.queue_status { uint32 mesh_packet_id; uint32 res; uint32 free; uint32 maxlen }`. Engine watches `mesh_packet_id` to advance `SendState` from `Queued` → `Sent`. `protocol.md` §16. |
-| **Routing ACK / NAK** | `MeshPacket.decoded.portnum=ROUTING_APP` with `request_id` matching an outbound packet. ACK transitions `Sent → (Acked | Delivered)`; NAK transitions `→ Failed(reason)`. `protocol.md` §11. |
+| **Routing ACK / NAK** | `MeshPacket.decoded.portnum=ROUTING_APP` with `request_id` matching an outbound packet. ACK transitions `Sent → Delivered` (sender is not the destination) or `Sent → Acked` (sender is the destination); NAK transitions `→ Failed(reason)`. `protocol.md` §11. |
 | **want_response** | Bool on `MeshPacket.decoded`. When true, the receiver MAY reply; combined with `request_id` it's the basis for SDK admin RPCs. |
-| **`SendState`** (SDK) | Sealed `Queued → Sent → (Acked | Delivered | Failed(SendFailure))`. `Delivered` requires an end-to-end ACK from the addressed node, not just a router relay. ADR-005. |
+| **`SendState`** (SDK) | Sealed `Queued → Sent → (Acked | Delivered | Failed(SendFailure))`. `Acked` requires the addressed node's own ACK; `Delivered` is a relay or implicit ack. ADR-005. |
 
 ## Storage
 

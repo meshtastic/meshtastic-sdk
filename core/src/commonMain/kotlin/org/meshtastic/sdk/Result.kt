@@ -31,16 +31,17 @@ public sealed interface SendState {
     public data object Sent : SendState
 
     /**
-     * The device received an acknowledgment from the target (unicast only).
-     *
-     * (From device-emitted `Routing` ACK.)
+     * The addressed node confirmed receipt (unicast only): a `Routing` ACK whose sender is the
+     * destination. Final.
      */
     public data object Acked : SendState
 
     /**
-     * A broadcast packet was rebroadcast by another node.
-     *
-     * (From device-emitted `Routing` broadcast ack.)
+     * Another node relayed the packet: a `Routing` ACK whose sender is not the destination, such as
+     * the local device's implicit ack for an overheard rebroadcast. The only success state a
+     * broadcast reaches. [MessageHandle.await] already succeeds here; a unicast send can still move
+     * to [Acked] if the destination's ack arrives before the ACK timeout, or to [Failed] if the
+     * destination rejects it.
      */
     public data object Delivered : SendState
 

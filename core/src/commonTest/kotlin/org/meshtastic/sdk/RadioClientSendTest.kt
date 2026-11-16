@@ -418,7 +418,7 @@ class RadioClientSendTest {
 
             val outcome = handle.await()
             assertValue(SendOutcome.Success, outcome, "broadcast await outcome")
-            assertValue(SendState.Acked, handle.state.value, "broadcast terminal state")
+            assertValue(SendState.Delivered, handle.state.value, "broadcast terminal state")
         }
     }
 

@@ -10,6 +10,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking
 
+- `SendState.Acked` now means the addressed node confirmed receipt, and `SendState.Delivered`
+  means another node relayed the packet (the local device's implicit ack). Every successful
+  `Routing` reply used to set `Acked`, and nothing set `Delivered`. A broadcast now ends in
+  `Delivered`, so code that reads `state == Acked` as "any ack" must also accept `Delivered`.
+  A unicast send that gets a relay ack first moves from `Delivered` to `Acked` when the
+  destination's ack arrives before the ACK timeout, or to `Failed` when the destination NAKs;
+  `MessageHandle.await()` returns `Success` at the first of `Delivered` and `Acked`.
 - `SendFailure.RateLimited` is a new case, and a send the device refuses with
   `Routing.Error.RATE_LIMIT_EXCEEDED` now fails with it instead of
   `SendFailure.Other(RATE_LIMIT_EXCEEDED)`. Firmware answers that way to a second text message
