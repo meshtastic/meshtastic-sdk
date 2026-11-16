@@ -10,9 +10,6 @@ package org.meshtastic.sdk.storage.sqldelight
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import okio.FileSystem
-import okio.Path.Companion.toPath
-import okio.SYSTEM
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.sdk.ConfigBundle
@@ -56,19 +53,25 @@ import kotlin.random.Random
  */
 public class SqlDelightStorageProvider(private val baseDir: String = "") : StorageProvider {
 
+    private var openDriver: (dbPath: String) -> SqlDriver = ::createDriver
+
+    internal constructor(baseDir: String, openDriver: (dbPath: String) -> SqlDriver) : this(baseDir) {
+        this.openDriver = openDriver
+    }
+
     private val indexMutex = Mutex()
 
     override suspend fun activate(identity: TransportIdentity): DeviceStorage {
         if (baseDir.isEmpty()) {
             // In-memory-only mode: no index, no file, fresh driver per activation.
-            return SqlDelightStorage(createDriver(":memory:"))
+            return SqlDelightStorage(openDriver(":memory:"))
         }
 
-        ensureBaseDir()
-        val index = indexMutex.withLock { readIndex(indexPath()) }
+        ensureStorageDir(baseDir)
+        val index = indexMutex.withLock { loadIndex(baseDir) }
         val dbId = index.identityToDbId[identity.raw]
         return if (dbId != null) {
-            val inner = SqlDelightStorage(createDriver(dbFilePath(dbId)))
+            val inner = SqlDelightStorage(openDriver(dbFilePath(dbId)))
             NodeKeyedStorage(inner, identity, dbId)
         } else {
             NodeKeyedStorage(inner = null, identity = identity, dbId = null)
@@ -78,15 +81,15 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
     /** Open or create the node-keyed DB for a freshly-learned NodeNum; persist bindings. */
     private suspend fun bindToNode(identity: TransportIdentity, nodeNum: NodeId): Pair<DeviceStorage, String> =
         indexMutex.withLock {
-            val index = readIndex(indexPath())
+            val index = loadIndex(baseDir)
             val existingForNode = index.nodeNumToDbId[nodeNum.raw]
             val dbId = existingForNode ?: newDbId()
             val newBindings = index.copy(
                 identityToDbId = index.identityToDbId + (identity.raw to dbId),
                 nodeNumToDbId = index.nodeNumToDbId + (nodeNum.raw to dbId),
             )
-            writeIndexAtomically(indexPath(), newBindings)
-            val inner = SqlDelightStorage(createDriver(dbFilePath(dbId)))
+            storeIndex(baseDir, newBindings)
+            val inner = SqlDelightStorage(openDriver(dbFilePath(dbId)))
             inner to dbId
         }
 
@@ -97,21 +100,13 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
      */
     private suspend fun rebindNodeNum(newNodeNum: NodeId, dbId: String) {
         indexMutex.withLock {
-            val index = readIndex(indexPath())
+            val index = loadIndex(baseDir)
             val pruned = index.nodeNumToDbId.filterValues { it != dbId }
             val updated = index.copy(nodeNumToDbId = pruned + (newNodeNum.raw to dbId))
-            writeIndexAtomically(indexPath(), updated)
+            storeIndex(baseDir, updated)
         }
     }
 
-    private fun ensureBaseDir() {
-        val dir = baseDir.toPath()
-        if (!FileSystem.SYSTEM.exists(dir)) {
-            FileSystem.SYSTEM.createDirectories(dir)
-        }
-    }
-
-    private fun indexPath() = "$baseDir/$INDEX_FILENAME".toPath()
     private fun dbFilePath(dbId: String) = "$baseDir/$dbId.db"
 
     // ── Wrapper storage ───────────────────────────────────────────────────────
@@ -168,7 +163,12 @@ public class SqlDelightStorageProvider(private val baseDir: String = "") : Stora
             if (existing == null) {
                 // First bind: open (or adopt) the node-keyed DB, replay scratch, then delegate.
                 val (real, boundDbId) = bindToNode(identity, nodeNum)
-                replayScratchInto(real)
+                try {
+                    replayScratchInto(real)
+                } catch (t: Throwable) {
+                    real.close()
+                    throw t
+                }
                 inner = real
                 dbId = boundDbId
                 real.recordOwnNode(nodeNum, firmwareVersion)

@@ -28,7 +28,7 @@ If protocol/generated symbols look wrong, verify the `meshtasticProtobufs` pin r
 ## Commands Agents Should Run
 
 - Full gate: `./gradlew check`
-- Unit tests: `./gradlew jvmTest`, `./gradlew jsNodeTest` (Node.js on `PATH`) and, when relevant on macOS, `./gradlew iosSimulatorArm64Test`
+- Unit tests: `./gradlew jvmTest`, `./gradlew jsNodeTest` (Node.js on `PATH`), `./gradlew jsBrowserTest` (Chrome, or `CHROME_BIN`) and, when relevant on macOS, `./gradlew iosSimulatorArm64Test`
 - Lint: `./gradlew detekt spotlessCheck`
 - Format: `./gradlew spotlessApply`
 - Architecture rules: enforced by detekt `ForbiddenImport` + the

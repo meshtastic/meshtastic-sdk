@@ -7,10 +7,6 @@
  */
 package org.meshtastic.sdk.storage.sqldelight
 
-import okio.FileSystem
-import okio.Path
-import okio.SYSTEM
-
 /**
  * Bindings persisted in `<baseDir>/.meshtastic-index`.
  *
@@ -38,48 +34,36 @@ private const val PREFIX_IDENTITY = "i"
 private const val PREFIX_NODE_NUM = "n"
 private const val SEP = '\t'
 
-internal fun readIndex(path: Path): StorageIndex {
-    val fs = FileSystem.SYSTEM
-    if (!fs.exists(path)) return StorageIndex()
+internal fun decodeIndex(lines: Sequence<String>): StorageIndex {
     val identityMap = mutableMapOf<String, String>()
     val nodeMap = mutableMapOf<Int, String>()
-    fs.read(path) {
-        while (true) {
-            val line = readUtf8Line() ?: break
-            if (line.isBlank() || line.startsWith("#")) continue
-            val parts = line.split(SEP)
-            if (parts.size < 3) continue
-            when (parts[0]) {
-                PREFIX_IDENTITY -> identityMap[parts[1]] = parts[2]
+    for (line in lines) {
+        if (line.isBlank() || line.startsWith("#")) continue
+        val parts = line.split(SEP)
+        if (parts.size < 3) continue
+        when (parts[0]) {
+            PREFIX_IDENTITY -> identityMap[parts[1]] = parts[2]
 
-                PREFIX_NODE_NUM -> {
-                    val n = parts[1].toIntOrNull() ?: continue
-                    nodeMap[n] = parts[2]
-                }
+            PREFIX_NODE_NUM -> {
+                val n = parts[1].toIntOrNull() ?: continue
+                nodeMap[n] = parts[2]
             }
         }
     }
     return StorageIndex(identityMap, nodeMap)
 }
 
-internal fun writeIndexAtomically(path: Path, index: StorageIndex) {
-    val fs = FileSystem.SYSTEM
-    val tmp = path.parent!! / (path.name + ".tmp")
-    fs.write(tmp) {
-        writeUtf8(SqlDelightStorageProvider.INDEX_HEADER)
-        writeUtf8("\n")
-        for ((id, db) in index.identityToDbId) {
-            writeUtf8("$PREFIX_IDENTITY$SEP$id$SEP$db\n")
-        }
-        for ((node, db) in index.nodeNumToDbId) {
-            writeUtf8("$PREFIX_NODE_NUM$SEP$node$SEP$db\n")
-        }
-    }
-    try {
-        fs.atomicMove(tmp, path)
-    } catch (_: UnsupportedOperationException) {
-        // Platforms where atomicMove is unsupported (rare); fall back to best-effort.
-        if (fs.exists(path)) fs.delete(path)
-        fs.atomicMove(tmp, path)
-    }
+internal fun encodeIndex(index: StorageIndex): String = buildString {
+    append(SqlDelightStorageProvider.INDEX_HEADER).append('\n')
+    for ((id, db) in index.identityToDbId) append("$PREFIX_IDENTITY$SEP$id$SEP$db\n")
+    for ((node, db) in index.nodeNumToDbId) append("$PREFIX_NODE_NUM$SEP$node$SEP$db\n")
 }
+
+/** Creates the storage root if the platform has one (a directory on jvm/android/apple). */
+internal expect fun ensureStorageDir(baseDir: String)
+
+/** Reads the identity/node index for [baseDir]; empty if none was written yet. */
+internal expect fun loadIndex(baseDir: String): StorageIndex
+
+/** Persists [index] for [baseDir], replacing the previous one atomically where possible. */
+internal expect fun storeIndex(baseDir: String, index: StorageIndex)

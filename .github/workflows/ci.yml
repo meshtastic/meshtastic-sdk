@@ -105,6 +105,9 @@ jobs:
       - name: Build and test (Kotlin/JS, Node.js)
         run: ./gradlew jsNodeTest
 
+      - name: Test browser storage (Kotlin/JS, headless Chrome)
+        run: ./gradlew jsBrowserTest
+
   test-ios:
     runs-on: macos-latest
     strategy:

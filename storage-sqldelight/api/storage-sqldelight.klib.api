@@ -1,5 +1,5 @@
 // Klib ABI Dump
-// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Targets: [iosArm64, iosSimulatorArm64, iosX64, js]
 // Rendering settings:
 // - Signature version: 2
 // - Show manifest properties: true
@@ -11,3 +11,6 @@ final class org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider : or
 
     final suspend fun activate(org.meshtastic.sdk/TransportIdentity): org.meshtastic.sdk/DeviceStorage // org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider.activate|activate(org.meshtastic.sdk.TransportIdentity){}[0]
 }
+
+// Targets: [js]
+final fun org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider(kotlin/String, kotlin/Function1<kotlin/String, org.w3c.dom/Worker>): org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider // org.meshtastic.sdk.storage.sqldelight/SqlDelightStorageProvider|SqlDelightStorageProvider(kotlin.String;kotlin.Function1<kotlin.String,org.w3c.dom.Worker>){}[0]

@@ -9,6 +9,7 @@ package org.meshtastic.sdk.storage.sqldelight
 
 import android.content.Context
 import androidx.sqlite.db.SupportSQLiteDatabase
+import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
 import org.meshtastic.sdk.storage.sqldelight.internal.MeshDatabase
@@ -21,7 +22,7 @@ internal actual fun createDriver(dbPath: String): SqlDriver {
     // AndroidSqliteDriver.Callback.onConfigure is invoked per-connection by the framework
     // connection pool. Applying PRAGMAs here ensures every connection honours ADR-014,
     // unlike a one-shot execute() which only affects the creating thread's connection.
-    val callback = object : AndroidSqliteDriver.Callback(MeshDatabase.Schema) {
+    val callback = object : AndroidSqliteDriver.Callback(MeshDatabase.Schema.synchronous()) {
         override fun onConfigure(db: SupportSQLiteDatabase) {
             super.onConfigure(db)
             db.setForeignKeyConstraintsEnabled(true)
@@ -32,7 +33,7 @@ internal actual fun createDriver(dbPath: String): SqlDriver {
             db.execSQL("PRAGMA synchronous=NORMAL;")
         }
     }
-    return AndroidSqliteDriver(MeshDatabase.Schema, ctx, name, callback = callback)
+    return AndroidSqliteDriver(MeshDatabase.Schema.synchronous(), ctx, name, callback = callback)
 }
 
 /**
