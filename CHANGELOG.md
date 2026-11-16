@@ -32,6 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `RadioClient.enableHamMode(callSign, ...)`: sets ham mode and fills `tx_power` and
+  `frequency` from the loaded LoRa config, because firmware applies both from the request
+  unconditionally. `AdminApi.setHamMode` still sends its `HamParameters` verbatim; its KDoc now
+  says 0 resets TX power and clears `override_frequency`.
+- `RadioClient.exportDeviceProfile` and `RadioClient.installDeviceProfile`: export the device's
+  settings as a `DeviceProfile` and install one through a single `editSettings` transaction,
+  writing only the sections the profile has. The private key is left out of exports and the
+  security section is skipped on install unless the caller opts in.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

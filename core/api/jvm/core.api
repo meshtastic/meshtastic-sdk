@@ -471,6 +471,13 @@ public final class org/meshtastic/sdk/DeviceCapabilities {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/DeviceProfilesKt {
+	public static final fun exportDeviceProfile (Lorg/meshtastic/sdk/RadioClient;ZZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun exportDeviceProfile$default (Lorg/meshtastic/sdk/RadioClient;ZZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun installDeviceProfile (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/DeviceProfile;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun installDeviceProfile$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/DeviceProfile;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
 public abstract interface class org/meshtastic/sdk/DeviceStorage : java/lang/AutoCloseable {
 	public abstract fun clear (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun close ()V
@@ -543,6 +550,11 @@ public final class org/meshtastic/sdk/Frame {
 	public final fun getBytes ()Lokio/ByteString;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/HamModeKt {
+	public static final fun enableHamMode (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Float;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun enableHamMode$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Float;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/HandshakeAwaitKt {
