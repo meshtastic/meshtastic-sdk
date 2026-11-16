@@ -769,7 +769,7 @@ Host SDK:
 - A held send stays `Queued`, keeps its order, and `MessageHandle.cancel()` fails it with `Cancelled`. A send beyond the 128th fails with `QueueRejected(32)`, the code the firmware uses for a full queue.
 - A written packet counts against `free` until its `QueueStatus` arrives or 5 s pass (Android's per-packet wait). After a timeout the device is treated as not reporting and nothing is held until a `QueueStatus` is heard again. With a full queue (`free == 0`) and nothing in flight the engine waits the same 5 s for an unsolicited `QueueStatus`.
 - Packets addressed to the local node, including local admin, bypass the FIFO: firmware delivers them through `Router::sendLocal` (answered `ERRNO_SHOULD_RELEASE`), never the transmit queue. RPCs (`admin`, `telemetry`, `routing`, `storeForward` requests) and the handshake are written immediately and are not counted.
-- Disconnect or a reconnect cycle fails every held send with `Disconnected`.
+- Disconnect fails every held send with `Disconnected`, and so does a reconnect cycle unless `RadioClient.Builder.queueWhileReconnecting` is on: held sends then wait for the next session and are written first when it is Ready.
 
 ### Packet ID generation
 

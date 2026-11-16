@@ -97,6 +97,7 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val offlineQueueCapacity: Int = 0, // sends kept while not Connected; 0 turns the queue off
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -416,8 +417,9 @@ internal class MeshEngine(
         id: MessageId,
         stateFlow: MutableStateFlow<SendState>,
         sentOnAcceptance: Boolean = false,
+        queuedOffline: Boolean = false,
     ) {
-        val result = inbox.trySend(EngineMessage.Send(packet, id, stateFlow, sentOnAcceptance))
+        val result = inbox.trySend(EngineMessage.Send(packet, id, stateFlow, sentOnAcceptance, queuedOffline))
         if (!result.isSuccess) {
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
@@ -2171,6 +2173,11 @@ internal class MeshEngine(
         livenessWatchdogJob?.cancel()
         livenessWatchdogJob = null
 
+        // With the offline queue on, sends not yet written (held for the device queue, or queued
+        // while offline) wait for the next session; everything else fails below.
+        val survivors = takeOfflineSurvivors()
+        for (msg in survivors) pendingSends.remove(msg.id)
+
         // Fail in-flight sends — their wire IDs won't survive the device-side session restart.
         for ((_, stateFlow) in pendingSends) {
             // A relay-acked send already ended in Delivered; the session ending does not undo it.
@@ -2184,6 +2191,10 @@ internal class MeshEngine(
         heldSends.clear()
         resetPacing()
         failPreSendQueueWith(SendFailure.Disconnected)
+        for (msg in survivors) {
+            pendingSends[msg.id] = msg.stateFlow
+            preSendQueue.add(msg)
+        }
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
 
@@ -2196,6 +2207,15 @@ internal class MeshEngine(
             delay(backoff)
             inbox.trySend(EngineMessage.ReconnectTick(cause, reconnectAttempt))
         }
+    }
+
+    private fun takeOfflineSurvivors(): List<EngineMessage.Send> {
+        if (offlineQueueCapacity <= 0) return emptyList()
+        val held = heldSends.filter { it.stateFlow.value == SendState.Queued }.map { it.copy(queuedOffline = true) }
+        val queued = preSendQueue.filter { it.queuedOffline && it.stateFlow.value == SendState.Queued }
+        heldSends.clear()
+        preSendQueue.removeAll { it.queuedOffline }
+        return held + queued
     }
 
     private fun handleReconnectTick(msg: EngineMessage.ReconnectTick) {
@@ -2269,6 +2289,15 @@ internal class MeshEngine(
         pendingSends[msg.id] = msg.stateFlow
 
         if (handshakeStage != HandshakeStage.Ready) {
+            if (msg.queuedOffline &&
+                preSendQueue.count { it.queuedOffline && it.stateFlow.value == SendState.Queued } >=
+                offlineQueueCapacity
+            ) {
+                logger.warn(TAG) { "Offline send queue full; rejecting id=${msg.id}" }
+                msg.stateFlow.value = SendState.Failed(SendFailure.QueueRejected(ERRNO_BASE))
+                pendingSends.remove(msg.id)
+                return
+            }
             preSendQueue.add(msg)
             logger.debug(TAG) { "Send queued id=${msg.id} (pre-Ready)" }
             return
@@ -2445,6 +2474,7 @@ internal class MeshEngine(
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
             pendingSends.remove(msg.id)
             heldSends.removeAll { it.id == msg.id }
+            preSendQueue.removeAll { it.id == msg.id }
         }
         // regardless of state, drop any pending ACK timer so we don't post a stale
         // SendAckTimeout for a handle the user has explicitly cancelled.

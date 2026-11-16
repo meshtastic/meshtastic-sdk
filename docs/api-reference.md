@@ -76,8 +76,24 @@ RadioClient.Builder()
     .presenceTimeout(15.minutes)                                       // default: 15 min — node offline threshold
     .autoReconnect(AutoReconnectConfig())                              // default: disabled; opt-in exponential backoff
     .skipNodeDb()                                                      // default: off — config-only connect, skips Stage 2
+    .queueWhileReconnecting(32)                                        // default: 0 (off) — see below
     .build()
 ```
+
+#### Sending while not connected — `queueWhileReconnecting(capacity)` *(since 0.3.0)*
+
+Off by default: `send` throws `NotConnected` unless the client is `Connected`. With a positive
+`capacity`, `send` and the helpers built on it return a `Queued` handle while `connection` is
+`Connecting`, `Configuring` or `Reconnecting`, and the engine writes the queue in order, through
+the device-queue pacing under `MessageHandle` semantics, once the session is `Connected`. Sends held
+back for the device's queue when an auto-reconnect starts join the queue ahead of newer ones.
+
+- Over `capacity`, the new handle fails with `QueueRejected(32)`; `send` does not throw for it.
+- `disconnect()` or an auto-reconnect that gives up fails every queued send with `Disconnected`
+  (a handshake timeout fails them with `HandshakeFailed`), and `send` throws `NotConnected`
+  again. It also throws before the first `connect()`.
+- Packets already written to the device when the link drops still fail with `Disconnected`.
+- Memory only: nothing survives the process (`docs/roadmap.md` R-10).
 
 #### Config-only connect — `skipNodeDb()` *(since 0.3.0)*
 
@@ -171,7 +187,7 @@ a flow of the full `Map<NodeId, NodeInfo>`; the underlying
 
 | Member | Returns | Throws |
 |---|---|---|
-| `send(packet: MeshPacket): MessageHandle` | handle (state already `Queued`) | `NotConnected`, `PayloadTooLarge` |
+| `send(packet: MeshPacket): MessageHandle` | handle (state already `Queued`) | `NotConnected` (unless `queueWhileReconnecting` applies), `PayloadTooLarge` |
 | `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0): MessageHandle` | handle | same as `send` |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
 | `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |

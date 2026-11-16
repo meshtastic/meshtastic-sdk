@@ -1294,7 +1294,7 @@ public final class org/meshtastic/sdk/ProtoBytesKt {
 
 public final class org/meshtastic/sdk/RadioClient {
 	public static final field Companion Lorg/meshtastic/sdk/RadioClient$Companion;
-	public fun <init> (Lorg/meshtastic/sdk/internal/MeshEngine;Lkotlin/time/Clock;Lkotlin/time/Duration;ZLkotlin/coroutines/CoroutineContext;)V
+	public fun <init> (Lorg/meshtastic/sdk/internal/MeshEngine;Lkotlin/time/Clock;Lkotlin/time/Duration;ZLkotlin/coroutines/CoroutineContext;I)V
 	public final fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getAdmin ()Lorg/meshtastic/sdk/AdminApi;
@@ -1341,6 +1341,7 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public final fun presenceTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun protocolLogging (Lorg/meshtastic/sdk/LogLevel;Lorg/meshtastic/sdk/PayloadRedactor;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public static synthetic fun protocolLogging$default (Lorg/meshtastic/sdk/RadioClient$Builder;Lorg/meshtastic/sdk/LogLevel;Lorg/meshtastic/sdk/PayloadRedactor;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun queueWhileReconnecting (I)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun rpcTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun rpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;

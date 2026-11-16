@@ -83,6 +83,7 @@ public class RadioClient internal constructor(
     private val rpcTimeout: Duration,
     private val autoSyncTimeOnConnect: Boolean,
     private val parentContext: kotlin.coroutines.CoroutineContext,
+    private val offlineQueueCapacity: Int,
 ) {
 
     // ── Observable state ────────────────────────────────────────────────────
@@ -298,7 +299,8 @@ public class RadioClient internal constructor(
      *
      * @param packet the packet to send
      * @return a handle tracking delivery state
-     * @throws MeshtasticException.NotConnected if not currently connected
+     * @throws MeshtasticException.NotConnected if not currently connected, unless
+     *   [Builder.queueWhileReconnecting] is on and a connection is in progress
      * @throws MeshtasticException.PayloadTooLarge if the payload exceeds the device limit
      * @throws MeshtasticException.Protocol if the packet is malformed
      */
@@ -308,7 +310,9 @@ public class RadioClient internal constructor(
         if (payloadSize > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
         }
-        if (connection.value !is ConnectionState.Connected) {
+        val state = connection.value
+        val queuedOffline = state !is ConnectionState.Connected
+        if (queuedOffline && !(offlineQueueCapacity > 0 && state.isInProgress)) {
             throw MeshtasticException.NotConnected()
         }
 
@@ -322,7 +326,7 @@ public class RadioClient internal constructor(
             resendFn = { pkt -> send(pkt) },
         )
         handle.expectsAck = packet.want_ack || packet.decoded?.want_response == true
-        engine.trySend(packet, id, stateFlow, sentOnAcceptance = true)
+        engine.trySend(packet, id, stateFlow, sentOnAcceptance = true, queuedOffline = queuedOffline)
         return handle
     }
 
@@ -634,6 +638,7 @@ public class RadioClient internal constructor(
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
         private var skipNodeDb: Boolean = false
+        private var offlineQueueCapacity: Int = 0
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -836,6 +841,38 @@ public class RadioClient internal constructor(
         public fun skipNodeDb(skip: Boolean = true): Builder = apply { skipNodeDb = skip }
 
         /**
+         * Keep sends made while the session is not yet usable, instead of throwing
+         * [MeshtasticException.NotConnected].
+         *
+         * **Default: off** (`capacity = 0`). When on, [RadioClient.send] and the helpers built on it
+         * return a [MessageHandle] in [SendState.Queued] while [RadioClient.connection] is
+         * [ConnectionState.Connecting], [ConnectionState.Configuring] or
+         * [ConnectionState.Reconnecting], and write the queued sends in order, through the usual
+         * pacing on the device's transmit queue, once the session is [ConnectionState.Connected].
+         * A send that had not been written when an auto-reconnect began joins the queue too.
+         *
+         * At most [capacity] sends wait. The next one gets a handle that fails with
+         * `SendFailure.QueueRejected(32)`; [send][RadioClient.send] does not throw for it.
+         *
+         * A call to [RadioClient.disconnect], or an auto-reconnect that gives up, fails every queued
+         * send with [SendFailure.Disconnected] (a handshake that times out fails them with
+         * [SendFailure.HandshakeFailed]), and `send` throws `NotConnected` again. `send` also
+         * throws before the first [RadioClient.connect] and after the session has ended.
+         *
+         * The queue is memory only: nothing survives the process, and the SDK does not persist
+         * messages. Packets already written to the device when the link drops still fail with
+         * [SendFailure.Disconnected].
+         *
+         * @param capacity the most sends to keep; `0` turns the queue off
+         * @throws IllegalArgumentException if [capacity] is negative
+         * @since 0.3.0
+         */
+        public fun queueWhileReconnecting(capacity: Int): Builder = apply {
+            require(capacity >= 0) { "capacity must not be negative" }
+            offlineQueueCapacity = capacity
+        }
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -856,9 +893,11 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                offlineQueueCapacity = offlineQueueCapacity,
             )
 
             return RadioClient(
+                offlineQueueCapacity = offlineQueueCapacity,
                 engine = engine,
                 clock = clock,
                 rpcTimeout = rpcTimeout,

@@ -42,6 +42,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `RadioClient.Builder.queueWhileReconnecting(capacity)`: opt in to keeping up to `capacity`
+  sends made while the client is `Connecting`, `Configuring` or `Reconnecting`. `send` returns a
+  `Queued` handle instead of throwing `NotConnected`, and the queue is written in order once the
+  session is `Connected`. A send over the capacity gets a handle that fails with
+  `QueueRejected(32)`. `disconnect()` or a reconnect that gives up fails the queue with
+  `Disconnected`. Default off; memory only.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

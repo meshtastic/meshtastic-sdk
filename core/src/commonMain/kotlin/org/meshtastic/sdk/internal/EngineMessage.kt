@@ -93,6 +93,8 @@ internal sealed interface EngineMessage {
         val stateFlow: MutableStateFlow<SendState>,
         /** A send that requests no ack reports Sent only once the device accepts it. */
         val sentOnAcceptance: Boolean = false,
+        /** Accepted while the session was not usable; it survives reconnect attempts and is capped. */
+        val queuedOffline: Boolean = false,
     ) : EngineMessage
 
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
