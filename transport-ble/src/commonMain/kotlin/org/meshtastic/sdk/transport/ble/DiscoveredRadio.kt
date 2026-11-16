@@ -20,15 +20,17 @@ import com.juul.kable.PlatformAdvertisement
  *
  * @property name Advertised local name (for example `Meshtastic_ab12`), or `null` when this
  *   advertisement did not carry one.
- * @property rssi Received signal strength in dBm (negative; closer to zero is stronger).
- * @property address Stable platform identifier: the Bluetooth MAC address on Android and JVM, the
- *   CoreBluetooth peripheral UUID string on iOS. It is the value the platform `BleTransport`
+ * @property rssi Received signal strength in dBm (negative; closer to zero is stronger), or `null`
+ *   when the platform reports none for this advertisement, as BlueZ on the JVM does.
+ * @property address Stable platform identifier: the Bluetooth MAC address on Android, the
+ *   CoreBluetooth peripheral UUID string on iOS, and on the JVM the Kable identifier's string form
+ *   (on Linux a BlueZ object path, not a bare MAC). It is the value the platform `BleTransport`
  *   storage identity is keyed on, and on Android it can be passed to `BleTransport(address = ...)`.
  * @since 0.3.0
  */
 public class DiscoveredRadio internal constructor(
     public val name: String?,
-    public val rssi: Int,
+    public val rssi: Int?,
     public val address: String,
     internal val advertisement: PlatformAdvertisement?,
 ) {
@@ -38,7 +40,7 @@ public class DiscoveredRadio internal constructor(
     override fun hashCode(): Int {
         var result = address.hashCode()
         result = 31 * result + (name?.hashCode() ?: 0)
-        result = 31 * result + rssi
+        result = 31 * result + (rssi ?: 0)
         return result
     }
 

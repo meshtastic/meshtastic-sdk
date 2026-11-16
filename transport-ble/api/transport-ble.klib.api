@@ -27,7 +27,7 @@ final class org.meshtastic.sdk.transport.ble/DiscoveredRadio { // org.meshtastic
     final val name // org.meshtastic.sdk.transport.ble/DiscoveredRadio.name|{}name[0]
         final fun <get-name>(): kotlin/String? // org.meshtastic.sdk.transport.ble/DiscoveredRadio.name.<get-name>|<get-name>(){}[0]
     final val rssi // org.meshtastic.sdk.transport.ble/DiscoveredRadio.rssi|{}rssi[0]
-        final fun <get-rssi>(): kotlin/Int // org.meshtastic.sdk.transport.ble/DiscoveredRadio.rssi.<get-rssi>|<get-rssi>(){}[0]
+        final fun <get-rssi>(): kotlin/Int? // org.meshtastic.sdk.transport.ble/DiscoveredRadio.rssi.<get-rssi>|<get-rssi>(){}[0]
 
     final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk.transport.ble/DiscoveredRadio.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk.transport.ble/DiscoveredRadio.hashCode|hashCode(){}[0]

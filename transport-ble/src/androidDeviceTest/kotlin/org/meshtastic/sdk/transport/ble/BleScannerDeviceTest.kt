@@ -37,7 +37,7 @@ class BleScannerDeviceTest {
 
         val radio = radios.first()
         assertTrue("address must be non-blank: $radio", radio.address.isNotBlank())
-        assertTrue("rssi must be negative dBm: $radio", radio.rssi < 0)
+        assertTrue("rssi must be negative dBm: $radio", radio.rssi?.let { it < 0 } ?: false)
 
         val transport = BleTransport(radio)
         try {

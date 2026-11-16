@@ -39,8 +39,9 @@ public object BleScanner {
      * Cold: each collection starts its own platform scan, filtered on
      * [BleConstants.MESH_SERVICE_UUID], and cancelling the collector stops it.
      *
-     * Not deduplicated: every received advertisement is emitted, so a UI can fold the flow into a
-     * map keyed by [DiscoveredRadio.address] and keep RSSI current. The flow keeps no per-radio
+     * Not deduplicated: every advertisement the platform delivers is emitted, so a UI can fold the
+     * flow into a map keyed by [DiscoveredRadio.address] and keep RSSI current. BlueZ on the JVM
+     * delivers a radio once per scan and without an RSSI. The flow keeps no per-radio
      * state and adds no buffer, so memory stays constant however long it is collected, and a slow
      * collector backpressures the platform scan callback rather than queueing. Apply `conflate()`
      * or a sampler downstream when updates arrive faster than they are rendered.
@@ -77,7 +78,8 @@ private fun PlatformAdvertisement.toRawAdvertisement(): RawAdvertisement = RawAd
 
 internal fun RawAdvertisement.toDiscoveredRadio(): DiscoveredRadio = DiscoveredRadio(
     name = name?.takeIf { it.isNotBlank() },
-    rssi = rssi,
+    // Kable reports Int.MIN_VALUE when the platform gave no reading.
+    rssi = rssi.takeIf { it != Int.MIN_VALUE },
     address = address,
     advertisement = advertisement,
 )

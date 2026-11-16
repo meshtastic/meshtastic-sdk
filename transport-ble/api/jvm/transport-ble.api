@@ -36,7 +36,7 @@ public final class org/meshtastic/sdk/transport/ble/DiscoveredRadio {
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAddress ()Ljava/lang/String;
 	public final fun getName ()Ljava/lang/String;
-	public final fun getRssi ()I
+	public final fun getRssi ()Ljava/lang/Integer;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }

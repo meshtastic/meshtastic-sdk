@@ -31,6 +31,12 @@ class BleScannerTest {
     }
 
     @Test
+    fun missingRssiBecomesNull() {
+        assertNull(RawAdvertisement("addr", "n", Int.MIN_VALUE).toDiscoveredRadio().rssi)
+        assertEquals(0, RawAdvertisement("addr", "n", 0).toDiscoveredRadio().rssi)
+    }
+
+    @Test
     fun blankNameBecomesNull() {
         assertNull(RawAdvertisement("addr", "  ", -70).toDiscoveredRadio().name)
         assertNull(RawAdvertisement("addr", null, -70).toDiscoveredRadio().name)
