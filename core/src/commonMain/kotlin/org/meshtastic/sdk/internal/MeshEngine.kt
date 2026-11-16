@@ -528,8 +528,11 @@ internal class MeshEngine(
         failPreSendQueueWith(SendFailure.Disconnected)
 
         for ((id, stateFlow) in pendingSends) {
-            // A no-ack send already ended in Sent; the session ending does not undo that.
-            if (id !in noAckSends) stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            // A no-ack send already ended in Sent, and a relay-acked one in Delivered; the session
+            // ending does not undo either.
+            if (id !in noAckSends && stateFlow.value != SendState.Delivered) {
+                stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            }
         }
         pendingSends.clear()
         pendingDestinations.clear()
@@ -2138,8 +2141,11 @@ internal class MeshEngine(
 
         // Fail in-flight sends — their wire IDs won't survive the device-side session restart.
         for ((id, stateFlow) in pendingSends) {
-            // A no-ack send already ended in Sent; the session ending does not undo that.
-            if (id !in noAckSends) stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            // A no-ack send already ended in Sent, and a relay-acked one in Delivered; the session
+            // ending does not undo either.
+            if (id !in noAckSends && stateFlow.value != SendState.Delivered) {
+                stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            }
         }
         pendingSends.clear()
         pendingDestinations.clear()

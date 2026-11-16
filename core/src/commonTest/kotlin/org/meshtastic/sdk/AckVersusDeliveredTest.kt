@@ -283,6 +283,22 @@ class AckVersusDeliveredTest {
     }
 
     @Test
+    fun dm_relayAckedThenDisconnect_staysDelivered() = runTest {
+        withClient { client, transport ->
+            val handle = client.sendText("hi", to = destination)
+            runCurrent()
+            transport.injectRoutingAck(handle.id.raw, fromNode = transport.nodeNum)
+            runCurrent()
+            assertEquals(SendState.Delivered, handle.state.value)
+
+            client.disconnect()
+            runCurrent()
+
+            assertEquals(SendState.Delivered, handle.state.value)
+        }
+    }
+
+    @Test
     fun sendWithWantAck_isNotTerminalAtSent() = runTest {
         withClient { client, transport ->
             val handle = client.sendText("hi", to = destination)
