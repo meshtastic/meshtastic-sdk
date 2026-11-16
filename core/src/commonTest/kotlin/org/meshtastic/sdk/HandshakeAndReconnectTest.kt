@@ -235,7 +235,7 @@ class HandshakeAndReconnectTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:fw-too-old"),
             nowMs = { currentTime },
-            firmwareVersion = "2.5.13.abcdef0",
+            firmwareVersion = "2.3.14.abcdef0",
         )
         val client = buildClient(transport, autoReconnect = AutoReconnectConfig(enabled = true))
         val errors = mutableListOf<MeshEvent.TransportError>()
@@ -249,8 +249,8 @@ class HandshakeAndReconnectTest {
         }
 
         val error = assertIs<MeshtasticException.FirmwareTooOld>(connectJob.await().exceptionOrNull())
-        assertEquals(20514, error.required)
-        assertEquals(20513, error.present)
+        assertEquals(20315, error.required)
+        assertEquals(20314, error.present)
         assertEquals(ConnectionState.Disconnected, client.connection.value)
         assertEquals(1, errors.size)
         assertIs<MeshtasticException.FirmwareTooOld>(errors.single().error)
@@ -262,14 +262,28 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun firmwareAtOrAboveFloorOrUnreadableStillConnects() = runTest {
-        for (version in listOf("2.5.14", "2.8.3", "2.8.3.68f47ef", "garbage", "")) {
+    fun firmwareAtOrAboveAbsoluteFloorConnectsAndWarnsOnlyBelowRecommended() = runTest {
+        val expectWarning = mapOf(
+            "2.3.15" to true,
+            "2.5.13" to true,
+            "2.5.14" to false,
+            "2.8.3" to false,
+            "2.8.3.68f47ef" to false,
+            "garbage" to false,
+            "" to false,
+        )
+        for ((version, warns) in expectWarning) {
             val transport = ScriptedTransport(
                 identity = TransportIdentity("fake:fw-ok-$version"),
                 nowMs = { currentTime },
                 firmwareVersion = version,
             )
             val client = buildClient(transport)
+            val warnings = mutableListOf<MeshEvent.ProtocolWarning>()
+            backgroundScope.launch {
+                client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
+            }
+            runCurrent()
             val connectJob = backgroundScope.async { client.connect() }
             repeat(4) {
                 advanceTimeBy(150L)
@@ -277,6 +291,14 @@ class HandshakeAndReconnectTest {
             }
             connectJob.await()
             assertEquals(ConnectionState.Connected, client.connection.value, "version '$version'")
+            if (warns) {
+                val warning = warnings.single()
+                assertEquals("firmware should be updated", warning.message)
+                assertEquals(version, warning.details["present"])
+                assertEquals("2.5.14", warning.details["recommended"])
+            } else {
+                assertTrue(warnings.isEmpty(), "version '$version' got $warnings")
+            }
             client.disconnect()
         }
     }

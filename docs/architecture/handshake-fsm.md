@@ -81,7 +81,7 @@ The 30 s scheduled heartbeat (`protocol.md` §16) starts only on entry to `Ready
 `Failed(cause)` always returns to `Idle`. The engine then runs a fixed reconnect policy: **exponential backoff (initial 500 ms, factor 2, capped at 60 s, with ±20 % jitter), infinite attempts** while the consumer holds the `RadioClient`. Each retry begins a new attempt with `Connecting(attempt + 1)`. The policy is intentionally not configurable in 0.x — Phase 5 may revisit and add `Builder.reconnect(...)` if real-world adopters report concrete needs (recorded as a separate ADR if/when it lands).
 
 Causes that DO NOT auto-reconnect:
-- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.MIN_SUPPORTED`, 2.5.14; checked when the Stage 1 `metadata` frame arrives; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
+- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
 
 Causes that DO auto-reconnect:
 - `MeshtasticException.Transport(...)`
