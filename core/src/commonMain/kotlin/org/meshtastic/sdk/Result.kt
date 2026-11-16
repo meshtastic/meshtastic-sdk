@@ -132,8 +132,9 @@ public sealed interface SendFailure {
      * The device rejected the packet at its transmit queue (`QueueStatus.res != 0`), most
      * commonly because the firmware's bounded in-flight queue (~16 packets) is full.
      *
-     * Surfaced immediately instead of waiting out the ACK timer. Callers should back off and
-     * retry; bulk senders should pace submissions against this signal.
+     * Surfaced immediately instead of waiting out the ACK timer. Also reported (with `res = 32`)
+     * when the engine's own hold queue for sends waiting on the device is full. Callers should
+     * back off and retry.
      *
      * @param res the raw `QueueStatus.res` error code reported by the firmware
      * @since 0.2.0

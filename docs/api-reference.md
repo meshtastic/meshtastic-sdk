@@ -213,8 +213,9 @@ public class MessageHandle internal constructor(
 
 1. **Disconnect resolves all open handles** to `Failed(Disconnected)` before transport teardown completes. `await()` returns the corresponding outcome — no leaks.
 2. **Caller-cancel is independent of handle.** Cancelling the coroutine inside `await()` rethrows `CancellationException`; the handle's `state` continues to update for other observers. Use `cancel()` to actively withdraw.
-3. **`cancel()` is idempotent and state-dependent.** Pre-`Sent`: removed from outbound queue, `state = Failed(Cancelled)`. Post-`Sent`: no effect on the radio; state unchanged. Always safe.
-4. **`PayloadTooLarge` is never observed via `MessageHandle`.** It's thrown synchronously by `send()`; no handle is returned.
+3. **`cancel()` is idempotent and state-dependent.** Pre-`Sent`, including a send held back for the device's transmit queue: removed from outbound queue, `state = Failed(Cancelled)`. Post-`Sent`: no effect on the radio; state unchanged. Always safe.
+4. **Sends are paced on the device's transmit queue.** `send` returns at once; the packet is written only while the device reports room (`docs/protocol.md` "Device queue accounting"), so a burst stays `Queued` in order and drains as `QueueStatus` frees slots. At most 128 sends wait; the next one fails `QueueRejected(32)`.
+5. **`PayloadTooLarge` is never observed via `MessageHandle`.** It's thrown synchronously by `send()`; no handle is returned.
 
 ## `SendState`, `SendFailure`, `SendOutcome`
 

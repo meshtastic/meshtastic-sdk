@@ -188,6 +188,15 @@ internal sealed interface EngineMessage {
      */
     data class SendAckTimeout(val id: MessageId) : EngineMessage
 
+    /**
+     * The device did not answer a paced send with a `QueueStatus` in time. The engine stops
+     * counting that packet against the device's queue and presumes a device that never reports.
+     */
+    data class PaceTimeout(val id: MessageId) : EngineMessage
+
+    /** Nothing is in flight and the device reported a full queue, but no `QueueStatus` followed. */
+    data object PaceStall : EngineMessage
+
     // ── Auto-reconnect (DX-7 / COV-4) ──────────────────────────────────────
 
     /** Backoff window expired; supervisor should attempt the next reconnect cycle. */

@@ -762,10 +762,14 @@ message QueueStatus {
 }
 ```
 
+`free` and `maxlen` describe the LoRa transmit queue (`firmware:src/mesh/RadioLibInterface.cpp` `getQueueStatus`, depth `MAX_TX_QUEUE` = 16 in `RadioInterface.h`). The firmware answers every packet written by the phone with a `queue_status` carrying that packet's id and `res` (`MeshService.cpp` `handleToRadio`), reads `free` after the enqueue, and sends an unsolicited one with `mesh_packet_id = 0` when a full queue gets room (`MeshService::loop`) and in reply to a heartbeat.
+
 Host SDK:
-- If `free == 0`, enter local backpressure: do not write more `ToRadio.packet` messages until `free > 0` arrives.
-- The local `Queued` state holds packets while waiting for capacity.
-- Default device queue depth is small (typically 8–16); the host SHOULD NOT assume large depth.
+- The engine holds user sends in a FIFO of at most 128 (`MeshEngine.MAX_HELD_SENDS`) and writes one only while `free - (packets written and not yet answered) > 0`. `free` is the freshest `QueueStatus` heard, answered or unsolicited; before the first one the engine assumes 16.
+- A held send stays `Queued`, keeps its order, and `MessageHandle.cancel()` fails it with `Cancelled`. A send beyond the 128th fails with `QueueRejected(32)`, the code the firmware uses for a full queue.
+- A written packet counts against `free` until its `QueueStatus` arrives or 5 s pass (Android's per-packet wait). After a timeout the device is treated as not reporting and nothing is held until a `QueueStatus` is heard again. With a full queue (`free == 0`) and nothing in flight the engine waits the same 5 s for an unsolicited `QueueStatus`.
+- Packets addressed to the local node, including local admin, bypass the FIFO: firmware delivers them through `Router::sendLocal` (answered `ERRNO_SHOULD_RELEASE`), never the transmit queue. RPCs (`admin`, `telemetry`, `routing`, `storeForward` requests) and the handshake are written immediately and are not counted.
+- Disconnect or a reconnect cycle fails every held send with `Disconnected`.
 
 ### Packet ID generation
 

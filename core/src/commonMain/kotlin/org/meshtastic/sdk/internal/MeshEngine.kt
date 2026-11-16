@@ -164,6 +164,20 @@ internal class MeshEngine(
     // Sends that request no ack and no response. Their state is Sent and final; they stay tracked
     // only until the device's QueueStatus, so a queue rejection can still fail them.
     private val noAckSends = mutableSetOf<MessageId>()
+
+    // User sends not yet written, in submission order; released while the device has room.
+    private val heldSends = ArrayDeque<EngineMessage.Send>()
+
+    // Wire ids written to the device and not yet answered by a QueueStatus.
+    private val paceInFlight = mutableSetOf<MessageId>()
+    private val paceTimeoutJobs = mutableMapOf<MessageId, Job>()
+    private var paceStallJob: Job? = null
+
+    // `free` from the freshest QueueStatus; null until one is heard this session.
+    private var deviceQueueFree: Int? = null
+
+    // A device that answered nothing within PACE_TIMEOUT_MS is not waited on until it speaks again.
+    private var deviceQueueSilent = false
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
 
@@ -541,6 +555,8 @@ internal class MeshEngine(
         pendingSends.clear()
         pendingDestinations.clear()
         noAckSends.clear()
+        heldSends.clear()
+        resetPacing()
 
         inbox.close()
         outbound.close()
@@ -662,6 +678,8 @@ internal class MeshEngine(
             is EngineMessage.PostRpc -> handlePostRpc(msg)
             is EngineMessage.PendingResponseTimeout -> handlePendingResponseTimeout(msg)
             is EngineMessage.SendAckTimeout -> handleSendAckTimeout(msg)
+            is EngineMessage.PaceTimeout -> handlePaceTimeout(msg)
+            EngineMessage.PaceStall -> handlePaceStall()
             is EngineMessage.ReconnectTick -> handleReconnectTick(msg)
             is EngineMessage.ReconnectAttemptResult -> handleReconnectAttemptResult(msg)
         }
@@ -1522,7 +1540,7 @@ internal class MeshEngine(
         // Drain the snapshot: dispatch every send that wasn't cancelled while waiting.
         for (msg in snapshot) {
             if (msg.stateFlow.value == SendState.Queued) {
-                dispatchSend(msg)
+                submitPaced(msg, bounded = false)
             }
         }
 
@@ -1548,7 +1566,11 @@ internal class MeshEngine(
                 // "queue is empty / no tracked packet" heartbeat-ish signal. Looking that up in
                 // [pendingSends] is harmless but meaningless, and incorrectly treating it as a
                 // successful send for a dropped packet would corrupt user-visible state. Guard.
-                if (queueStatus.mesh_packet_id == 0) return
+                noteQueueStatus(queueStatus)
+                if (queueStatus.mesh_packet_id == 0) {
+                    pumpHeldSends()
+                    return
+                }
                 val packetId = MessageId(queueStatus.mesh_packet_id)
                 // `res` is the firmware's enqueue result in the ERRNO namespace
                 // (MeshTypes.h), NOT Routing.Error: 0 = OK, 32 = queue full / unknown,
@@ -1596,6 +1618,7 @@ internal class MeshEngine(
                         }
                     }
                 }
+                pumpHeldSends()
             }
 
             // / route auxiliary FromRadio variants through the shared helper
@@ -2158,6 +2181,8 @@ internal class MeshEngine(
         pendingSends.clear()
         pendingDestinations.clear()
         noAckSends.clear()
+        heldSends.clear()
+        resetPacing()
         failPreSendQueueWith(SendFailure.Disconnected)
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
@@ -2249,10 +2274,91 @@ internal class MeshEngine(
             return
         }
 
-        dispatchSend(msg)
+        submitPaced(msg, bounded = true)
     }
 
-    private fun dispatchSend(msg: EngineMessage.Send) {
+    // A packet addressed to this node is delivered by the firmware's local loopback and answered
+    // with ERRNO_SHOULD_RELEASE; it never enters the LoRa transmit queue (Router.cpp sendLocal),
+    // so local admin does not wait behind a backlog.
+    private fun bypassesPacing(msg: EngineMessage.Send): Boolean = myNodeNum != 0 && msg.packet.to == myNodeNum
+
+    private fun submitPaced(msg: EngineMessage.Send, bounded: Boolean) {
+        if (bypassesPacing(msg)) {
+            dispatchSend(msg)
+            return
+        }
+        if (bounded && heldSends.size >= MAX_HELD_SENDS && !hasDeviceRoom()) {
+            logger.warn(TAG) { "Held-send queue full; rejecting id=${msg.id}" }
+            msg.stateFlow.value = SendState.Failed(SendFailure.QueueRejected(ERRNO_BASE))
+            pendingSends.remove(msg.id)
+            return
+        }
+        heldSends.addLast(msg)
+        pumpHeldSends()
+    }
+
+    private fun hasDeviceRoom(): Boolean =
+        deviceQueueSilent || (deviceQueueFree ?: ASSUMED_QUEUE_FREE) - paceInFlight.size > 0
+
+    private fun pumpHeldSends() {
+        while (heldSends.isNotEmpty() && hasDeviceRoom()) {
+            val msg = heldSends.removeFirst()
+            if (msg.stateFlow.value != SendState.Queued) continue
+            val key = dispatchSend(msg) ?: continue
+            paceInFlight.add(key)
+            engineScope?.let { scope ->
+                paceTimeoutJobs.remove(key)?.cancel()
+                paceTimeoutJobs[key] = scope.launch {
+                    delay(PACE_TIMEOUT_MS)
+                    inbox.trySend(EngineMessage.PaceTimeout(key))
+                }
+            }
+        }
+        paceStallJob?.cancel()
+        paceStallJob = null
+        if (heldSends.isNotEmpty() && paceInFlight.isEmpty()) {
+            paceStallJob = engineScope?.launch {
+                delay(PACE_TIMEOUT_MS)
+                inbox.trySend(EngineMessage.PaceStall)
+            }
+        }
+    }
+
+    private fun handlePaceTimeout(msg: EngineMessage.PaceTimeout) {
+        paceTimeoutJobs.remove(msg.id)
+        if (paceInFlight.remove(msg.id)) {
+            deviceQueueSilent = true
+            pumpHeldSends()
+        }
+    }
+
+    private fun handlePaceStall() {
+        paceStallJob = null
+        if (heldSends.isEmpty() || paceInFlight.isNotEmpty()) return
+        deviceQueueSilent = true
+        pumpHeldSends()
+    }
+
+    private fun noteQueueStatus(queueStatus: org.meshtastic.proto.QueueStatus) {
+        deviceQueueFree = queueStatus.free
+        deviceQueueSilent = false
+        if (queueStatus.mesh_packet_id != 0) {
+            val key = MessageId(queueStatus.mesh_packet_id)
+            if (paceInFlight.remove(key)) paceTimeoutJobs.remove(key)?.cancel()
+        }
+    }
+
+    private fun resetPacing() {
+        for ((_, job) in paceTimeoutJobs) job.cancel()
+        paceTimeoutJobs.clear()
+        paceStallJob?.cancel()
+        paceStallJob = null
+        paceInFlight.clear()
+        deviceQueueFree = null
+        deviceQueueSilent = false
+    }
+
+    private fun dispatchSend(msg: EngineMessage.Send): MessageId? {
         // Ensure the wire packet ID is set to the SDK-level MessageId value so that
         // QueueStatus / Routing ACK correlation via pendingSends[MessageId(x)] works.
         val wireId = if (msg.packet.id != 0) msg.packet.id else msg.id.raw
@@ -2270,7 +2376,7 @@ internal class MeshEngine(
                 logger.warn(TAG) { "Send id=$wireId collides with in-flight wire id; rejecting" }
                 msg.stateFlow.value = SendState.Failed(SendFailure.IdCollision)
                 pendingSends.remove(msg.id)
-                return
+                return null
             }
         }
         // Remote ADMIN_APP packets pick up the target's session passkey + PKC routing here
@@ -2311,7 +2417,7 @@ internal class MeshEngine(
                     inbox.trySend(EngineMessage.SendAckTimeout(wireKey))
                 }
             }
-            return
+            return wireKey
         }
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
@@ -2322,13 +2428,14 @@ internal class MeshEngine(
         //  • want_response requests (e.g. AdminMessage.get_owner_request)
         if (packet.want_ack || wantsResponse) {
             val key = MessageId(wireId)
-            val scope = engineScope ?: return
+            val scope = engineScope ?: return wireKey
             ackTimeoutJobs.remove(key)?.cancel()
             ackTimeoutJobs[key] = scope.launch {
                 delay(sendTimeout)
                 inbox.trySend(EngineMessage.SendAckTimeout(key))
             }
         }
+        return wireKey
     }
 
     private fun handleCancelHandle(msg: EngineMessage.CancelHandle) {
@@ -2337,6 +2444,7 @@ internal class MeshEngine(
         if (stateFlow.value == SendState.Queued && msg.id !in noAckSends) {
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
             pendingSends.remove(msg.id)
+            heldSends.removeAll { it.id == msg.id }
         }
         // regardless of state, drop any pending ACK timer so we don't post a stale
         // SendAckTimeout for a handle the user has explicitly cancelled.
@@ -2689,7 +2797,7 @@ internal class MeshEngine(
         }
     }
 
-    private companion object {
+    internal companion object {
         private const val TAG = "MeshEngine"
 
         // Handshake nonces (protocol.md §6).
@@ -2701,6 +2809,17 @@ internal class MeshEngine(
 
         // How long a no-ack send waits for the device's QueueStatus before counting as accepted.
         const val NO_ACK_ACCEPT_GRACE_MS = 5_000L
+
+        // How long a written send waits for its QueueStatus before it stops counting against the
+        // device's queue. Matches Android's per-packet wait (PacketHandlerImpl RESPONSE_TIMEOUT).
+        const val PACE_TIMEOUT_MS = 5_000L
+
+        // Bound on user sends held back for the device's queue (the firmware queue is 16 deep).
+        const val MAX_HELD_SENDS = 128
+
+        // Free slots assumed before any QueueStatus is heard: an idle firmware queue,
+        // MAX_TX_QUEUE in RadioInterface.h.
+        const val ASSUMED_QUEUE_FREE = 16
 
         // one-shot retry of `want_config_id` at half the Stage 1 budget.
         const val STAGE1_RETRY_MS = 10_000L
