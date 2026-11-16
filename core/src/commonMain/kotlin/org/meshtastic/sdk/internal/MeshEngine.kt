@@ -34,6 +34,7 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DisplayPalette
 import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
@@ -61,6 +62,7 @@ import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DeviceVersion
+import org.meshtastic.sdk.DisplayMirrorFrame
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
@@ -169,6 +171,19 @@ internal class MeshEngine(
         extraBufferCapacity = DEVICE_LOG_BUFFER,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
+
+    // Live mirror: no replay, and a slow collector loses the oldest undelivered frame rather than
+    // stalling the engine. With no collector a frame is dropped on emit, so none is retained.
+    val displayFrames = MutableSharedFlow<DisplayMirrorFrame>(
+        extraBufferCapacity = 2,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Latest complete display palette for the session, `null` until the device sends one. */
+    val displayPalette = MutableStateFlow<DisplayPalette?>(null)
+
+    private val displayFrameReassembler = DisplayFrameReassembler()
+    private val displayPaletteReassembler = DisplayPaletteReassembler()
 
     /** Every decoded inbound envelope, unfiltered. Lossy by design so a slow tap never stalls the engine. */
     val rawFromRadio = MutableSharedFlow<FromRadio>(
@@ -750,6 +765,7 @@ internal class MeshEngine(
         lastEncryptedSkipWarningAtMs = 0L
         recentInboundPacketKeys.clear()
         recentInboundPacketKeySet.clear()
+        resetDisplayMirror()
 
         reconnectJob?.cancel()
         reconnectJob = null
@@ -2446,6 +2462,17 @@ internal class MeshEngine(
             true
         }
 
+        // Display mirror chunks: reassembled into whole frames / palettes, never rendered here.
+        fromRadio.display_frame != null -> {
+            handleDisplayFrameChunk(fromRadio.display_frame!!)
+            true
+        }
+
+        fromRadio.display_palette != null -> {
+            displayPaletteReassembler.accept(fromRadio.display_palette!!)?.let { displayPalette.value = it }
+            true
+        }
+
         // queueStatus arriving mid-handshake is not actionable (we have no
         // pendingSends yet) — surface it explicitly so it's not silently dropped.
         stage != HandshakeStage.Ready && fromRadio.queueStatus != null -> {
@@ -2474,6 +2501,23 @@ internal class MeshEngine(
         } else if (!connected && previous == true) {
             events.tryEmit(MeshEvent.MqttDisconnected())
         }
+    }
+
+    private fun handleDisplayFrameChunk(chunk: org.meshtastic.proto.DisplayFrame) {
+        when (val outcome = displayFrameReassembler.accept(chunk)) {
+            DisplayFrameReassembler.Outcome.Incomplete -> Unit
+
+            is DisplayFrameReassembler.Outcome.Complete -> displayFrames.tryEmit(outcome.frame)
+
+            is DisplayFrameReassembler.Outcome.Dropped ->
+                logger.warn(TAG) { "Dropped display frame chunk: ${outcome.reason}" }
+        }
+    }
+
+    private fun resetDisplayMirror() {
+        displayFrameReassembler.reset()
+        displayPaletteReassembler.reset()
+        displayPalette.value = null
     }
 
     private fun warnUnhandledVariant(variant: String, stage: HandshakeStage) {
@@ -2837,6 +2881,7 @@ internal class MeshEngine(
         stage2ProgressCounter = 0L
         recentInboundPacketKeys.clear()
         recentInboundPacketKeySet.clear()
+        resetDisplayMirror()
         livenessWatchdogJob?.cancel()
         livenessWatchdogJob = null
 

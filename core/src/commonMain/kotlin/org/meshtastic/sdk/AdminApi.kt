@@ -237,6 +237,29 @@ public interface AdminApi {
     /** Send a synthetic input event to the device (button press, touch, etc.). */
     public suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit>
 
+    /**
+     * Start or stop continuous mirroring of the device display.
+     *
+     * While enabled, the device streams a frame after every redraw that changed the screen;
+     * collect them from [RadioClient.displayFrames]. Mirroring is not persisted across reboot.
+     * Local device only: firmware refuses it over the mesh, so a [forNode]-scoped instance returns
+     * [AdminResult.Unauthorized] without sending. Success means the device acknowledged the
+     * request; the first frame follows immediately.
+     *
+     * @param enabled `true` to start mirroring, `false` to stop
+     * @since 0.3.0
+     */
+    public suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit>
+
+    /**
+     * Ask the device for a single frame of its display, delivered on [RadioClient.displayFrames].
+     * Prefer this over [setDisplayMirror] for e-ink panels. Local device only; a
+     * [forNode]-scoped instance returns [AdminResult.Unauthorized] without sending.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun requestDisplayFrame(): AdminResult<Unit>
+
     // ── Contacts ────────────────────────────────────────────────────────────
 
     /** Add a shared contact to the device's contact list. */

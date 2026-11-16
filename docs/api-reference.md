@@ -150,10 +150,15 @@ A node that sends a session passkey has at least 150 s of validity left on it. A
 | `fromRadio: Flow<FromRadio>` | Every decoded inbound envelope, unredacted: handshake frames, config, channels, `log_record`, and packets | 256 | The oldest envelope is dropped, unreported |
 | `sessionEvents: Flow<RadioSessionEvent>?` | Optional single-consumer queue | Bounded by `Builder.sessionReceive(capacity)` |
 | `deviceLogs: Flow<LogRecord>` | `FromRadio.log_record`, handshake included | 64 | The oldest record is dropped, unreported |
+| `displayFrames: Flow<DisplayMirrorFrame>` | Reassembled display mirror frames | 2 | The oldest frame is dropped, unreported |
 
 The engine never waits for a collector. All five are hot: collectors share one upstream and see only what is emitted while they collect. `nodes` is the exception for the baseline: each subscription first receives a `NodeChange.Snapshot` of the current node map, so a late subscriber never misses it. The handshake also emits a live `Snapshot` when it commits, after every reconnect, which existing subscribers treat as a full replacement. `Flow<NodeChange>.asNodeMap()` is the fold behind `nodeMap()`.
 
 `fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. `deviceLogs` carries `FromRadio.log_record` (device logs over the phone API) on its own, so a log stream cannot push rare events out of `events`; firmware sends them on serial and TCP while `security.debug_log_api_enabled` is set, and the SDK never sets it. See [observability.md](./observability.md#device-logs).
+
+#### Display mirror
+
+`AdminApi.setDisplayMirror(true)` starts a continuous stream and `AdminApi.requestDisplayFrame()` asks for one frame; both are local-device only. The engine reassembles the firmware's chunks and emits each complete frame on `displayFrames` as a `DisplayMirrorFrame` (`width`, `height`, `format`, `frameId`, `data`, the partial-update rectangle `rectX`/`rectY`/`rectWidth`/`rectHeight`, and `paletteSignature`). A collector that falls behind loses the oldest undelivered frame, so a slow renderer skips ahead without stalling the engine. `displayPalette: StateFlow<DisplayPalette?>` holds the latest complete palette that `DisplayMirrorFrame.paletteSignature` refers to; it is `null` until one arrives and after a disconnect. The SDK delivers bytes only: it does not decode, composite or render.
 
 ### Session receive
 
@@ -477,6 +482,8 @@ public interface AdminApi {
     public suspend fun addContact(contact: SharedContact): AdminResult<Unit>
     public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
     public suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit>          // local node only
+    public suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit>    // local node only; frames on displayFrames
+    public suspend fun requestDisplayFrame(): AdminResult<Unit>                 // local node only
 
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
