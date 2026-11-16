@@ -1685,6 +1685,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getChannels ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConfigBundle ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConnection ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getDeviceLogs ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getFiles ()Lorg/meshtastic/sdk/FileTransferApi;
 	public final fun getFromRadio ()Lkotlinx/coroutines/flow/Flow;

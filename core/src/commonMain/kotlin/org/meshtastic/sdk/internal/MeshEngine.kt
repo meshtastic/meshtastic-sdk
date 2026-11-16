@@ -40,6 +40,7 @@ import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.LoRaRegionPresetMap
 import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.LockdownStatus
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
@@ -157,6 +158,13 @@ internal class MeshEngine(
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    // Device logs can arrive at any rate, so a slow collector loses the oldest records instead of
+    // slowing the engine, and nothing is replayed.
+    val deviceLogs = MutableSharedFlow<LogRecord>(
+        extraBufferCapacity = DEVICE_LOG_BUFFER,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
@@ -2323,8 +2331,7 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            // Legacy text log. Drop explicitly — the firmware has a richer log channel via
-            // ClientNotification; we don't persist these.
+            deviceLogs.tryEmit(fromRadio.log_record!!)
             true
         }
 
@@ -3585,6 +3592,9 @@ internal class MeshEngine(
         // hard-cap was 120s — reduce to 60s to match upstream reference
         // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
         const val STAGE2_HARD_CAP_MS = 60_000L
+
+        // records a slow `deviceLogs` collector can fall behind by before the oldest are dropped.
+        const val DEVICE_LOG_BUFFER = 64
 
         // maximum frames buffered during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64

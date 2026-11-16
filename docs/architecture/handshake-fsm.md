@@ -52,7 +52,7 @@ stateDiagram-v2
 
 ### Stale frames (per protocol.md §6)
 
-While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during the settle window are buffered (up to 64) and replayed after it, and mesh packets that arrive during the handshake are held (up to 64) until `Ready`.
+While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during the settle window are buffered (up to 64) and replayed after it, and mesh packets that arrive during the handshake are held (up to 64) until `Ready`. `queue_status` frames are discarded and `log_record` frames go straight to `RadioClient.deviceLogs`; neither is buffered.
 
 ### Heartbeat in handshake
 

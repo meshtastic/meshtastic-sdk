@@ -256,7 +256,7 @@ message FromRadio {
     MyNodeInfo  my_info                 = 3;  // Phone's view of THIS node (config handshake)
     NodeInfo    node_info               = 4;  // Other-node info from NodeDB (config handshake)
     Config      config                  = 5;  // Config sub-message (config handshake)
-    LogRecord   log_record              = 6;  // (legacy text log)
+    LogRecord   log_record              = 6;  // Device log line (stream transports, only with security.debug_log_api_enabled); RadioClient.deviceLogs
     uint32      config_complete_id      = 7;  // Terminator: handshake complete (echoes want_config_id)
     bool        rebooted                = 8;  // Device booted; treat as forced disconnect
     ModuleConfig moduleConfig           = 9;  // ModuleConfig sub-message (config handshake)

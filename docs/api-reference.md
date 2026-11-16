@@ -149,10 +149,11 @@ A node that sends a session passkey has at least 150 s of validity left on it. A
 | `events: Flow<MeshEvent>` | Advisory events | 64 | The oldest event is dropped, unreported |
 | `fromRadio: Flow<FromRadio>` | Every decoded inbound envelope, unredacted: handshake frames, config, channels, `log_record`, and packets | 256 | The oldest envelope is dropped, unreported |
 | `sessionEvents: Flow<RadioSessionEvent>?` | Optional single-consumer queue | Bounded by `Builder.sessionReceive(capacity)` |
+| `deviceLogs: Flow<LogRecord>` | `FromRadio.log_record`, handshake included | 64 | The oldest record is dropped, unreported |
 
 The engine never waits for a collector. All five are hot: collectors share one upstream and see only what is emitted while they collect. `nodes` is the exception for the baseline: each subscription first receives a `NodeChange.Snapshot` of the current node map, so a late subscriber never misses it. The handshake also emits a live `Snapshot` when it commits, after every reconnect, which existing subscribers treat as a full replacement. `Flow<NodeChange>.asNodeMap()` is the fold behind `nodeMap()`.
 
-`fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. It's the only place `FromRadio.log_record` (device logs over the phone API) surfaces; see [observability.md](./observability.md#device-logs).
+`fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. `deviceLogs` carries `FromRadio.log_record` (device logs over the phone API) on its own, so a log stream cannot push rare events out of `events`; firmware sends them on serial and TCP while `security.debug_log_api_enabled` is set, and the SDK never sets it. See [observability.md](./observability.md#device-logs).
 
 ### Session receive
 
