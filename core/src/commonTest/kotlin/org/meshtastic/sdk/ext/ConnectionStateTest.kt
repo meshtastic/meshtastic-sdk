@@ -15,6 +15,17 @@ import kotlin.test.assertTrue
 class ConnectionStateTest {
     private val reconnecting = ConnectionState.Reconnecting(MeshtasticException.Transport("link lost"), attempt = 3)
 
+    private val sleeping = ConnectionState.DeviceSleeping(
+        kotlin.time.Instant.fromEpochSeconds(0),
+        expectedWakeSeconds = null,
+    )
+
+    @Test fun deviceSleepingIsNeitherUsableNorInProgress() {
+        assertFalse(sleeping.isUsable)
+        assertFalse(sleeping.isInProgress)
+        assertEquals("Device sleeping", sleeping.statusMessage)
+    }
+
     @Test fun isUsableOnlyWhenConnected() {
         assertFalse(ConnectionState.Disconnected.isUsable)
         assertFalse(ConnectionState.Connecting(attempt = 1).isUsable)

@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking
 
+- `ConnectionState.DeviceSleeping(since, expectedWakeSeconds)` is a new case. A BLE link that a
+  power-saving device drops by design, after a fully handshaken session, is reported as
+  `DeviceSleeping` instead of `Reconnecting` (auto-reconnect on) or `Disconnected` (off). An
+  exhaustive `when` over `ConnectionState` needs the new branch.
 - `SendFailure.RateLimited` is a new case, and a send the device refuses with
   `Routing.Error.RATE_LIMIT_EXCEEDED` now fails with it instead of
   `SendFailure.Other(RATE_LIMIT_EXCEEDED)`. Firmware answers that way to a second text message
@@ -32,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Reconnect attempts made while a device is `DeviceSleeping` with a known wake bound
+  (`Config.power.ls_secs`) do not count against `AutoReconnectConfig.maxAttempts` until the
+  bound plus twice `maxBackoff` has passed; after that the state is `Reconnecting`.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

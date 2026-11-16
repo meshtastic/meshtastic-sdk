@@ -145,7 +145,7 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `connectAndAwaitReady()` | `Unit` (suspends until `Connected` with session passkey seeded) | same as `connect()` | Convenience wrapper: calls `connect()`, then awaits the post-handshake admin session passkey seed. Prefer this unless you need to observe handshake progress. |
 | `disconnect()` | `Unit` | never | Idempotent. Cancels supervisor; resolves all open `MessageHandle`s to `Failed(Disconnected)`. |
 | `withConnection(teardownTimeout: Duration = 10.seconds) { … }` *(extension, since 0.2.0)* | `T` (the block's result) | rethrows from `connect()` / block | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T`. Connects, runs `block`, and **always** disconnects — on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. The structured replacement for the deliberately absent `close()`/`use { }`. |
-| `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
+| `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`; a power-saving device that drops its BLE link by design goes `Connected → DeviceSleeping → Connecting → …` instead (see [`DeviceSleeping`](#devicesleeping)). |
 | `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
 | `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
 | `channels: StateFlow<List<Channel>>` | — | — | Empty until Stage 1 completes. Reactive view of all device channels. Updated on `setChannel` responses. |
@@ -313,8 +313,19 @@ public sealed interface ConnectionState {
     public data class Configuring(val phase: ConfigPhase, val progress: Float) : ConnectionState
     public data object Connected : ConnectionState
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
+    public data class DeviceSleeping(val since: Instant, val expectedWakeSeconds: Int?) : ConnectionState
 }
 
+### `DeviceSleeping`
+
+Reported instead of `Reconnecting` only when all of these hold: the transport reported a recoverable error (not a liveness timeout, send failure or `disconnect()`), the session had completed the handshake, no `FromRadio.rebooted` arrived, the transport is BLE, and the last known config says firmware drops BLE by design:
+
+- tracker, TAK tracker or sensor role with `power.is_power_saving` (deep sleep, the device restarts on wake; `expectedWakeSeconds` is `null`), or
+- router or router-late role, or `power.is_power_saving`, with `metadata.hasWifi`, no WiFi SSID or Ethernet configured, and `power.ls_secs > 0` (ESP32 light sleep turns Bluetooth off). `expectedWakeSeconds` is `ls_secs`, or `null` for routers, which wake with Bluetooth off.
+
+With auto-reconnect on, the engine keeps retrying with the normal backoff. With a known `expectedWakeSeconds`, attempts made before `since + expectedWakeSeconds + 2 × maxBackoff` do not count against `maxAttempts`; after that the state becomes `Reconnecting` and attempts count. With `null` they count from the first attempt, so `maxAttempts` bounds the wait. With auto-reconnect off the session ends and the state stays `DeviceSleeping` until `disconnect()` returns it to `Disconnected`. Pending sends fail with `SendFailure.Disconnected` as for any drop.
+
+```kotlin
 public enum class ConfigPhase {
     /**
      * First handshake stage: metadata, device config, and channels.
@@ -349,7 +360,7 @@ public enum class ConfigPhase {
 /** True for Connected — the client can send/receive. */
 public val ConnectionState.isUsable: Boolean
 
-/** True for Connecting, Configuring, Reconnecting — a transition is in progress. */
+/** True for Connecting, Configuring, Reconnecting — a transition is in progress. False for DeviceSleeping. */
 public val ConnectionState.isInProgress: Boolean
 
 /** Human-readable status suitable for UI display (e.g., "Configuring (Stage 1 — 45%)"). */
