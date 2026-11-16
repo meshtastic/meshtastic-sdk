@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
@@ -168,6 +169,22 @@ public class RadioClient internal constructor(
      * device reports a different NodeNum than the one previously persisted).
      */
     public val events: Flow<MeshEvent> = engine.events.hide()
+
+    /**
+     * Log lines the device sends over the phone API, in arrival order, handshake included.
+     *
+     * Firmware only sends them on stream transports (serial and TCP) while
+     * `security.debug_log_api_enabled` is set; turn it on with [AdminApi.setConfig] and a
+     * `Config.SecurityConfig`. The SDK never changes that setting. The BLE LogRadio
+     * characteristic is a separate transport-level path that the SDK does not read.
+     *
+     * Hot, no replay. Volume is unbounded, so a collector that falls more than 64 records
+     * behind loses the oldest ones; the engine and the other flows never wait for it, and no
+     * [MeshEvent.PacketsDropped] is emitted for logs.
+     *
+     * @since 0.3.0
+     */
+    public val deviceLogs: Flow<LogRecord> = engine.deviceLogs.hide()
 
     // ── On-demand query ─────────────────────────────────────────────────────
 

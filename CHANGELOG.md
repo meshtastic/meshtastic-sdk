@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `RadioClient.deviceLogs`: the device's `log_record` frames as a `Flow<LogRecord>`, handshake
+  included. Firmware sends them on serial and TCP when `security.debug_log_api_enabled` is set;
+  the SDK does not change that setting. Drop-oldest at 64, no replay, so a slow collector never
+  slows the engine and the logs never reach `events`.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

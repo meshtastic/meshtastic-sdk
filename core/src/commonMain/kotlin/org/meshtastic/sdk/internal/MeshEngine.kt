@@ -31,6 +31,7 @@ import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
@@ -133,6 +134,13 @@ internal class MeshEngine(
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    // Device logs can arrive at any rate, so a slow collector loses the oldest records instead of
+    // slowing the engine, and nothing is replayed.
+    val deviceLogs = MutableSharedFlow<LogRecord>(
+        extraBufferCapacity = DEVICE_LOG_BUFFER,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
@@ -1137,7 +1145,9 @@ internal class MeshEngine(
         val required = DeviceVersion.MIN_SUPPORTED.asInt
         if (present >= required) return
 
-        logger.error(TAG) { "Firmware $reported is below the supported floor ${DeviceVersion.MIN_SUPPORTED.versionString}" }
+        logger.error(TAG) {
+            "Firmware $reported is below the supported floor ${DeviceVersion.MIN_SUPPORTED.versionString}"
+        }
         val cause = MeshtasticException.tag(
             MeshtasticException.FirmwareTooOld(required = required, present = present),
             transportIdentity = transport.identity,
@@ -1748,8 +1758,7 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            // Legacy text log. Drop explicitly — the firmware has a richer log channel via
-            // ClientNotification; we don't persist these.
+            deviceLogs.tryEmit(fromRadio.log_record!!)
             true
         }
 
@@ -2724,6 +2733,9 @@ internal class MeshEngine(
         // hard-cap was 120s — reduce to 60s to match upstream reference
         // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
         const val STAGE2_HARD_CAP_MS = 60_000L
+
+        // records a slow `deviceLogs` collector can fall behind by before the oldest are dropped.
+        const val DEVICE_LOG_BUFFER = 64
 
         // maximum non-packet frames held during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64

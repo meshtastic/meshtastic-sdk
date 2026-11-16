@@ -15,8 +15,8 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -136,6 +136,98 @@ class HandshakeAndReconnectTest {
         assertEquals("Stage 2", timeout.stage)
         assertEquals(ConnectionState.Disconnected, client.connection.value)
         assertTrue(currentTime - stage2StartedAt >= STAGE2_PROGRESS_TICK_MS)
+    }
+
+    @Test
+    fun injectedLogRecordReachesDeviceLogsWithItsFields() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:log-fields"), nowMs = { currentTime })
+        val client = buildClient(transport)
+        client.connect()
+        client.deviceLogs.test {
+            transport.injectFromRadio(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.log_record = LogRecord.Builder().also { lr ->
+                        lr.message = "hello"
+                        lr.source = "Router"
+                        lr.time = 1_700_000_000
+                        lr.level = LogRecord.Level.WARNING
+                    }.build()
+                }.build(),
+            )
+            drainCurrent()
+            val record = awaitItem()
+            assertEquals("hello", record.message)
+            assertEquals("Router", record.source)
+            assertEquals(1_700_000_000, record.time)
+            assertEquals(LogRecord.Level.WARNING, record.level)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun logFloodWithStalledCollectorDoesNotStallEngineOrPackets() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:log-flood"), nowMs = { currentTime })
+        val client = buildClient(transport)
+        client.connect()
+        backgroundScope.launch { client.deviceLogs.collect { kotlinx.coroutines.awaitCancellation() } }
+        runCurrent()
+
+        client.packets.test {
+            repeat(2_000) { index ->
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.log_record = LogRecord.Builder().also { lr -> lr.message = "log $index" }.build()
+                    }.build(),
+                )
+                if (index % 50 == 49) drainCurrent()
+            }
+            transport.injectAlivePacket(packetId = 4242)
+            drainCurrent()
+            assertEquals(4242, awaitItem().id)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun logRecordsDuringHandshakeAreDeliveredAndLeaveHandshakeBuffersAlone() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:log-handshake"),
+            nowMs = { currentTime },
+            autoCompleteStage2 = false,
+        )
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { client.connect() }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+
+        val logs = mutableListOf<LogRecord>()
+        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+        client.events.test {
+            client.packets.test {
+                repeat(128) { index -> transport.injectAlivePacket(packetId = 3000 + index) }
+                drainCurrent()
+                repeat(300) { index ->
+                    transport.injectFromRadio(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.log_record = LogRecord.Builder().also { lr -> lr.message = "log $index" }.build()
+                        }.build(),
+                    )
+                    if (index % 20 == 19) drainCurrent()
+                }
+                drainCurrent()
+                assertEquals(300, logs.size, "records arrive live, during the handshake")
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.config_complete_id = NONCE_STAGE2
+                    }.build(),
+                )
+                drainCurrent()
+                connectJob.await()
+                repeat(128) { index -> assertEquals(3000 + index, awaitItem().id) }
+                cancelAndIgnoreRemainingEvents()
+            }
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -1163,7 +1255,7 @@ class HandshakeAndReconnectTest {
 
         client.packets.test {
             transport.injectMixedBacklog(count = 300, firstPacketId = 5000)
-            { drainCurrent() }
+                { drainCurrent() }
             expectNoEvents()
             transport.injectFromRadio(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
