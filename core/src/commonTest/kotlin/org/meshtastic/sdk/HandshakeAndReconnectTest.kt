@@ -26,10 +26,12 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.HardwareModel
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
@@ -1051,28 +1053,65 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun handshakeBufferOverflowDropsOldestAndSignalsPacketsDropped() = runTest {
+    fun handshakeBufferOverflowDropsOldestAndSignalsPacketsDroppedOnce() = runTest {
+        val warnings = mutableListOf<String>()
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:buffer-overflow"),
             nowMs = { currentTime },
             autoCompleteStage2 = false,
         )
-        val client = buildClient(transport)
+        val client = buildClient(transport, warnings = warnings)
         val connectJob = backgroundScope.async { client.connect() }
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
 
         client.events.test {
-            // Two past the 64-packet cap: the two oldest are dropped, each observably.
-            repeat(66) { index -> transport.injectAlivePacket(packetId = 1000 + index) }
-            drainCurrent()
-            repeat(2) {
-                val dropped = assertIs<MeshEvent.PacketsDropped>(awaitItem())
-                assertEquals(DroppedFlow.Packets, dropped.flow)
+            // 12 past the 128-packet cap: the 12 oldest are dropped, reported by one event.
+            repeat(140) { index ->
+                transport.injectAlivePacket(packetId = 1000 + index)
+                if (index % 20 == 19) drainCurrent()
             }
+            drainCurrent()
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
 
+        client.events.test {
+            client.packets.test {
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.config_complete_id = NONCE_STAGE2
+                    }.build(),
+                )
+                drainCurrent()
+                connectJob.await()
+                assertEquals(1012, awaitItem().id, "Drop-oldest: the flush must start at the 13th packet")
+                repeat(127) { awaitItem() }
+                cancelAndIgnoreRemainingEvents()
+            }
+            val dropped = assertIs<MeshEvent.PacketsDropped>(awaitItem())
+            assertEquals(DroppedFlow.Packets, dropped.flow)
+            assertEquals(12, dropped.count)
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertEquals(1, warnings.count { it.contains("buffer full") }, "one summarizing warning, got $warnings")
+    }
+
+    @Test
+    fun mixedFramesDuringStage2DeliverEveryPacketInOrder() = runTest {
+        val warnings = mutableListOf<String>()
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:mixed-stage2"),
+            nowMs = { currentTime },
+            autoCompleteStage2 = false,
+        )
+        val client = buildClient(transport, warnings = warnings)
+        val connectJob = backgroundScope.async { client.connect() }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+
         client.packets.test {
+            transport.injectMixedBacklog(count = 300, firstPacketId = 5000)
+            { drainCurrent() }
+            expectNoEvents()
             transport.injectFromRadio(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
                     wb.config_complete_id = NONCE_STAGE2
@@ -1080,9 +1119,35 @@ class HandshakeAndReconnectTest {
             )
             drainCurrent()
             connectJob.await()
-            assertEquals(1002, awaitItem().id, "Drop-oldest: the flush must start at the third packet")
+            repeat(100) { index -> assertEquals(5000 + index, awaitItem().id) }
+            expectNoEvents()
             cancelAndIgnoreRemainingEvents()
         }
+        assertTrue(warnings.none { it.contains("buffer full") }, "no overflow warnings, got $warnings")
+    }
+
+    @Test
+    fun mixedFramesDuringStage1SettleDeliverEveryPacketInOrder() = runTest {
+        val warnings = mutableListOf<String>()
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:mixed-settle"),
+            nowMs = { currentTime },
+        )
+        val client = buildClient(transport, warnings = warnings)
+        client.packets.test {
+            val connectJob = backgroundScope.async { client.connect() }
+            client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Settling }
+            transport.injectMixedBacklog(count = 300, firstPacketId = 7000) { drainCurrent() }
+            repeat(4) {
+                advanceTimeBy(150L)
+                drainCurrent()
+            }
+            connectJob.await()
+            repeat(100) { index -> assertEquals(7000 + index, awaitItem().id) }
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+        assertTrue(warnings.none { it.contains("buffer full") }, "no overflow warnings, got $warnings")
     }
 
     @Test
@@ -1205,8 +1270,16 @@ class HandshakeAndReconnectTest {
     private fun TestScope.buildClient(
         transport: RadioTransport,
         autoReconnect: AutoReconnectConfig = AutoReconnectConfig.Disabled,
+        warnings: MutableList<String>? = null,
     ): RadioClient = RadioClient.Builder()
         .transport(transport)
+        .also { builder ->
+            if (warnings != null) {
+                builder.logger(
+                    LogSink { level, _, message, _ -> if (level == LogLevel.WARN) warnings += message },
+                )
+            }
+        }
         .storage(InMemoryStorageProvider())
         .clock(SchedulerClock { currentTime })
         .coroutineContext(backgroundScope.coroutineContext)
@@ -1389,6 +1462,34 @@ class HandshakeAndReconnectTest {
                     }.build(),
                 ),
             )
+        }
+
+        fun injectMixedBacklog(count: Int, firstPacketId: Int, drain: () -> Unit) {
+            var nextPacketId = firstPacketId
+            repeat(count) { index ->
+                when (index % 3) {
+                    0 -> injectAlivePacket(packetId = nextPacketId++)
+
+                    1 -> injectFromRadio(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.queueStatus = QueueStatus.Builder().also { qs ->
+                                qs.res = 0
+                                qs.free = 10
+                                qs.maxlen = 16
+                                qs.mesh_packet_id = 0x7000_0000 + index
+                            }.build()
+                        }.build(),
+                    )
+
+                    else -> injectFromRadio(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.log_record = LogRecord.Builder().also { lr -> lr.message = "log $index" }.build()
+                        }.build(),
+                    )
+                }
+                if (index % 20 == 19) drain()
+            }
+            drain()
         }
 
         fun injectAlivePacket(packetId: Int) {

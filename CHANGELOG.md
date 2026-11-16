@@ -65,6 +65,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with zero hops and nothing relayed them.
 - `AdminApi.setConfig` and `setModuleConfig` update `configBundle` once the device acks the
   write, as `editSettings` already did. Remote-node writes leave the local bundle alone.
+- Mesh packets that arrive during the handshake are kept up to 128 instead of 64, and
+  `queue_status` and `log_record` frames no longer fill the handshake buffers, so a device with
+  a backlog or debug logging on no longer loses live packets. An overflow now logs one warning
+  and emits one `MeshEvent.PacketsDropped` at `Ready` instead of one per frame.
 
 ## [0.2.0] — 2026-10-03
 

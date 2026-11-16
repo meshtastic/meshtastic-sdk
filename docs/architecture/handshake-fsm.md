@@ -61,6 +61,12 @@ stateDiagram-v2
 
 While in `TransportConnecting` and during the gap between `transport.connect()` returning Connected and `Stage1Sending` posting the first byte, **the engine drops every inbound frame**. Stale `FromRadio` from a prior PhoneAPI session can otherwise corrupt the early state. Once Stage 1's nonce is on the wire, every inbound frame is dispatched.
 
+### Mid-handshake frames
+
+Live `FromRadio.packet` frames that arrive before `Ready` are held in a 128-packet buffer and flushed through the normal packet pipeline, in order, when the session reaches `Ready`. The bound covers the firmware to-phone queue: 8 to 32 packets depending on target (`mesh-pb-constants.h` `MAX_RX_TOPHONE`) and 100 by default on Portduino (`PortduinoGlue.h` `maxtophone`, set by `MaxMessageQueue`). Beyond 128 the oldest packets are dropped, with one summarizing warning and one `MeshEvent.PacketsDropped(Packets, count)` at `Ready`.
+
+`queue_status` frames and `log_record` frames are never buffered: no send is in flight before `Ready`, and log records are unbounded in number. During the settle window only non-packet frames wait for replay (cap 64, one warning on overflow).
+
 ### Heartbeat in handshake
 
 A heartbeat with `nonce = ++counter` is sent **once** between Stage 1 settle and Stage 2 send. It serves two purposes:

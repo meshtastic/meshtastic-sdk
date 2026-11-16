@@ -235,6 +235,8 @@ internal class MeshEngine(
      * [SETTLE_BUFFER_CAP].
      */
     private val settleBuffer = ArrayDeque<FromRadio>(SETTLE_BUFFER_CAP)
+    private var settleBufferDropped = 0
+    private var handshakePacketsDropped = 0
 
     /**
      * `FromRadio.packet` frames (text messages, telemetry, waypoints, …) that arrive while the
@@ -601,6 +603,8 @@ internal class MeshEngine(
         lastCongestionLevel.clear()
         // clear any leftover settle-buffer entries so a reconnect starts clean.
         settleBuffer.clear()
+        settleBufferDropped = 0
+        handshakePacketsDropped = 0
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
@@ -1004,18 +1008,7 @@ internal class MeshEngine(
             }
 
             HandshakeStage.Stage1Settling -> {
-                // instead of dropping, buffer frames for replay after settle. Drop-oldest
-                // at SETTLE_BUFFER_CAP and surface a PacketsDropped event so subscribers can
-                // spot pathological backlogs — silent loss is forbidden per
-                // ADR-005 public-surface rules).
-                if (settleBuffer.size >= SETTLE_BUFFER_CAP) {
-                    val dropped = settleBuffer.removeFirst()
-                    logger.warn(TAG) {
-                        "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropping oldest frame ($dropped)"
-                    }
-                    events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
-                }
-                settleBuffer.addLast(fromRadio)
+                bufferSettleFrame(fromRadio)
                 return
             }
 
@@ -1026,6 +1019,30 @@ internal class MeshEngine(
             HandshakeStage.SeedingSession -> processSeedingEnvelope(fromRadio)
 
             HandshakeStage.Ready -> routeNormalEnvelope(fromRadio)
+        }
+    }
+
+    /**
+     * Only frames that [processStage1Envelope] must see again after the settle window are held in
+     * [settleBuffer]. Mesh packets go straight to [handshakePacketBuffer] (the replay would put
+     * them there anyway), and log records and queue status frames are handled immediately:
+     * neither carries state the handshake commit depends on, and both can arrive in floods.
+     */
+    private fun bufferSettleFrame(fromRadio: org.meshtastic.proto.FromRadio) {
+        val packet = fromRadio.packet
+        when {
+            packet != null -> bufferHandshakePacket(packet)
+
+            fromRadio.log_record != null || fromRadio.queueStatus != null ->
+                handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.Stage1Settling)
+
+            else -> {
+                if (settleBuffer.size >= SETTLE_BUFFER_CAP) {
+                    settleBuffer.removeFirst()
+                    settleBufferDropped++
+                }
+                settleBuffer.addLast(fromRadio)
+            }
         }
     }
 
@@ -1104,6 +1121,13 @@ internal class MeshEngine(
 
     private fun handleStage1SettleComplete() {
         if (handshakeStage != HandshakeStage.Stage1Settling) return
+
+        if (settleBufferDropped > 0) {
+            logger.warn(TAG) {
+                "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropped the $settleBufferDropped oldest frames"
+            }
+            settleBufferDropped = 0
+        }
 
         // replay any frames that arrived during the settle window through the normal
         // Stage1 envelope handler. We temporarily flip back to Stage1Draining so the handler
@@ -1432,10 +1456,7 @@ internal class MeshEngine(
     private fun bufferHandshakePacket(packet: MeshPacket) {
         if (handshakePacketBuffer.size >= HANDSHAKE_PACKET_BUFFER_CAP) {
             handshakePacketBuffer.removeFirst()
-            logger.warn(TAG) {
-                "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — dropping oldest"
-            }
-            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
+            handshakePacketsDropped++
         }
         handshakePacketBuffer.addLast(packet)
     }
@@ -1491,6 +1512,15 @@ internal class MeshEngine(
                     inbox.trySend(EngineMessage.PresenceCheckTick)
                 }
             }
+        }
+
+        if (handshakePacketsDropped > 0) {
+            logger.warn(TAG) {
+                "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — " +
+                    "dropped the $handshakePacketsDropped oldest packets"
+            }
+            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = handshakePacketsDropped))
+            handshakePacketsDropped = 0
         }
 
         // Flush mesh packets that arrived mid-handshake through the normal Ready pipeline
@@ -1740,12 +1770,8 @@ internal class MeshEngine(
             true
         }
 
-        // queueStatus arriving mid-handshake is not actionable (we have no
-        // pendingSends yet) — surface it explicitly so it's not silently dropped.
-        stage != HandshakeStage.Ready && fromRadio.queueStatus != null -> {
-            warnUnhandledVariant("queue_status", stage)
-            true
-        }
+        // No send is in flight before Ready, so a mid-handshake queueStatus matches nothing.
+        stage != HandshakeStage.Ready && fromRadio.queueStatus != null -> true
 
         else -> false
     }
@@ -2098,6 +2124,8 @@ internal class MeshEngine(
         pendingMetadata = null
         settleBuffer.clear()
         handshakePacketBuffer.clear()
+        settleBufferDropped = 0
+        handshakePacketsDropped = 0
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
         stage2WatchdogJob?.cancel()
@@ -2664,11 +2692,13 @@ internal class MeshEngine(
         // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
         const val STAGE2_HARD_CAP_MS = 60_000L
 
-        // maximum frames buffered during the inter-stage settle window.
+        // maximum non-packet frames held during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64
 
-        // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
-        const val HANDSHAKE_PACKET_BUFFER_CAP = 64
+        // Mesh packets held while the handshake is in flight (flushed at Ready). Firmware's
+        // to-phone queue holds 8 to 32 packets (mesh-pb-constants.h MAX_RX_TOPHONE) and 100 on
+        // Portduino by default (PortduinoGlue.h maxtophone); 128 also matches the `packets` flow buffer.
+        const val HANDSHAKE_PACKET_BUFFER_CAP = 128
 
         // name of the legacy secondary channel used for remote admin when PKC keys are
         // unavailable. Matched case-insensitively against ChannelSettings.name.
