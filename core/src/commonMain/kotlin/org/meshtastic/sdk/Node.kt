@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import okio.ByteString
 import org.meshtastic.proto.NodeInfo
 
 /**
@@ -326,6 +327,19 @@ public sealed interface MeshEvent {
          * Host SHOULD prompt the user to regenerate keys.
          */
         public data object LowEntropyKey : SecurityWarning
+
+        /**
+         * A `NODEINFO_APP` from [node] offered a public key different from the 32-byte key
+         * already stored for it. The engine drops that NODEINFO (as firmware does) and keeps the
+         * stored user and key. The node may have been reset, or the sender may be an impostor;
+         * the host decides whether to tell the user. Emitted once per distinct ([node],
+         * [offeredKey]) pair, so a node that keeps announcing does not repeat it.
+         *
+         * @param node the node whose announcement was dropped
+         * @param offeredKey the key the announcement carried; empty when it carried none
+         * @since 0.3.0
+         */
+        public data class PublicKeyMismatch(val node: NodeId, val offeredKey: ByteString) : SecurityWarning
     }
 
     /**
@@ -403,16 +417,56 @@ public enum class DroppedFlow {
 }
 
 /**
- * Key-verification prompt details surfaced via [MeshEvent.KeyVerification].
+ * Key-verification step surfaced via [MeshEvent.KeyVerification], one per
+ * `ClientNotification` key-verification payload the device sends.
  *
- * Marker interface; concrete verification methods will be added when PKI verification UI is
- * implemented. Until then, any non-null prompt means the host should show a generic
- * verification experience.
+ * Whole flow, with `admin.keyVerification(KeyVerificationAdmin(...))` as the outbound half:
+ * 1. Initiator: send `INITIATE_VERIFICATION` with the peer's `remote_nodenum`.
+ * 2. Responder device: [ShowSecurityNumber]; show the number, the user reads it to the initiator.
+ * 3. Initiator device: [EnterSecurityNumber]; send `PROVIDE_SECURITY_NUMBER` with the same
+ *    `nonce` and the number the user typed.
+ * 4. Both devices: [ConfirmVerification]; once the user compares the characters, send
+ *    `DO_VERIFY` (or `DO_NOT_VERIFY`) with the same `nonce`.
  *
- * The shape will be ratified in a follow-up ADR before 1.0; consumers wiring this today should
- * expect the interface to add abstract members (binary-incompatible for implementers, but a
- * pure marker for collectors who only `is`-check it).
- *
- * @since 0.1.0
+ * @since 0.3.0
  */
-public interface KeyVerificationPrompt
+public sealed interface KeyVerificationPrompt {
+    /** Session nonce; echo it in the `KeyVerificationAdmin` replies. */
+    public val nonce: Long
+
+    /** Long name of the other node, or the device's placeholder when it has none. */
+    public val remoteLongName: String
+
+    /**
+     * The device wants the security number the peer is displaying.
+     *
+     * @since 0.3.0
+     */
+    public data class EnterSecurityNumber(override val nonce: Long, override val remoteLongName: String) :
+        KeyVerificationPrompt
+
+    /**
+     * A peer started verification with this device; show [securityNumber] so it can be read out.
+     *
+     * @since 0.3.0
+     */
+    public data class ShowSecurityNumber(
+        override val nonce: Long,
+        override val remoteLongName: String,
+        val securityNumber: Int,
+    ) : KeyVerificationPrompt
+
+    /**
+     * The exchange reached its final confirmation. [isSender] is `true` on the initiating device.
+     * [verificationCharacters] is the device-supplied code to compare; firmware may leave it
+     * empty and carry the text only in the raw [MeshEvent.Notification] message.
+     *
+     * @since 0.3.0
+     */
+    public data class ConfirmVerification(
+        override val nonce: Long,
+        override val remoteLongName: String,
+        val isSender: Boolean,
+        val verificationCharacters: String,
+    ) : KeyVerificationPrompt
+}

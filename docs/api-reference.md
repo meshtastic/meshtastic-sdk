@@ -280,6 +280,7 @@ public sealed interface MeshEvent {
     public sealed interface SecurityWarning : MeshEvent {
         public data object DuplicatedPublicKey : SecurityWarning
         public data object LowEntropyKey : SecurityWarning
+        public data class PublicKeyMismatch(val node: NodeId, val offeredKey: ByteString) : SecurityWarning
     }
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
     public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
@@ -289,7 +290,7 @@ public enum class DroppedFlow { Packets, Events }
 public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 ```
 
-When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference). `KeyVerification` is declared but the engine doesn't emit it.
+When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference).
 
 ## `NodeChange`
 

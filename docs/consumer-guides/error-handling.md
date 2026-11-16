@@ -112,6 +112,8 @@ when (val result = client.admin.getOwner()) {
 | `PacketsDropped(flow, count)` | A collector of `packets` or `nodes` fell behind and new items were discarded. | Move work off the collector. |
 | `ProtocolWarning(message, details)` | A non-fatal anomaly, such as an undecodable envelope. | Log it. |
 | `SecurityWarning.DuplicatedPublicKey`, `SecurityWarning.LowEntropyKey` | Suspect key material. | Surface prominently. |
+| `SecurityWarning.PublicKeyMismatch` | A contact offered a different key; the stored key still applies. | Warn that the key changed. |
+| `KeyVerification` | One step of the device's key-verification exchange. | Show the number or confirm UI; reply with `AdminApi.keyVerification`. |
 | `Notification(notification)` | A `ClientNotification` from the device. | Show it if relevant. |
 
 ### Example: collecting events

@@ -266,6 +266,11 @@ val sent = transport.outboundPackets()  // inspect what the client sent
 
 The node encrypts and decrypts direct messages with X25519 keys; the SDK never handles a private key ([protocol.md §10](./protocol.md#10-pki-direct-messages-x25519--aes-ccm)).
 
+- Inbound DM payloads arrive as `MeshPacket` with `decoded.public_key` populated whenever the firmware decrypted them with a known peer key. An empty `public_key` on a `decoded.portnum == TEXT_MESSAGE_APP` packet from a non-broadcast `to` field means the peer's identity could not be verified.
+- `MeshEvent.KeyVerification` carries the steps of the device's numeric key verification (`KeyVerificationPrompt.EnterSecurityNumber`, `ShowSecurityNumber`, `ConfirmVerification`); start it and answer it with `AdminApi.keyVerification` (see `docs/protocol.md` §10).
+- `MeshEvent.SecurityWarning.PublicKeyMismatch` reports a `NODEINFO_APP` dropped because its key differs from the stored one, once per node and offered key.
+- `MeshEvent.SecurityWarning.DuplicatedPublicKey` and `MeshEvent.SecurityWarning.LowEntropyKey` flag device-reported key problems; treat the affected `NodeId` as untrusted for DMs until a manual re-verification round trips.
+
 - Inbound direct messages arrive on `packets` already decoded.
 - `sendDirectMessageEncrypted(to, text)` sets `pki_encrypted`, so the node encrypts to the recipient's key. `sendText` to a unicast destination also works when the node has the recipient's key.
 - Each node's key is `NodeInfo.user.public_key`, and the local one is in `ownNode`. To guard against impersonation, compare a peer's current key with one the user verified before sending, since the engine doesn't refuse the send.

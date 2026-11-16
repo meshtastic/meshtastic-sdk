@@ -147,6 +147,7 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 | `Notification(notification)` | The device sends a `ClientNotification`. | Show it at your discretion. Security-relevant ones also arrive as `SecurityWarning`. |
 | `SecurityWarning.DuplicatedPublicKey` | Firmware saw another node broadcast a public key already in its node database: a cloned node or an impersonation attempt. | Surface it prominently. |
 | `SecurityWarning.LowEntropyKey` | Firmware reports the private key was generated with too little entropy. | Prompt the user to regenerate keys. |
+| `SecurityWarning.PublicKeyMismatch(node, offeredKey)` | A `NODEINFO_APP` offered a key that differs from the stored one, and the engine dropped it. Once per node and offered key. | Warn that the contact's key changed; DMs still use the stored key. |
 | `TransportError(error)` | The session dropped while connected. `error` is the typed cause: `Transport` for link failures and the liveness watchdog, `HandshakeTimeout` or `StorageUnavailable` when those end a session. Match on type, not on `message`. | Inform the user; with auto-reconnect on, watch `ConnectionState.Reconnecting`. |
 | `ProtocolWarning(message, details)` | A non-fatal anomaly: an undecodable envelope, a `FromRadio` variant the SDK doesn't surface. `details` carries structured context. | Log it; show it in developer tooling. |
 | `IdentityRebound(previousNodeNum, newNodeNum, reason)` | The device reports a different NodeNum than the one stored for this transport identity. See [Identity rebind](#identity-rebind). | Snapshot in-memory state if needed; optionally tell the user the radio changed. |
@@ -162,7 +163,7 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 | `QueueStatusChanged(status)` | A `FromRadio.queue_status` arrives after the handshake: a send result, a heartbeat reply, or a freed slot in a full queue. The engine already applied it to the matching `MessageHandle`. | Optional queue indicator. Under heavy sending these can crowd older events out of the 64-slot buffer for a slow collector. |
 | `MqttConnected` | A local `getDeviceConnectionStatus()` response shows the device's own broker connection up, and the previous one on this connection did not. The device never pushes MQTT state, and client-proxied MQTT reads as down. | Refresh MQTT status UI. |
 | `MqttDisconnected(reason)` | A local `getDeviceConnectionStatus()` response shows the broker connection down after one on this connection showed it up. `reason` is always null. | Refresh MQTT status UI. |
-| `KeyVerification` | Declared but not emitted by the engine. | None. |
+| `KeyVerification(prompt)` | One step of the device's key-verification exchange (`protocol.md` §10): `EnterSecurityNumber`, `ShowSecurityNumber` or `ConfirmVerification`. | Show the number or the comparison UI; answer with `AdminApi.keyVerification` and the prompt's `nonce`. |
 
 ### Identity rebind
 
@@ -170,7 +171,7 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 
 ### Security warnings
 
-The two `SecurityWarning` variants come from the `ClientNotification.payload_variant` oneof (`duplicated_public_key`, `low_entropy_key` in `mesh.proto`). The engine emits the raw `Notification` and the typed variant.
+`PublicKeyMismatch` comes from the engine. The other two `SecurityWarning` variants come from the `ClientNotification.payload_variant` oneof (`duplicated_public_key`, `low_entropy_key` in `mesh.proto`). The engine emits the raw `Notification` and the typed variant.
 
 ## Putting it together
 
