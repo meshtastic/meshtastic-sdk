@@ -213,8 +213,12 @@ class AckVersusDeliveredTest {
 
     @Test
     fun broadcastWithoutWantAck_endsInSent() = runTest {
-        withClient(sendTimeout = 5.seconds) { client, _ ->
+        withClient(sendTimeout = 5.seconds) { client, transport ->
             val handle = client.send(noAckPacket(to = NodeId.BROADCAST.raw))
+            runCurrent()
+            assertEquals(SendState.Queued, handle.state.value)
+
+            transport.injectFrame(queueStatus(handle.id.raw, res = 0))
             runCurrent()
 
             assertEquals(SendState.Sent, handle.state.value)
@@ -229,8 +233,12 @@ class AckVersusDeliveredTest {
 
     @Test
     fun unicastWithoutWantAck_endsInSent() = runTest {
-        withClient(sendTimeout = 5.seconds) { client, _ ->
+        withClient(sendTimeout = 5.seconds) { client, transport ->
             val handle = client.send(noAckPacket(to = destination.raw))
+            runCurrent()
+            assertEquals(SendState.Queued, handle.state.value)
+
+            transport.injectFrame(queueStatus(handle.id.raw, res = 0))
             runCurrent()
 
             assertEquals(SendState.Sent, handle.state.value)
@@ -270,9 +278,55 @@ class AckVersusDeliveredTest {
     }
 
     @Test
-    fun sendWithoutWantAck_isNotFailedByDisconnect() = runTest {
+    fun sendWithoutWantAck_noQueueStatus_isSentAfterGrace() = runTest {
         withClient { client, _ ->
             val handle = client.send(noAckPacket(to = destination.raw))
+            runCurrent()
+            assertEquals(SendState.Queued, handle.state.value)
+
+            advanceTimeBy(6_000)
+            runCurrent()
+
+            assertEquals(SendState.Sent, handle.state.value)
+            assertEquals(SendOutcome.Success, handle.await())
+        }
+    }
+
+    @Test
+    fun sendWithoutWantAck_awaitDoesNotSucceedBeforeTheDeviceAccepts() = runTest {
+        withClient { client, transport ->
+            val handle = client.send(noAckPacket(to = destination.raw))
+            runCurrent()
+            val outcome = backgroundScope.async { handle.await() }
+            runCurrent()
+            assertFalse(outcome.isCompleted, "await must wait for the device's verdict")
+
+            transport.injectFrame(queueStatus(handle.id.raw, res = 39))
+            runCurrent()
+
+            assertEquals(SendOutcome.Failure(SendFailure.QueueRejected(res = 39)), outcome.await())
+        }
+    }
+
+    @Test
+    fun sendWithoutWantAck_disconnectBeforeAcceptanceFailsIt() = runTest {
+        withClient { client, _ ->
+            val handle = client.send(noAckPacket(to = destination.raw))
+            runCurrent()
+
+            client.disconnect()
+            runCurrent()
+
+            assertEquals(SendState.Failed(SendFailure.Disconnected), handle.state.value)
+        }
+    }
+
+    @Test
+    fun sendWithoutWantAck_isNotFailedByDisconnect() = runTest {
+        withClient { client, transport ->
+            val handle = client.send(noAckPacket(to = destination.raw))
+            runCurrent()
+            transport.injectFrame(queueStatus(handle.id.raw, res = 0))
             runCurrent()
 
             client.disconnect()

@@ -322,7 +322,7 @@ public class RadioClient internal constructor(
             resendFn = { pkt -> send(pkt) },
         )
         handle.expectsAck = packet.want_ack || packet.decoded?.want_response == true
-        engine.trySend(packet, id, stateFlow)
+        engine.trySend(packet, id, stateFlow, sentOnAcceptance = true)
         return handle
     }
 

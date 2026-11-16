@@ -28,7 +28,8 @@ public sealed interface SendState {
      *
      * (From `QueueStatus`.) For a send that requests no ack (`want_ack = false`) and no response,
      * nothing comes back from the mesh, so this is its final state: the most that can be known is
-     * that the device took the packet. For every other send it is an intermediate state.
+     * that the device took the packet. Such a send stays [Queued] until the device's `QueueStatus`
+     * accepts it, or 5 s pass with no rejection. For every other send it is an intermediate state.
      */
     public data object Sent : SendState
 

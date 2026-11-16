@@ -397,8 +397,13 @@ internal class MeshEngine(
         connectionState.first { it == ConnectionState.Disconnected }
     }
 
-    fun trySend(packet: MeshPacket, id: MessageId, stateFlow: MutableStateFlow<SendState>) {
-        val result = inbox.trySend(EngineMessage.Send(packet, id, stateFlow))
+    fun trySend(
+        packet: MeshPacket,
+        id: MessageId,
+        stateFlow: MutableStateFlow<SendState>,
+        sentOnAcceptance: Boolean = false,
+    ) {
+        val result = inbox.trySend(EngineMessage.Send(packet, id, stateFlow, sentOnAcceptance))
         if (!result.isSuccess) {
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
@@ -527,10 +532,9 @@ internal class MeshEngine(
         //         to the pendingSends sweep below, but explicit so the intent is documented).
         failPreSendQueueWith(SendFailure.Disconnected)
 
-        for ((id, stateFlow) in pendingSends) {
-            // A no-ack send already ended in Sent, and a relay-acked one in Delivered; the session
-            // ending does not undo either.
-            if (id !in noAckSends && stateFlow.value != SendState.Delivered) {
+        for ((_, stateFlow) in pendingSends) {
+            // A relay-acked send already ended in Delivered; the session ending does not undo it.
+            if (stateFlow.value != SendState.Delivered) {
                 stateFlow.value = SendState.Failed(SendFailure.Disconnected)
             }
         }
@@ -1556,7 +1560,10 @@ internal class MeshEngine(
                 // so ERRNO values must never be decoded as Routing.Error.
                 if (queueStatus.res == 0 || queueStatus.res == ERRNO_SHOULD_RELEASE) {
                     pendingSends[packetId]?.value = SendState.Sent
-                    if (noAckSends.remove(packetId)) pendingSends.remove(packetId)
+                    if (noAckSends.remove(packetId)) {
+                        pendingSends.remove(packetId)
+                        ackTimeoutJobs.remove(packetId)?.cancel()
+                    }
                 } else {
                     noAckSends.remove(packetId)
                     // The firmware rejected the packet at its transmit queue. Fast-fail
@@ -2140,10 +2147,9 @@ internal class MeshEngine(
         livenessWatchdogJob = null
 
         // Fail in-flight sends — their wire IDs won't survive the device-side session restart.
-        for ((id, stateFlow) in pendingSends) {
-            // A no-ack send already ended in Sent, and a relay-acked one in Delivered; the session
-            // ending does not undo either.
-            if (id !in noAckSends && stateFlow.value != SendState.Delivered) {
+        for ((_, stateFlow) in pendingSends) {
+            // A relay-acked send already ended in Delivered; the session ending does not undo it.
+            if (stateFlow.value != SendState.Delivered) {
                 stateFlow.value = SendState.Failed(SendFailure.Disconnected)
             }
         }
@@ -2284,20 +2290,29 @@ internal class MeshEngine(
             }.build(),
         )
         outbound.trySend(Frame(encoded.toByteString()))
-        // Transition Queued → Sent; the device will confirm with QueueStatus.
-        msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // No ack and no response requested (broadcast or unicast): the firmware reports nothing
-        // back except QueueStatus, so Sent is the final state and no ACK timeout is armed.
+        // No ack and no response requested (broadcast or unicast): the only verdict the firmware
+        // gives is QueueStatus. A MessageHandle send stays Queued until the device accepts or
+        // rejects it; internal sends report Sent once written. Either way the entry is released on
+        // QueueStatus, or after a short grace for a device that sends none.
         if (!packet.want_ack && !wantsResponse) {
             noAckSends.add(wireKey)
             pendingDestinations.remove(wireKey)
-            logger.debug(TAG) { "No ack requested; Sent is final id=${msg.id}" }
+            if (!msg.sentOnAcceptance) msg.stateFlow.value = SendState.Sent
+            engineScope?.let { scope ->
+                ackTimeoutJobs.remove(wireKey)?.cancel()
+                ackTimeoutJobs[wireKey] = scope.launch {
+                    delay(NO_ACK_ACCEPT_GRACE_MS)
+                    inbox.trySend(EngineMessage.SendAckTimeout(wireKey))
+                }
+            }
             return
         }
+        // Transition Queued → Sent; the device will confirm with QueueStatus.
+        msg.stateFlow.value = SendState.Sent
 
         // Arm an ACK timeout for any send expecting firmware feedback:
         //  • unicast want_ack — waits for recipient's Routing ACK
@@ -2645,6 +2660,12 @@ internal class MeshEngine(
     private fun handleSendAckTimeout(msg: EngineMessage.SendAckTimeout) {
         val flow = pendingSends[msg.id] ?: return
         ackTimeoutJobs.remove(msg.id)
+        if (noAckSends.remove(msg.id)) {
+            // No QueueStatus within the grace: nothing rejected it, so it counts as accepted.
+            if (flow.value == SendState.Queued) flow.value = SendState.Sent
+            pendingSends.remove(msg.id)
+            return
+        }
         when (flow.value) {
             SendState.Queued, SendState.Sent -> {
                 logger.debug(TAG) { "ACK timeout for id=${msg.id} (state was ${flow.value})" }
@@ -2674,6 +2695,9 @@ internal class MeshEngine(
 
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
+
+        // How long a no-ack send waits for the device's QueueStatus before counting as accepted.
+        const val NO_ACK_ACCEPT_GRACE_MS = 5_000L
 
         // one-shot retry of `want_config_id` at half the Stage 1 budget.
         const val STAGE1_RETRY_MS = 10_000L

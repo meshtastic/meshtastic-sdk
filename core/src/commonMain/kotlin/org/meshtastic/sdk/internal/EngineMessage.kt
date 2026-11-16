@@ -87,8 +87,13 @@ internal sealed interface EngineMessage {
      * The [stateFlow] is owned by the [MessageHandle] returned to the caller; the engine
      * updates it as the packet progresses through its lifecycle.
      */
-    data class Send(val packet: MeshPacket, val id: MessageId, val stateFlow: MutableStateFlow<SendState>) :
-        EngineMessage
+    data class Send(
+        val packet: MeshPacket,
+        val id: MessageId,
+        val stateFlow: MutableStateFlow<SendState>,
+        /** A send that requests no ack reports Sent only once the device accepts it. */
+        val sentOnAcceptance: Boolean = false,
+    ) : EngineMessage
 
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
     data class CancelHandle(val id: MessageId) : EngineMessage

@@ -107,10 +107,11 @@ class P0ReliabilityTest {
         val handle = client.send(broadcastPacket()) // want_ack=false
         runCurrent()
 
-        // A broadcast that requests no ack ends in Sent once the device accepts the packet.
-        assertEquals(SendState.Sent, handle.state.value)
+        // A broadcast that requests no ack stays Queued until the device accepts the packet, or
+        // until the acceptance grace passes with no rejection.
+        assertEquals(SendState.Queued, handle.state.value)
 
-        advanceTimeBy(5_000) // far past the 1s sendTimeout
+        advanceTimeBy(6_000) // past the 1s sendTimeout and the acceptance grace
         runCurrent()
 
         // Must not degrade to Failed - Sent is final for a send that requests no ack.
