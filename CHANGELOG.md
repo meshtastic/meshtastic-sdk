@@ -64,6 +64,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `Builder.protocolLogging(level, redactor)` was stored and never used. It now logs one line per
+  `ToRadio` and `FromRadio` frame through the `LogSink`, tagged `Protocol`, with packet payloads
+  rendered by the redactor. `PayloadRedactor` gained `redact(portnum, payload)`, whose default
+  prints only the payload size, and `PayloadRedactor.None` prints hex.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out

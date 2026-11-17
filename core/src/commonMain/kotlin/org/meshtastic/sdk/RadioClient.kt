@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
+import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
@@ -768,9 +769,11 @@ public class RadioClient internal constructor(
         /**
          * Enable protocol-level logging.
          *
-         * Routes framed-packet diagnostics through the configured [LogSink]. The [redactor]
-         * masks positions, text payloads, and PSKs. Default: [LogLevel.NONE] (off).
-         * See `docs/security.md`.
+         * Logs one line per `ToRadio` frame sent and per `FromRadio` frame received through the
+         * configured [LogSink] at [level], tagged `Protocol`. A line names the frame variant and,
+         * for packets, the ids, port and channel; every packet payload goes through [redactor],
+         * whose default prints only its size. While [level] is [LogLevel.NONE] (default) nothing is
+         * logged and the redactor is never called. See `docs/security.md`.
          */
         public fun protocolLogging(level: LogLevel, redactor: PayloadRedactor = PayloadRedactor.Default): Builder =
             apply {
@@ -881,6 +884,8 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                protocolLogLevel = protocolLogLevel,
+                payloadRedactor = payloadRedactor,
             )
 
             return RadioClient(
@@ -910,15 +915,34 @@ private fun <T> SharedFlow<T>.hide(): Flow<T> = flow { emitAll(this@hide) }
 /**
  * Strategy for redacting sensitive payload data in protocol logs.
  *
- * Applied when [RadioClient.Builder.protocolLogging] is active. The default implementation masks
- * positions, text payloads, and PSKs.
+ * Applied to every packet payload in a protocol log line when [RadioClient.Builder.protocolLogging]
+ * is active. [Default] prints only the payload size, which keeps positions, text, PSKs and admin
+ * session passkeys out of the log.
  *
  * @since 0.1.0
  */
 public interface PayloadRedactor {
+    /**
+     * Render [payload], the `Data.payload` of a packet on [portnum], for a protocol log line.
+     * Encrypted packets arrive with [PortNum.UNKNOWN_APP]. Called only while protocol logging is on.
+     *
+     * @since 0.3.0
+     */
+    public fun redact(portnum: PortNum, payload: ByteString): String = "<${payload.size} bytes redacted>"
+
     public companion object {
-        /** The default redaction strategy — masks position, text, and key fields. */
+        /** The default redaction strategy: the payload size only. */
         public val Default: PayloadRedactor = object : PayloadRedactor {}
+
+        /**
+         * Prints the payload as hex. Passkeys, PSKs, positions and text appear in the log; for
+         * development builds only.
+         *
+         * @since 0.3.0
+         */
+        public val None: PayloadRedactor = object : PayloadRedactor {
+            override fun redact(portnum: PortNum, payload: ByteString): String = payload.hex()
+        }
     }
 }
 
