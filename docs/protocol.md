@@ -369,6 +369,7 @@ The firmware emits these `FromRadio` payloads in this order (`firmware:src/mesh/
 | 2 | `STATE_SEND_UIDATA` | `device_ui: DeviceUIConfig` | Optional UI payload. |
 | 3 | `STATE_SEND_OWN_NODEINFO` | `node_info: NodeInfo` | Self entry in NodeDB. |
 | 4 | `STATE_SEND_METADATA` | `metadata: DeviceMetadata` | Firmware version, hw model, role, `hasPKC` (PKI capability), excluded modules. |
+| 4a | `STATE_SEND_REGION_PRESETS` | `region_presets: LoRaRegionPresetMap` | Legal modem presets and default per region for this build; sent unconditionally. Kept in `ConfigBundle.regionPresets`; absent on older firmware. |
 | 5 | `STATE_SEND_CHANNELS` | `channel: Channel` × N | One per defined channel slot. |
 | 6 | `STATE_SEND_CONFIG` | `config: Config` × N | One per Config sub-message: device, position, power, network, display, lora, bluetooth, security, sessionkey, device_ui. |
 | 7 | `STATE_SEND_MODULECONFIG` | `module_config: ModuleConfig` × N | One per ModuleConfig sub-message: mqtt, serial, external_notification, store_forward, range_test, telemetry, canned_message, audio, remote_hardware, neighbor_info, detection_sensor, ambient_lighting, paxcounter, traffic_management. |

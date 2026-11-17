@@ -11,6 +11,7 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceUIConfig
+import org.meshtastic.proto.LoRaRegionPresetMap
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -38,7 +39,30 @@ public data class ConfigBundle(
 
     /** Device UI configuration (display preferences, language, etc.), if provided by firmware. */
     public val deviceUIConfig: DeviceUIConfig? = null,
-)
+
+    /**
+     * The device's own list of legal modem presets and the default preset per LoRa region, as
+     * sent in Stage 1 (`FromRadio.region_presets`). `null` when the firmware never sent one
+     * (older builds); an empty map is a device that sent an empty list. A region that does not
+     * appear in the map carries no constraint. Session-only: re-sent on every connect, never
+     * written to storage, so a bundle loaded from storage has `null` here.
+     *
+     * @since 0.3.0
+     */
+    public val regionPresets: LoRaRegionPresetMap? = null,
+) {
+    /**
+     * Capability queries for this device, driven by the reported firmware version and the
+     * `excluded_modules` bitfield in [metadata].
+     *
+     * @since 0.3.0
+     */
+    public val capabilities: DeviceCapabilities
+        get() = DeviceCapabilities(
+            firmwareVersion = metadata.firmware_version.ifEmpty { null },
+            excludedModules = metadata.excluded_modules,
+        )
+}
 
 /**
  * Storage provider factory.

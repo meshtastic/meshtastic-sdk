@@ -26,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AutoReconnectConfig` gained a seventh constructor parameter, `recoveryStep`. Named and
   default-argument call sites are unaffected; binaries built against the six-parameter
   constructor do not link.
+- `ConfigBundle` gained a sixth constructor parameter, `regionPresets`, and `DeviceCapabilities`
+  a second, `excludedModules`. Named and default-argument call sites are unaffected; binaries
+  built against the old constructors, `copy` or `componentN` do not link.
 - Published JVM and Android bytecode is JDK 17 (class file 61) and compiled with
   `-Xjdk-release=17`, as the README and constitution already stated; 0.2.0 shipped JDK 21
   bytecode. JDK 17 hosts can now load the artifacts.
@@ -36,6 +39,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   included. Firmware sends them on serial and TCP when `security.debug_log_api_enabled` is set;
   the SDK does not change that setting. Drop-oldest at 64, no replay, so a slow collector never
   slows the engine and the logs never reach `events`.
+- `ConfigBundle.regionPresets`: the device's own legal modem presets and default preset per
+  region (`FromRadio.region_presets`, sent in Stage 1, so config-only sessions get it too).
+  `null` on firmware that never sends it. Session-only: re-sent on every connect, not stored.
+- `DeviceCapabilities.hasModule(ExcludedModules)` and `ConfigBundle.capabilities`: whether the
+  device has a module compiled in, from `DeviceMetadata.excluded_modules`. A device that
+  reports no bitfield has every module.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

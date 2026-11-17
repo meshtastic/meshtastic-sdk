@@ -204,6 +204,7 @@ internal class MeshEngine(
     private var pendingMyInfo: org.meshtastic.proto.MyNodeInfo? = null
     private var pendingMetadata: org.meshtastic.proto.DeviceMetadata? = null
     private var pendingDeviceUIConfig: org.meshtastic.proto.DeviceUIConfig? = null
+    private var pendingRegionPresets: org.meshtastic.proto.LoRaRegionPresetMap? = null
 
     // Sends that arrived while still handshaking — dispatched in flushQueuedSends().
     private val preSendQueue = mutableListOf<EngineMessage.Send>()
@@ -602,6 +603,7 @@ internal class MeshEngine(
         pendingChannels.clear()
         pendingMyInfo = null
         pendingMetadata = null
+        pendingRegionPresets = null
         pendingDeviceUIConfig = null
         preSendQueue.clear()
         // reset the degraded flag so the next connect attempt gets a fresh storage shot.
@@ -1090,6 +1092,8 @@ internal class MeshEngine(
 
             deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
 
+            fromRadio.region_presets != null -> pendingRegionPresets = fromRadio.region_presets
+
             nodeInfo != null -> {
                 val nodeId = NodeId(nodeInfo.num)
                 pendingNodes[nodeId] = nodeInfo
@@ -1337,6 +1341,7 @@ internal class MeshEngine(
                         configs = pendingConfigs,
                         moduleConfigs = pendingModuleConfigs,
                         deviceUIConfig = pendingDeviceUIConfig,
+                        regionPresets = pendingRegionPresets,
                     )
                     meshState = meshState.withConfig(bundle)
                 }
@@ -2183,6 +2188,7 @@ internal class MeshEngine(
         pendingChannels.clear()
         pendingMyInfo = null
         pendingMetadata = null
+        pendingRegionPresets = null
         settleBuffer.clear()
         handshakePacketBuffer.clear()
         settleBufferDropped = 0
