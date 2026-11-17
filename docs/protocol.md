@@ -405,6 +405,15 @@ After `Connected` the SDK folds these into the node DB, each emitting `NodeChang
 - **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
 - **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
 - **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
+- **`NODE_STATUS_APP` and `PAXCOUNTER_APP`** only refresh the sender as any other packet does. `NodeInfo` has no field for a status string or a paxcount, and firmware keeps the status in a separate per-node map (`firmware:src/mesh/NodeDB.h:337`, `NodeDB.cpp:2184`) and the paxcount in no node entry, so a host that wants either decodes the packet from `RadioClient.packets` (`StatusMessage.ADAPTER`, `Paxcount.ADAPTER`) and stores it itself.
+
+### Position requests and DM channels
+
+A request is a `POSITION_APP` packet with `want_response = true`. Firmware answers it from `PositionModule::allocReply`, which builds the reply from its own position and ignores the request payload (`firmware:src/modules/PositionModule.cpp:291-304`, dispatched by `src/mesh/MeshModule.cpp:186-190`), throttled to one reply per three minutes. An empty request therefore draws the same reply as one carrying our position, so `requestPosition` stays empty and goes out at `BACKGROUND` priority as Android's does (`CommandSenderImpl.kt:312`). A plain unicast is encrypted with the channel's key unless firmware PKI-encrypts it, in which case the channel does not matter (`Router.cpp:1170-1196`), so `channelFor` gives the channel from `NodeInfo.channel` the way Android does (`CommandSenderImpl.kt:141`).
+
+### Waypoints
+
+A `Waypoint` is keyed by `id`; a new one with a known id replaces the old on every device. Firmware reads `expire == 0` as "never expires" and `expire == 1` as "deleted"; any other value is an epoch-seconds deadline (`firmware:src/meshUtils.h:95-102`). A delete is the same waypoint re-sent with `expire = 1` (`firmware:src/modules/WaypointModule.cpp:226-227`; Android does the same, `WaypointDialogs.kt:101`). `locked_to == 0` leaves the waypoint open to anyone; otherwise only that node may change it, and firmware only removes a waypoint locked to another node locally, never mesh-wide (`WaypointModule.cpp:217-224`). Android refuses to send id `0` (`BaseMapViewModel.kt:224`) and takes new ids from its packet-id generator. The SDK exposes `Waypoint.isExpired`, `Waypoint.canBeEditedBy`, `newWaypointId`, `RadioClient.sendWaypoint` and `RadioClient.deleteWaypoint`, and keeps no waypoint store.
 
 ### Generating the nonce
 
@@ -501,7 +510,7 @@ message Data {
 | `ROUTING_APP` | 5 | `Routing` | both | ACK/NAK and route discovery |
 | `ADMIN_APP` | 6 | `AdminMessage` | both | Device administration (see §13) |
 | `TEXT_MESSAGE_COMPRESSED_APP` | 7 | `unishox2`-compressed UTF-8 | both | Optional compression |
-| `WAYPOINT_APP` | 8 | `Waypoint` | both | Shared map markers |
+| `WAYPOINT_APP` | 8 | `Waypoint` | both | Shared map markers (rules below) |
 | `AUDIO_APP` | 9 | Codec2 audio frames | both | Push-to-talk |
 | `DETECTION_SENSOR_APP` | 10 | UTF-8 string | device→phone | GPIO event notifications |
 | `ALERT_APP` | 11 | UTF-8 string | both | High-priority broadcast alerts |
@@ -511,7 +520,7 @@ message Data {
 | `IP_TUNNEL_APP` | 33 | IP packet bytes | both | Optional IP-over-LoRa |
 | `PAXCOUNTER_APP` | 34 | `Paxcount` | device→phone | Pedestrian counter |
 | `STORE_FORWARD_PLUSPLUS_APP` | 35 | `StoreAndForward` (extended) | both | Store-and-forward v2 |
-| `NODE_STATUS_APP` | 36 | proprietary | — | Reserved |
+| `NODE_STATUS_APP` | 36 | `StatusMessage` | both | Free-text node status |
 | `SERIAL_APP` | 64 | UTF-8 / bytes | both | Serial-bridge module |
 | `STORE_FORWARD_APP` | 65 | `StoreAndForward` | both | Store-and-forward router |
 | `RANGE_TEST_APP` | 66 | UTF-8 sequence numbers | both | Range testing module |
