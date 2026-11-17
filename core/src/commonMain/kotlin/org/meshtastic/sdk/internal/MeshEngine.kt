@@ -2458,7 +2458,7 @@ internal class MeshEngine(
     private fun describe(msg: ToRadio): String = when {
         msg.packet != null -> describe(msg.packet!!)
         msg.want_config_id != null -> "ToRadio want_config_id=${msg.want_config_id}"
-        msg.heartbeat != null -> "ToRadio heartbeat"
+        msg.heartbeat != null -> "ToRadio heartbeat nonce=${msg.heartbeat!!.nonce}"
         msg.disconnect != null -> "ToRadio disconnect"
         msg.xmodemPacket != null -> "ToRadio ${describe(msg.xmodemPacket!!)}"
         msg.mqttClientProxyMessage != null -> "ToRadio mqttClientProxyMessage"
@@ -2467,25 +2467,47 @@ internal class MeshEngine(
 
     private fun describe(msg: FromRadio): String = when {
         msg.packet != null -> describe(msg.packet!!)
+
         msg.config_complete_id != null -> "FromRadio config_complete_id=${msg.config_complete_id}"
+
         msg.my_info != null -> "FromRadio my_info"
+
         msg.node_info != null -> "FromRadio node_info"
+
         msg.config != null -> "FromRadio config"
+
         msg.moduleConfig != null -> "FromRadio moduleConfig"
+
         msg.channel != null -> "FromRadio channel"
+
         msg.metadata != null -> "FromRadio metadata"
-        msg.queueStatus != null -> "FromRadio queueStatus"
+
+        msg.queueStatus != null -> msg.queueStatus!!.let {
+            "FromRadio queueStatus free=${it.free} res=${it.res} id=${it.mesh_packet_id}"
+        }
+
         msg.rebooted != null -> "FromRadio rebooted"
+
         msg.xmodemPacket != null -> "FromRadio ${describe(msg.xmodemPacket!!)}"
+
         msg.log_record != null -> "FromRadio log_record"
+
         msg.fileInfo != null -> "FromRadio fileInfo"
+
         msg.clientNotification != null -> "FromRadio clientNotification"
+
         msg.mqttClientProxyMessage != null -> "FromRadio mqttClientProxyMessage"
+
         msg.deviceuiConfig != null -> "FromRadio deviceuiConfig"
+
         msg.lockdown_status != null -> "FromRadio lockdown_status"
+
         msg.region_presets != null -> "FromRadio region_presets"
+
         msg.display_frame != null -> "FromRadio display_frame"
+
         msg.display_palette != null -> "FromRadio display_palette"
+
         else -> "FromRadio other"
     }
 
