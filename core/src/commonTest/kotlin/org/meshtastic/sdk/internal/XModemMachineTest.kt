@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.internal
 
+import okio.Buffer
 import okio.ByteString
 import okio.ByteString.Companion.encodeUtf8
 import okio.ByteString.Companion.toByteString
@@ -125,7 +126,7 @@ class XModemMachineTest {
         val step = machine.onFrame(deviceBlock(2, bytesOf(128)), 1)
         assertEquals(listOf(XModemProtocol.downloadAbort()), step.send)
         assertEquals(null, step.outcome)
-        assertEquals(XModemOutcome.Resync, machine.onFrame(ctl(XModem.Control.CAN), 2).outcome)
+        assertEquals(XModemOutcome.Resync(), machine.onFrame(ctl(XModem.Control.CAN), 2).outcome)
     }
 
     @Test
@@ -134,7 +135,7 @@ class XModemMachineTest {
         machine.start(0)
         val step = machine.onFrame(deviceBlock(2, bytesOf(97)), 1)
         assertEquals(listOf(XModem.Control.ACK), controls(step))
-        assertEquals(XModemOutcome.Resync, machine.onFrame(ctl(XModem.Control.EOT), 2).outcome)
+        assertEquals(XModemOutcome.Resync(), machine.onFrame(ctl(XModem.Control.EOT), 2).outcome)
     }
 
     @Test
@@ -144,7 +145,7 @@ class XModemMachineTest {
         machine.onFrame(deviceBlock(1, bytesOf(128)), 1)
         val step = machine.onFrame(ctl(XModem.Control.EOT), 2)
         assertTrue(step.send.isEmpty())
-        assertEquals(XModemOutcome.Resync, step.outcome)
+        assertEquals(XModemOutcome.Resync(), step.outcome)
     }
 
     @Test
@@ -301,7 +302,57 @@ class XModemMachineTest {
         val abort = machine.onTick(1000)
         assertEquals(listOf(XModemProtocol.downloadAbort()), abort.send)
         assertEquals(null, abort.outcome)
-        assertEquals(FileTransferFailure.Timeout, failure(machine.onTick(2000)))
+        assertEquals(XModemOutcome.Resync(silent = true), machine.onTick(1500).outcome)
+    }
+
+    @Test
+    fun downloadLostEofIsConfirmedAfterTheShortWaitNotTheBlockTimeout() {
+        val file = bytesOf(97)
+        val machine = XModemDownload("/a", blockTimeoutMs = 3000)
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, file), 10)
+        assertEquals(1510, machine.deadlineMs)
+        assertTrue(machine.onTick(1509).send.isEmpty())
+        assertEquals(listOf(XModem.Control.ACK), controls(machine.onTick(1510)))
+        assertEquals(XModemOutcome.Done(file), machine.onFrame(ctl(XModem.Control.CAN), 1520).outcome)
+    }
+
+    @Test
+    fun downloadLostDataBlockIsNakedAfterTheBlockTimeoutAndLateOriginalIsAnIgnoredDuplicate() {
+        val b1 = bytesOf(128)
+        val b2 = bytesOf(60)
+        val machine = XModemDownload("/a", blockTimeoutMs = 3000)
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, b1), 10)
+        assertTrue(machine.onTick(3009).send.isEmpty())
+        val nak = machine.onTick(3010)
+        assertEquals(listOf(XModem.Control.NAK), controls(nak))
+        // the original block 2 arrives just after the NAK, then the device's re-send of it
+        val first = machine.onFrame(deviceBlock(2, b2), 3020)
+        assertEquals(listOf(XModem.Control.ACK), controls(first))
+        val dup = machine.onFrame(deviceBlock(2, b2), 3030)
+        assertTrue(dup.send.isEmpty())
+        val done = machine.onFrame(ctl(XModem.Control.EOT), 3040)
+        assertEquals(
+            XModemOutcome.Done(
+                b1.substring(0, 128).let {
+                    Buffer().write(it).write(b2).readByteString()
+                },
+            ),
+            done.outcome,
+        )
+    }
+
+    @Test
+    fun downloadHealthySeesNoNakAndNoExtraFrames() {
+        val machine = XModemDownload("/a")
+        val frames = mutableListOf<XModem>()
+        frames += machine.start(0).send
+        frames += machine.onFrame(deviceBlock(1, bytesOf(128)), 50).send
+        assertTrue(machine.onTick(2_999).send.isEmpty())
+        frames += machine.onFrame(deviceBlock(2, bytesOf(9)), 3_000).send
+        assertTrue(machine.onFrame(ctl(XModem.Control.EOT), 3_050).outcome is XModemOutcome.Done)
+        assertEquals(listOf(XModem.Control.STX, XModem.Control.ACK, XModem.Control.ACK), frames.map { it.control })
     }
 
     @Test
@@ -570,97 +621,6 @@ class XModemMachineTest {
         val end = machine.onTick(1001)
         assertTrue(end.send.isEmpty())
         assertEquals(FileTransferFailure.Timeout, failure(end))
-    }
-
-    // Nudges: a heartbeat written while a reply is overdue
-
-    private fun nudges(machine: XModemMachine<*>, from: Long, to: Long): List<Long> {
-        val times = mutableListOf<Long>()
-        var t = from
-        while (t <= to) {
-            val step = machine.onTick(t)
-            if (step.spacerNonce != null) {
-                assertTrue(step.send.isEmpty(), "a nudge is never an XModem frame")
-                assertEquals(null, step.outcome)
-                times.add(t)
-            }
-            t = if (machine.wakeMs > t) machine.wakeMs else t + 1
-        }
-        return times
-    }
-
-    @Test
-    fun downloadStartWaitNudgesEveryIntervalAndStopsAtTheDeadline() {
-        val machine = XModemDownload("/a")
-        machine.start(0)
-        assertEquals(1_000, machine.wakeMs)
-        assertTrue(machine.onTick(999).spacerNonce == null)
-        val times = nudges(machine, 1_000, 9_999)
-        assertEquals((1..9).map { it * 1_000L }, times)
-        machine.onTick(10_000)
-        assertEquals(FileTransferFailure.Timeout, failure(machine.onFrame(ctl(XModem.Control.CAN), 10_001)))
-    }
-
-    @Test
-    fun healthyDeviceGetsNoNudge() {
-        val machine = XModemDownload("/a")
-        machine.start(0)
-        assertTrue(machine.onTick(500).spacerNonce == null)
-        machine.onFrame(deviceBlock(1, bytesOf(128)), 600)
-        assertTrue(machine.onTick(1_500).spacerNonce == null)
-        machine.onFrame(deviceBlock(2, bytesOf(5)), 1_600)
-        assertTrue(machine.onTick(2_500).spacerNonce == null)
-        assertTrue(machine.onFrame(ctl(XModem.Control.EOT), 2_600).outcome is XModemOutcome.Done)
-    }
-
-    @Test
-    fun nudgeIsNotARetryAndDoesNotChangeTheExpectedBlock() {
-        val machine = XModemDownload("/a", maxRetries = 1)
-        machine.start(0)
-        machine.onFrame(deviceBlock(1, bytesOf(128)), 10)
-        assertEquals(listOf(1_010L, 2_010L, 3_010L), nudges(machine, 1_010, 3_999))
-        val ack = machine.onFrame(deviceBlock(2, bytesOf(128)), 4_000)
-        assertEquals(listOf(XModem.Control.ACK), controls(ack))
-        assertEquals(128 * 2, ack.bytes)
-    }
-
-    @Test
-    fun nudgesStopOnceTheTransferEnds() {
-        val machine = XModemDownload("/a")
-        machine.start(0)
-        machine.onFrame(deviceBlock(1, bytesOf(5)), 10)
-        machine.onFrame(ctl(XModem.Control.EOT), 20)
-        assertTrue(machine.onTick(5_000).spacerNonce == null)
-    }
-
-    @Test
-    fun cleanupWaitsNudgeToo() {
-        val machine = XModemDownload("/a")
-        machine.start(0)
-        machine.onFrame(deviceBlock(1, bytesOf(128)), 5)
-        machine.cancel(10)
-        assertEquals(listOf(1_010L, 2_010L), nudges(machine, 1_010, 2_999))
-        assertTrue(machine.onFrame(ctl(XModem.Control.CAN), 3_000).outcome != null)
-        assertTrue(machine.onTick(4_000).spacerNonce == null)
-    }
-
-    @Test
-    fun uploadWaitsNudgeAndKeepTheRequestPending() {
-        val machine = XModemUpload("/a", bytesOf(10))
-        val start = machine.start(0)
-        assertEquals(listOf(1_000L, 2_000L), nudges(machine, 1_000, 2_999))
-        val block = machine.onFrame(ctl(XModem.Control.ACK), 3_000)
-        assertEquals(1, block.send.single().seq)
-        assertEquals(XModem.Control.SOH, start.send.single().control)
-    }
-
-    @Test
-    fun nudgeNoncesDifferFromEachOtherAndNeverTriggerNodeInfo() {
-        val machine = XModemDownload("/a")
-        machine.start(0)
-        val nonces = (1..9).map { machine.onTick(it * 1_000L).spacerNonce!! }
-        assertEquals(nonces.size, nonces.toSet().size)
-        assertTrue(nonces.none { it <= 1L })
     }
 
     // Identical consecutive writes (BLE firmware drops them)

@@ -28,9 +28,14 @@ import okio.ByteString
  * transfer varies the `seq` of the control frames firmware ignores it on, and puts a heartbeat
  * between two writes that would otherwise be identical.
  *
- * **Nudges:** while a reply is overdue by a second the transfer writes a heartbeat, which makes a
- * device that holds its output until the host writes deliver it. A nudge is not a retry and is
- * never an XModem frame.
+ * **Timeouts:** device frames can be lost, so a silent wait is recovered quickly. A data block
+ * that does not arrive within 3 s (six BLE round trips of about 500 ms; serial takes tens of ms)
+ * is re-requested with a `NAK`, up to 10 times in a row. After the last block the device's closing
+ * frame is awaited 1.5 s, then the bytes are returned anyway. A request with no reply within 3 s
+ * is abandoned and the whole download restarts, up to twice. A reply to a cleanup frame is awaited
+ * 1.5 s. A download from a silent device therefore fails with [FileTransferFailure.Timeout] within
+ * 3 x (3 s + 1.5 s) = 13.5 s, and one that stalls after its first block within
+ * 10 x 3 s + 1.5 s = 31.5 s of the last frame received, plus at most two restarts of 4.5 s each.
  *
  * **Inbound delivery:** the transfer reads device frames from [RadioClient.events], a bounded
  * drop-oldest buffer. Firmware sends one frame and waits for the reply, and the transfer reads
@@ -69,7 +74,8 @@ public interface FileTransferApi {
      *
      * A device that falls out of step (a block ahead of the expected one, or an end-of-file frame
      * after a full block) makes the download start over, discarding what was received, up to twice;
-     * [FileTransferFailure.RetriesExhausted] follows the last one. A refusal, a cancellation by the
+     * [FileTransferFailure.RetriesExhausted] follows the last one ([FileTransferFailure.Timeout] when the
+     * device never answered the request). A refusal, a cancellation by the
      * device or a size limit is a real answer and ends the call.
      *
      * @param path device filesystem path, 1 to [MAX_PATH_BYTES] UTF-8 bytes, no NUL

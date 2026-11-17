@@ -19,13 +19,13 @@ internal object XModemProtocol {
     const val BLOCK_SIZE: Int = 128
     const val SEQ_MASK: Int = 0xFFFF
     const val DEFAULT_MAX_RETRIES: Int = 10
-    const val DEFAULT_BLOCK_TIMEOUT_MS: Long = 10_000L
 
     /**
-     * Quiet time before a waiting transfer writes a nudge. BLE round trips are about 500 ms per frame,
-     * so a healthy reply is rarely still in flight at 1 s, and serial replies take tens of ms.
+     * Quiet time before a block is re-requested: six BLE round trips (about 500 ms each; serial takes
+     * tens of ms). The wait for a device's closing frame after the last block, and for its reply to
+     * a cleanup frame, is half of it.
      */
-    const val NUDGE_INTERVAL_MS: Long = 1_000L
+    const val DEFAULT_BLOCK_TIMEOUT_MS: Long = 3_000L
     private const val CRC_POLY: Int = 0x1021
 
     /** CRC-16/XMODEM (polynomial 0x1021, initial value 0), the value of firmware's `crc16_ccitt`. */
@@ -79,8 +79,11 @@ internal sealed interface XModemOutcome<out T> {
 
     data class Failed(val failure: FileTransferFailure) : XModemOutcome<Nothing>
 
-    /** The device is out of step in a way only a fresh request fixes; the caller starts over. */
-    data object Resync : XModemOutcome<Nothing>
+    /**
+     * The device is out of step in a way only a fresh request fixes; the caller starts over.
+     * [silent] means it never answered the request.
+     */
+    data class Resync(val silent: Boolean = false) : XModemOutcome<Nothing>
 }
 
 /**
@@ -113,12 +116,6 @@ internal class FrameLog {
         return XModemProtocol.control(control, counter)
     }
 
-    /** A heartbeat written on its own to wake a silent device; it also separates the next frame from the last. */
-    fun nudge(): Long {
-        last = null
-        return ++nonce
-    }
-
     fun spacerFor(frame: XModem): Long? {
         val repeat = frame == last
         last = frame
@@ -139,8 +136,6 @@ internal class FrameLog {
 internal interface XModemMachine<T> {
     val deadlineMs: Long
 
-    /** When [onTick] next has work to do: the next nudge, or [deadlineMs] when that comes first. */
-    val wakeMs: Long
     val totalBytes: Int?
 
     fun start(nowMs: Long): XModemStep<T>
@@ -178,14 +173,12 @@ internal class XModemDownload(
     private var settling: Settling<ByteString>? = null
     private val log = FrameLog()
 
-    // Every wait is armed as now + blockTimeoutMs, so the nudge schedule restarts with it.
+    // After a short block the data is complete, so the wait for the device's closing frame is brief.
+    private val closeTimeoutMs = blockTimeoutMs / 2
+    private val settleTimeoutMs = blockTimeoutMs / 2
+
     override var deadlineMs: Long = Long.MAX_VALUE
-        private set(value) {
-            field = value
-            nextNudgeMs = value - blockTimeoutMs + XModemProtocol.NUDGE_INTERVAL_MS
-        }
-    private var nextNudgeMs = Long.MAX_VALUE
-    override val wakeMs: Long get() = minOf(deadlineMs, nextNudgeMs)
+        private set
     override val totalBytes: Int? = null
 
     override fun start(nowMs: Long): XModemStep<ByteString> {
@@ -216,7 +209,7 @@ internal class XModemDownload(
 
                 Phase.AwaitBlock -> {
                     phase = Phase.Finished
-                    XModemStep(outcome = XModemOutcome.Resync)
+                    XModemStep(outcome = XModemOutcome.Resync())
                 }
 
                 else -> XModemStep()
@@ -228,11 +221,17 @@ internal class XModemDownload(
 
     override fun onTick(nowMs: Long): XModemStep<ByteString> {
         if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
-        if (nowMs < deadlineMs) return nudgeIfDue(nowMs)
+        if (nowMs < deadlineMs) return XModemStep()
         return when (phase) {
             Phase.Settling -> endSettling()
+
             Phase.AwaitBlock -> retry(nowMs, FileTransferFailure.Timeout, shortFrame = false)
+
             Phase.AwaitEot -> confirmComplete(nowMs)
+
+            // The device may have opened the file without its first block reaching us: start over.
+            Phase.AwaitFirst -> abortWith(nowMs, XModemOutcome.Resync(silent = true), shortFrame = false)
+
             else -> abort(nowMs, FileTransferFailure.Timeout)
         }
     }
@@ -245,15 +244,8 @@ internal class XModemDownload(
     private fun confirmComplete(nowMs: Long): XModemStep<ByteString> {
         phase = Phase.Settling
         settling = Settling(setOf(XModem.Control.EOT, XModem.Control.CAN), XModemOutcome.Done(data.readByteString()))
-        deadlineMs = nowMs + blockTimeoutMs
+        deadlineMs = nowMs + settleTimeoutMs
         return log.step(log.control(XModem.Control.ACK))
-    }
-
-    /** A heartbeat, never an XModem frame, so a device that slept on its output delivers it. Not a retry. */
-    private fun nudgeIfDue(nowMs: Long): XModemStep<ByteString> {
-        if (nowMs < nextNudgeMs) return XModemStep()
-        nextNudgeMs = nowMs + XModemProtocol.NUDGE_INTERVAL_MS
-        return XModemStep(spacerNonce = log.nudge())
     }
 
     override fun cancel(nowMs: Long): XModemStep<ByteString> = when (phase) {
@@ -275,7 +267,7 @@ internal class XModemDownload(
         val short = chunk.size < XModemProtocol.BLOCK_SIZE
         // NAK makes firmware resend only its current block and it never goes back (xmodem.cpp:296-305).
         if (seq != nextSeq && ((seq - nextSeq) and XModemProtocol.SEQ_MASK) in 1..SEQ_HALF) {
-            return abortWith(nowMs, XModemOutcome.Resync, shortFrame = short)
+            return abortWith(nowMs, XModemOutcome.Resync(), shortFrame = short)
         }
         if (!crcOk || seq != nextSeq) return retry(nowMs, FileTransferFailure.RetriesExhausted, shortFrame = short)
         if (received + chunk.size > maxBytes) return abort(nowMs, FileTransferFailure.TooLarge, shortFrame = short)
@@ -284,7 +276,7 @@ internal class XModemDownload(
         accepted++
         nextSeq = (nextSeq + 1) and XModemProtocol.SEQ_MASK
         retries = 0
-        deadlineMs = nowMs + blockTimeoutMs
+        deadlineMs = nowMs + if (short) closeTimeoutMs else blockTimeoutMs
         phase = if (short) Phase.AwaitEot else Phase.AwaitBlock
         return log.step(log.control(XModem.Control.ACK), bytes = received)
     }
@@ -313,7 +305,7 @@ internal class XModemDownload(
         }
         phase = Phase.Settling
         settling = Settling(expect, outcome)
-        deadlineMs = nowMs + blockTimeoutMs
+        deadlineMs = nowMs + settleTimeoutMs
         return log.step(frame)
     }
 
@@ -351,14 +343,10 @@ internal class XModemUpload(
     private var settling: Settling<Unit>? = null
     private val log = FrameLog()
 
-    // Every wait is armed as now + blockTimeoutMs, so the nudge schedule restarts with it.
+    private val settleTimeoutMs = blockTimeoutMs / 2
+
     override var deadlineMs: Long = Long.MAX_VALUE
-        private set(value) {
-            field = value
-            nextNudgeMs = value - blockTimeoutMs + XModemProtocol.NUDGE_INTERVAL_MS
-        }
-    private var nextNudgeMs = Long.MAX_VALUE
-    override val wakeMs: Long get() = minOf(deadlineMs, nextNudgeMs)
+        private set
     override val totalBytes: Int = content.size
 
     override fun start(nowMs: Long): XModemStep<Unit> {
@@ -397,7 +385,7 @@ internal class XModemUpload(
 
     override fun onTick(nowMs: Long): XModemStep<Unit> {
         if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
-        if (nowMs < deadlineMs) return nudgeIfDue(nowMs)
+        if (nowMs < deadlineMs) return XModemStep()
         return when (phase) {
             Phase.Settling -> endSettling()
 
@@ -410,13 +398,6 @@ internal class XModemUpload(
 
             else -> retry(nowMs, FileTransferFailure.Timeout)
         }
-    }
-
-    /** A heartbeat, never an XModem frame, so a device that slept on its output delivers it. Not a retry. */
-    private fun nudgeIfDue(nowMs: Long): XModemStep<Unit> {
-        if (nowMs < nextNudgeMs) return XModemStep()
-        nextNudgeMs = nowMs + XModemProtocol.NUDGE_INTERVAL_MS
-        return XModemStep(spacerNonce = log.nudge())
     }
 
     /**
@@ -505,7 +486,7 @@ internal class XModemUpload(
     private fun settle(nowMs: Long, control: XModem.Control, outcome: XModemOutcome<Unit>): XModemStep<Unit> {
         phase = Phase.Settling
         settling = Settling(setOf(XModem.Control.ACK), outcome)
-        deadlineMs = nowMs + blockTimeoutMs
+        deadlineMs = nowMs + settleTimeoutMs
         return log.step(log.control(control))
     }
 

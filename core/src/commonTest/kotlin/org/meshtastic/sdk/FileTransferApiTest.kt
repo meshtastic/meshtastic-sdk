@@ -508,7 +508,7 @@ class FileTransferApiTest {
         val op = async { client.files.upload("/b", bytesOf(500)) }
         // firmware accepts the request but its ACK is lost
         pump(transport, firmware, op, dropReplyTo = setOf(0))
-        advanceTimeBy(10_001)
+        advanceTimeBy(3_001)
         pump(transport, firmware, op, dropReplyTo = setOf(0), from = 1)
         advanceTimeBy(20_000)
         runCurrent()
@@ -617,10 +617,12 @@ class FileTransferApiTest {
         val op = async { client.files.download("/a") }
         pump(transport, firmware, op)
         assertTrue(!op.isCompleted)
-        advanceTimeBy(10_001)
+        val started = testScheduler.currentTime
+        advanceTimeBy(1_501)
         pump(transport, firmware, op, from = sentXModem(transport).size - 1)
-        advanceTimeBy(10_001)
+        advanceTimeBy(1_501)
         runCurrent()
+        assertTrue(testScheduler.currentTime - started < 4_000, "a lost EOT must not wait out a block timeout")
         assertEquals(FileTransferResult.Success(content), op.await())
         assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
         // the device is idle again: the next download is clean
@@ -631,135 +633,98 @@ class FileTransferApiTest {
         runCatching { client.disconnect() }
     }
 
-    /** Transfer heartbeats only: the engine's own keep-alive uses nonce 0. */
-    private fun heartbeats(transport: FakeRadioTransport, from: Int): Int =
-        transport.outboundFrames().drop(from).count {
-            val bytes = it.bytes.toByteArray()
-            (ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)).heartbeat?.nonce ?: 0) >= 2
-        }
-
-    /** A device that holds each reply until the host writes something after the request, as a sleeping serial console does. */
-    private fun TestScope.pumpWithholding(
+    /** Answers like [pump] but also lets virtual time pass, 100 ms at a time, so timeouts fire. [dropReplyTo] indexes host XModem writes. */
+    private fun TestScope.pumpTimed(
         transport: FakeRadioTransport,
         firmware: FirmwareXModem,
         op: Deferred<*>,
-        from: Int,
+        dropReplyTo: Set<Int> = emptySet(),
     ) {
-        var seen = from
-        var pending: XModem? = null
+        var seen = 0
         var guard = 0
-        while (!op.isCompleted && guard++ < 2_000) {
-            val raw = transport.outboundFrames()
-            for (i in seen until raw.size) {
-                val bytes = raw[i].bytes.toByteArray()
-                val toRadio = ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size))
-                if (toRadio.xmodemPacket != null) {
-                    pending = firmware.handle(toRadio.xmodemPacket!!)
-                } else if (toRadio.heartbeat != null) {
-                    pending?.let { reply ->
-                        transport.injectFrame(
-                            FromRadio.Builder().also { wb ->
-                                wb.xmodemPacket = reply
-                            }.build().toFrame(),
-                        )
-                    }
-                    pending = null
+        while (!op.isCompleted && guard++ < 600) {
+            val sent = sentXModem(transport)
+            for (i in seen until sent.size) {
+                val reply = firmware.handle(sent[i])
+                if (reply != null && i !in dropReplyTo) {
+                    transport.injectFrame(FromRadio.Builder().also { wb -> wb.xmodemPacket = reply }.build().toFrame())
                 }
                 runCurrent()
             }
-            seen = raw.size
-            if (!op.isCompleted) {
-                advanceTimeBy(100)
-                runCurrent()
-            }
+            seen = sent.size
+            advanceTimeBy(100)
+            runCurrent()
         }
     }
 
     @Test
-    fun withheldRepliesArriveOneNudgeIntervalEachNotOneBlockTimeout() = runTest {
+    fun lostDataBlockIsRecoveredByANakAfterTheBlockTimeout() = runTest {
         val (transport, client) = connectedClient()
         connect(client)
         val content = bytesOf(300)
         val firmware = FirmwareXModem(mutableMapOf("/a" to content))
-        val base = transport.outboundFrames().size
         val started = testScheduler.currentTime
         val op = async { client.files.download("/a") }
-        pumpWithholding(transport, firmware, op, base)
+        // the reply to the first ACK (block 2) is lost
+        pumpTimed(transport, firmware, op, dropReplyTo = setOf(1))
         assertEquals(FileTransferResult.Success(content), op.await())
-        // request, three blocks and the EOT: five replies, about one second each
         val elapsed = testScheduler.currentTime - started
-        assertTrue(elapsed in 4_000..7_000, "elapsed $elapsed")
-        assertNoConsecutiveRepeats(transport, base)
+        assertTrue(elapsed in 3_000..4_500, "elapsed $elapsed")
+        assertEquals(1, sentXModem(transport).count { it.control == XModem.Control.NAK })
         runCatching { client.disconnect() }
     }
 
     @Test
-    fun healthyDeviceIsNeverNudged() = runTest {
-        val (transport, client) = connectedClient()
-        connect(client)
-        val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(300)))
-        val base = transport.outboundFrames().size
-        val op = async { client.files.download("/a") }
-        pump(transport, firmware, op)
-        assertEquals(FileTransferResult.Success(bytesOf(300)), op.await())
-        assertEquals(0, heartbeats(transport, base))
-        runCatching { client.disconnect() }
-    }
-
-    @Test
-    fun nudgesAreBoundedByTheBlockTimeoutAndStopWhenTheTransferEnds() = runTest {
-        val (transport, client) = connectedClient()
-        connect(client)
-        val base = transport.outboundFrames().size
-        val op = async { client.files.download("/a") }
-        runCurrent()
-        advanceTimeBy(10_001)
-        runCurrent()
-        assertEquals(9, heartbeats(transport, base))
-        // the abort frame's reply never comes: the cleanup wait nudges for one more block timeout, then ends
-        advanceTimeBy(10_001)
-        runCurrent()
-        assertEquals(FileTransferResult.Failure(FileTransferFailure.Timeout), op.await())
-        val total = heartbeats(transport, base)
-        assertTrue(total <= 18, "total $total")
-        advanceTimeBy(60_000)
-        runCurrent()
-        assertEquals(total, heartbeats(transport, base))
-        assertNoConsecutiveRepeats(transport, base)
-        runCatching { client.disconnect() }
-    }
-
-    @Test
-    fun nudgesStopAfterACancelledTransferHasSettled() = runTest {
-        val (transport, client) = connectedClient()
-        connect(client)
-        val base = transport.outboundFrames().size
-        val op = async { client.files.upload("/a", bytesOf(10)) }
-        runCurrent()
-        advanceTimeBy(2_500)
-        op.cancel()
-        advanceTimeBy(30_000)
-        runCurrent()
-        val total = heartbeats(transport, base)
-        advanceTimeBy(60_000)
-        runCurrent()
-        assertEquals(total, heartbeats(transport, base))
-        assertNull(client.files.progress.value)
-        runCatching { client.disconnect() }
-    }
-
-    @Test
-    fun silentStartIsRecoveredByANudge() = runTest {
+    fun lostFirstBlockIsRecoveredByARestart() = runTest {
         val (transport, client) = connectedClient()
         connect(client)
         val content = bytesOf(225)
         val firmware = FirmwareXModem(mutableMapOf("/a" to content))
-        val base = transport.outboundFrames().size
         val started = testScheduler.currentTime
         val op = async { client.files.download("/a") }
-        pumpWithholding(transport, firmware, op, base)
+        // block 1 never arrives although firmware has opened the file
+        pumpTimed(transport, firmware, op, dropReplyTo = setOf(0))
         assertEquals(FileTransferResult.Success(content), op.await())
-        assertTrue(testScheduler.currentTime - started < 5_000)
+        assertEquals(2, requests(transport))
+        assertTrue(testScheduler.currentTime - started < 6_000)
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun healthyDownloadSendsNoNakAndNoExtraFrames() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(300)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        val op = async { client.files.download("/a") }
+        pumpTimed(transport, firmware, op)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        assertEquals(
+            listOf(XModem.Control.STX, XModem.Control.ACK, XModem.Control.ACK, XModem.Control.ACK),
+            sentXModem(transport).map { it.control },
+        )
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun cancellingDuringTheWaitForABlockStillCleansUp() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(300)))
+        val op = async { client.files.download("/a") }
+        runCurrent()
+        firmware.handle(sentXModem(transport).last())?.let {
+            transport.injectFrame(FromRadio.Builder().also { wb -> wb.xmodemPacket = it }.build().toFrame())
+        }
+        runCurrent()
+        op.cancel()
+        runCurrent()
+        assertEquals(XModem.Control.SOH, sentXModem(transport).last().control)
+        advanceTimeBy(1_501)
+        runCurrent()
+        assertNull(client.files.progress.value)
+        assertTrue(op.isCancelled)
         runCatching { client.disconnect() }
     }
 
@@ -803,16 +768,15 @@ class FileTransferApiTest {
 
     @Test
     fun silentDeviceTimesOut() = runTest {
-        val (_, client) = connectedClient()
+        val (transport, client) = connectedClient()
         connect(client)
         val op = async { client.files.download("/a") }
         runCurrent()
-        advanceTimeBy(10_001)
-        runCurrent()
-        // the SDK then waits one more block timeout for the device's reply to its abort frame
-        advanceTimeBy(10_001)
+        // three attempts, each a 3 s wait for block 1 plus a 1.5 s wait for the reply to the abort frame
+        advanceTimeBy(13_501)
         runCurrent()
         assertEquals(FileTransferResult.Failure(FileTransferFailure.Timeout), op.await())
+        assertEquals(3, requests(transport))
         runCatching { client.disconnect() }
     }
 

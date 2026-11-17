@@ -46,6 +46,9 @@ internal class FileTransferApiImpl(
     private val maxBytes: Int = FileTransferApi.MAX_FILE_BYTES,
 ) : FileTransferApi {
     private val busy = Mutex()
+
+    // Guarded by [busy]: whether the last abandoned attempt got no answer to its request at all.
+    private var lastResyncSilent = false
     private val _progress = MutableStateFlow<FileTransferProgress?>(null)
     override val progress: StateFlow<FileTransferProgress?> = _progress.asStateFlow()
 
@@ -87,11 +90,13 @@ internal class FileTransferApiImpl(
                 return FileTransferResult.Failure(FileTransferFailure.NotConnected)
             }
             // The slot stays owned across restarts; each attempt discards what the last one received.
+            lastResyncSilent = false
             repeat(restarts + 1) {
                 _progress.value = null
                 drive(path, direction, newMachine())?.let { return it }
             }
-            return FileTransferResult.Failure(FileTransferFailure.RetriesExhausted)
+            val failure = if (lastResyncSilent) FileTransferFailure.Timeout else FileTransferFailure.RetriesExhausted
+            return FileTransferResult.Failure(failure)
         } finally {
             _progress.value = null
             busy.unlock()
@@ -137,13 +142,16 @@ internal class FileTransferApiImpl(
 
                     is XModemOutcome.Failed -> result = FileTransferResult.Failure(outcome.failure)
 
-                    XModemOutcome.Resync -> resync = true
+                    is XModemOutcome.Resync -> {
+                        resync = true
+                        lastResyncSilent = outcome.silent
+                    }
 
                     null -> {
-                        val wait = (machine.wakeMs - tick()).coerceAtLeast(0)
+                        val wait = (machine.deadlineMs - tick()).coerceAtLeast(0)
                         when (val message = withTimeoutOrNull(wait) { inbound.receive() }) {
                             null -> {
-                                now = maxOf(now, machine.wakeMs)
+                                now = maxOf(now, machine.deadlineMs)
                                 step = machine.onTick(now)
                             }
 
