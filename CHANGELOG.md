@@ -45,6 +45,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   before the GATT connect (`bondFirst`), retry a stalled direct connect with `autoConnect`
   (`autoConnectFallback`), and refresh Android's cached GATT table once when discovery lacks the
   Meshtastic service (`refreshStaleGattCache`). All default to off and are ignored on iOS and JVM.
+- `BleTransport.deviceLogs()` and `BleConstants.LOGRADIO_UUID` / `LOGRADIO` in `:transport-ble`:
+  a cold, opt-in `Flow<LogRecord>` from the radio's `logradio` characteristic, buffered with
+  drop-oldest so logs never slow the link. The device must have `security.debug_log_api_enabled`
+  on. Independent of the `FromRadio.log_record` path.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

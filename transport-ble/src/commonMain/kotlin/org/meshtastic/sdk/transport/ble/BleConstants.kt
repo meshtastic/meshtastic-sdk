@@ -50,6 +50,16 @@ public object BleConstants {
     public val FROMNUM_UUID: Uuid =
         Uuid.parse("ed9da18c-a800-4f66-a670-aa7547e34453")
 
+    /**
+     * `logradio` — NOTIFY+READ characteristic carrying one `LogRecord` protobuf per notification
+     * (`BluetoothCommon.h` `LOGRADIO_UUID`). Optional: firmware streams to it only while
+     * `security.debug_log_api_enabled` is set. See [BleTransport.deviceLogs].
+     *
+     * @since 0.3.0
+     */
+    public val LOGRADIO_UUID: Uuid =
+        Uuid.parse("5a3d6e49-06e6-4423-9944-e9de8cdf9547")
+
     /** Lazily resolved `fromradio` characteristic (used for reads). */
     public val FROMRADIO: Characteristic =
         characteristicOf(MESH_SERVICE_UUID, FROMRADIO_UUID)
@@ -61,4 +71,12 @@ public object BleConstants {
     /** Lazily resolved `fromnum` characteristic (used for notifications). */
     public val FROMNUM: Characteristic =
         characteristicOf(MESH_SERVICE_UUID, FROMNUM_UUID)
+
+    /**
+     * Lazily resolved `logradio` characteristic (used for notifications).
+     *
+     * @since 0.3.0
+     */
+    public val LOGRADIO: Characteristic =
+        characteristicOf(MESH_SERVICE_UUID, LOGRADIO_UUID)
 }

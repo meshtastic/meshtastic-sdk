@@ -4,6 +4,8 @@ public final class org/meshtastic/sdk/transport/ble/BleConstants {
 	public final fun getFROMNUM_UUID ()Lkotlin/uuid/Uuid;
 	public final fun getFROMRADIO ()Lcom/juul/kable/Characteristic;
 	public final fun getFROMRADIO_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getLOGRADIO ()Lcom/juul/kable/Characteristic;
+	public final fun getLOGRADIO_UUID ()Lkotlin/uuid/Uuid;
 	public final fun getMESH_SERVICE_UUID ()Lkotlin/uuid/Uuid;
 	public final fun getTORADIO ()Lcom/juul/kable/Characteristic;
 	public final fun getTORADIO_UUID ()Lkotlin/uuid/Uuid;
@@ -35,6 +37,7 @@ public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtasti
 	public fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;)V
 	public synthetic fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deviceLogs ()Lkotlinx/coroutines/flow/Flow;
 	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun frames ()Lkotlinx/coroutines/flow/Flow;
 	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;

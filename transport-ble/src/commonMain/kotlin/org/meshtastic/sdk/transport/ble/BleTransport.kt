@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -30,16 +31,20 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioTransport
@@ -372,6 +377,47 @@ public class BleTransport(
         emitAll(frameChannel.consumeAsFlow())
     }.onCompletion { framesCollected.value = false }
 
+    /**
+     * Device log records from the `logradio` characteristic, while the returned flow is collected.
+     *
+     * Cold and opt-in: nothing subscribes until a collector starts, and cancelling the collector
+     * unsubscribes. Call it on a connected transport; the subscription does not survive a
+     * disconnect, so collect again after reconnecting. This is the BLE-native log path, separate
+     * from the `FromRadio.log_record` path of the phone API and independent of it: use whichever
+     * your link offers, not both.
+     *
+     * Firmware streams only while `security.debug_log_api_enabled` is set on the device; with it
+     * off the flow stays silent. The host enables it through admin config, not this transport.
+     * A notification carries one protobuf `LogRecord` and is limited to the negotiated ATT payload,
+     * so a record longer than that arrives truncated and is skipped, as is any payload that does
+     * not decode. The legacy plain-text log characteristic is not read; current firmware does not
+     * expose it.
+     *
+     * Records are buffered (64) and the oldest is dropped when the collector falls behind, so
+     * logs never slow the GATT link. The flow completes empty when discovery shows the radio has no
+     * `logradio` characteristic, and fails with [MeshtasticException.Transport] when the
+     * subscription cannot start or the link drops.
+     *
+     * @since 0.3.0
+     */
+    public fun deviceLogs(): Flow<LogRecord> = flow {
+        val discovered = peripheral.services.value
+        val hasCharacteristic = discovered == null || discovered.any { service ->
+            service.serviceUuid == BleConstants.MESH_SERVICE_UUID &&
+                service.characteristics.any { it.characteristicUuid == BleConstants.LOGRADIO_UUID }
+        }
+        if (hasCharacteristic) emitAll(peripheral.observe(BleConstants.LOGRADIO))
+    }
+        .mapNotNull { payload -> decodeLogRecord(payload) }
+        .buffer(LOG_BUFFER_CAPACITY, BufferOverflow.DROP_OLDEST)
+        .catch { cause ->
+            if (cause is CancellationException || cause is MeshtasticException) throw cause
+            throw MeshtasticException.Transport(
+                "BLE log subscription to ${identity.raw} failed: ${cause.message}",
+                cause,
+            )
+        }
+
     /** Release internal coroutines and frame channel. Idempotent; does not close [Peripheral]. */
     public fun shutdown() {
         if (!shuttingDown.compareAndSet(expect = false, update = true)) return
@@ -527,6 +573,14 @@ public class BleTransport(
         private const val BOND_WARMUP_TIMEOUT_MS: Long = 120_000L
         private const val BOND_RETRY_LIMIT: Int = 1
         private const val BOND_RETRY_BACKOFF_MS: Long = 2_000L
+
+        private const val LOG_BUFFER_CAPACITY: Int = 64
+
+        internal fun decodeLogRecord(payload: ByteArray): LogRecord? = try {
+            LogRecord.ADAPTER.decode(payload)
+        } catch (_: okio.IOException) {
+            null
+        }
 
         internal const val DIRECT_CONNECT_TIMEOUT_MS: Long = 15_000L
         internal const val AUTO_CONNECT_TIMEOUT_MS: Long = 60_000L

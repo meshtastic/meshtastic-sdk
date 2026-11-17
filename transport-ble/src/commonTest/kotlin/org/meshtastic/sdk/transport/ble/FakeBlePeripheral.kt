@@ -24,11 +24,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.onStart
 import kotlin.uuid.Uuid
 
 /**
  * Minimal in-memory [Peripheral]: [connect]/[disconnect] flip [state], [read] returns an
- * empty payload (queue drained, which satisfies the warmup read), [observe] never emits.
+ * empty payload (queue drained, which satisfies the warmup read), [observe] never emits except `logradio`, which replays [logNotifications].
  * [connectBehavior] runs first on every connect (1-based call number) so a test can stall or
  * fail one; [servicesAfterConnect] is what discovery reports for that call. [events] records the
  * order of connect and disconnect calls. Members [BleTransport] never touches throw
@@ -41,6 +42,7 @@ internal class FakeBlePeripheral(
     private val connectBehavior: suspend (call: Int) -> Unit = {},
     private val servicesAfterConnect: (call: Int) -> List<DiscoveredService>? = { null },
     val events: MutableList<String> = mutableListOf(),
+    private val logNotifications: Flow<ByteArray> = emptyFlow(),
 ) : Peripheral {
 
     private val stateFlow = MutableStateFlow<State>(State.Disconnected())
@@ -88,8 +90,15 @@ internal class FakeBlePeripheral(
 
     override suspend fun write(descriptor: Descriptor, data: ByteArray) = Unit
 
+    var logSubscriptions: Int = 0
+        private set
+
     override fun observe(characteristic: Characteristic, onSubscription: suspend () -> Unit): Flow<ByteArray> =
-        emptyFlow()
+        if (characteristic.characteristicUuid == BleConstants.LOGRADIO_UUID) {
+            logNotifications.onStart { logSubscriptions++ }
+        } else {
+            emptyFlow()
+        }
 
     override fun close() {
         scope.cancel()

@@ -429,6 +429,18 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
   6. Repeat step 1 of I3 on iOS or the JVM with a non-default `BleResilience`.
 - **Expected:** step 1 shows `Connecting → Bonding → Connected`; step 2 fails with `MeshtasticException.Transport` before any GATT connect; step 3 connects after the radio returns, with `autoConnect = true` visible in the platform log; step 4 connects and the node's current service table is in use; step 6 behaves as with `BleResilience.None`.
 
+#### I6 — `BleTransport.deviceLogs()` streams device logs and never stalls the link
+- **Transport:** BLE (Android, iOS, JVM)
+- **Pre-req:** A connected radio with `security.debug_log_api_enabled` on (set it through admin config); a second run with it off.
+- **Steps:**
+  1. Collect `transport.deviceLogs()` while the session is `Connected` and print each `LogRecord` (`level`, `source`, `message`).
+  2. Add a 2 s `delay` per record in the collector, send 20 text messages from the app, and confirm the handshake and sends still complete.
+  3. Cancel the collector and confirm no further records are delivered.
+  4. Disconnect and reconnect, then collect again.
+  5. Turn `debug_log_api_enabled` off and repeat step 1.
+  6. On Android, run `./gradlew :transport-ble:connectedAndroidTest` (`BleDeviceLogsDeviceTest`).
+- **Expected:** records arrive in order with plausible levels; with the slow collector some records are skipped but sends and the link are unaffected; cancel stops delivery; step 4 delivers again; step 5 delivers nothing and does not fail.
+
 ## Recording results
 
 For each release, copy this template into `docs/release-history/vX.Y.Z-conformance.md` and fill in:

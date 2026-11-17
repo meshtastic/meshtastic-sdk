@@ -21,6 +21,7 @@ and [ADR-012](../decisions/012-transport-threading.md) for the threading contrac
 | Auto-discovery | None (host:port supplied by user) | `BleScanner.scan()` (Kable `Scanner` filtered on `BleConstants.MESH_SERVICE_UUID`), then `BleTransport(radio)` | OS port enumeration via `JvmSerialPorts.list()` / `AndroidSerialPorts.list()` |
 | Known devices without a scan | None | Android: `bondedBleDevices(context)` lists every bonded device (not only radios, and not proof of presence); `BleTransport(device)` connects. iOS and JVM have no such list | `JvmSerialPorts.list()` / `AndroidSerialPorts.list()` |
 | Link recovery | None beyond engine backoff | 3 GATT connect retries; Android opt-ins via `BleResilience`: bond-first, `autoConnect` fallback, GATT cache refresh | None |
+| Device logs | Via the phone-API `FromRadio.log_record` | `BleTransport.deviceLogs()` reads the `logradio` characteristic (opt-in, drop-oldest) | Via the phone-API `FromRadio.log_record` |
 | Idle behavior | **15 min** firmware-side idle close (`protocol.md` §1A) | Link kept alive by GATT; OS may drop on radio reset | None — link dies only on cable detach |
 | Wake-byte preamble | Yes (4× `0x94`) | Not applicable (GATT message boundaries) | Yes (4× `0x94`) |
 | Module docs | [`transport-tcp/Module.md`](../../transport-tcp/Module.md) | [`transport-ble/Module.md`](../../transport-ble/Module.md) | [`transport-serial/Module.md`](../../transport-serial/Module.md) |
