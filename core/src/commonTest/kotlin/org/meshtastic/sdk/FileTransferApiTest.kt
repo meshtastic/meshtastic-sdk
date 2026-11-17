@@ -631,6 +631,138 @@ class FileTransferApiTest {
         runCatching { client.disconnect() }
     }
 
+    /** Transfer heartbeats only: the engine's own keep-alive uses nonce 0. */
+    private fun heartbeats(transport: FakeRadioTransport, from: Int): Int =
+        transport.outboundFrames().drop(from).count {
+            val bytes = it.bytes.toByteArray()
+            (ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)).heartbeat?.nonce ?: 0) >= 2
+        }
+
+    /** A device that holds each reply until the host writes something after the request, as a sleeping serial console does. */
+    private fun TestScope.pumpWithholding(
+        transport: FakeRadioTransport,
+        firmware: FirmwareXModem,
+        op: Deferred<*>,
+        from: Int,
+    ) {
+        var seen = from
+        var pending: XModem? = null
+        var guard = 0
+        while (!op.isCompleted && guard++ < 2_000) {
+            val raw = transport.outboundFrames()
+            for (i in seen until raw.size) {
+                val bytes = raw[i].bytes.toByteArray()
+                val toRadio = ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size))
+                if (toRadio.xmodemPacket != null) {
+                    pending = firmware.handle(toRadio.xmodemPacket!!)
+                } else if (toRadio.heartbeat != null) {
+                    pending?.let { reply ->
+                        transport.injectFrame(
+                            FromRadio.Builder().also { wb ->
+                                wb.xmodemPacket = reply
+                            }.build().toFrame(),
+                        )
+                    }
+                    pending = null
+                }
+                runCurrent()
+            }
+            seen = raw.size
+            if (!op.isCompleted) {
+                advanceTimeBy(100)
+                runCurrent()
+            }
+        }
+    }
+
+    @Test
+    fun withheldRepliesArriveOneNudgeIntervalEachNotOneBlockTimeout() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(300)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        val base = transport.outboundFrames().size
+        val started = testScheduler.currentTime
+        val op = async { client.files.download("/a") }
+        pumpWithholding(transport, firmware, op, base)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        // request, three blocks and the EOT: five replies, about one second each
+        val elapsed = testScheduler.currentTime - started
+        assertTrue(elapsed in 4_000..7_000, "elapsed $elapsed")
+        assertNoConsecutiveRepeats(transport, base)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun healthyDeviceIsNeverNudged() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(300)))
+        val base = transport.outboundFrames().size
+        val op = async { client.files.download("/a") }
+        pump(transport, firmware, op)
+        assertEquals(FileTransferResult.Success(bytesOf(300)), op.await())
+        assertEquals(0, heartbeats(transport, base))
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun nudgesAreBoundedByTheBlockTimeoutAndStopWhenTheTransferEnds() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val base = transport.outboundFrames().size
+        val op = async { client.files.download("/a") }
+        runCurrent()
+        advanceTimeBy(10_001)
+        runCurrent()
+        assertEquals(9, heartbeats(transport, base))
+        // the abort frame's reply never comes: the cleanup wait nudges for one more block timeout, then ends
+        advanceTimeBy(10_001)
+        runCurrent()
+        assertEquals(FileTransferResult.Failure(FileTransferFailure.Timeout), op.await())
+        val total = heartbeats(transport, base)
+        assertTrue(total <= 18, "total $total")
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(total, heartbeats(transport, base))
+        assertNoConsecutiveRepeats(transport, base)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun nudgesStopAfterACancelledTransferHasSettled() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val base = transport.outboundFrames().size
+        val op = async { client.files.upload("/a", bytesOf(10)) }
+        runCurrent()
+        advanceTimeBy(2_500)
+        op.cancel()
+        advanceTimeBy(30_000)
+        runCurrent()
+        val total = heartbeats(transport, base)
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(total, heartbeats(transport, base))
+        assertNull(client.files.progress.value)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun silentStartIsRecoveredByANudge() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(225)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        val base = transport.outboundFrames().size
+        val started = testScheduler.currentTime
+        val op = async { client.files.download("/a") }
+        pumpWithholding(transport, firmware, op, base)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        assertTrue(testScheduler.currentTime - started < 5_000)
+        runCatching { client.disconnect() }
+    }
+
     @Test
     fun overCapShortBlockLeavesNextDownloadClean() = runTest {
         val (transport, client) = connectedClient()

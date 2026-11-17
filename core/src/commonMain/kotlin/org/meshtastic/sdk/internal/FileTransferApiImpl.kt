@@ -140,10 +140,10 @@ internal class FileTransferApiImpl(
                     XModemOutcome.Resync -> resync = true
 
                     null -> {
-                        val wait = (machine.deadlineMs - tick()).coerceAtLeast(0)
+                        val wait = (machine.wakeMs - tick()).coerceAtLeast(0)
                         when (val message = withTimeoutOrNull(wait) { inbound.receive() }) {
                             null -> {
-                                now = maxOf(now, machine.deadlineMs)
+                                now = maxOf(now, machine.wakeMs)
                                 step = machine.onTick(now)
                             }
 

@@ -28,6 +28,10 @@ import okio.ByteString
  * transfer varies the `seq` of the control frames firmware ignores it on, and puts a heartbeat
  * between two writes that would otherwise be identical.
  *
+ * **Nudges:** while a reply is overdue by a second the transfer writes a heartbeat, which makes a
+ * device that holds its output until the host writes deliver it. A nudge is not a retry and is
+ * never an XModem frame.
+ *
  * **Inbound delivery:** the transfer reads device frames from [RadioClient.events], a bounded
  * drop-oldest buffer. Firmware sends one frame and waits for the reply, and the transfer reads
  * each frame as it arrives, so the buffer cannot overflow from the transfer alone. A frame lost

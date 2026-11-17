@@ -572,6 +572,97 @@ class XModemMachineTest {
         assertEquals(FileTransferFailure.Timeout, failure(end))
     }
 
+    // Nudges: a heartbeat written while a reply is overdue
+
+    private fun nudges(machine: XModemMachine<*>, from: Long, to: Long): List<Long> {
+        val times = mutableListOf<Long>()
+        var t = from
+        while (t <= to) {
+            val step = machine.onTick(t)
+            if (step.spacerNonce != null) {
+                assertTrue(step.send.isEmpty(), "a nudge is never an XModem frame")
+                assertEquals(null, step.outcome)
+                times.add(t)
+            }
+            t = if (machine.wakeMs > t) machine.wakeMs else t + 1
+        }
+        return times
+    }
+
+    @Test
+    fun downloadStartWaitNudgesEveryIntervalAndStopsAtTheDeadline() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        assertEquals(1_000, machine.wakeMs)
+        assertTrue(machine.onTick(999).spacerNonce == null)
+        val times = nudges(machine, 1_000, 9_999)
+        assertEquals((1..9).map { it * 1_000L }, times)
+        machine.onTick(10_000)
+        assertEquals(FileTransferFailure.Timeout, failure(machine.onFrame(ctl(XModem.Control.CAN), 10_001)))
+    }
+
+    @Test
+    fun healthyDeviceGetsNoNudge() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        assertTrue(machine.onTick(500).spacerNonce == null)
+        machine.onFrame(deviceBlock(1, bytesOf(128)), 600)
+        assertTrue(machine.onTick(1_500).spacerNonce == null)
+        machine.onFrame(deviceBlock(2, bytesOf(5)), 1_600)
+        assertTrue(machine.onTick(2_500).spacerNonce == null)
+        assertTrue(machine.onFrame(ctl(XModem.Control.EOT), 2_600).outcome is XModemOutcome.Done)
+    }
+
+    @Test
+    fun nudgeIsNotARetryAndDoesNotChangeTheExpectedBlock() {
+        val machine = XModemDownload("/a", maxRetries = 1)
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, bytesOf(128)), 10)
+        assertEquals(listOf(1_010L, 2_010L, 3_010L), nudges(machine, 1_010, 3_999))
+        val ack = machine.onFrame(deviceBlock(2, bytesOf(128)), 4_000)
+        assertEquals(listOf(XModem.Control.ACK), controls(ack))
+        assertEquals(128 * 2, ack.bytes)
+    }
+
+    @Test
+    fun nudgesStopOnceTheTransferEnds() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, bytesOf(5)), 10)
+        machine.onFrame(ctl(XModem.Control.EOT), 20)
+        assertTrue(machine.onTick(5_000).spacerNonce == null)
+    }
+
+    @Test
+    fun cleanupWaitsNudgeToo() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, bytesOf(128)), 5)
+        machine.cancel(10)
+        assertEquals(listOf(1_010L, 2_010L), nudges(machine, 1_010, 2_999))
+        assertTrue(machine.onFrame(ctl(XModem.Control.CAN), 3_000).outcome != null)
+        assertTrue(machine.onTick(4_000).spacerNonce == null)
+    }
+
+    @Test
+    fun uploadWaitsNudgeAndKeepTheRequestPending() {
+        val machine = XModemUpload("/a", bytesOf(10))
+        val start = machine.start(0)
+        assertEquals(listOf(1_000L, 2_000L), nudges(machine, 1_000, 2_999))
+        val block = machine.onFrame(ctl(XModem.Control.ACK), 3_000)
+        assertEquals(1, block.send.single().seq)
+        assertEquals(XModem.Control.SOH, start.send.single().control)
+    }
+
+    @Test
+    fun nudgeNoncesDifferFromEachOtherAndNeverTriggerNodeInfo() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        val nonces = (1..9).map { machine.onTick(it * 1_000L).spacerNonce!! }
+        assertEquals(nonces.size, nonces.toSet().size)
+        assertTrue(nonces.none { it <= 1L })
+    }
+
     // Identical consecutive writes (BLE firmware drops them)
 
     @Test

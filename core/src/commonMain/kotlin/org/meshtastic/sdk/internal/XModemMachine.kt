@@ -20,6 +20,12 @@ internal object XModemProtocol {
     const val SEQ_MASK: Int = 0xFFFF
     const val DEFAULT_MAX_RETRIES: Int = 10
     const val DEFAULT_BLOCK_TIMEOUT_MS: Long = 10_000L
+
+    /**
+     * Quiet time before a waiting transfer writes a nudge. BLE round trips are about 500 ms per frame,
+     * so a healthy reply is rarely still in flight at 1 s, and serial replies take tens of ms.
+     */
+    const val NUDGE_INTERVAL_MS: Long = 1_000L
     private const val CRC_POLY: Int = 0x1021
 
     /** CRC-16/XMODEM (polynomial 0x1021, initial value 0), the value of firmware's `crc16_ccitt`. */
@@ -107,6 +113,12 @@ internal class FrameLog {
         return XModemProtocol.control(control, counter)
     }
 
+    /** A heartbeat written on its own to wake a silent device; it also separates the next frame from the last. */
+    fun nudge(): Long {
+        last = null
+        return ++nonce
+    }
+
     fun spacerFor(frame: XModem): Long? {
         val repeat = frame == last
         last = frame
@@ -126,6 +138,9 @@ internal class FrameLog {
  */
 internal interface XModemMachine<T> {
     val deadlineMs: Long
+
+    /** When [onTick] next has work to do: the next nudge, or [deadlineMs] when that comes first. */
+    val wakeMs: Long
     val totalBytes: Int?
 
     fun start(nowMs: Long): XModemStep<T>
@@ -163,8 +178,14 @@ internal class XModemDownload(
     private var settling: Settling<ByteString>? = null
     private val log = FrameLog()
 
+    // Every wait is armed as now + blockTimeoutMs, so the nudge schedule restarts with it.
     override var deadlineMs: Long = Long.MAX_VALUE
-        private set
+        private set(value) {
+            field = value
+            nextNudgeMs = value - blockTimeoutMs + XModemProtocol.NUDGE_INTERVAL_MS
+        }
+    private var nextNudgeMs = Long.MAX_VALUE
+    override val wakeMs: Long get() = minOf(deadlineMs, nextNudgeMs)
     override val totalBytes: Int? = null
 
     override fun start(nowMs: Long): XModemStep<ByteString> {
@@ -206,7 +227,8 @@ internal class XModemDownload(
     }
 
     override fun onTick(nowMs: Long): XModemStep<ByteString> {
-        if (phase == Phase.Idle || phase == Phase.Finished || nowMs < deadlineMs) return XModemStep()
+        if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
+        if (nowMs < deadlineMs) return nudgeIfDue(nowMs)
         return when (phase) {
             Phase.Settling -> endSettling()
             Phase.AwaitBlock -> retry(nowMs, FileTransferFailure.Timeout, shortFrame = false)
@@ -225,6 +247,13 @@ internal class XModemDownload(
         settling = Settling(setOf(XModem.Control.EOT, XModem.Control.CAN), XModemOutcome.Done(data.readByteString()))
         deadlineMs = nowMs + blockTimeoutMs
         return log.step(log.control(XModem.Control.ACK))
+    }
+
+    /** A heartbeat, never an XModem frame, so a device that slept on its output delivers it. Not a retry. */
+    private fun nudgeIfDue(nowMs: Long): XModemStep<ByteString> {
+        if (nowMs < nextNudgeMs) return XModemStep()
+        nextNudgeMs = nowMs + XModemProtocol.NUDGE_INTERVAL_MS
+        return XModemStep(spacerNonce = log.nudge())
     }
 
     override fun cancel(nowMs: Long): XModemStep<ByteString> = when (phase) {
@@ -322,8 +351,14 @@ internal class XModemUpload(
     private var settling: Settling<Unit>? = null
     private val log = FrameLog()
 
+    // Every wait is armed as now + blockTimeoutMs, so the nudge schedule restarts with it.
     override var deadlineMs: Long = Long.MAX_VALUE
-        private set
+        private set(value) {
+            field = value
+            nextNudgeMs = value - blockTimeoutMs + XModemProtocol.NUDGE_INTERVAL_MS
+        }
+    private var nextNudgeMs = Long.MAX_VALUE
+    override val wakeMs: Long get() = minOf(deadlineMs, nextNudgeMs)
     override val totalBytes: Int = content.size
 
     override fun start(nowMs: Long): XModemStep<Unit> {
@@ -361,7 +396,8 @@ internal class XModemUpload(
     }
 
     override fun onTick(nowMs: Long): XModemStep<Unit> {
-        if (phase == Phase.Idle || phase == Phase.Finished || nowMs < deadlineMs) return XModemStep()
+        if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
+        if (nowMs < deadlineMs) return nudgeIfDue(nowMs)
         return when (phase) {
             Phase.Settling -> endSettling()
 
@@ -374,6 +410,13 @@ internal class XModemUpload(
 
             else -> retry(nowMs, FileTransferFailure.Timeout)
         }
+    }
+
+    /** A heartbeat, never an XModem frame, so a device that slept on its output delivers it. Not a retry. */
+    private fun nudgeIfDue(nowMs: Long): XModemStep<Unit> {
+        if (nowMs < nextNudgeMs) return XModemStep()
+        nextNudgeMs = nowMs + XModemProtocol.NUDGE_INTERVAL_MS
+        return XModemStep(spacerNonce = log.nudge())
     }
 
     /**
