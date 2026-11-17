@@ -72,6 +72,9 @@ internal sealed interface XModemOutcome<out T> {
     data class Done<T>(val value: T) : XModemOutcome<T>
 
     data class Failed(val failure: FileTransferFailure) : XModemOutcome<Nothing>
+
+    /** The device is out of step in a way only a fresh request fixes; the caller starts over. */
+    data object Resync : XModemOutcome<Nothing>
 }
 
 /**
@@ -138,6 +141,8 @@ internal interface XModemMachine<T> {
     fun cancel(nowMs: Long): XModemStep<T>
 }
 
+private const val SEQ_HALF = 0x7FFF
+
 private class Settling<T>(val expect: Set<XModem.Control>, val outcome: XModemOutcome<T>)
 
 /** Device to host. The host sends the request (`STX`, `seq = 0`, path) and acknowledges each block. */
@@ -183,8 +188,18 @@ internal class XModemDownload(
                 if (phase == Phase.AwaitEot) XModemStep() else block(frame, nowMs)
 
             // No ACK for EOT: an idle firmware answers a stray ACK with CAN (xmodem.cpp:279-282).
-            XModem.Control.EOT ->
-                if (phase == Phase.AwaitEot) finish() else XModemStep()
+            // A legitimate EOT follows a short block (xmodem.cpp:254-262), so one after a full block is a
+            // stale isEOT; sending it cleared the flag and closed the file, leaving the device idle.
+            XModem.Control.EOT -> when (phase) {
+                Phase.AwaitEot -> finish()
+
+                Phase.AwaitBlock -> {
+                    phase = Phase.Finished
+                    XModemStep(outcome = XModemOutcome.Resync)
+                }
+
+                else -> XModemStep()
+            }
 
             else -> XModemStep()
         }
@@ -229,6 +244,10 @@ internal class XModemDownload(
         val crcOk = chunk.size <= XModemProtocol.BLOCK_SIZE && XModemProtocol.crc16(chunk) == frame.crc16
         if (crcOk && accepted > 0 && seq == ((nextSeq - 1) and XModemProtocol.SEQ_MASK)) return XModemStep()
         val short = chunk.size < XModemProtocol.BLOCK_SIZE
+        // NAK makes firmware resend only its current block and it never goes back (xmodem.cpp:296-305).
+        if (seq != nextSeq && ((seq - nextSeq) and XModemProtocol.SEQ_MASK) in 1..SEQ_HALF) {
+            return abortWith(nowMs, XModemOutcome.Resync, shortFrame = short)
+        }
         if (!crcOk || seq != nextSeq) return retry(nowMs, FileTransferFailure.RetriesExhausted, shortFrame = short)
         if (received + chunk.size > maxBytes) return abort(nowMs, FileTransferFailure.TooLarge, shortFrame = short)
         data.write(chunk)
@@ -254,14 +273,17 @@ internal class XModemDownload(
      * When the device's pending block is known to be short, the way out is to `ACK` it and wait for
      * the `EOT`, keeping none of its bytes. Otherwise the abort frame is sent and its `CAN` reply awaited.
      */
-    private fun abort(nowMs: Long, failure: FileTransferFailure, shortFrame: Boolean = false): XModemStep<ByteString> {
+    private fun abort(nowMs: Long, failure: FileTransferFailure, shortFrame: Boolean = false): XModemStep<ByteString> =
+        abortWith(nowMs, XModemOutcome.Failed(failure), shortFrame)
+
+    private fun abortWith(nowMs: Long, outcome: XModemOutcome<Nothing>, shortFrame: Boolean): XModemStep<ByteString> {
         val (frame, expect) = if (shortFrame) {
             log.control(XModem.Control.ACK) to setOf(XModem.Control.EOT, XModem.Control.CAN)
         } else {
             XModemProtocol.downloadAbort() to setOf(XModem.Control.CAN)
         }
         phase = Phase.Settling
-        settling = Settling(expect, XModemOutcome.Failed(failure))
+        settling = Settling(expect, outcome)
         deadlineMs = nowMs + blockTimeoutMs
         return log.step(frame)
     }

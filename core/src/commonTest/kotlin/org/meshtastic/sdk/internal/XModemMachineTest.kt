@@ -109,11 +109,42 @@ class XModemMachineTest {
     }
 
     @Test
-    fun downloadWrongSequenceIsNaked() {
+    fun downloadBehindSequenceIsNaked() {
         val machine = XModemDownload("/a")
         machine.start(0)
         val chunk = bytesOf(128)
-        assertEquals(listOf(XModem.Control.NAK), controls(machine.onFrame(deviceBlock(2, chunk), 1)))
+        machine.onFrame(deviceBlock(1, chunk), 1)
+        machine.onFrame(deviceBlock(2, chunk), 2)
+        assertEquals(listOf(XModem.Control.NAK), controls(machine.onFrame(deviceBlock(0, chunk), 3)))
+    }
+
+    @Test
+    fun downloadAheadSequenceResyncsAndAbortsWithoutWaitingOutTheTimeout() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        val step = machine.onFrame(deviceBlock(2, bytesOf(128)), 1)
+        assertEquals(listOf(XModemProtocol.downloadAbort()), step.send)
+        assertEquals(null, step.outcome)
+        assertEquals(XModemOutcome.Resync, machine.onFrame(ctl(XModem.Control.CAN), 2).outcome)
+    }
+
+    @Test
+    fun downloadAheadShortBlockIsAckedSoFirmwareClearsIsEot() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        val step = machine.onFrame(deviceBlock(2, bytesOf(97)), 1)
+        assertEquals(listOf(XModem.Control.ACK), controls(step))
+        assertEquals(XModemOutcome.Resync, machine.onFrame(ctl(XModem.Control.EOT), 2).outcome)
+    }
+
+    @Test
+    fun downloadEotAfterFullBlockResyncsWithNoFrames() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, bytesOf(128)), 1)
+        val step = machine.onFrame(ctl(XModem.Control.EOT), 2)
+        assertTrue(step.send.isEmpty())
+        assertEquals(XModemOutcome.Resync, step.outcome)
     }
 
     @Test
@@ -141,8 +172,9 @@ class XModemMachineTest {
                 "seq $seq",
             )
         }
+        machine.onFrame(deviceBlock(301, bytesOf(7)), 399)
         val done = machine.onFrame(ctl(XModem.Control.EOT), 400)
-        assertEquals(null, done.outcome)
+        assertTrue(done.outcome is XModemOutcome.Done)
     }
 
     @Test
@@ -338,7 +370,6 @@ class XModemMachineTest {
         val full = second.onFrame(deviceBlock(1, bytesOf(128)), 4)
         assertEquals(listOf(XModem.Control.ACK), controls(full))
         assertEquals(null, full.outcome)
-        assertEquals(null, second.onFrame(ctl(XModem.Control.EOT), 5).outcome)
     }
 
     // Upload

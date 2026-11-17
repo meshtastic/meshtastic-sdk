@@ -63,6 +63,11 @@ public interface FileTransferApi {
      * The download completes once the device's last block (shorter than 128 bytes) is accepted: if
      * the device's closing frame is a `CAN` or never arrives, the bytes are still returned.
      *
+     * A device that falls out of step (a block ahead of the expected one, or an end-of-file frame
+     * after a full block) makes the download start over, discarding what was received, up to twice;
+     * [FileTransferFailure.RetriesExhausted] follows the last one. A refusal, a cancellation by the
+     * device or a size limit is a real answer and ends the call.
+     *
      * @param path device filesystem path, 1 to [MAX_PATH_BYTES] UTF-8 bytes, no NUL
      * @return the file contents, or the reason the transfer did not complete. A file larger than
      *   [MAX_FILE_BYTES] fails with [FileTransferFailure.TooLarge] as soon as the limit is crossed.

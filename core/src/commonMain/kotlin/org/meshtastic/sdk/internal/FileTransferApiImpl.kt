@@ -51,21 +51,22 @@ internal class FileTransferApiImpl(
 
     override suspend fun download(path: String): FileTransferResult<ByteString> {
         if (!XModemProtocol.validPath(path)) return FileTransferResult.Failure(FileTransferFailure.InvalidPath)
-        return run(
-            path,
-            FileTransferDirection.Download,
-            XModemDownload(path, maxBytes = maxBytes, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs),
-        )
+        return run(path, FileTransferDirection.Download, MAX_RESTARTS) {
+            XModemDownload(path, maxBytes = maxBytes, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs)
+        }
     }
 
     override suspend fun upload(path: String, data: ByteString): FileTransferResult<Unit> {
         if (!XModemProtocol.validPath(path)) return FileTransferResult.Failure(FileTransferFailure.InvalidPath)
         if (data.size > FileTransferApi.MAX_FILE_BYTES) return FileTransferResult.Failure(FileTransferFailure.TooLarge)
-        return run(
-            path,
-            FileTransferDirection.Upload,
-            XModemUpload(path, data, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs),
-        )
+        return run(path, FileTransferDirection.Upload, restarts = 0) {
+            XModemUpload(path, data, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs)
+        }
+    }
+
+    private companion object {
+        /** A desynchronized download is restarted at most twice: a third failure in a row is not a transient. */
+        const val MAX_RESTARTS = 2
     }
 
     private sealed interface Inbound {
@@ -77,14 +78,20 @@ internal class FileTransferApiImpl(
     private suspend fun <T> run(
         path: String,
         direction: FileTransferDirection,
-        machine: XModemMachine<T>,
+        restarts: Int,
+        newMachine: () -> XModemMachine<T>,
     ): FileTransferResult<T> {
         if (!busy.tryLock()) return FileTransferResult.Failure(FileTransferFailure.Busy)
         try {
             if (client.connection.value !is ConnectionState.Connected) {
                 return FileTransferResult.Failure(FileTransferFailure.NotConnected)
             }
-            return drive(path, direction, machine)
+            // The slot stays owned across restarts; each attempt discards what the last one received.
+            repeat(restarts + 1) {
+                _progress.value = null
+                drive(path, direction, newMachine())?.let { return it }
+            }
+            return FileTransferResult.Failure(FileTransferFailure.RetriesExhausted)
         } finally {
             _progress.value = null
             busy.unlock()
@@ -95,7 +102,7 @@ internal class FileTransferApiImpl(
         path: String,
         direction: FileTransferDirection,
         machine: XModemMachine<T>,
-    ): FileTransferResult<T> {
+    ): FileTransferResult<T>? {
         val inbound = Channel<Inbound>(Channel.UNLIMITED)
         // The collectors live in their own scope so they outlast the caller's cancellation while the
         // transfer waits for the device's reply to its cleanup frames. UNDISPATCHED registers both
@@ -115,10 +122,11 @@ internal class FileTransferApiImpl(
             return now
         }
 
-        suspend fun loop(first: XModemStep<T>): FileTransferResult<T> {
+        suspend fun loop(first: XModemStep<T>): FileTransferResult<T>? {
             var step = first
             var result: FileTransferResult<T>? = null
-            while (result == null) {
+            var resync = false
+            while (result == null && !resync) {
                 step.bytes?.let { _progress.value = FileTransferProgress(path, direction, it, machine.totalBytes) }
                 if (!send(step.spacerNonce, step.send)) {
                     result = FileTransferResult.Failure(FileTransferFailure.NotConnected)
@@ -128,6 +136,8 @@ internal class FileTransferApiImpl(
                     is XModemOutcome.Done -> result = FileTransferResult.Success(outcome.value)
 
                     is XModemOutcome.Failed -> result = FileTransferResult.Failure(outcome.failure)
+
+                    XModemOutcome.Resync -> resync = true
 
                     null -> {
                         val wait = (machine.deadlineMs - tick()).coerceAtLeast(0)

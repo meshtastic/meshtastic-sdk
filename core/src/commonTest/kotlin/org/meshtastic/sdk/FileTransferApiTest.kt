@@ -11,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -41,6 +42,10 @@ private class FirmwareXModem(val files: MutableMap<String, ByteString> = mutable
     /** Number of upcoming sent blocks to corrupt (download) and received blocks to refuse (upload). */
     var corrupt = 0
     var nakNext = 0
+
+    /** Block the next (or every, when sticky) download starts at; firmware never goes back to block 1. */
+    var startAtBlock = 1
+    var startAtBlockSticky = false
 
     enum class Closing { Eot, Can, Nothing }
 
@@ -76,7 +81,8 @@ private class FirmwareXModem(val files: MutableMap<String, ByteString> = mutable
                     }
                     val data = files[path] ?: return ctl(XModem.Control.NAK)
                     transmitting = data
-                    packetNo = 1
+                    packetNo = startAtBlock
+                    if (!startAtBlockSticky) startAtBlock = 1
                     return block()
                 }
                 val rx = receiving
@@ -274,6 +280,109 @@ class FileTransferApiTest {
         val op = async { client.files.download("/nope") }
         pump(transport, FirmwareXModem(), op)
         assertEquals(FileTransferResult.Failure(FileTransferFailure.Refused), op.await())
+        assertEquals(1, sentXModem(transport).count { it.control == XModem.Control.STX })
+        runCatching { client.disconnect() }
+    }
+
+    private fun requests(transport: FakeRadioTransport) =
+        sentXModem(transport).count { it.control == XModem.Control.STX }
+
+    @Test
+    fun downloadRestartsWhenTheDeviceStartsAtBlockTwo() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(225)
+        val firmware = FirmwareXModem(mutableMapOf("/prefs/config.proto" to content))
+        firmware.startAtBlock = 2
+        val started = testScheduler.currentTime
+        val op = async { client.files.download("/prefs/config.proto") }
+        pump(transport, firmware, op)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        assertEquals(2, requests(transport))
+        assertTrue(testScheduler.currentTime - started < 1_000, "restart must not wait out the block timeout")
+        assertTrue(!firmware.sendingEot)
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        runCurrent()
+        assertNull(client.files.progress.value)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun downloadRestartsWhenTheDeviceCarriesAStaleIsEot() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(225)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        firmware.sendingEot = true
+        val started = testScheduler.currentTime
+        val op = async { client.files.download("/a") }
+        pump(transport, firmware, op)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        assertEquals(2, requests(transport))
+        assertTrue(testScheduler.currentTime - started < 1_000)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun downloadRestartsAreBounded() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(225)))
+        firmware.startAtBlock = 2
+        firmware.startAtBlockSticky = true
+        val op = async { client.files.download("/a") }
+        pump(transport, firmware, op)
+        assertEquals(FileTransferResult.Failure(FileTransferFailure.RetriesExhausted), op.await())
+        assertEquals(3, requests(transport))
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun cancellingDuringARestartStopsTheLoop() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(225)))
+        firmware.startAtBlock = 2
+        firmware.startAtBlockSticky = true
+        val op = async { client.files.download("/a") }
+        runCurrent()
+        // answer the first request only, then cancel once the second attempt has begun
+        var handled = 0
+        while (requests(transport) < 2 && handled++ < 50) {
+            val sent = sentXModem(transport)
+            firmware.handle(sent.last())?.let {
+                transport.injectFrame(FromRadio.Builder().also { wb -> wb.xmodemPacket = it }.build().toFrame())
+            }
+            runCurrent()
+        }
+        assertEquals(2, requests(transport))
+        op.cancel()
+        advanceTimeBy(60_000)
+        runCurrent()
+        assertEquals(2, requests(transport))
+        assertTrue(op.isCancelled)
+        assertNull(client.files.progress.value)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun progressResetsOnRestartAndNeverExceedsTheCurrentAttempt() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(225)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        firmware.sendingEot = true
+        val seen = mutableListOf<Int?>()
+        backgroundScope.launch { client.files.progress.collect { seen.add(it?.bytesTransferred) } }
+        val op = async { client.files.download("/a") }
+        pump(transport, firmware, op)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        runCurrent()
+        val firstAttempt = seen.indexOf(128)
+        assertTrue(firstAttempt >= 0)
+        assertTrue(seen.drop(firstAttempt + 1).contains(null), "progress must reset between attempts: $seen")
+        assertTrue(seen.filterNotNull().all { it <= 225 })
+        assertNull(seen.last())
         runCatching { client.disconnect() }
     }
 
