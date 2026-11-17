@@ -147,7 +147,7 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `withConnection(teardownTimeout: Duration = 10.seconds) { … }` *(extension, since 0.2.0)* | `T` (the block's result) | rethrows from `connect()` / block | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T`. Connects, runs `block`, and **always** disconnects — on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. The structured replacement for the deliberately absent `close()`/`use { }`. |
 | `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
-| `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
+| `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, `DeviceUIConfig`, and the device's `LoRaRegionPresetMap` (`regionPresets`, `null` on firmware that never sends it, not persisted). `capabilities` answers `hasModule(ExcludedModules)` from `DeviceMetadata.excluded_modules`. Updated on unsolicited config pushes. |
 | `channels: StateFlow<List<Channel>>` | — | — | Empty until Stage 1 completes. Reactive view of all device channels. Updated on `setChannel` responses. |
 
 ### Streams
@@ -650,7 +650,10 @@ public data class ConfigBundle(
     public val configs: List<Config>,
     public val moduleConfigs: List<ModuleConfig>,
     public val deviceUIConfig: DeviceUIConfig? = null,
-)
+    public val regionPresets: LoRaRegionPresetMap? = null,   // session-only, never stored
+) {
+    public val capabilities: DeviceCapabilities               // firmware version + excluded_modules
+}
 
 /** RAM only; nothing survives the process. No driver, files or Context. (since 0.3.0) */
 public class InMemoryStorage : DeviceStorage

@@ -1161,8 +1161,10 @@ final class org.meshtastic.sdk/BatteryStatus { // org.meshtastic.sdk/BatteryStat
 }
 
 final class org.meshtastic.sdk/ConfigBundle { // org.meshtastic.sdk/ConfigBundle|null[0]
-    constructor <init>(org.meshtastic.proto/MyNodeInfo, org.meshtastic.proto/DeviceMetadata, kotlin.collections/List<org.meshtastic.proto/Config>, kotlin.collections/List<org.meshtastic.proto/ModuleConfig>, org.meshtastic.proto/DeviceUIConfig? = ...) // org.meshtastic.sdk/ConfigBundle.<init>|<init>(org.meshtastic.proto.MyNodeInfo;org.meshtastic.proto.DeviceMetadata;kotlin.collections.List<org.meshtastic.proto.Config>;kotlin.collections.List<org.meshtastic.proto.ModuleConfig>;org.meshtastic.proto.DeviceUIConfig?){}[0]
+    constructor <init>(org.meshtastic.proto/MyNodeInfo, org.meshtastic.proto/DeviceMetadata, kotlin.collections/List<org.meshtastic.proto/Config>, kotlin.collections/List<org.meshtastic.proto/ModuleConfig>, org.meshtastic.proto/DeviceUIConfig? = ..., org.meshtastic.proto/LoRaRegionPresetMap? = ...) // org.meshtastic.sdk/ConfigBundle.<init>|<init>(org.meshtastic.proto.MyNodeInfo;org.meshtastic.proto.DeviceMetadata;kotlin.collections.List<org.meshtastic.proto.Config>;kotlin.collections.List<org.meshtastic.proto.ModuleConfig>;org.meshtastic.proto.DeviceUIConfig?;org.meshtastic.proto.LoRaRegionPresetMap?){}[0]
 
+    final val capabilities // org.meshtastic.sdk/ConfigBundle.capabilities|{}capabilities[0]
+        final fun <get-capabilities>(): org.meshtastic.sdk/DeviceCapabilities // org.meshtastic.sdk/ConfigBundle.capabilities.<get-capabilities>|<get-capabilities>(){}[0]
     final val configs // org.meshtastic.sdk/ConfigBundle.configs|{}configs[0]
         final fun <get-configs>(): kotlin.collections/List<org.meshtastic.proto/Config> // org.meshtastic.sdk/ConfigBundle.configs.<get-configs>|<get-configs>(){}[0]
     final val deviceUIConfig // org.meshtastic.sdk/ConfigBundle.deviceUIConfig|{}deviceUIConfig[0]
@@ -1173,13 +1175,16 @@ final class org.meshtastic.sdk/ConfigBundle { // org.meshtastic.sdk/ConfigBundle
         final fun <get-moduleConfigs>(): kotlin.collections/List<org.meshtastic.proto/ModuleConfig> // org.meshtastic.sdk/ConfigBundle.moduleConfigs.<get-moduleConfigs>|<get-moduleConfigs>(){}[0]
     final val myInfo // org.meshtastic.sdk/ConfigBundle.myInfo|{}myInfo[0]
         final fun <get-myInfo>(): org.meshtastic.proto/MyNodeInfo // org.meshtastic.sdk/ConfigBundle.myInfo.<get-myInfo>|<get-myInfo>(){}[0]
+    final val regionPresets // org.meshtastic.sdk/ConfigBundle.regionPresets|{}regionPresets[0]
+        final fun <get-regionPresets>(): org.meshtastic.proto/LoRaRegionPresetMap? // org.meshtastic.sdk/ConfigBundle.regionPresets.<get-regionPresets>|<get-regionPresets>(){}[0]
 
     final fun component1(): org.meshtastic.proto/MyNodeInfo // org.meshtastic.sdk/ConfigBundle.component1|component1(){}[0]
     final fun component2(): org.meshtastic.proto/DeviceMetadata // org.meshtastic.sdk/ConfigBundle.component2|component2(){}[0]
     final fun component3(): kotlin.collections/List<org.meshtastic.proto/Config> // org.meshtastic.sdk/ConfigBundle.component3|component3(){}[0]
     final fun component4(): kotlin.collections/List<org.meshtastic.proto/ModuleConfig> // org.meshtastic.sdk/ConfigBundle.component4|component4(){}[0]
     final fun component5(): org.meshtastic.proto/DeviceUIConfig? // org.meshtastic.sdk/ConfigBundle.component5|component5(){}[0]
-    final fun copy(org.meshtastic.proto/MyNodeInfo = ..., org.meshtastic.proto/DeviceMetadata = ..., kotlin.collections/List<org.meshtastic.proto/Config> = ..., kotlin.collections/List<org.meshtastic.proto/ModuleConfig> = ..., org.meshtastic.proto/DeviceUIConfig? = ...): org.meshtastic.sdk/ConfigBundle // org.meshtastic.sdk/ConfigBundle.copy|copy(org.meshtastic.proto.MyNodeInfo;org.meshtastic.proto.DeviceMetadata;kotlin.collections.List<org.meshtastic.proto.Config>;kotlin.collections.List<org.meshtastic.proto.ModuleConfig>;org.meshtastic.proto.DeviceUIConfig?){}[0]
+    final fun component6(): org.meshtastic.proto/LoRaRegionPresetMap? // org.meshtastic.sdk/ConfigBundle.component6|component6(){}[0]
+    final fun copy(org.meshtastic.proto/MyNodeInfo = ..., org.meshtastic.proto/DeviceMetadata = ..., kotlin.collections/List<org.meshtastic.proto/Config> = ..., kotlin.collections/List<org.meshtastic.proto/ModuleConfig> = ..., org.meshtastic.proto/DeviceUIConfig? = ..., org.meshtastic.proto/LoRaRegionPresetMap? = ...): org.meshtastic.sdk/ConfigBundle // org.meshtastic.sdk/ConfigBundle.copy|copy(org.meshtastic.proto.MyNodeInfo;org.meshtastic.proto.DeviceMetadata;kotlin.collections.List<org.meshtastic.proto.Config>;kotlin.collections.List<org.meshtastic.proto.ModuleConfig>;org.meshtastic.proto.DeviceUIConfig?;org.meshtastic.proto.LoRaRegionPresetMap?){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/ConfigBundle.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk/ConfigBundle.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk/ConfigBundle.toString|toString(){}[0]
@@ -1217,7 +1222,7 @@ final class org.meshtastic.sdk/CongestionMetrics { // org.meshtastic.sdk/Congest
 }
 
 final class org.meshtastic.sdk/DeviceCapabilities { // org.meshtastic.sdk/DeviceCapabilities|null[0]
-    constructor <init>(kotlin/String?) // org.meshtastic.sdk/DeviceCapabilities.<init>|<init>(kotlin.String?){}[0]
+    constructor <init>(kotlin/String?, kotlin/Int = ...) // org.meshtastic.sdk/DeviceCapabilities.<init>|<init>(kotlin.String?;kotlin.Int){}[0]
 
     final val canMuteNode // org.meshtastic.sdk/DeviceCapabilities.canMuteNode|{}canMuteNode[0]
         final fun <get-canMuteNode>(): kotlin/Boolean // org.meshtastic.sdk/DeviceCapabilities.canMuteNode.<get-canMuteNode>|<get-canMuteNode>(){}[0]
@@ -1227,6 +1232,8 @@ final class org.meshtastic.sdk/DeviceCapabilities { // org.meshtastic.sdk/Device
         final fun <get-canToggleTelemetryEnabled>(): kotlin/Boolean // org.meshtastic.sdk/DeviceCapabilities.canToggleTelemetryEnabled.<get-canToggleTelemetryEnabled>|<get-canToggleTelemetryEnabled>(){}[0]
     final val canToggleUnmessageable // org.meshtastic.sdk/DeviceCapabilities.canToggleUnmessageable|{}canToggleUnmessageable[0]
         final fun <get-canToggleUnmessageable>(): kotlin/Boolean // org.meshtastic.sdk/DeviceCapabilities.canToggleUnmessageable.<get-canToggleUnmessageable>|<get-canToggleUnmessageable>(){}[0]
+    final val excludedModules // org.meshtastic.sdk/DeviceCapabilities.excludedModules|{}excludedModules[0]
+        final fun <get-excludedModules>(): kotlin/Int // org.meshtastic.sdk/DeviceCapabilities.excludedModules.<get-excludedModules>|<get-excludedModules>(){}[0]
     final val firmwareVersion // org.meshtastic.sdk/DeviceCapabilities.firmwareVersion|{}firmwareVersion[0]
         final fun <get-firmwareVersion>(): kotlin/String? // org.meshtastic.sdk/DeviceCapabilities.firmwareVersion.<get-firmwareVersion>|<get-firmwareVersion>(){}[0]
     final val supportsEsp32Ota // org.meshtastic.sdk/DeviceCapabilities.supportsEsp32Ota|{}supportsEsp32Ota[0]
@@ -1243,8 +1250,10 @@ final class org.meshtastic.sdk/DeviceCapabilities { // org.meshtastic.sdk/Device
         final fun <get-supportsTrafficManagementConfig>(): kotlin/Boolean // org.meshtastic.sdk/DeviceCapabilities.supportsTrafficManagementConfig.<get-supportsTrafficManagementConfig>|<get-supportsTrafficManagementConfig>(){}[0]
 
     final fun component1(): kotlin/String? // org.meshtastic.sdk/DeviceCapabilities.component1|component1(){}[0]
-    final fun copy(kotlin/String? = ...): org.meshtastic.sdk/DeviceCapabilities // org.meshtastic.sdk/DeviceCapabilities.copy|copy(kotlin.String?){}[0]
+    final fun component2(): kotlin/Int // org.meshtastic.sdk/DeviceCapabilities.component2|component2(){}[0]
+    final fun copy(kotlin/String? = ..., kotlin/Int = ...): org.meshtastic.sdk/DeviceCapabilities // org.meshtastic.sdk/DeviceCapabilities.copy|copy(kotlin.String?;kotlin.Int){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/DeviceCapabilities.equals|equals(kotlin.Any?){}[0]
+    final fun hasModule(org.meshtastic.proto/ExcludedModules): kotlin/Boolean // org.meshtastic.sdk/DeviceCapabilities.hasModule|hasModule(org.meshtastic.proto.ExcludedModules){}[0]
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk/DeviceCapabilities.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk/DeviceCapabilities.toString|toString(){}[0]
 }
