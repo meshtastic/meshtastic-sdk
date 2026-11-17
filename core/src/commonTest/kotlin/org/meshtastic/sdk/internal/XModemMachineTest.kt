@@ -499,6 +499,62 @@ class XModemMachineTest {
         assertEquals(FileTransferFailure.Timeout, failure(end))
     }
 
+    // Identical consecutive writes (BLE firmware drops them)
+
+    @Test
+    fun downloadAcksAndNaksCarryChangingSeqAndNeedNoSpacer() {
+        val machine = XModemDownload("/a", maxRetries = 5)
+        machine.start(0)
+        val ack1 = machine.onFrame(deviceBlock(1, bytesOf(128)), 1)
+        val ack2 = machine.onFrame(deviceBlock(2, bytesOf(128)), 2)
+        val nak1 = machine.onFrame(deviceBlock(3, bytesOf(128), crc = 1), 3)
+        val nak2 = machine.onFrame(deviceBlock(3, bytesOf(128), crc = 1), 4)
+        val frames = listOf(ack1, ack2, nak1, nak2).map { it.send.single() }
+        frames.zipWithNext().forEach { (a, b) -> assertTrue(a != b) }
+        assertTrue(listOf(ack1, ack2, nak1, nak2).all { it.spacerNonce == null })
+    }
+
+    @Test
+    fun uploadEotAndCanDifferFromThePreviousControlFrame() {
+        val machine = XModemUpload("/a", ByteString.EMPTY)
+        machine.start(0)
+        val eot = machine.onFrame(ctl(XModem.Control.ACK), 1)
+        assertEquals(XModem.Control.EOT, eot.send.single().control)
+        assertTrue(eot.send.single().seq != 0)
+    }
+
+    @Test
+    fun uploadRetransmitAfterNakGetsAHeartbeatSpacerWithChangingNonce() {
+        val machine = XModemUpload("/a", bytesOf(10))
+        machine.start(0)
+        val first = machine.onFrame(ctl(XModem.Control.ACK), 1)
+        assertEquals(null, first.spacerNonce)
+        val again = machine.onFrame(ctl(XModem.Control.NAK), 2)
+        val third = machine.onFrame(ctl(XModem.Control.NAK), 3)
+        assertEquals(first.send, again.send)
+        assertEquals(2L, again.spacerNonce)
+        assertEquals(3L, third.spacerNonce)
+    }
+
+    @Test
+    fun uploadProbeRepeatsTheRequestBehindASpacer() {
+        val machine = XModemUpload("/a", bytesOf(10), blockTimeoutMs = 1000)
+        val start = machine.start(0)
+        assertEquals(null, start.spacerNonce)
+        val probe = machine.onTick(1000)
+        assertEquals(start.send, probe.send)
+        assertEquals(2L, probe.spacerNonce)
+    }
+
+    @Test
+    fun spacerNonceIsNeverTheNodeInfoTrigger() {
+        val log = FrameLog()
+        val frame = XModemProtocol.dataFrame(1, bytesOf(4))
+        val nonces = (0 until 50).mapNotNull { log.spacerFor(frame) }
+        assertTrue(nonces.none { it == 0L || it == 1L })
+        assertEquals(nonces.size, nonces.toSet().size)
+    }
+
     @Test
     fun uploadTooLargeFailsBeforeAnyFrame() {
         val machine = XModemUpload("/a", bytesOf(129), maxBytes = 128)

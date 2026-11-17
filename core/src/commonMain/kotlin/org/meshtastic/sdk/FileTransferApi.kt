@@ -24,6 +24,10 @@ import okio.ByteString
  * download sends a frame firmware treats as unexpected, so the source file is kept (firmware
  * deletes the file named by the last request when it receives `CAN`).
  *
+ * **BLE duplicate filter:** BLE firmware drops a write identical to the previous one. The
+ * transfer varies the `seq` of the control frames firmware ignores it on, and puts a heartbeat
+ * between two writes that would otherwise be identical.
+ *
  * **Inbound delivery:** the transfer reads device frames from [RadioClient.events], a bounded
  * drop-oldest buffer. Firmware sends one frame and waits for the reply, and the transfer reads
  * each frame as it arrives, so the buffer cannot overflow from the transfer alone. A frame lost

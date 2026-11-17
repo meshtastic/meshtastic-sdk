@@ -25,6 +25,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString
+import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.XModem
 import org.meshtastic.sdk.ConnectionState
@@ -119,7 +120,7 @@ internal class FileTransferApiImpl(
             var result: FileTransferResult<T>? = null
             while (result == null) {
                 step.bytes?.let { _progress.value = FileTransferProgress(path, direction, it, machine.totalBytes) }
-                if (!send(step.send)) {
+                if (!send(step.spacerNonce, step.send)) {
                     result = FileTransferResult.Failure(FileTransferFailure.NotConnected)
                     continue
                 }
@@ -158,13 +159,17 @@ internal class FileTransferApiImpl(
         }
     }
 
-    private fun send(frames: List<XModem>): Boolean {
-        for (frame in frames) {
-            try {
-                client.sendRaw(ToRadio.Builder().also { wb -> wb.xmodemPacket = frame }.build())
-            } catch (_: MeshtasticException.NotConnected) {
-                return false
+    private fun send(spacerNonce: Long?, frames: List<XModem>): Boolean {
+        try {
+            if (spacerNonce != null) {
+                val beat = Heartbeat.Builder().also { wb -> wb.nonce = spacerNonce.toInt() }.build()
+                client.sendRaw(ToRadio.Builder().also { wb -> wb.heartbeat = beat }.build())
             }
+            for (frame in frames) {
+                client.sendRaw(ToRadio.Builder().also { wb -> wb.xmodemPacket = frame }.build())
+            }
+        } catch (_: MeshtasticException.NotConnected) {
+            return false
         }
         return true
     }
