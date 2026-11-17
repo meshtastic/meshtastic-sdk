@@ -72,5 +72,10 @@ for the transport ↔ engine threading contract.
   `NSBluetoothAlwaysUsageDescription`); a missing one fails the flow with `MeshtasticException.Transport`.
   `BleTransport(radio: DiscoveredRadio)` connects to a result on every target (Android also applies
   its MTU and connection-priority tuning); on Android `BleTransport(address = radio.address)` works too.
+- `org.meshtastic.sdk.transport.ble.bondedBleDevices(context)` (Android only) — the host's bonded
+  devices as `BondedBleDevice(name, address)`, no scan. It lists every bonded device, because Android
+  gives no reliable Meshtastic marker, and a bond does not mean the radio is in range. Needs
+  `BLUETOOTH_CONNECT` on API 31+ (not requested by the SDK). `BleTransport(device)` is the one-liner
+  to a transport. iOS has no bonded list and the JVM backends expose none, so neither target has this.
 - `org.meshtastic.sdk.transport.ble.BleConstants` — service / characteristic UUIDs as `kotlin.uuid.Uuid`
   and pre-built Kable `Characteristic` handles.

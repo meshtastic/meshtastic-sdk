@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   found by the mesh service UUID, on Android, iOS and JVM, with no Kable types in the signature.
   `BleTransport(radio)` connects to a result on every target. The caller holds the BLE
   permissions; a scan that cannot start fails with `MeshtasticException.Transport`.
+- `bondedBleDevices(context)` and `BondedBleDevice` in `:transport-ble` (Android only): the
+  devices the host has bonded with, listed without a scan. A bond is not presence, and the list
+  is every bonded device, not only radios. `BleTransport(device)` builds a transport from one.
+  The caller holds `BLUETOOTH_CONNECT`.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

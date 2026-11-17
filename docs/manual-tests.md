@@ -407,6 +407,16 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
   5. On Android, run `./gradlew :transport-ble:connectedAndroidTest` (`BleScannerDeviceTest`).
 - **Expected:** the radio is emitted repeatedly with a current RSSI; `Connected` within 30 s; scanning stops on cancel; with Bluetooth off or a missing permission the flow fails with `MeshtasticException.Transport`.
 
+#### I4 — `bondedBleDevices()` lists a paired radio and connects without a scan
+- **Transport:** BLE (Android)
+- **Pre-req:** A Meshtastic radio already bonded in Android's Bluetooth settings; `BLUETOOTH_CONNECT` granted.
+- **Steps:**
+  1. Call `bondedBleDevices(context)` and confirm the radio is listed with its name and MAC.
+  2. Build `BleTransport(device)` from it and run `client.connect()` with the radio in range.
+  3. Power the radio off and repeat step 2.
+  4. Revoke `BLUETOOTH_CONNECT` and repeat step 1; unbond the radio in settings and repeat step 1.
+- **Expected:** the bonded radio is listed with no scan running; `Connected` within 30 s when in range; with the radio off the connect fails with `MeshtasticException.Transport` (the list still shows it); a missing permission throws `MeshtasticException.Transport`; an unbonded radio is no longer listed.
+
 ## Recording results
 
 For each release, copy this template into `docs/release-history/vX.Y.Z-conformance.md` and fill in:
