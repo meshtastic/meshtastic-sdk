@@ -180,6 +180,16 @@ a flow of the full `Map<NodeId, NodeInfo>`; the underlying
 | `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
 
+### Channel-aware helpers *(since 0.3.0)*
+
+| Member | Notes |
+|---|---|
+| `RadioClient.channelFor(node: NodeId): ChannelIndex` | `NodeInfo.channel` for a node heard live; `0` for an unknown node, our own node and the primary channel |
+| `RadioClient.sendDirectMessageOnHeardChannel(to, text, wantAck)` | `sendDirectMessage` on `channelFor(to)` |
+| `RadioClient.requestPositionOnHeardChannel(from)` | `requestPosition` on `channelFor(from)` |
+
+`sendDirectMessage` and `requestPosition` keep their `ChannelIndex(0)` default. `requestPosition` sends an empty `POSITION_APP` payload with `want_response` at `BACKGROUND` priority.
+
 ### Waypoint helpers *(since 0.3.0)*
 
 | Member | Notes |

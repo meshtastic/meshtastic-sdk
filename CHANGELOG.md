@@ -40,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `RadioClient.channelFor(node)`, `sendDirectMessageOnHeardChannel` and
+  `requestPositionOnHeardChannel`: send on the channel the node was last heard on, which
+  `sendDirectMessage` and `requestPosition` do not do with their default channel `0`.
 - Waypoint rules and senders: `Waypoint.isExpired(now)`, `Waypoint.canBeEditedBy(node)`,
   `newWaypointId()`, `RadioClient.sendWaypoint` and `RadioClient.deleteWaypoint` (a re-send with
   `expire = 1`, as firmware and the Android app delete). The SDK keeps no waypoint store.
@@ -76,6 +79,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `requestPosition` sets `BACKGROUND` priority on the request, as the Android app does, instead
+  of the default priority.
 - `sendDirectMessageEncrypted` fills `public_key` with the recipient's stored key, as the
   Android app does. Firmware rejects a packet whose `public_key` differs from its own copy.
 - Live mesh traffic now updates the node DB. Every decoded packet creates or refreshes its
