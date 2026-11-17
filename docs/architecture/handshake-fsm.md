@@ -58,6 +58,10 @@ While `Idle`, which covers the gap between `transport.connect()` reaching `Conne
 
 One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`.
 
+### No wake heartbeat before Stage 1
+
+The SDK sends the four `0x94` resync bytes on stream transports and nothing else before `want_config_id`; it sends no pre-handshake heartbeat on any transport. Firmware runs `powerFSM.trigger(EVENT_CONTACT_FROM_PHONE)` and refreshes `lastContactMsec` at the top of `PhoneAPI::handleToRadio` (`PhoneAPI.cpp:519-520`) for every `ToRadio` variant, so `want_config_id` itself is the contact event. `EVENT_CONTACT_FROM_PHONE` has a single transition, `stateDARK -> stateDARK` (`PowerFSM.cpp:470`), none from light sleep, and BLE writes reach `handleToRadio` through the same queue whatever the payload (`NimbleBluetooth.cpp:479-522`, `:256`).
+
 ## Failure transitions and reconnect
 
 A failure always returns to `Idle`. Reconnecting is off by default: the engine projects `Disconnected` and the host decides what to do. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that reconnects after a recoverable `TransportState.Error`, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each attempt is projected as `Reconnecting(cause, attempt)`.
