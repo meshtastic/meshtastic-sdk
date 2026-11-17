@@ -8,7 +8,7 @@
 
 | Package | Stability | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
+| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `AdminSessionStatus`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
@@ -148,6 +148,8 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
 | `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
+| `adminSessions: StateFlow<Map<NodeId, AdminSessionStatus>>` *(since 0.3.0)* | — | — | Per-node admin session: `Active` for 150 s after the node last issued a passkey, `Stale` until 300 s, then absent (`NoSession`). Also dropped on `ADMIN_BAD_SESSION_KEY`, disconnect and identity rebind. Expiry is evaluated on the 30 s heartbeat tick. Never carries passkey bytes. |
+| `adminSessionStatus(node: NodeId): Flow<AdminSessionStatus>` *(since 0.3.0)* | `NodeId` | `AdminSessionStatus` | `adminSessions` for one node; `NoSession` when absent. |
 | `channels: StateFlow<List<Channel>>` | — | — | Empty until Stage 1 completes. Reactive view of all device channels. Updated on `setChannel` responses. |
 
 ### Streams

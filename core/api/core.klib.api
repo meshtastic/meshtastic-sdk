@@ -328,6 +328,46 @@ sealed interface <#A: out kotlin/Any?> org.meshtastic.sdk/AdminResult { // org.m
     }
 }
 
+sealed interface org.meshtastic.sdk/AdminSessionStatus { // org.meshtastic.sdk/AdminSessionStatus|null[0]
+    final class Active : org.meshtastic.sdk/AdminSessionStatus { // org.meshtastic.sdk/AdminSessionStatus.Active|null[0]
+        constructor <init>(kotlin.time/Instant, kotlin.time/Instant) // org.meshtastic.sdk/AdminSessionStatus.Active.<init>|<init>(kotlin.time.Instant;kotlin.time.Instant){}[0]
+
+        final val refreshedAt // org.meshtastic.sdk/AdminSessionStatus.Active.refreshedAt|{}refreshedAt[0]
+            final fun <get-refreshedAt>(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Active.refreshedAt.<get-refreshedAt>|<get-refreshedAt>(){}[0]
+        final val staleAt // org.meshtastic.sdk/AdminSessionStatus.Active.staleAt|{}staleAt[0]
+            final fun <get-staleAt>(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Active.staleAt.<get-staleAt>|<get-staleAt>(){}[0]
+
+        final fun component1(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Active.component1|component1(){}[0]
+        final fun component2(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Active.component2|component2(){}[0]
+        final fun copy(kotlin.time/Instant = ..., kotlin.time/Instant = ...): org.meshtastic.sdk/AdminSessionStatus.Active // org.meshtastic.sdk/AdminSessionStatus.Active.copy|copy(kotlin.time.Instant;kotlin.time.Instant){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/AdminSessionStatus.Active.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/AdminSessionStatus.Active.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/AdminSessionStatus.Active.toString|toString(){}[0]
+    }
+
+    final class Stale : org.meshtastic.sdk/AdminSessionStatus { // org.meshtastic.sdk/AdminSessionStatus.Stale|null[0]
+        constructor <init>(kotlin.time/Instant, kotlin.time/Instant) // org.meshtastic.sdk/AdminSessionStatus.Stale.<init>|<init>(kotlin.time.Instant;kotlin.time.Instant){}[0]
+
+        final val expiresAt // org.meshtastic.sdk/AdminSessionStatus.Stale.expiresAt|{}expiresAt[0]
+            final fun <get-expiresAt>(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Stale.expiresAt.<get-expiresAt>|<get-expiresAt>(){}[0]
+        final val refreshedAt // org.meshtastic.sdk/AdminSessionStatus.Stale.refreshedAt|{}refreshedAt[0]
+            final fun <get-refreshedAt>(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Stale.refreshedAt.<get-refreshedAt>|<get-refreshedAt>(){}[0]
+
+        final fun component1(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Stale.component1|component1(){}[0]
+        final fun component2(): kotlin.time/Instant // org.meshtastic.sdk/AdminSessionStatus.Stale.component2|component2(){}[0]
+        final fun copy(kotlin.time/Instant = ..., kotlin.time/Instant = ...): org.meshtastic.sdk/AdminSessionStatus.Stale // org.meshtastic.sdk/AdminSessionStatus.Stale.copy|copy(kotlin.time.Instant;kotlin.time.Instant){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/AdminSessionStatus.Stale.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/AdminSessionStatus.Stale.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/AdminSessionStatus.Stale.toString|toString(){}[0]
+    }
+
+    final object NoSession : org.meshtastic.sdk/AdminSessionStatus { // org.meshtastic.sdk/AdminSessionStatus.NoSession|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/AdminSessionStatus.NoSession.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/AdminSessionStatus.NoSession.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/AdminSessionStatus.NoSession.toString|toString(){}[0]
+    }
+}
+
 sealed interface org.meshtastic.sdk/ConnectionState { // org.meshtastic.sdk/ConnectionState|null[0]
     final class Configuring : org.meshtastic.sdk/ConnectionState { // org.meshtastic.sdk/ConnectionState.Configuring|null[0]
         constructor <init>(org.meshtastic.sdk/ConfigPhase, kotlin/Float) // org.meshtastic.sdk/ConnectionState.Configuring.<init>|<init>(org.meshtastic.sdk.ConfigPhase;kotlin.Float){}[0]
@@ -1487,6 +1527,8 @@ final class org.meshtastic.sdk/NeighborInfo { // org.meshtastic.sdk/NeighborInfo
 final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|null[0]
     final val admin // org.meshtastic.sdk/RadioClient.admin|{}admin[0]
         final fun <get-admin>(): org.meshtastic.sdk/AdminApi // org.meshtastic.sdk/RadioClient.admin.<get-admin>|<get-admin>(){}[0]
+    final val adminSessions // org.meshtastic.sdk/RadioClient.adminSessions|{}adminSessions[0]
+        final fun <get-adminSessions>(): kotlinx.coroutines.flow/StateFlow<kotlin.collections/Map<org.meshtastic.sdk/NodeId, org.meshtastic.sdk/AdminSessionStatus>> // org.meshtastic.sdk/RadioClient.adminSessions.<get-adminSessions>|<get-adminSessions>(){}[0]
     final val channels // org.meshtastic.sdk/RadioClient.channels|{}channels[0]
         final fun <get-channels>(): kotlinx.coroutines.flow/StateFlow<kotlin.collections/List<org.meshtastic.proto/Channel>?> // org.meshtastic.sdk/RadioClient.channels.<get-channels>|<get-channels>(){}[0]
     final val configBundle // org.meshtastic.sdk/RadioClient.configBundle|{}configBundle[0]
@@ -1508,6 +1550,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
     final val telemetry // org.meshtastic.sdk/RadioClient.telemetry|{}telemetry[0]
         final fun <get-telemetry>(): org.meshtastic.sdk/TelemetryApi // org.meshtastic.sdk/RadioClient.telemetry.<get-telemetry>|<get-telemetry>(){}[0]
 
+    final fun adminSessionStatus(org.meshtastic.sdk/NodeId): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/AdminSessionStatus> // org.meshtastic.sdk/RadioClient.adminSessionStatus|adminSessionStatus(org.meshtastic.sdk.NodeId){}[0]
     final fun requestNodeInfo(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.requestNodeInfo|requestNodeInfo(org.meshtastic.sdk.NodeId){}[0]
     final fun send(org.meshtastic.proto/MeshPacket): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.send|send(org.meshtastic.proto.MeshPacket){}[0]
     final fun sendRaw(org.meshtastic.proto/ToRadio) // org.meshtastic.sdk/RadioClient.sendRaw|sendRaw(org.meshtastic.proto.ToRadio){}[0]

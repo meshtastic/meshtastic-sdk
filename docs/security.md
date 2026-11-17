@@ -77,6 +77,7 @@ Roadmap transports (`transport-mqtt-proxy`, `transport-rpc`, `transport-http`) c
 ## `session_passkey` handling
 
 - **Never persisted.** Engine holds it in `CommandDispatcher` for the connection's lifetime.
+- **Never exposed.** `RadioClient.adminSessions` reports per-node state and timestamps only, never key bytes.
 - **Reset on every reconnect.** A fresh `get_owner_request` after handshake re-issues the value.
 - **Single in-flight retry on `ADMIN_BAD_SESSION_KEY`:** the engine refreshes once, replays the original admin call once, then surfaces `AdminResult.SessionKeyExpired` if still rejected. (Documented in [`error-taxonomy.md`](./error-taxonomy.md).)
 

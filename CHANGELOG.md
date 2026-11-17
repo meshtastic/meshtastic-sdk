@@ -32,6 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `RadioClient.adminSessions` and `adminSessionStatus(node)`, with `AdminSessionStatus`: whether
+  an admin session with a node is `Active`, `Stale` or absent (`NoSession`). Firmware accepts a
+  session passkey for 300 s from generation and rotates it after 150 s, so a key seen in a
+  response is `Active` for 150 s and `Stale` until 300 s. Cleared on `ADMIN_BAD_SESSION_KEY`,
+  disconnect and identity rebind. The engine now keeps a passkey for 300 s instead of 4 minutes.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

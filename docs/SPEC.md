@@ -665,7 +665,7 @@ public interface DeviceStorage : AutoCloseable {
 
     /**
      * Host-facing persist / load of a session passkey. Since 0.2.0 the engine no longer calls
-     * these — admin session passkeys are per-node, have a 4-minute TTL, and are held in memory
+     * these — admin session passkeys are per-node, expire 300 s after the engine last saw them, and are held in memory
      * only. Like `loadNodes`, these remain on the interface for host use.
      */
     public suspend fun saveSessionPasskey(passkey: SessionPasskey)

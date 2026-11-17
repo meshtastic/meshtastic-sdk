@@ -14,8 +14,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
@@ -122,6 +124,30 @@ public class RadioClient internal constructor(
      * [AdminApi.listChannels] to force a full device re-read (8 RPCs).
      */
     public val channels: StateFlow<List<org.meshtastic.proto.Channel>?> = engine.channelsState.asStateFlow()
+
+    /**
+     * Admin session state per node, keyed by the node that issued the session passkey.
+     *
+     * A node appears once an admin response from it carries a passkey and disappears when the
+     * key expires, the node rejects it with `ADMIN_BAD_SESSION_KEY`, the connection ends or the
+     * local identity changes. A node that is absent has [AdminSessionStatus.NoSession]. The local
+     * node's session is seeded during the handshake. Expiry is evaluated on the engine's
+     * 30 s heartbeat tick against the injected [Builder.clock], so a transition can surface up to
+     * 30 s late; the passkey bytes are never exposed.
+     *
+     * @since 0.3.0
+     */
+    public val adminSessions: StateFlow<Map<NodeId, AdminSessionStatus>> = engine.adminSessions.asStateFlow()
+
+    /**
+     * Admin session state of one [node]: [adminSessions] projected to a single node, with
+     * [AdminSessionStatus.NoSession] standing in for an absent entry. Emits the current status
+     * on collection, then only changes.
+     *
+     * @since 0.3.0
+     */
+    public fun adminSessionStatus(node: NodeId): Flow<AdminSessionStatus> =
+        adminSessions.map { it[node] ?: AdminSessionStatus.NoSession }.distinctUntilChanged()
 
     /**
      * Node-change deltas. **Every** subscriber — early or late — first receives a
