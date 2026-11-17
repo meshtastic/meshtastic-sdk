@@ -180,6 +180,18 @@ a flow of the full `Map<NodeId, NodeInfo>`; the underlying
 | `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
 
+### Waypoint helpers *(since 0.3.0)*
+
+| Member | Notes |
+|---|---|
+| `Waypoint.isExpired(now: Instant): Boolean` | `expire == 0` never expires, `expire == 1` is deleted, otherwise expired once `now` reaches it |
+| `Waypoint.canBeEditedBy(node: NodeId): Boolean` | `locked_to == 0` or equal to `node` |
+| `newWaypointId(random: Random = Random): Int` | non-zero |
+| `RadioClient.sendWaypoint(waypoint, to, channel, wantAck): MessageHandle` | `WAYPOINT_APP`; throws `IllegalArgumentException` for id `0` and `MeshtasticException.Protocol` for a waypoint locked to another node |
+| `RadioClient.deleteWaypoint(waypoint, to, channel, wantAck): MessageHandle` | sends the waypoint with `expire = 1` |
+
+The SDK keeps no waypoint store; message and waypoint history belong to the consumer (roadmap R-10).
+
 ### Send DSL *(since 0.2.0)*
 
 ```kotlin

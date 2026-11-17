@@ -40,6 +40,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Waypoint rules and senders: `Waypoint.isExpired(now)`, `Waypoint.canBeEditedBy(node)`,
+  `newWaypointId()`, `RadioClient.sendWaypoint` and `RadioClient.deleteWaypoint` (a re-send with
+  `expire = 1`, as firmware and the Android app delete). The SDK keeps no waypoint store.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
