@@ -29,7 +29,7 @@
 12. [Outbound queue & send lifecycle](#12-outbound-queue--send-lifecycle)
 13. [Admin protocol & session passkey](#13-admin-protocol--session-passkey)
 14. [MQTT proxy mode](#14-mqtt-proxy-mode)
-15. [Firmware update (XModem)](#15-firmware-update-xmodem)
+15. [File transfer (XModem)](#15-file-transfer-xmodem)
 16. [Heartbeat & queue status](#16-heartbeat--queue-status)
 17. [Channels, roles, regions, presets](#17-channels-roles-regions-presets)
 18. [Constants & magic numbers](#18-constants--magic-numbers)
@@ -243,7 +243,7 @@ message ToRadio {
     MeshPacket packet              = 1;  // App-layer outbound packet (text, position, telemetry, admin, etc.)
     uint32     want_config_id      = 3;  // Triggers the config handshake (see §6)
     bool       disconnect          = 4;  // Phone politely tells device it is dropping the link
-    XModem     xmodem_packet       = 5;  // Firmware update transfer (see §15)
+    XModem     xmodem_packet       = 5;  // File transfer (see §15)
     MqttClientProxyMessage mqtt_client_proxy_message = 6;  // (see §14)
     Heartbeat  heartbeat           = 7;  // Liveness ping (see §16)
   }
@@ -266,7 +266,7 @@ message FromRadio {
     ModuleConfig module_config          = 9;  // ModuleConfig sub-message (config handshake)
     Channel     channel                 = 10; // Channel definition (config handshake)
     QueueStatus queue_status            = 11; // Outbound queue accounting (see §12, §16)
-    XModem      xmodem_packet           = 12; // Firmware update transfer (see §15)
+    XModem      xmodem_packet           = 12; // File transfer (see §15)
     DeviceMetadata metadata             = 13; // Firmware version, hw model, role, hasPKC, etc. (config handshake)
     MqttClientProxyMessage mqtt_client_proxy_message = 14; // (see §14)
     FileInfo    file_info               = 15; // File system manifest entry (config handshake)
@@ -951,32 +951,43 @@ While the device is in `STATE_SEND_*` (anything other than `STATE_SEND_PACKETS`)
 
 ---
 
-## 15. Firmware update (XModem)
+## 15. File transfer (XModem)
 
-The device supports XModem-style firmware transfers initiated by an `AdminMessage(enter_dfu_mode_request = true)` followed by an XModem byte-stream over the same PhoneAPI channel.
+The device reads and writes files on its on-board filesystem through an XModem-style exchange carried on `ToRadio.xmodem_packet` and `FromRadio.xmodem_packet`. The SDK exposes it as `RadioClient.files` ([`FileTransferApi`](./api-reference.md#filetransferapi-since-030)). Source of truth: `firmware/src/xmodem.cpp` and `xmodem.h`; frames are routed in `firmware/src/mesh/PhoneAPI.cpp`. This is file transfer only, not firmware flashing.
 
 ```protobuf
 message XModem {
   Control control = 1;
-  uint32 seq = 2;
-  uint32 crc16 = 3;
-  bytes buffer = 4;
+  uint32 seq = 2;      // 16 bits on the device (xmodem.options)
+  uint32 crc16 = 3;    // 16 bits on the device
+  bytes buffer = 4;    // at most 128 bytes
 }
-enum Control {
-  NUL   = 0;
-  SOH   = 1;    // Start of Header (128-byte block)
-  STX   = 2;    // Start of Text (1024-byte block)
-  EOT   = 4;    // End of Transmission
-  ACK   = 6;
-  NAK   = 21;
-  CAN   = 24;   // Cancel
-  CTRLZ = 26;
-}
+enum Control { NUL = 0; SOH = 1; STX = 2; EOT = 4; ACK = 6; NAK = 21; CAN = 24; CTRLZ = 26; }
 ```
 
-Carried on `ToRadio.xmodem_packet` and `FromRadio.xmodem_packet`. Block sizes 128 (SOH) and 1024 (STX). Standard XModem protocol with CRC-16 instead of checksum. Standard recovery: NAK any block with bad CRC; expect retransmit. EOT terminates.
+| Parameter | Value |
+|---|---|
+| Block size | 128 bytes (`buffer` max_size 128); the last block is shorter than 128 |
+| CRC | CRC-16/XMODEM: polynomial 0x1021, initial value 0, over `buffer` only (`xmodem.cpp` `crc16_ccitt`); check value for `"123456789"` is 0x31C3 |
+| Sequence | Data blocks start at 1 and increase by 1 with no 8-bit wrap; the value is 16 bits and wraps to 0 after 65535. `seq = 0` marks the request frame |
+| Request frame | `seq = 0`, `buffer` = path as UTF-8 plus a NUL; the path is at most 127 bytes; any `..` component or a `X:` drive prefix is refused with `NAK` |
+| Device retry limit | `MAXRETRANS` = 25 consecutive `NAK`s from the host while the device sends; it then sends `CAN` |
 
-The SDK should expose firmware update as an opt-in module (deferred to Phase 6 in the project plan).
+Download (device to host) and upload (host to device):
+
+| Step | Download | Upload |
+|---|---|---|
+| 1 | host `STX`, seq 0, path | host `SOH`, seq 0, path |
+| 2 | device `SOH` seq 1 with the first block, or `NAK` if the file cannot be opened | device `ACK`, or `NAK` if the file cannot be opened |
+| 3 | host `ACK`; device sends the next block | host `SOH` seq n, crc16, block; device `ACK` if seq and CRC match, else `NAK` |
+| 4 | a block shorter than 128 bytes is the last; after the host `ACK` the device sends `EOT` | after the last block the host sends `EOT`; device `ACK`s |
+| 5 | host sends nothing back for `EOT` (an `ACK` to an idle device is answered with `CAN`) | complete on the `ACK` |
+
+- A file whose size is an exact multiple of 128 ends a download with an empty block (size 0) before `EOT`; an empty file is one empty block. An upload sends only the full blocks, and an empty file is the request followed directly by `EOT`.
+- Host `NAK` during a download makes the device resend its current block. A device `NAK` during an upload means seq or CRC did not match; resend the same block. The device does not count upload retries, so the host bounds them.
+- Host `CAN` makes the device acknowledge, close the file and delete the file named by the last request (`xmodem.cpp` `CAN` case), even when that file was being read. An upload cancel wants that. A download abort instead sends a data frame with a nonzero seq while the device is transmitting: it replies `CAN` and closes the file without deleting it.
+- Firmware does not report a full filesystem during an upload: a short write is logged and the block is still acknowledged.
+- With `MESHTASTIC_PHONEAPI_ACCESS_CONTROL`, frames from an unauthorized client are dropped in both directions, so the client sees silence.
 
 ### OTA and device reboot resync
 

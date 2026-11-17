@@ -525,6 +525,129 @@ public final class org/meshtastic/sdk/ExternalChangeKind : java/lang/Enum {
 	public static fun values ()[Lorg/meshtastic/sdk/ExternalChangeKind;
 }
 
+public abstract interface class org/meshtastic/sdk/FileTransferApi {
+	public static final field Companion Lorg/meshtastic/sdk/FileTransferApi$Companion;
+	public static final field MAX_FILE_BYTES I
+	public static final field MAX_PATH_BYTES I
+	public abstract fun download (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getProgress ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun upload (Ljava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/FileTransferApi$Companion {
+	public static final field MAX_FILE_BYTES I
+	public static final field MAX_PATH_BYTES I
+}
+
+public final class org/meshtastic/sdk/FileTransferDirection : java/lang/Enum {
+	public static final field Download Lorg/meshtastic/sdk/FileTransferDirection;
+	public static final field Upload Lorg/meshtastic/sdk/FileTransferDirection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/FileTransferDirection;
+	public static fun values ()[Lorg/meshtastic/sdk/FileTransferDirection;
+}
+
+public abstract interface class org/meshtastic/sdk/FileTransferFailure {
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$Busy : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$Busy;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$DeviceCancelled : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$DeviceCancelled;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$InvalidPath : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$InvalidPath;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$NotConnected : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$NotConnected;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$Refused : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$Refused;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$RetriesExhausted : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$RetriesExhausted;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$Timeout : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$Timeout;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$TooLarge : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$TooLarge;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferProgress {
+	public fun <init> (Ljava/lang/String;Lorg/meshtastic/sdk/FileTransferDirection;ILjava/lang/Integer;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lorg/meshtastic/sdk/FileTransferDirection;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Lorg/meshtastic/sdk/FileTransferDirection;ILjava/lang/Integer;)Lorg/meshtastic/sdk/FileTransferProgress;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/FileTransferProgress;Ljava/lang/String;Lorg/meshtastic/sdk/FileTransferDirection;ILjava/lang/Integer;ILjava/lang/Object;)Lorg/meshtastic/sdk/FileTransferProgress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBytesTransferred ()I
+	public final fun getDirection ()Lorg/meshtastic/sdk/FileTransferDirection;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getTotalBytes ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class org/meshtastic/sdk/FileTransferResult {
+}
+
+public final class org/meshtastic/sdk/FileTransferResult$Failure : org/meshtastic/sdk/FileTransferResult {
+	public fun <init> (Lorg/meshtastic/sdk/FileTransferFailure;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/FileTransferFailure;
+	public final fun copy (Lorg/meshtastic/sdk/FileTransferFailure;)Lorg/meshtastic/sdk/FileTransferResult$Failure;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/FileTransferResult$Failure;Lorg/meshtastic/sdk/FileTransferFailure;ILjava/lang/Object;)Lorg/meshtastic/sdk/FileTransferResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Lorg/meshtastic/sdk/FileTransferFailure;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferResult$Success : org/meshtastic/sdk/FileTransferResult {
+	public fun <init> (Ljava/lang/Object;)V
+	public final fun component1 ()Ljava/lang/Object;
+	public final fun copy (Ljava/lang/Object;)Lorg/meshtastic/sdk/FileTransferResult$Success;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/FileTransferResult$Success;Ljava/lang/Object;ILjava/lang/Object;)Lorg/meshtastic/sdk/FileTransferResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/FirmwareTimeKt {
 	public static final fun firmwareSecondsToInstant (I)Lkotlin/time/Instant;
 	public static final fun relativeTo (Lkotlin/time/Instant;Lkotlin/time/Instant;)Ljava/lang/String;
@@ -1302,6 +1425,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getConfigBundle ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConnection ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getEvents ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getFiles ()Lorg/meshtastic/sdk/FileTransferApi;
 	public final fun getNodes ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getOwnNode ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getPackets ()Lkotlinx/coroutines/flow/Flow;
