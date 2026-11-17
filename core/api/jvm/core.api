@@ -1,3 +1,14 @@
+public final class org/meshtastic/sdk/AckProof : java/lang/Enum {
+	public static final field Absent Lorg/meshtastic/sdk/AckProof;
+	public static final field Invalid Lorg/meshtastic/sdk/AckProof;
+	public static final field NoKey Lorg/meshtastic/sdk/AckProof;
+	public static final field Unrecognized Lorg/meshtastic/sdk/AckProof;
+	public static final field Valid Lorg/meshtastic/sdk/AckProof;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/AckProof;
+	public static fun values ()[Lorg/meshtastic/sdk/AckProof;
+}
+
 public abstract interface class org/meshtastic/sdk/AdminApi {
 	public abstract fun addContact (Lorg/meshtastic/proto/SharedContact;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun backupPreferences (Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -1236,6 +1247,18 @@ public final class org/meshtastic/sdk/NodeInfosKt {
 	public static final fun getShortName (Lorg/meshtastic/proto/NodeInfo;)Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/NodeLastByte {
+	public fun <init> (I)V
+	public final fun candidates (Ljava/util/Collection;)Ljava/util/List;
+	public final fun component1 ()I
+	public final fun copy (I)Lorg/meshtastic/sdk/NodeLastByte;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/NodeLastByte;IILjava/lang/Object;)Lorg/meshtastic/sdk/NodeLastByte;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/NodeStatusKt {
 	public static final fun getConnectionQuality (Lorg/meshtastic/proto/NodeInfo;)Lorg/meshtastic/sdk/ConnectionQuality;
 	public static final fun getDEFAULT_ONLINE_THRESHOLD ()J
@@ -1247,6 +1270,45 @@ public final class org/meshtastic/sdk/NodeStatusKt {
 
 public final class org/meshtastic/sdk/PacketDecodeKt {
 	public static final fun decodeAs (Lorg/meshtastic/proto/MeshPacket;Lcom/squareup/wire/ProtoAdapter;)Lcom/squareup/wire/Message;
+}
+
+public final class org/meshtastic/sdk/PacketProvenanceKt {
+	public static final fun getAckProof (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/AckProof;
+	public static final fun getHeardOnCurrentLora (Lorg/meshtastic/proto/NodeInfo;)Z
+	public static final fun getNextHop (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/NodeLastByte;
+	public static final fun getRelayNode (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/NodeLastByte;
+	public static final fun getSignature (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/PacketSignature;
+	public static final fun getSignsPackets (Lorg/meshtastic/proto/NodeInfo;)Z
+	public static final fun getTransport (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/PacketTransport;
+	public static final fun getXeddsaSignature (Lorg/meshtastic/proto/MeshPacket;)Lokio/ByteString;
+	public static final fun lastByte (Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/NodeLastByte;
+	public static final fun lastByte-LO_6HKw (I)Lorg/meshtastic/sdk/NodeLastByte;
+}
+
+public final class org/meshtastic/sdk/PacketSignature : java/lang/Enum {
+	public static final field CarriedUnchecked Lorg/meshtastic/sdk/PacketSignature;
+	public static final field CheckedByDevice Lorg/meshtastic/sdk/PacketSignature;
+	public static final field Malformed Lorg/meshtastic/sdk/PacketSignature;
+	public static final field None Lorg/meshtastic/sdk/PacketSignature;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/PacketSignature;
+	public static fun values ()[Lorg/meshtastic/sdk/PacketSignature;
+}
+
+public final class org/meshtastic/sdk/PacketTransport : java/lang/Enum {
+	public static final field Api Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Internal Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Lora Lorg/meshtastic/sdk/PacketTransport;
+	public static final field LoraAlt1 Lorg/meshtastic/sdk/PacketTransport;
+	public static final field LoraAlt2 Lorg/meshtastic/sdk/PacketTransport;
+	public static final field LoraAlt3 Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Mqtt Lorg/meshtastic/sdk/PacketTransport;
+	public static final field MulticastUdp Lorg/meshtastic/sdk/PacketTransport;
+	public static final field UnicastUdp Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Unrecognized Lorg/meshtastic/sdk/PacketTransport;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/PacketTransport;
+	public static fun values ()[Lorg/meshtastic/sdk/PacketTransport;
 }
 
 public final class org/meshtastic/sdk/PayloadAccessorsKt {

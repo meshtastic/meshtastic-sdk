@@ -555,6 +555,27 @@ public sealed interface StoreForwardEvent {
 }
 ```
 
+## Packet provenance accessors *(since 0.3.0)*
+
+Pure extensions over a raw `MeshPacket` from `client.packets` and over `NodeInfo`. What each field means and its limits are in [protocol.md](./protocol.md) under "Provenance fields".
+
+```kotlin
+public val MeshPacket.transport: PacketTransport          // Internal, Lora, LoraAlt1..3, Mqtt, MulticastUdp, Api, UnicastUdp, Unrecognized
+public val MeshPacket.relayNode: NodeLastByte?            // null when 0 or not a byte
+public val MeshPacket.nextHop: NodeLastByte?
+public val MeshPacket.signature: PacketSignature          // None, CarriedUnchecked, Malformed, CheckedByDevice
+public val MeshPacket.xeddsaSignature: ByteString?
+public val MeshPacket.ackProof: AckProof?                 // null off ROUTING_APP; Absent, Valid, Invalid, NoKey, Unrecognized
+public val NodeInfo.heardOnCurrentLora: Boolean
+public val NodeInfo.signsPackets: Boolean
+public fun NodeId.lastByte(): NodeLastByte                // 0x00 maps to 0xFF, as firmware does
+public data class NodeLastByte(val value: Int) {          // 1..255
+    public fun candidates(nodes: Collection<NodeId>): List<NodeId>
+}
+```
+
+A `NodeLastByte` is not a node id: more than one node can match it, so resolve it with `candidates` against the nodes you know and treat several matches as ambiguous.
+
 ## Config Builder Extensions *(since 0.2.0)*
 
 Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:

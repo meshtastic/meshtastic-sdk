@@ -43,6 +43,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
+- Per-packet provenance accessors on `MeshPacket`: `transport`, `relayNode` and `nextHop` (a
+  `NodeLastByte`, one byte that several nodes can share, with `candidates(nodes)`), `signature`
+  and `xeddsaSignature` (what the device verified, not an SDK check), and `ackProof`. `NodeInfo`
+  gains `heardOnCurrentLora` and `signsPackets`.
 
 ### Changed
 

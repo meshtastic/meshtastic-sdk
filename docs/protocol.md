@@ -426,11 +426,12 @@ message MeshPacket {
   uint32  hop_start      = 14; // Original hop_limit at send time. (hop_start - hop_limit) = hops_away
   bytes   public_key     = 15; // (PKI) Sender's 32-byte X25519 public key, if PKI used
   bool    pki_encrypted  = 16; // True if `encrypted` is PKI-encrypted (X25519+AES-CCM, see §10)
-  fixed32 next_hop       = 17; // Next-hop node ID (uint32) for unicast routing hint
-  fixed32 relay_node     = 18; // The node that relayed this to me (uint32)
-  uint32  tx_after       = 19; // Transmit-after delay (seconds), used by router for backoff
-  Delayed delayed        = 20; // Whether this is a delayed/store-and-forward packet
-  TransportMechanism transport = 21; // How this packet arrived (LoRa, MQTT, API, etc.)
+  uint32  next_hop       = 18; // LAST BYTE of the next-hop node number; 0 = no preference
+  uint32  relay_node     = 19; // LAST BYTE of the node that relayed this to the device; 0 = none
+  uint32  tx_after       = 20; // Never sent over the radio
+  TransportMechanism transport_mechanism = 21; // How this packet arrived (LoRa, MQTT, API, etc.)
+  bool    xeddsa_signed  = 22; // Set by the device after it verified an XEdDSA signature
+  AckProofStatus ack_proof_status = 23; // Device verdict on a Routing ack proof; never on the air
 }
 
 enum Priority {
@@ -451,6 +452,16 @@ enum Priority {
 - **`HOP_LIMIT_MAX` = 7** (3-bit field; max useful hop_limit)
 - **Broadcast address: `0xFFFFFFFF`** (NOT `0` and NOT `0xFF`)
 - **`PublicKey` size: always 32 bytes** (Curve25519)
+
+### Provenance fields
+
+None of these has proto presence except where noted, so the SDK reads them through `PacketProvenance.kt`.
+
+- **`relay_node` / `next_hop`** are one byte: the low byte of a node number, with `0x00` reported as `0xFF` (`NodeDB.h:443`). `0` means none (`MeshTypes.h:44,46`). Several nodes can share a byte, so it is never a node id. `NodeLastByte.candidates(nodes)` lists the known nodes that match. Firmware resolves a relay byte only when exactly one known node matches (`Router.cpp:280-286`).
+- **`transport_mechanism`** is the last hop into the device (`RadioInterface.cpp:1559` sets LoRa, `MQTT.cpp:161` MQTT, `PacketAPI.cpp:74` API). `TRANSPORT_INTERNAL` is the default `0`, so it also reads from firmware that predates the field. Store-and-forward replays carry the stored value (`StoreForwardModule.cpp:272`). `via_mqtt` is separate: the packet crossed an MQTT bridge somewhere.
+- **`xeddsa_signed`** is set only by the device, after `xeddsa_verify` succeeds against an authoritative key or a first-contact NodeInfo; any inbound value is cleared first (`Router.cpp:720-745`, `Router.cpp:692-702`). The 64-byte `decoded.xeddsa_signature` is forwarded to the phone as received. A signature with `xeddsa_signed` false is one the device did not check (no key for the sender, outside Strict mode), not one that failed: a failed or wrong-length signature drops the packet (`Router.cpp:746-776`). The SDK holds no XEdDSA implementation, so `PacketSignature.CheckedByDevice` repeats the device's verdict.
+- **`ack_proof_status`** is set by the device on a received ack or nak (`MeshService.cpp:126-129`, `ReliableRouter.cpp:198-218`). `ACK_PROOF_ABSENT` is also what an unchecked proof reads, so it proves nothing negative. `ACK_PROOF_VALID` means the node the packet was addressed to proved receipt; it says nothing about authorship, which is `xeddsa_signed`.
+- **`NodeInfo.heard_on_current_lora`** is derived on the device from the slot a node was last heard on and the committed LoRa configuration (`TypeConversions.cpp:25`). `NodeInfo.has_xeddsa_signed` is the device's persisted "this node signs" bit.
 
 ### Payload paths
 

@@ -10,6 +10,20 @@ open annotation class org.meshtastic.sdk/MeshSendDsl : kotlin/Annotation { // or
     constructor <init>() // org.meshtastic.sdk/MeshSendDsl.<init>|<init>(){}[0]
 }
 
+final enum class org.meshtastic.sdk/AckProof : kotlin/Enum<org.meshtastic.sdk/AckProof> { // org.meshtastic.sdk/AckProof|null[0]
+    enum entry Absent // org.meshtastic.sdk/AckProof.Absent|null[0]
+    enum entry Invalid // org.meshtastic.sdk/AckProof.Invalid|null[0]
+    enum entry NoKey // org.meshtastic.sdk/AckProof.NoKey|null[0]
+    enum entry Unrecognized // org.meshtastic.sdk/AckProof.Unrecognized|null[0]
+    enum entry Valid // org.meshtastic.sdk/AckProof.Valid|null[0]
+
+    final val entries // org.meshtastic.sdk/AckProof.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<org.meshtastic.sdk/AckProof> // org.meshtastic.sdk/AckProof.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): org.meshtastic.sdk/AckProof // org.meshtastic.sdk/AckProof.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<org.meshtastic.sdk/AckProof> // org.meshtastic.sdk/AckProof.values|values#static(){}[0]
+}
+
 final enum class org.meshtastic.sdk/ConfigPhase : kotlin/Enum<org.meshtastic.sdk/ConfigPhase> { // org.meshtastic.sdk/ConfigPhase|null[0]
     enum entry Settling // org.meshtastic.sdk/ConfigPhase.Settling|null[0]
     enum entry Stage1 // org.meshtastic.sdk/ConfigPhase.Stage1|null[0]
@@ -102,6 +116,38 @@ final enum class org.meshtastic.sdk/NodeField : kotlin/Enum<org.meshtastic.sdk/N
 
     final fun valueOf(kotlin/String): org.meshtastic.sdk/NodeField // org.meshtastic.sdk/NodeField.valueOf|valueOf#static(kotlin.String){}[0]
     final fun values(): kotlin/Array<org.meshtastic.sdk/NodeField> // org.meshtastic.sdk/NodeField.values|values#static(){}[0]
+}
+
+final enum class org.meshtastic.sdk/PacketSignature : kotlin/Enum<org.meshtastic.sdk/PacketSignature> { // org.meshtastic.sdk/PacketSignature|null[0]
+    enum entry CarriedUnchecked // org.meshtastic.sdk/PacketSignature.CarriedUnchecked|null[0]
+    enum entry CheckedByDevice // org.meshtastic.sdk/PacketSignature.CheckedByDevice|null[0]
+    enum entry Malformed // org.meshtastic.sdk/PacketSignature.Malformed|null[0]
+    enum entry None // org.meshtastic.sdk/PacketSignature.None|null[0]
+
+    final val entries // org.meshtastic.sdk/PacketSignature.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<org.meshtastic.sdk/PacketSignature> // org.meshtastic.sdk/PacketSignature.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): org.meshtastic.sdk/PacketSignature // org.meshtastic.sdk/PacketSignature.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<org.meshtastic.sdk/PacketSignature> // org.meshtastic.sdk/PacketSignature.values|values#static(){}[0]
+}
+
+final enum class org.meshtastic.sdk/PacketTransport : kotlin/Enum<org.meshtastic.sdk/PacketTransport> { // org.meshtastic.sdk/PacketTransport|null[0]
+    enum entry Api // org.meshtastic.sdk/PacketTransport.Api|null[0]
+    enum entry Internal // org.meshtastic.sdk/PacketTransport.Internal|null[0]
+    enum entry Lora // org.meshtastic.sdk/PacketTransport.Lora|null[0]
+    enum entry LoraAlt1 // org.meshtastic.sdk/PacketTransport.LoraAlt1|null[0]
+    enum entry LoraAlt2 // org.meshtastic.sdk/PacketTransport.LoraAlt2|null[0]
+    enum entry LoraAlt3 // org.meshtastic.sdk/PacketTransport.LoraAlt3|null[0]
+    enum entry Mqtt // org.meshtastic.sdk/PacketTransport.Mqtt|null[0]
+    enum entry MulticastUdp // org.meshtastic.sdk/PacketTransport.MulticastUdp|null[0]
+    enum entry UnicastUdp // org.meshtastic.sdk/PacketTransport.UnicastUdp|null[0]
+    enum entry Unrecognized // org.meshtastic.sdk/PacketTransport.Unrecognized|null[0]
+
+    final val entries // org.meshtastic.sdk/PacketTransport.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<org.meshtastic.sdk/PacketTransport> // org.meshtastic.sdk/PacketTransport.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): org.meshtastic.sdk/PacketTransport // org.meshtastic.sdk/PacketTransport.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<org.meshtastic.sdk/PacketTransport> // org.meshtastic.sdk/PacketTransport.values|values#static(){}[0]
 }
 
 final enum class org.meshtastic.sdk/SignalQuality : kotlin/Enum<org.meshtastic.sdk/SignalQuality> { // org.meshtastic.sdk/SignalQuality|null[0]
@@ -1484,6 +1530,20 @@ final class org.meshtastic.sdk/NeighborInfo { // org.meshtastic.sdk/NeighborInfo
     }
 }
 
+final class org.meshtastic.sdk/NodeLastByte { // org.meshtastic.sdk/NodeLastByte|null[0]
+    constructor <init>(kotlin/Int) // org.meshtastic.sdk/NodeLastByte.<init>|<init>(kotlin.Int){}[0]
+
+    final val value // org.meshtastic.sdk/NodeLastByte.value|{}value[0]
+        final fun <get-value>(): kotlin/Int // org.meshtastic.sdk/NodeLastByte.value.<get-value>|<get-value>(){}[0]
+
+    final fun candidates(kotlin.collections/Collection<org.meshtastic.sdk/NodeId>): kotlin.collections/List<org.meshtastic.sdk/NodeId> // org.meshtastic.sdk/NodeLastByte.candidates|candidates(kotlin.collections.Collection<org.meshtastic.sdk.NodeId>){}[0]
+    final fun component1(): kotlin/Int // org.meshtastic.sdk/NodeLastByte.component1|component1(){}[0]
+    final fun copy(kotlin/Int = ...): org.meshtastic.sdk/NodeLastByte // org.meshtastic.sdk/NodeLastByte.copy|copy(kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/NodeLastByte.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/NodeLastByte.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/NodeLastByte.toString|toString(){}[0]
+}
+
 final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|null[0]
     final val admin // org.meshtastic.sdk/RadioClient.admin|{}admin[0]
         final fun <get-admin>(): org.meshtastic.sdk/AdminApi // org.meshtastic.sdk/RadioClient.admin.<get-admin>|<get-admin>(){}[0]
@@ -1995,12 +2055,16 @@ final val org.meshtastic.sdk/DEFAULT_ONLINE_THRESHOLD // org.meshtastic.sdk/DEFA
     final fun <get-DEFAULT_ONLINE_THRESHOLD>(): kotlin.time/Duration // org.meshtastic.sdk/DEFAULT_ONLINE_THRESHOLD.<get-DEFAULT_ONLINE_THRESHOLD>|<get-DEFAULT_ONLINE_THRESHOLD>(){}[0]
 final val org.meshtastic.sdk/DefaultPsk // org.meshtastic.sdk/DefaultPsk|{}DefaultPsk[0]
     final fun <get-DefaultPsk>(): kotlin/ByteArray // org.meshtastic.sdk/DefaultPsk.<get-DefaultPsk>|<get-DefaultPsk>(){}[0]
+final val org.meshtastic.sdk/ackProof // org.meshtastic.sdk/ackProof|@org.meshtastic.proto.MeshPacket{}ackProof[0]
+    final fun (org.meshtastic.proto/MeshPacket).<get-ackProof>(): org.meshtastic.sdk/AckProof? // org.meshtastic.sdk/ackProof.<get-ackProof>|<get-ackProof>@org.meshtastic.proto.MeshPacket(){}[0]
 final val org.meshtastic.sdk/connectionQuality // org.meshtastic.sdk/connectionQuality|@org.meshtastic.proto.NodeInfo{}connectionQuality[0]
     final fun (org.meshtastic.proto/NodeInfo).<get-connectionQuality>(): org.meshtastic.sdk/ConnectionQuality // org.meshtastic.sdk/connectionQuality.<get-connectionQuality>|<get-connectionQuality>@org.meshtastic.proto.NodeInfo(){}[0]
 final val org.meshtastic.sdk/displayId // org.meshtastic.sdk/displayId|@org.meshtastic.proto.NodeInfo{}displayId[0]
     final fun (org.meshtastic.proto/NodeInfo).<get-displayId>(): kotlin/String // org.meshtastic.sdk/displayId.<get-displayId>|<get-displayId>@org.meshtastic.proto.NodeInfo(){}[0]
 final val org.meshtastic.sdk/displayName // org.meshtastic.sdk/displayName|@org.meshtastic.proto.HardwareModel{}displayName[0]
     final fun (org.meshtastic.proto/HardwareModel).<get-displayName>(): kotlin/String // org.meshtastic.sdk/displayName.<get-displayName>|<get-displayName>@org.meshtastic.proto.HardwareModel(){}[0]
+final val org.meshtastic.sdk/heardOnCurrentLora // org.meshtastic.sdk/heardOnCurrentLora|@org.meshtastic.proto.NodeInfo{}heardOnCurrentLora[0]
+    final fun (org.meshtastic.proto/NodeInfo).<get-heardOnCurrentLora>(): kotlin/Boolean // org.meshtastic.sdk/heardOnCurrentLora.<get-heardOnCurrentLora>|<get-heardOnCurrentLora>@org.meshtastic.proto.NodeInfo(){}[0]
 final val org.meshtastic.sdk/isBroadcast // org.meshtastic.sdk/isBroadcast|@org.meshtastic.sdk.NodeId{}isBroadcast[0]
     final fun (org.meshtastic.sdk/NodeId).<get-isBroadcast>(): kotlin/Boolean // org.meshtastic.sdk/isBroadcast.<get-isBroadcast>|<get-isBroadcast>@org.meshtastic.sdk.NodeId(){}[0]
 final val org.meshtastic.sdk/isInProgress // org.meshtastic.sdk/isInProgress|@org.meshtastic.sdk.ConnectionState{}isInProgress[0]
@@ -2017,14 +2081,26 @@ final val org.meshtastic.sdk/neighborInfoFlow // org.meshtastic.sdk/neighborInfo
     final fun (org.meshtastic.sdk/RadioClient).<get-neighborInfoFlow>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/NeighborInfo> // org.meshtastic.sdk/neighborInfoFlow.<get-neighborInfoFlow>|<get-neighborInfoFlow>@org.meshtastic.sdk.RadioClient(){}[0]
 final val org.meshtastic.sdk/neighborInfoMessages // org.meshtastic.sdk/neighborInfoMessages|@org.meshtastic.sdk.RadioClient{}neighborInfoMessages[0]
     final fun (org.meshtastic.sdk/RadioClient).<get-neighborInfoMessages>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/MeshPacket> // org.meshtastic.sdk/neighborInfoMessages.<get-neighborInfoMessages>|<get-neighborInfoMessages>@org.meshtastic.sdk.RadioClient(){}[0]
+final val org.meshtastic.sdk/nextHop // org.meshtastic.sdk/nextHop|@org.meshtastic.proto.MeshPacket{}nextHop[0]
+    final fun (org.meshtastic.proto/MeshPacket).<get-nextHop>(): org.meshtastic.sdk/NodeLastByte? // org.meshtastic.sdk/nextHop.<get-nextHop>|<get-nextHop>@org.meshtastic.proto.MeshPacket(){}[0]
+final val org.meshtastic.sdk/relayNode // org.meshtastic.sdk/relayNode|@org.meshtastic.proto.MeshPacket{}relayNode[0]
+    final fun (org.meshtastic.proto/MeshPacket).<get-relayNode>(): org.meshtastic.sdk/NodeLastByte? // org.meshtastic.sdk/relayNode.<get-relayNode>|<get-relayNode>@org.meshtastic.proto.MeshPacket(){}[0]
 final val org.meshtastic.sdk/shortName // org.meshtastic.sdk/shortName|@org.meshtastic.proto.NodeInfo{}shortName[0]
     final fun (org.meshtastic.proto/NodeInfo).<get-shortName>(): kotlin/String // org.meshtastic.sdk/shortName.<get-shortName>|<get-shortName>@org.meshtastic.proto.NodeInfo(){}[0]
 final val org.meshtastic.sdk/signalQuality // org.meshtastic.sdk/signalQuality|@org.meshtastic.proto.NodeInfo{}signalQuality[0]
     final fun (org.meshtastic.proto/NodeInfo).<get-signalQuality>(): org.meshtastic.sdk/SignalQuality // org.meshtastic.sdk/signalQuality.<get-signalQuality>|<get-signalQuality>@org.meshtastic.proto.NodeInfo(){}[0]
+final val org.meshtastic.sdk/signature // org.meshtastic.sdk/signature|@org.meshtastic.proto.MeshPacket{}signature[0]
+    final fun (org.meshtastic.proto/MeshPacket).<get-signature>(): org.meshtastic.sdk/PacketSignature // org.meshtastic.sdk/signature.<get-signature>|<get-signature>@org.meshtastic.proto.MeshPacket(){}[0]
+final val org.meshtastic.sdk/signsPackets // org.meshtastic.sdk/signsPackets|@org.meshtastic.proto.NodeInfo{}signsPackets[0]
+    final fun (org.meshtastic.proto/NodeInfo).<get-signsPackets>(): kotlin/Boolean // org.meshtastic.sdk/signsPackets.<get-signsPackets>|<get-signsPackets>@org.meshtastic.proto.NodeInfo(){}[0]
 final val org.meshtastic.sdk/statusMessage // org.meshtastic.sdk/statusMessage|@org.meshtastic.sdk.ConnectionState{}statusMessage[0]
     final fun (org.meshtastic.sdk/ConnectionState).<get-statusMessage>(): kotlin/String // org.meshtastic.sdk/statusMessage.<get-statusMessage>|<get-statusMessage>@org.meshtastic.sdk.ConnectionState(){}[0]
 final val org.meshtastic.sdk/textMessages // org.meshtastic.sdk/textMessages|@org.meshtastic.sdk.RadioClient{}textMessages[0]
     final fun (org.meshtastic.sdk/RadioClient).<get-textMessages>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/MeshPacket> // org.meshtastic.sdk/textMessages.<get-textMessages>|<get-textMessages>@org.meshtastic.sdk.RadioClient(){}[0]
+final val org.meshtastic.sdk/transport // org.meshtastic.sdk/transport|@org.meshtastic.proto.MeshPacket{}transport[0]
+    final fun (org.meshtastic.proto/MeshPacket).<get-transport>(): org.meshtastic.sdk/PacketTransport // org.meshtastic.sdk/transport.<get-transport>|<get-transport>@org.meshtastic.proto.MeshPacket(){}[0]
+final val org.meshtastic.sdk/xeddsaSignature // org.meshtastic.sdk/xeddsaSignature|@org.meshtastic.proto.MeshPacket{}xeddsaSignature[0]
+    final fun (org.meshtastic.proto/MeshPacket).<get-xeddsaSignature>(): okio/ByteString? // org.meshtastic.sdk/xeddsaSignature.<get-xeddsaSignature>|<get-xeddsaSignature>@org.meshtastic.proto.MeshPacket(){}[0]
 
 final fun (kotlin.collections/Iterable<org.meshtastic.proto/NodeInfo>).org.meshtastic.sdk/toMeshNodes(kotlin/Int): kotlin.collections/List<org.meshtastic.sdk/MeshNode> // org.meshtastic.sdk/toMeshNodes|toMeshNodes@kotlin.collections.Iterable<org.meshtastic.proto.NodeInfo>(kotlin.Int){}[0]
 final fun (kotlin.time/Instant).org.meshtastic.sdk/relativeTo(kotlin.time/Instant = ...): kotlin/String // org.meshtastic.sdk/relativeTo|relativeTo@kotlin.time.Instant(kotlin.time.Instant){}[0]
@@ -2063,6 +2139,7 @@ final fun (org.meshtastic.proto/Telemetry).org.meshtastic.sdk/toBatteryStatus():
 final fun (org.meshtastic.proto/Telemetry).org.meshtastic.sdk/toReading(): org.meshtastic.sdk/TelemetryReading? // org.meshtastic.sdk/toReading|toReading@org.meshtastic.proto.Telemetry(){}[0]
 final fun (org.meshtastic.proto/ToRadio).org.meshtastic.sdk/toByteArray(): kotlin/ByteArray // org.meshtastic.sdk/toByteArray|toByteArray@org.meshtastic.proto.ToRadio(){}[0]
 final fun (org.meshtastic.sdk/NodeId).org.meshtastic.sdk/isLocal(org.meshtastic.sdk/NodeId? = ...): kotlin/Boolean // org.meshtastic.sdk/isLocal|isLocal@org.meshtastic.sdk.NodeId(org.meshtastic.sdk.NodeId?){}[0]
+final fun (org.meshtastic.sdk/NodeId).org.meshtastic.sdk/lastByte(): org.meshtastic.sdk/NodeLastByte // org.meshtastic.sdk/lastByte|lastByte@org.meshtastic.sdk.NodeId(){}[0]
 final fun (org.meshtastic.sdk/NodeId).org.meshtastic.sdk/toDefaultId(): kotlin/String // org.meshtastic.sdk/toDefaultId|toDefaultId@org.meshtastic.sdk.NodeId(){}[0]
 final fun (org.meshtastic.sdk/NodeId).org.meshtastic.sdk/toHex(): kotlin/String // org.meshtastic.sdk/toHex|toHex@org.meshtastic.sdk.NodeId(){}[0]
 final fun (org.meshtastic.sdk/NodeId.Companion).org.meshtastic.sdk/fromDefaultId(kotlin/String): org.meshtastic.sdk/NodeId? // org.meshtastic.sdk/fromDefaultId|fromDefaultId@org.meshtastic.sdk.NodeId.Companion(kotlin.String){}[0]
