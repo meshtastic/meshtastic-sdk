@@ -40,6 +40,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   settings as a `DeviceProfile` and install one through a single `editSettings` transaction,
   writing only the sections the profile has. The private key is left out of exports and the
   security section is skipped on install unless the caller opts in.
+  The ringtone and canned-message reads are skipped for modules the device's metadata excludes and
+  otherwise wait at most 3 s, concurrently, since firmware does not answer without the module.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

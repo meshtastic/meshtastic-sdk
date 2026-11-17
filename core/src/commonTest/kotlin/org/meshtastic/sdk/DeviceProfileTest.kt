@@ -19,11 +19,14 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
+import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceProfile
+import org.meshtastic.proto.ExcludedModules
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
@@ -315,6 +318,70 @@ class DeviceProfileTest {
     }
 
     @Test
+    fun exportDoesNotAskForTextTheDeviceExcludes() = runTest {
+        val excluded = ExcludedModules.CANNEDMSG_CONFIG.value or ExcludedModules.EXTNOTIF_CONFIG.value
+        val (transport, client) = connectedClient(profileFrames(excluded))
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val result = client.exportDeviceProfile()
+        val sent = transport.outboundPackets().drop(before).mapNotNull { adminOf(it) }
+        assertTrue(
+            sent.none {
+                it.get_ringtone_request == true || it.get_canned_message_module_messages_request == true
+            },
+        )
+        val profile = assertIs<AdminResult.Success<DeviceProfile>>(result).value
+        assertNull(profile.ringtone)
+        assertNull(profile.canned_messages)
+        client.disconnect()
+    }
+
+    @Test
+    fun exportFromASilentDeviceWaitsOneShortTimeout() = runTest {
+        val (transport, client) = connectedClient(profileFrames(0))
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val start = testScheduler.currentTime
+        val deferred = async { client.exportDeviceProfile() }
+        runCurrent()
+        val sent = transport.outboundPackets().drop(before).mapNotNull { adminOf(it) }
+        assertTrue(sent.any { it.get_ringtone_request == true }, "ringtone requested")
+        assertTrue(sent.any { it.get_canned_message_module_messages_request == true }, "canned requested at once")
+        val profile = assertIs<AdminResult.Success<DeviceProfile>>(deferred.await()).value
+        assertEquals(3_000L, testScheduler.currentTime - start)
+        assertNull(profile.ringtone)
+        assertNull(profile.canned_messages)
+        client.disconnect()
+    }
+
+    @Test
+    fun exportFromADeviceThatAnswersKeepsBothFields() = runTest {
+        val (transport, client) = connectedClient(profileFrames(0))
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val deferred = async { client.exportDeviceProfile() }
+        runCurrent()
+        val ringtone = admin(transport, before) { it.get_ringtone_request == true }
+        val canned = admin(transport, before) { it.get_canned_message_module_messages_request == true }
+        transport.injectAdminResponse(
+            ringtone.id,
+            AdminMessage.Builder().also { it.get_ringtone_response = "rt:d=4" }.build(),
+        )
+        transport.injectAdminResponse(
+            canned.id,
+            AdminMessage.Builder().also { it.get_canned_message_module_messages_response = "a|b" }.build(),
+        )
+        runCurrent()
+        val profile = assertIs<AdminResult.Success<DeviceProfile>>(deferred.await()).value
+        assertEquals("rt:d=4", profile.ringtone)
+        assertEquals("a|b", profile.canned_messages)
+        client.disconnect()
+    }
+
+    @Test
     fun hamParametersFillsPowerAndFrequencyFromLora() {
         val lora = Config.LoRaConfig.Builder().also {
             it.tx_power = 22
@@ -411,6 +478,19 @@ class DeviceProfileTest {
             }.build()
         }.build()
     }.build().toFrame()
+
+    private fun profileFrames(excludedModules: Int) = listOf(
+        FromRadio.Builder().also { fr ->
+            fr.metadata = DeviceMetadata.Builder().also { it.excluded_modules = excludedModules }.build()
+        }.build().toFrame(),
+        FromRadio.Builder().also { fr ->
+            fr.node_info = NodeInfo.Builder().also { ni ->
+                ni.num = 1
+                ni.user = User.Builder().also { it.long_name = "Fake" }.build()
+            }.build()
+        }.build().toFrame(),
+        loraFrame(power = 14, freq = 0f),
+    )
 
     private fun TestScope.connectedClient(frames: List<Frame>): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(

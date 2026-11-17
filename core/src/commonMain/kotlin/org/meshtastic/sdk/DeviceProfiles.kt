@@ -7,19 +7,28 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSet
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceProfile
+import org.meshtastic.proto.ExcludedModules
 import org.meshtastic.proto.LocalConfig
 import org.meshtastic.proto.LocalModuleConfig
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.Position
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
+import kotlin.time.Duration.Companion.seconds
 
 private const val CHANNEL_SLOTS = 8
+
+// Firmware answers these reads only when the owning module exists in the build and, for canned
+// messages, runs in the current display mode; otherwise it stays silent.
+private val OPTIONAL_READ_TIMEOUT = 3.seconds
 
 /**
  * Builds a [DeviceProfile] from the connected device's state.
@@ -28,7 +37,9 @@ private const val CHANNEL_SLOTS = 8
  * config section the profile format has a field for, the fixed position when the device uses one,
  * and, unless [includeDeviceText] is false, the ringtone and canned messages read through
  * [RadioClient.admin]. A ringtone or canned-message read that does not succeed is left out of the
- * profile rather than failing the export. Encode the result with [DeviceProfile.ADAPTER].
+ * profile rather than failing the export. A read is skipped when the device's metadata lists the
+ * module as excluded; the other reads run concurrently and each waits at most 3 seconds, because a
+ * build without the module never answers. Encode the result with [DeviceProfile.ADAPTER].
  *
  * `Config.sessionkey` and `Config.device_ui` have no field in the profile and are not exported.
  *
@@ -45,8 +56,28 @@ public suspend fun RadioClient.exportDeviceProfile(
 ): AdminResult<DeviceProfile> {
     val bundle = configBundle.value ?: return AdminResult.Failed(Routing.Error.BAD_REQUEST)
     val own = ownNode.value ?: return AdminResult.Failed(Routing.Error.BAD_REQUEST)
-    val ringtone = if (includeDeviceText) admin.getRingtone().getOrNull() else null
-    val canned = if (includeDeviceText) admin.getCannedMessages().getOrNull() else null
+    val excluded = bundle.metadata.excluded_modules
+    val (ringtone, canned) = if (includeDeviceText) {
+        coroutineScope {
+            val ringtoneRead = async {
+                if (excluded and ExcludedModules.EXTNOTIF_CONFIG.value != 0) {
+                    null
+                } else {
+                    withTimeoutOrNull(OPTIONAL_READ_TIMEOUT) { admin.getRingtone().getOrNull() }
+                }
+            }
+            val cannedRead = async {
+                if (excluded and ExcludedModules.CANNEDMSG_CONFIG.value != 0) {
+                    null
+                } else {
+                    withTimeoutOrNull(OPTIONAL_READ_TIMEOUT) { admin.getCannedMessages().getOrNull() }
+                }
+            }
+            ringtoneRead.await() to cannedRead.await()
+        }
+    } else {
+        null to null
+    }
     val fixedPosition = own.position?.takeIf { p ->
         bundle.configs.any { it.position?.fixed_position == true } &&
             p.latitude_i != null && p.longitude_i != null
