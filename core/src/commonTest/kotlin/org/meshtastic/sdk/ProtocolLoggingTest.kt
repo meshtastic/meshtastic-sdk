@@ -20,6 +20,7 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.sdk.testing.FakeRadioTransport
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -60,6 +61,28 @@ class ProtocolLoggingTest {
 
         assertTrue(log.lines.none { it.tag == "Protocol" })
         assertTrue(redactor.calls.isEmpty())
+    }
+
+    @Test
+    fun xmodemFramesAreNamedWithoutTheirBytes() = runTest {
+        val log = Recorder()
+        val (transport, _) = connect(log) { protocolLogging(LogLevel.DEBUG) }
+        val frame = org.meshtastic.proto.XModem.Builder().also { wb ->
+            wb.control = org.meshtastic.proto.XModem.Control.SOH
+            wb.seq = 7
+            wb.buffer = "secret file bytes".encodeUtf8()
+        }.build()
+
+        transport.injectFrame(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.xmodemPacket = frame
+            }.build().toFrame(),
+        )
+        runCurrent()
+
+        val line = log.protocol("RX").single { it.message.contains("xmodem") }.message
+        assertTrue(line.contains("SOH") && line.contains("seq=7") && line.contains("len=17"), line)
+        assertFalse(line.contains("secret"), line)
     }
 
     @Test

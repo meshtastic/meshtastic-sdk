@@ -2460,6 +2460,8 @@ internal class MeshEngine(
         msg.want_config_id != null -> "ToRadio want_config_id=${msg.want_config_id}"
         msg.heartbeat != null -> "ToRadio heartbeat"
         msg.disconnect != null -> "ToRadio disconnect"
+        msg.xmodemPacket != null -> "ToRadio ${describe(msg.xmodemPacket!!)}"
+        msg.mqttClientProxyMessage != null -> "ToRadio mqttClientProxyMessage"
         else -> "ToRadio other"
     }
 
@@ -2474,8 +2476,22 @@ internal class MeshEngine(
         msg.metadata != null -> "FromRadio metadata"
         msg.queueStatus != null -> "FromRadio queueStatus"
         msg.rebooted != null -> "FromRadio rebooted"
+        msg.xmodemPacket != null -> "FromRadio ${describe(msg.xmodemPacket!!)}"
+        msg.log_record != null -> "FromRadio log_record"
+        msg.fileInfo != null -> "FromRadio fileInfo"
+        msg.clientNotification != null -> "FromRadio clientNotification"
+        msg.mqttClientProxyMessage != null -> "FromRadio mqttClientProxyMessage"
+        msg.deviceuiConfig != null -> "FromRadio deviceuiConfig"
+        msg.lockdown_status != null -> "FromRadio lockdown_status"
+        msg.region_presets != null -> "FromRadio region_presets"
+        msg.display_frame != null -> "FromRadio display_frame"
+        msg.display_palette != null -> "FromRadio display_palette"
         else -> "FromRadio other"
     }
+
+    // Control, sequence and length only: a file's bytes never reach the log.
+    private fun describe(frame: org.meshtastic.proto.XModem): String =
+        "xmodem ${frame.control} seq=${frame.seq} len=${frame.buffer.size}"
 
     private fun describe(packet: MeshPacket): String {
         val head = "packet id=${packet.id} from=0x${packet.from.toString(16)} to=0x${packet.to.toString(16)} " +
