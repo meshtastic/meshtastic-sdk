@@ -748,7 +748,10 @@ public data class ConfigBundle(
     val configs: List<Config>,
     val moduleConfigs: List<ModuleConfig>,
     val deviceUIConfig: DeviceUIConfig? = null,
-)
+    public val regionPresets: LoRaRegionPresetMap? = null,   // session-only, never stored
+) {
+    public val capabilities: DeviceCapabilities               // firmware version + excluded_modules
+}
 
 public class InMemoryStorage : DeviceStorage               // RAM only
 public class InMemoryStorageProvider : StorageProvider

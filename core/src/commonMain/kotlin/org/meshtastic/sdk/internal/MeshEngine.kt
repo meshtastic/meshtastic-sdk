@@ -1399,6 +1399,8 @@ internal class MeshEngine(
 
             deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
 
+            fromRadio.region_presets != null -> pendingRegionPresets = fromRadio.region_presets
+
             nodeInfo != null -> {
                 val nodeId = NodeId(nodeInfo.num)
                 pendingNodes[nodeId] = nodeInfo
@@ -1643,6 +1645,7 @@ internal class MeshEngine(
                         configs = pendingConfigs,
                         moduleConfigs = pendingModuleConfigs,
                         deviceUIConfig = pendingDeviceUIConfig,
+                        regionPresets = pendingRegionPresets,
                     )
                     meshState = meshState.withConfig(bundle)
                 }
