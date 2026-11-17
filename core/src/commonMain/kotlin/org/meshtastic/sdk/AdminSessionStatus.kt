@@ -14,9 +14,13 @@ import kotlin.time.Instant
  *
  * A node issues an 8-byte session passkey in every admin response and accepts it for 300 s after
  * it generated the key. It generates a new key on the first response sent once the current key is
- * older than 150 s, and the client cannot see when the key was generated. A key observed at time
- * `T` is therefore certainly valid until `T + 150 s` ([Active]), possibly valid until `T + 300 s`
- * ([Stale]), and rejected after that ([NoSession]). Source: `firmware/src/modules/AdminModule.cpp`
+ * older than 150 s, so a key in a response was at most 150 s old when the node sent it and had at
+ * least 150 s of validity left at that moment. The client cannot see when the key was generated
+ * and cannot measure how long a response took to arrive. A key received at time `T` is therefore
+ * expected to be accepted until `T + 150 s` ([Active]), may be accepted until `T + 300 s`
+ * ([Stale]), and is certainly rejected after that ([NoSession]). [Active] is an expectation, not
+ * a guarantee: mesh delivery delay shortens it, and a node that rejects a key in any state is
+ * handled by the single re-authentication retry. Source: `firmware/src/modules/AdminModule.cpp`
  * `setPassKey` and `checkPassKey`.
  *
  * The passkey itself is never exposed.
@@ -34,10 +38,13 @@ public sealed interface AdminSessionStatus {
     public data object NoSession : AdminSessionStatus
 
     /**
-     * A passkey is on file and certainly still valid until [staleAt].
+     * A passkey is on file and is expected to be accepted until [staleAt]. This is not a
+     * guarantee: the node had at least 150 s of validity left when it sent the key, minus the
+     * delivery delay the SDK cannot measure for a remote node, so a request inside this window can
+     * still be rejected. The existing single retry on `ADMIN_BAD_SESSION_KEY` handles that.
      *
-     * @property refreshedAt when the engine last observed a passkey from the node
-     * @property staleAt `refreshedAt` plus 150 s
+     * @property refreshedAt when the engine received the response carrying the passkey
+     * @property staleAt `refreshedAt` plus 150 s, the minimum validity the node had left when it sent the key
      * @since 0.3.0
      */
     public data class Active(val refreshedAt: Instant, val staleAt: Instant) : AdminSessionStatus

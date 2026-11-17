@@ -85,7 +85,10 @@ is the default. Enabling this hook emits one line, tagged `Protocol`, for
 every `ToRadio` frame written and every `FromRadio` frame received, at the
 specified level. A line starts with `TX` or `RX` and names the frame variant;
 for a packet it adds `id`, `from`, `to`, `channel`, the port and the payload
-as rendered by the redactor. Config, node and key contents are never printed.
+as rendered by the redactor. Config and node contents are never printed. With the default
+redactor no key material appears; `PayloadRedactor.None`, or a custom redactor that returns
+payload bytes, can expose session passkeys, PSKs and private keys, so never use either with a
+log sink that leaves the device.
 
 ```kotlin
 val client = RadioClient.Builder()

@@ -935,8 +935,9 @@ public interface PayloadRedactor {
         public val Default: PayloadRedactor = object : PayloadRedactor {}
 
         /**
-         * Prints the payload as hex. Passkeys, PSKs, positions and text appear in the log; for
-         * development builds only.
+         * Prints the payload as hex. Session passkeys, PSKs, private keys, positions and text
+         * appear in the log. Development builds only; never use it with a log sink that leaves
+         * the device.
          *
          * @since 0.3.0
          */

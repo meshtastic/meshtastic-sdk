@@ -86,7 +86,7 @@ Roadmap transports (`transport-mqtt-proxy`, `transport-rpc`, `transport-http`) c
 `LogSink` MAY receive sensitive material if abused. Rules enforced by the engine:
 
 - Channel PSKs are NEVER logged at any level. Internal `toString()` helpers redact them (`Channel.psk = <16 bytes redacted>`).
-- `session_passkey` is NEVER logged.
+- `session_passkey` is not logged by the engine or by the default `PayloadRedactor`. `PayloadRedactor.None`, or a custom redactor that returns payload bytes, can print session passkeys, PSKs and private keys; do not use either with a log sink that leaves the device.
 - PKI public keys MAY be logged at `Debug` (they're public).
 - `MeshPacket.decoded.payload` MAY be logged at `Verbose` only. Production consumers should run with `Info` or higher.
 - Frame logging is the Builder opt-in `Builder.protocolLogging(level, redactor)` (see `SPEC.md` §3.1); off by default. It logs frame variants and packet headers; every packet payload goes through the `PayloadRedactor`, whose default prints the size only. `PayloadRedactor.None` prints payloads, session passkeys included, as hex.

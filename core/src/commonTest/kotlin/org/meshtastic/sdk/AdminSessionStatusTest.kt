@@ -178,6 +178,61 @@ class AdminSessionStatusTest {
         assertFalse(rendered.contains(REMOTE_PASSKEY.toByteString().hex()))
     }
 
+    @Test
+    fun keyBufferedDuringTheHandshakeIsStampedAtReceipt() = runTest {
+        val device = SessionDevice(holdOwner = true)
+        val client = buildClient(device)
+        val connect = backgroundScope.async { client.connect() }
+        repeat(100) {
+            if (!device.ownerHeld) {
+                advanceTimeBy(100)
+                runCurrent()
+            }
+        }
+        assertTrue(device.ownerHeld, "handshake must reach the owner request")
+        advanceTimeBy(5_000)
+        runCurrent()
+        device.releaseOwner()
+        runCurrent()
+        connect.await()
+
+        val remote = assertIs<AdminSessionStatus.Active>(client.adminSessions.value[REMOTE])
+        val local = assertIs<AdminSessionStatus.Active>(client.adminSessions.value[LOCAL])
+        val gap = local.refreshedAt - remote.refreshedAt
+        assertTrue(gap >= 5.seconds && gap < 8.seconds, "remote key must keep its receipt time, gap was $gap")
+    }
+
+    @Test
+    fun lateRejectionOfAnOlderKeyKeepsTheNewerKey() = runTest {
+        val device = SessionDevice()
+        val client = buildClient(device)
+        client.connect()
+        runCurrent()
+        answerRemoteMetadata(client, device, REMOTE_PASSKEY)
+
+        val before = device.outboundPackets().size
+        val older = backgroundScope.async { client.admin.forNode(REMOTE).getDeviceMetadata() }
+        runCurrent()
+        val olderRequest = device.outboundPackets().drop(before).last { it.to == REMOTE.raw }
+
+        answerRemoteMetadata(client, device, NEWER_PASSKEY)
+        val newer = assertIs<AdminSessionStatus.Active>(client.adminSessions.value[REMOTE])
+
+        device.inject(routingError(olderRequest.id, REMOTE.raw))
+        runCurrent()
+        assertEquals(newer, client.adminSessions.value[REMOTE])
+        older.cancel()
+
+        val beforeCurrent = device.outboundPackets().size
+        val current = backgroundScope.async { client.admin.forNode(REMOTE).getDeviceMetadata() }
+        runCurrent()
+        val currentRequest = device.outboundPackets().drop(beforeCurrent).last { it.to == REMOTE.raw }
+        device.inject(routingError(currentRequest.id, REMOTE.raw))
+        runCurrent()
+        assertFalse(REMOTE in client.adminSessions.value)
+        current.cancel()
+    }
+
     // ── Harness ─────────────────────────────────────────────────────────────
 
     private fun TestScope.buildClient(device: SessionDevice): RadioClient = RadioClient.Builder()
@@ -258,10 +313,21 @@ class AdminSessionStatusTest {
         val REMOTE = NodeId(0x22222222)
         val LOCAL_PASSKEY = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8)
         val REMOTE_PASSKEY = byteArrayOf(9, 10, 11, 12, 13, 14, 15, 16)
+        val NEWER_PASSKEY = byteArrayOf(21, 22, 23, 24, 25, 26, 27, 28)
     }
 
     /** Minimal radio: two-stage handshake plus a `get_owner_response` that seeds [LOCAL_PASSKEY]. */
-    private class SessionDevice : RadioTransport {
+    private class SessionDevice(private val holdOwner: Boolean = false) : RadioTransport {
+        private var heldOwner: FromRadio? = null
+
+        val ownerHeld: Boolean get() = heldOwner != null
+
+        /** Delivers a withheld `get_owner_response`. */
+        fun releaseOwner() {
+            heldOwner?.let(::inject)
+            heldOwner = null
+        }
+
         override val identity = TransportIdentity("fake:admin-session")
         private val stateFlow = MutableStateFlow<TransportState>(TransportState.Disconnected)
         private val inbound = MutableSharedFlow<Frame>(extraBufferCapacity = 128)
@@ -290,13 +356,16 @@ class AdminSessionStatusTest {
                     inject(FromRadio.Builder().also { wb -> wb.config_complete_id = NONCE_STAGE1 }.build())
                 }
 
-                NONCE_STAGE2 -> inject(FromRadio.Builder().also { wb -> wb.config_complete_id = NONCE_STAGE2 }.build())
+                NONCE_STAGE2 -> {
+                    inject(FromRadio.Builder().also { wb -> wb.config_complete_id = NONCE_STAGE2 }.build())
+                    if (holdOwner) inject(remoteMetadataResponse())
+                }
             }
             val packet = toRadio.packet ?: return
             val admin = packet.decoded?.payload
                 ?.let { runCatching { AdminMessage.ADAPTER.decode(it) }.getOrNull() } ?: return
             if (admin.get_owner_request == true && packet.to != REMOTE.raw) {
-                inject(
+                val response =
                     adminResponse(
                         requestId = packet.id,
                         from = LOCAL.raw,
@@ -309,10 +378,21 @@ class AdminSessionStatusTest {
                             }.build()
                             wb.session_passkey = LOCAL_PASSKEY.toByteString()
                         }.build(),
-                    ),
-                )
+                    )
+                if (holdOwner) heldOwner = response else inject(response)
             }
         }
+
+        private fun remoteMetadataResponse(): FromRadio = adminResponse(
+            requestId = 0,
+            from = REMOTE.raw,
+            response = AdminMessage.Builder().also { wb ->
+                wb.get_device_metadata_response = DeviceMetadata.Builder().also { wb ->
+                    wb.firmware_version = "2.7.0"
+                }.build()
+                wb.session_passkey = REMOTE_PASSKEY.toByteString()
+            }.build(),
+        )
 
         override fun frames(): Flow<Frame> = inbound
 
