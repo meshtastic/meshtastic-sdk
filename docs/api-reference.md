@@ -184,6 +184,16 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 
 `PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendText` and `sendReaction` set `want_ack`. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`.
 
+### Channel-aware helpers
+
+| Member | Notes |
+|---|---|
+| `RadioClient.channelFor(node: NodeId): ChannelIndex` | `NodeInfo.channel` for a node heard live; `0` for an unknown node, our own node and the primary channel |
+| `RadioClient.sendDirectMessageOnHeardChannel(to, text, wantAck)` | `sendDirectMessage` on `channelFor(to)` |
+| `RadioClient.requestPositionOnHeardChannel(from)` | `requestPosition` on `channelFor(from)` |
+
+`sendDirectMessage` and `requestPosition` keep their `ChannelIndex(0)` default. `requestPosition` sends an empty `POSITION_APP` payload with `want_response` at `BACKGROUND` priority.
+
 ### Waypoint helpers
 
 | Member | Notes |

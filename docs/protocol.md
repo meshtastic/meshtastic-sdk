@@ -399,6 +399,9 @@ After `Connected` the SDK folds these into the node DB, each emitting `NodeChang
 - **`NODE_STATUS_APP` and `PAXCOUNTER_APP`** only refresh the sender as any other packet does. `NodeInfo` has no field for a status string or a paxcount, and firmware keeps the status in a separate per-node map (`firmware:src/mesh/NodeDB.h:337`, `NodeDB.cpp:2184`) and the paxcount in no node entry, so a host that wants either decodes the packet from `RadioClient.packets` (`StatusMessage.ADAPTER`, `Paxcount.ADAPTER`) and stores it itself.
 
 A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
+### Position requests and DM channels
+
+A request is a `POSITION_APP` packet with `want_response = true`. Firmware answers it from `PositionModule::allocReply`, which builds the reply from its own position and ignores the request payload (`firmware:src/modules/PositionModule.cpp:291-304`, dispatched by `src/mesh/MeshModule.cpp:186-190`), throttled to one reply per three minutes. An empty request therefore draws the same reply as one carrying our position, so `requestPosition` stays empty and goes out at `BACKGROUND` priority as Android's does (`CommandSenderImpl.kt:312`). A plain unicast is encrypted with the channel's key unless firmware PKI-encrypts it, in which case the channel does not matter (`Router.cpp:1170-1196`), so `channelFor` gives the channel from `NodeInfo.channel` the way Android does (`CommandSenderImpl.kt:141`).
 
 ### Waypoints
 

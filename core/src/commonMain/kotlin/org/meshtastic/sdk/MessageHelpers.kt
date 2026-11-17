@@ -48,8 +48,10 @@ public suspend fun RadioClient.sendPosition(
 /**
  * Request the current [Position] from node [from].
  *
- * Sends an empty Position payload with `want_response = true`; the firmware
- * replies with the node's last known fix.
+ * Sends an empty Position payload with `want_response = true` at background priority; the
+ * firmware replies with its own position whatever the request carries
+ * (`firmware:src/modules/PositionModule.cpp:291-304`, `src/mesh/MeshModule.cpp:186-190`).
+ * Use [requestPositionOnHeardChannel] to address the node on the channel it was last heard on.
  *
  * @since 0.1.0
  */
@@ -58,6 +60,7 @@ public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = Cha
         wb.to = from.raw
         wb.channel = channel.raw
         wb.want_ack = false
+        wb.priority = MeshPacket.Priority.BACKGROUND
         wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.POSITION_APP
             wb.payload = ByteString.EMPTY
@@ -66,6 +69,36 @@ public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = Cha
     }.build()
     return send(packet)
 }
+
+/**
+ * The channel [node] was last heard on, from its node DB entry.
+ *
+ * `NodeInfo.channel` is `0` for the primary channel, for a node never heard live, for an unknown
+ * node and for our own node, so those all resolve to channel `0`. A PKI-encrypted DM ignores the
+ * channel; a plain unicast and a position request use it (Android: `CommandSenderImpl.kt:141`).
+ *
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.channelFor(node: NodeId): ChannelIndex = ChannelIndex(nodeSnapshot()[node]?.channel ?: 0)
+
+/**
+ * [requestPosition] to [from] on the channel [channelFor] resolves for it.
+ *
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.requestPositionOnHeardChannel(from: NodeId): MessageHandle =
+    requestPosition(from, channelFor(from))
+
+/**
+ * [sendDirectMessage] to [to] on the channel [channelFor] resolves for it.
+ *
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.sendDirectMessageOnHeardChannel(
+    to: NodeId,
+    text: String,
+    wantAck: Boolean = true,
+): MessageHandle = sendDirectMessage(to, text, channelFor(to), wantAck)
 
 /**
  * Send a unicast text message to [to]. Defaults [wantAck] to `true`.
