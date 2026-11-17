@@ -400,13 +400,9 @@ After `Connected` the SDK folds these into the node DB, each emitting `NodeChang
 
 A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
 
-After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
+### Waypoints
 
-- **`FromRadio.node_info`** replaces the node's entry.
-- **Every decoded `MeshPacket` with `from != 0`** creates or refreshes the sender (firmware `NodeDB::updateFrom`): `last_heard` from `rx_time`, or the engine clock when `rx_time` is 0; `snr` only when `transport_mechanism` is `TRANSPORT_LORA` and `rx_rssi` is present; `via_mqtt`; `hops_away = hop_start - hop_limit` only when `hop_start != 0` and `hop_start >= hop_limit`, otherwise unchanged. Packets from our own node refresh only `last_heard`. Encrypted packets (no `decoded`) never touch the DB.
-- **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
-- **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
-- **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
+A `Waypoint` is keyed by `id`; a new one with a known id replaces the old on every device. Firmware reads `expire == 0` as "never expires" and `expire == 1` as "deleted"; any other value is an epoch-seconds deadline (`firmware:src/meshUtils.h:95-102`). A delete is the same waypoint re-sent with `expire = 1` (`firmware:src/modules/WaypointModule.cpp:226-227`; Android does the same, `WaypointDialogs.kt:101`). `locked_to == 0` leaves the waypoint open to anyone; otherwise only that node may change it, and firmware only removes a waypoint locked to another node locally, never mesh-wide (`WaypointModule.cpp:217-224`). Android refuses to send id `0` (`BaseMapViewModel.kt:224`) and takes new ids from its packet-id generator. The SDK exposes `Waypoint.isExpired`, `Waypoint.canBeEditedBy`, `newWaypointId`, `RadioClient.sendWaypoint` and `RadioClient.deleteWaypoint`, and keeps no waypoint store.
 
 ---
 
@@ -510,7 +506,7 @@ message Data {
 | `ROUTING_APP` | 5 | `Routing` | both | ACK/NAK and route discovery |
 | `ADMIN_APP` | 6 | `AdminMessage` | both | Device administration (see §13) |
 | `TEXT_MESSAGE_COMPRESSED_APP` | 7 | `unishox2`-compressed UTF-8 | both | Optional compression |
-| `WAYPOINT_APP` | 8 | `Waypoint` | both | Shared map markers |
+| `WAYPOINT_APP` | 8 | `Waypoint` | both | Shared map markers (rules below) |
 | `AUDIO_APP` | 9 | Codec2 audio frames | both | Push-to-talk |
 | `DETECTION_SENSOR_APP` | 10 | UTF-8 string | device→phone | GPIO event notifications |
 | `ALERT_APP` | 11 | UTF-8 string | both | High-priority broadcast alerts |
