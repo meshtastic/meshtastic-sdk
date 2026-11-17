@@ -174,6 +174,9 @@ internal class MeshEngine(
     private val paceTimeoutJobs = mutableMapOf<MessageId, Job>()
     private var paceStallJob: Job? = null
 
+    // Ticks while sends are held and the device reports no room; each tick asks for a QueueStatus.
+    private var pacePollJob: Job? = null
+
     // `free` from the freshest QueueStatus; null until one is heard this session.
     private var deviceQueueFree: Int? = null
 
@@ -682,6 +685,7 @@ internal class MeshEngine(
             is EngineMessage.SendAckTimeout -> handleSendAckTimeout(msg)
             is EngineMessage.PaceTimeout -> handlePaceTimeout(msg)
             EngineMessage.PaceStall -> handlePaceStall()
+            EngineMessage.PacePoll -> handlePacePoll()
             is EngineMessage.ReconnectTick -> handleReconnectTick(msg)
             is EngineMessage.ReconnectAttemptResult -> handleReconnectAttemptResult(msg)
         }
@@ -2351,6 +2355,34 @@ internal class MeshEngine(
                 inbox.trySend(EngineMessage.PaceStall)
             }
         }
+        updatePacePolling()
+    }
+
+    // Firmware sends a QueueStatus when it enqueues a packet, not when a transmit slot frees, so a
+    // full device says nothing more. A keep-alive heartbeat makes it answer with its current free.
+    private fun updatePacePolling() {
+        val wanted = heldSends.isNotEmpty() && !hasDeviceRoom() && pollingAllowed()
+        if (!wanted) {
+            pacePollJob?.cancel()
+            pacePollJob = null
+        } else if (pacePollJob == null) {
+            pacePollJob = engineScope?.launch {
+                while (true) {
+                    delay(PACE_POLL_INTERVAL_MS)
+                    inbox.trySend(EngineMessage.PacePoll)
+                }
+            }
+        }
+    }
+
+    private fun pollingAllowed(): Boolean = bleHeartbeatEnabled || !transport.identity.raw.startsWith("ble:")
+
+    private fun handlePacePoll() {
+        if (heldSends.isEmpty() || hasDeviceRoom()) {
+            updatePacePolling()
+            return
+        }
+        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
     }
 
     private fun handlePaceTimeout(msg: EngineMessage.PaceTimeout) {
@@ -2382,6 +2414,8 @@ internal class MeshEngine(
         paceTimeoutJobs.clear()
         paceStallJob?.cancel()
         paceStallJob = null
+        pacePollJob?.cancel()
+        pacePollJob = null
         paceInFlight.clear()
         deviceQueueFree = null
         deviceQueueSilent = false
@@ -2843,6 +2877,11 @@ internal class MeshEngine(
         // How long a written send waits for its QueueStatus before it stops counting against the
         // device's queue. Matches Android's per-packet wait (PacketHandlerImpl RESPONSE_TIMEOUT).
         const val PACE_TIMEOUT_MS = 5_000L
+
+        // Poll period while sends are held behind a full device queue. A LoRa packet takes from
+        // about 0.1 s (fast presets) to several seconds (long-range presets) to air, so 1 s
+        // notices a freed slot within one packet time on the fast presets without a write storm.
+        const val PACE_POLL_INTERVAL_MS = 1_000L
 
         // Bound on user sends held back for the device's queue (the firmware queue is 16 deep).
         const val MAX_HELD_SENDS = 128

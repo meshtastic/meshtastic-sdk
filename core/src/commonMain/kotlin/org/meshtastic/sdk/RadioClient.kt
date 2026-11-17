@@ -741,7 +741,9 @@ public class RadioClient internal constructor(
          *
          * By default, the engine sends a heartbeat every 30 seconds on all transports including
          * BLE. Power-sensitive BLE apps can opt out. TCP and serial send heartbeats
-         * unconditionally (see `protocol.md` §16).
+         * unconditionally (see `protocol.md` §16). The opt-out also covers the short 1 s heartbeat
+         * poll the engine runs while sends are held behind a full device queue: on BLE no poll is
+         * written, and held sends are released by the 5 s fallback instead.
          */
         public fun disableBleHeartbeat(): Builder = apply { bleHeartbeatEnabled = false }
 

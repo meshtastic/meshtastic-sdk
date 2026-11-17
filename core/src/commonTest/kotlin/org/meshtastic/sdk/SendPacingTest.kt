@@ -18,6 +18,7 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.QueueStatus
+import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.toFrame
@@ -248,12 +249,118 @@ class SendPacingTest {
         }
     }
 
+    @Test
+    fun fullQueue_pollsWithAHeartbeatAndReleasesOnTheReply() = runTest {
+        withClient(warmFree = 0) { client, transport ->
+            val handles = List(3) { client.sendText("m$it", to = destination) }
+            runCurrent()
+            val before = transport.heartbeats()
+
+            advanceTimeBy(1_001)
+            runCurrent()
+            assertEquals(before + 1, transport.heartbeats(), "one poll per second")
+            assertEquals(emptyList(), transport.textIds())
+
+            transport.injectFrame(queueStatus(meshPacketId = 0, free = 2))
+            runCurrent()
+            assertEquals(handles.take(2).ids(), transport.textIds(), "released by the reply, not the 5 s timer")
+        }
+    }
+
+    @Test
+    fun nothingHeld_sendsNoPoll() = runTest {
+        withClient(warmFree = 0) { _, transport ->
+            val before = transport.heartbeats()
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertEquals(before, transport.heartbeats())
+        }
+    }
+
+    @Test
+    fun pollingStopsWhenTheFifoDrains() = runTest {
+        withClient(warmFree = 0) { client, transport ->
+            val handle = client.sendText("m", to = destination)
+            runCurrent()
+            advanceTimeBy(1_001)
+            runCurrent()
+            val polled = transport.heartbeats()
+
+            transport.injectFrame(queueStatus(meshPacketId = 0, free = 4))
+            runCurrent()
+            assertEquals(listOf(handle.id.raw), transport.textIds())
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(polled, transport.heartbeats())
+        }
+    }
+
+    @Test
+    fun pollingStopsOnDisconnect() = runTest {
+        withClient(warmFree = 0) { client, transport ->
+            client.sendText("m", to = destination)
+            runCurrent()
+            advanceTimeBy(1_001)
+            runCurrent()
+
+            client.disconnect()
+            runCurrent()
+            val polled = transport.heartbeats()
+
+            advanceTimeBy(3_000)
+            runCurrent()
+            assertEquals(polled, transport.heartbeats())
+        }
+    }
+
+    @Test
+    fun deviceThatIgnoresPolls_stillDrainsAfterTheTimeout() = runTest {
+        withClient(warmFree = 0) { client, transport ->
+            val handles = List(2) { client.sendText("m$it", to = destination) }
+            runCurrent()
+
+            advanceTimeBy(4_900)
+            runCurrent()
+            assertEquals(emptyList(), transport.textIds())
+            assertTrue(transport.heartbeats() > 0, "polls were sent")
+
+            advanceTimeBy(200)
+            runCurrent()
+            assertEquals(handles.ids(), transport.textIds())
+        }
+    }
+
+    @Test
+    fun bleWithHeartbeatsDisabled_doesNotPoll() = runTest {
+        withClient(warmFree = 0, identity = "ble:send-pacing", bleHeartbeat = false) { client, transport ->
+            val handle = client.sendText("m", to = destination)
+            runCurrent()
+            val before = transport.heartbeats()
+
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertEquals(before, transport.heartbeats())
+            assertEquals(SendState.Queued, handle.state.value)
+
+            advanceTimeBy(1_100)
+            runCurrent()
+            assertEquals(SendState.Sent, handle.state.value, "the 5 s fallback still releases it")
+        }
+    }
+
     private fun List<MessageHandle>.ids(): List<Int> = map { it.id.raw }
 
     private var warmId = 0
 
     private fun FakeRadioTransport.textIds(): List<Int> =
         outboundPackets().filter { it.decoded?.portnum == PortNum.TEXT_MESSAGE_APP && it.id != warmId }.map { it.id }
+
+    private fun FakeRadioTransport.heartbeats(): Int = outboundFrames().count { frame ->
+        val bytes = frame.bytes.toByteArray()
+        bytes.size >= 4 &&
+            runCatching { ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)).heartbeat }.getOrNull() != null
+    }
 
     private fun FakeRadioTransport.adminIds(): List<Int> =
         outboundPackets().filter { it.decoded?.portnum == PortNum.ADMIN_APP }.map { it.id }
@@ -278,15 +385,18 @@ class SendPacingTest {
 
     private suspend fun TestScope.withClient(
         warmFree: Int? = null,
+        identity: String = "fake:send-pacing",
+        bleHeartbeat: Boolean = true,
         block: suspend (RadioClient, FakeRadioTransport) -> Unit,
     ) {
-        val transport = FakeRadioTransport(identity = TransportIdentity("fake:send-pacing"), autoHandshake = true)
+        val transport = FakeRadioTransport(identity = TransportIdentity(identity), autoHandshake = true)
         val client = RadioClient.Builder()
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
             .sendTimeout(60.seconds)
             .autoSyncTimeOnConnect(false)
+            .apply { if (!bleHeartbeat) disableBleHeartbeat() }
             .build()
         client.connect()
         runCurrent()

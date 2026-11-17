@@ -199,6 +199,9 @@ internal sealed interface EngineMessage {
     /** Nothing is in flight and the device reported a full queue, but no `QueueStatus` followed. */
     data object PaceStall : EngineMessage
 
+    /** Sends are held and the device reports no room: ask it for a fresh `QueueStatus`. */
+    data object PacePoll : EngineMessage
+
     // ── Auto-reconnect (DX-7 / COV-4) ──────────────────────────────────────
 
     /** Backoff window expired; supervisor should attempt the next reconnect cycle. */
