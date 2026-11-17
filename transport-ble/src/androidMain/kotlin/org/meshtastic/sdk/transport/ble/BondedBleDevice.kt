@@ -71,9 +71,12 @@ internal fun Collection<Pair<String?, String>>.toBondedBleDevices(): List<Bonded
     .map { (name, address) -> BondedBleDevice(name = name?.takeIf { it.isNotBlank() }, address = address) }
 
 /**
- * Builds a [BleTransport] for a bonded device. Equivalent to `BleTransport(device.address)`.
+ * Builds a [BleTransport] for a bonded device. Equivalent to `BleTransport(device.address, resilience)`.
  *
  * @since 0.3.0
  */
-public fun BleTransport(device: BondedBleDevice, builderAction: PeripheralBuilder.() -> Unit = {}): BleTransport =
-    BleTransport(device.address, builderAction)
+public fun BleTransport(
+    device: BondedBleDevice,
+    resilience: BleResilience = BleResilience.None,
+    builderAction: PeripheralBuilder.() -> Unit = {},
+): BleTransport = BleTransport(device.address, resilience, builderAction)

@@ -23,7 +23,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,7 +71,7 @@ import kotlin.coroutines.EmptyCoroutineContext
  * @param address stable platform-specific address for storage identity keying.
  */
 public class BleTransport(
-    private val peripheral: Peripheral,
+    internal val peripheral: Peripheral,
     address: String,
     parentContext: CoroutineContext = EmptyCoroutineContext,
 ) : RadioTransport {
@@ -132,8 +134,14 @@ public class BleTransport(
      */
     internal var postConnectHook: suspend CoroutineScope.(Peripheral) -> Unit = {}
 
+    // Opt-in recovery seams (see BleResilience); all null unless the factory wired them.
+    internal var bondControl: BondControl? = null
+    internal var autoConnectSwitch: AutoConnectSwitch? = null
+    internal var gattCacheRefresher: GattCacheRefresher? = null
+
     override suspend fun connect() {
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
+        autoConnectSwitch?.reset()
         // Reset per-connect lifecycle flags so reuse-after-disconnect works.
         warmupComplete.value = false
         lastDrainFailure.value = null
@@ -145,7 +153,12 @@ public class BleTransport(
         frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
         try {
+            bondControl?.let { control ->
+                control.ensureBonded(onBonding = { _state.value = TransportState.Bonding })
+                _state.value = TransportState.Connecting
+            }
             connectWithRetry()
+            repairStaleGattCache()
 
             // Child of the transport scope (dies with it on shutdown), but independently
             // cancellable per connect cycle via cancelJobs()/disconnect().
@@ -398,7 +411,53 @@ public class BleTransport(
             },
         ) {
             if (shuttingDown.value) throw CancellationException("BleTransport shut down")
+            connectOnce()
+        }
+    }
+
+    private suspend fun connectOnce() {
+        val switch = autoConnectSwitch
+        if (switch == null) {
             peripheral.connect()
+            return
+        }
+        if (!switch.isOn) {
+            try {
+                withTimeout(DIRECT_CONNECT_TIMEOUT_MS) { peripheral.connect() }
+                return
+            } catch (_: TimeoutCancellationException) {
+                currentCoroutineContext().ensureActive()
+                // A stalled direct connect leaves Android's GATT slot busy; release it, then let the
+                // OS wait for the bonded radio itself.
+                try {
+                    peripheral.disconnect()
+                } catch (_: Exception) { /* idempotent */ }
+                switch.turnOn()
+                delay(AUTO_CONNECT_SETTLE_MS)
+            }
+        }
+        try {
+            withTimeout(AUTO_CONNECT_TIMEOUT_MS) { peripheral.connect() }
+        } catch (e: TimeoutCancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw MeshtasticException.Transport("BLE autoConnect to ${identity.raw} did not complete", e)
+        }
+    }
+
+    /** One cache refresh and rediscovery when discovery lacks the Meshtastic GATT table. */
+    private suspend fun repairStaleGattCache() {
+        val refresher = gattCacheRefresher ?: return
+        if (!peripheral.services.value.isMissingMeshtasticGatt()) return
+        if (!refresher.refresh()) return
+        try {
+            peripheral.disconnect()
+        } catch (_: Exception) { /* idempotent */ }
+        delay(GATT_REFRESH_SETTLE_MS)
+        connectWithRetry()
+        if (peripheral.services.value.isMissingMeshtasticGatt()) {
+            throw MeshtasticException.Transport(
+                "Meshtastic GATT service not found on ${identity.raw} after a GATT cache refresh",
+            )
         }
     }
 
@@ -468,6 +527,11 @@ public class BleTransport(
         private const val BOND_WARMUP_TIMEOUT_MS: Long = 120_000L
         private const val BOND_RETRY_LIMIT: Int = 1
         private const val BOND_RETRY_BACKOFF_MS: Long = 2_000L
+
+        internal const val DIRECT_CONNECT_TIMEOUT_MS: Long = 15_000L
+        internal const val AUTO_CONNECT_TIMEOUT_MS: Long = 60_000L
+        private const val AUTO_CONNECT_SETTLE_MS: Long = 1_000L
+        private const val GATT_REFRESH_SETTLE_MS: Long = 1_000L
 
         /** Total connect attempts (1 initial + N-1 retries) for transient GATT errors. */
         internal const val GATT_RETRY_ATTEMPTS: Int = 3

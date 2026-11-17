@@ -20,6 +20,7 @@ import kotlin.coroutines.EmptyCoroutineContext
  *
  * @param radio a radio emitted by [BleScanner.scan].
  * @param parentContext parent coroutine context for the transport's internal scope.
+ * @param resilience opt-in link-recovery mechanisms; Android only, see [BleResilience].
  * @param builderAction optional [PeripheralBuilder] configuration (threading, `autoConnect`, ...).
  * @throws IllegalArgumentException if [radio] was not produced by [BleScanner.scan].
  * @since 0.3.0
@@ -27,16 +28,34 @@ import kotlin.coroutines.EmptyCoroutineContext
 public fun BleTransport(
     radio: DiscoveredRadio,
     parentContext: CoroutineContext = EmptyCoroutineContext,
+    resilience: BleResilience = BleResilience.None,
     builderAction: PeripheralBuilder.() -> Unit = {},
 ): BleTransport {
     val advertisement = requireNotNull(radio.advertisement) {
         "DiscoveredRadio must come from BleScanner.scan()"
     }
-    val transport = BleTransport(
-        peripheral = Peripheral(advertisement, builderAction),
-        address = radio.address,
-        parentContext = parentContext,
-    )
+    return createBleTransport(radio.address, parentContext, resilience, builderAction) { configure ->
+        Peripheral(advertisement, configure)
+    }
+}
+
+/** Builds the peripheral through [createPeripheral], then wires platform tuning and [resilience]. */
+internal fun createBleTransport(
+    address: String,
+    parentContext: CoroutineContext,
+    resilience: BleResilience,
+    builderAction: PeripheralBuilder.() -> Unit,
+    createPeripheral: (PeripheralBuilder.() -> Unit) -> Peripheral,
+): BleTransport {
+    val switch = if (resilience.autoConnectFallback) AutoConnectSwitch() else null
+    val peripheral = createPeripheral {
+        // The caller's builderAction runs last so its own autoConnectIf wins.
+        switch?.let { installAutoConnect(it) }
+        builderAction()
+    }
+    val transport = BleTransport(peripheral = peripheral, address = address, parentContext = parentContext)
+    transport.autoConnectSwitch = switch
     applyPlatformTuning(transport)
+    applyPlatformResilience(transport, resilience)
     return transport
 }

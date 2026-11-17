@@ -14,6 +14,7 @@ import com.juul.kable.toIdentifier
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * ATT MTU requested after each link establishment. ToRadio/FromRadio frames are up to 512 bytes
@@ -53,16 +54,26 @@ private const val CONNECTION_PRIORITY_BOOST_MS: Long = 30_000L
  *   `autoConnect`, etc.). For bonded devices without a fresh advertisement, add
  *   `autoConnectIf { true }` to avoid GATT error 133.
  */
-public fun BleTransport(address: String, builderAction: PeripheralBuilder.() -> Unit = {}): BleTransport {
-    val transport = BleTransport(
-        peripheral = Peripheral(address.toIdentifier(), builderAction),
-        address = address,
-    )
-    applyPlatformTuning(transport)
-    return transport
+public fun BleTransport(address: String, builderAction: PeripheralBuilder.() -> Unit = {}): BleTransport =
+    BleTransport(address, BleResilience.None, builderAction)
+
+/**
+ * Same as `BleTransport(address, builderAction)` with opt-in link recovery: see [BleResilience].
+ *
+ * @param address Bluetooth MAC address string (e.g. `"AA:BB:CC:DD:EE:FF"`).
+ * @param resilience the mechanisms to enable; [BleResilience.None] reproduces the plain factory.
+ * @param builderAction Optional [PeripheralBuilder] action; runs after the resilience wiring, so an
+ *   `autoConnectIf` set here takes precedence.
+ * @since 0.3.0
+ */
+public fun BleTransport(
+    address: String,
+    resilience: BleResilience,
+    builderAction: PeripheralBuilder.() -> Unit = {},
+): BleTransport = createBleTransport(address, EmptyCoroutineContext, resilience, builderAction) { configure ->
+    Peripheral(address.toIdentifier(), configure)
 }
 
-/** Android tuning shared by the address factory and the scanned-radio factory. */
 internal actual fun applyPlatformTuning(transport: BleTransport) {
     transport.postConnectHook = { connected ->
         val android = connected as? AndroidPeripheral

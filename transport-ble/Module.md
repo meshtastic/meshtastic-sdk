@@ -77,5 +77,15 @@ for the transport ↔ engine threading contract.
   gives no reliable Meshtastic marker, and a bond does not mean the radio is in range. Needs
   `BLUETOOTH_CONNECT` on API 31+ (not requested by the SDK). `BleTransport(device)` is the one-liner
   to a transport. iOS has no bonded list and the JVM backends expose none, so neither target has this.
+- `org.meshtastic.sdk.transport.ble.BleResilience` — opt-in Android link recovery, passed as
+  `resilience` to `BleTransport(radio, ...)` or `BleTransport(address | device, resilience)`; all off by
+  default, ignored on iOS and JVM. `bondFirst` bonds before the GATT connect (publishing
+  `TransportState.Bonding`, 30 s limit, a refused bond fails the connect). `autoConnectFallback` retries
+  with `autoConnect = true` when a direct connect has not completed in 15 s; the next `connect()` starts
+  direct again. `refreshStaleGattCache` calls the hidden `BluetoothGatt.refresh()` (reflection into
+  Kable 0.45's private fields, kept by `consumer-rules.pro`) and reconnects once when discovery lacks
+  the Meshtastic service or one of its characteristics; a refused refresh leaves the connect unchanged.
+  The write type stays write-with-response: firmware declares `toradio` as `CHR_PROPS_WRITE` only
+  (`NRF52Bluetooth.cpp:324`, `NimbleBluetooth.cpp:985`), so there is nothing to choose.
 - `org.meshtastic.sdk.transport.ble.BleConstants` — service / characteristic UUIDs as `kotlin.uuid.Uuid`
   and pre-built Kable `Characteristic` handles.
