@@ -8,15 +8,21 @@
 package org.meshtastic.sdk.internal
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString
 import org.meshtastic.proto.ToRadio
@@ -36,6 +42,7 @@ internal class FileTransferApiImpl(
     private val client: RadioClient,
     private val maxRetries: Int = XModemProtocol.DEFAULT_MAX_RETRIES,
     private val blockTimeoutMs: Long = XModemProtocol.DEFAULT_BLOCK_TIMEOUT_MS,
+    private val maxBytes: Int = FileTransferApi.MAX_FILE_BYTES,
 ) : FileTransferApi {
     private val busy = Mutex()
     private val _progress = MutableStateFlow<FileTransferProgress?>(null)
@@ -46,7 +53,7 @@ internal class FileTransferApiImpl(
         return run(
             path,
             FileTransferDirection.Download,
-            XModemDownload(path, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs),
+            XModemDownload(path, maxBytes = maxBytes, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs),
         )
     }
 
@@ -87,13 +94,16 @@ internal class FileTransferApiImpl(
         path: String,
         direction: FileTransferDirection,
         machine: XModemMachine<T>,
-    ): FileTransferResult<T> = coroutineScope {
+    ): FileTransferResult<T> {
         val inbound = Channel<Inbound>(Channel.UNLIMITED)
-        // UNDISPATCHED registers both subscriptions before the first frame is sent.
-        val frames = launch(start = CoroutineStart.UNDISPATCHED) {
+        // The collectors live in their own scope so they outlast the caller's cancellation while the
+        // transfer waits for the device's reply to its cleanup frames. UNDISPATCHED registers both
+        // subscriptions before the first frame is sent.
+        val scope = CoroutineScope(currentCoroutineContext().minusKey(Job) + SupervisorJob())
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             client.events.collect { if (it is MeshEvent.XmodemPacket) inbound.trySend(Inbound.Frame(it.packet)) }
         }
-        val drops = launch(start = CoroutineStart.UNDISPATCHED) {
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
             client.connection.first { it !is ConnectionState.Connected }
             inbound.trySend(Inbound.Disconnected)
         }
@@ -104,8 +114,8 @@ internal class FileTransferApiImpl(
             return now
         }
 
-        try {
-            var step = machine.start(tick())
+        suspend fun loop(first: XModemStep<T>): FileTransferResult<T> {
+            var step = first
             var result: FileTransferResult<T>? = null
             while (result == null) {
                 step.bytes?.let { _progress.value = FileTransferProgress(path, direction, it, machine.totalBytes) }
@@ -134,13 +144,16 @@ internal class FileTransferApiImpl(
                     }
                 }
             }
-            result
+            return result
+        }
+
+        return try {
+            loop(machine.start(tick()))
         } catch (e: CancellationException) {
-            send(machine.cancel())
+            withContext(NonCancellable) { loop(machine.cancel(tick())) }
             throw e
         } finally {
-            frames.cancel()
-            drops.cancel()
+            scope.cancel()
             inbound.close()
         }
     }

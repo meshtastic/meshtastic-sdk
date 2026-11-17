@@ -159,7 +159,7 @@ class XModemMachineTest {
     fun downloadRetriesExhaustedAbortsWithoutCan() {
         val machine = XModemDownload("/a", maxRetries = 3)
         machine.start(0)
-        val chunk = bytesOf(10)
+        val chunk = bytesOf(128)
         repeat(3) {
             assertEquals(
                 listOf(XModem.Control.NAK),
@@ -167,9 +167,22 @@ class XModemMachineTest {
             )
         }
         val last = machine.onFrame(deviceBlock(1, chunk, crc = 1), 9)
-        assertEquals(FileTransferFailure.RetriesExhausted, failure(last))
         assertEquals(listOf(XModemProtocol.downloadAbort()), last.send)
         assertTrue(last.send.none { it.control == XModem.Control.CAN })
+        assertEquals(null, last.outcome)
+        assertEquals(null, machine.onFrame(ctl(XModem.Control.ACK), 10).outcome)
+        assertEquals(FileTransferFailure.RetriesExhausted, failure(machine.onFrame(ctl(XModem.Control.CAN), 11)))
+    }
+
+    @Test
+    fun downloadRetriesExhaustedOnShortBlockAcksSoFirmwareSendsEot() {
+        val machine = XModemDownload("/a", maxRetries = 1)
+        machine.start(0)
+        val chunk = bytesOf(10)
+        machine.onFrame(deviceBlock(1, chunk, crc = 1), 1)
+        val last = machine.onFrame(deviceBlock(1, chunk, crc = 1), 2)
+        assertEquals(listOf(XModem.Control.ACK), controls(last))
+        assertEquals(FileTransferFailure.RetriesExhausted, failure(machine.onFrame(ctl(XModem.Control.EOT), 3)))
     }
 
     @Test
@@ -211,7 +224,10 @@ class XModemMachineTest {
         val machine = XModemDownload("/a", blockTimeoutMs = 1000)
         machine.start(0)
         assertTrue(machine.onTick(999).outcome == null)
-        assertEquals(FileTransferFailure.Timeout, failure(machine.onTick(1000)))
+        val abort = machine.onTick(1000)
+        assertEquals(listOf(XModemProtocol.downloadAbort()), abort.send)
+        assertEquals(null, abort.outcome)
+        assertEquals(FileTransferFailure.Timeout, failure(machine.onTick(2000)))
     }
 
     @Test
@@ -224,18 +240,30 @@ class XModemMachineTest {
         assertEquals(2010, machine.deadlineMs)
         assertEquals(listOf(XModem.Control.NAK), controls(machine.onTick(2010)))
         val last = machine.onTick(3010)
-        assertEquals(FileTransferFailure.Timeout, failure(last))
         assertEquals(listOf(XModemProtocol.downloadAbort()), last.send)
+        assertEquals(FileTransferFailure.Timeout, failure(machine.onFrame(ctl(XModem.Control.CAN), 3011)))
     }
 
     @Test
-    fun downloadTooLargeAborts() {
+    fun downloadTooLargeFullBlockAborts() {
         val machine = XModemDownload("/a", maxBytes = 200)
         machine.start(0)
         machine.onFrame(deviceBlock(1, bytesOf(128)), 1)
         val step = machine.onFrame(deviceBlock(2, bytesOf(128)), 2)
-        assertEquals(FileTransferFailure.TooLarge, failure(step))
         assertEquals(listOf(XModemProtocol.downloadAbort()), step.send)
+        assertEquals(FileTransferFailure.TooLarge, failure(machine.onFrame(ctl(XModem.Control.CAN), 3)))
+    }
+
+    @Test
+    fun downloadTooLargeShortBlockIsAckedForEotAndKeepsNoBytes() {
+        val machine = XModemDownload("/a", maxBytes = 200)
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, bytesOf(128)), 1)
+        val step = machine.onFrame(deviceBlock(2, bytesOf(100)), 2)
+        assertEquals(listOf(XModem.Control.ACK), controls(step))
+        assertEquals(null, step.bytes)
+        assertEquals(null, step.outcome)
+        assertEquals(FileTransferFailure.TooLarge, failure(machine.onFrame(ctl(XModem.Control.EOT), 3)))
     }
 
     @Test
@@ -250,8 +278,25 @@ class XModemMachineTest {
     fun downloadCancelReturnsAbortFrameNotCan() {
         val machine = XModemDownload("/a")
         machine.start(0)
-        assertEquals(listOf(XModemProtocol.downloadAbort()), machine.cancel())
-        assertTrue(machine.cancel().isEmpty())
+        val step = machine.cancel(1)
+        assertEquals(listOf(XModemProtocol.downloadAbort()), step.send)
+        assertEquals(null, step.outcome)
+        assertTrue(machine.cancel(2).send.isEmpty())
+        assertTrue(machine.onFrame(ctl(XModem.Control.CAN), 3).outcome != null)
+    }
+
+    @Test
+    fun downloadFollowingAShortOverCapBlockIsClean() {
+        val first = XModemDownload("/a", maxBytes = 50)
+        first.start(0)
+        first.onFrame(deviceBlock(1, bytesOf(100)), 1)
+        first.onFrame(ctl(XModem.Control.EOT), 2)
+        val second = XModemDownload("/b")
+        second.start(3)
+        val full = second.onFrame(deviceBlock(1, bytesOf(128)), 4)
+        assertEquals(listOf(XModem.Control.ACK), controls(full))
+        assertEquals(null, full.outcome)
+        assertEquals(null, second.onFrame(ctl(XModem.Control.EOT), 5).outcome)
     }
 
     // Upload
@@ -318,8 +363,9 @@ class XModemMachineTest {
         machine.onFrame(ctl(XModem.Control.NAK), 2)
         machine.onFrame(ctl(XModem.Control.NAK), 3)
         val last = machine.onFrame(ctl(XModem.Control.NAK), 4)
-        assertEquals(FileTransferFailure.RetriesExhausted, failure(last))
         assertEquals(listOf(XModem.Control.CAN), controls(last))
+        assertEquals(null, last.outcome)
+        assertEquals(FileTransferFailure.RetriesExhausted, failure(machine.onFrame(ctl(XModem.Control.ACK), 5)))
     }
 
     @Test
@@ -365,12 +411,70 @@ class XModemMachineTest {
     }
 
     @Test
-    fun uploadSilentStartTimesOutWithoutCan() {
+    fun uploadSilentStartProbesWithoutCanAndTimesOut() {
+        val machine = XModemUpload("/a", bytesOf(10), blockTimeoutMs = 1000)
+        val start = machine.start(0)
+        val probe = machine.onTick(1000)
+        assertEquals(start.send, probe.send)
+        assertEquals(null, probe.outcome)
+        val end = machine.onTick(2000)
+        assertEquals(FileTransferFailure.Timeout, failure(end))
+        assertTrue(end.send.isEmpty())
+    }
+
+    @Test
+    fun uploadLostStartAckIsProbedThenNakCleansWithCanOnOwnPath() {
         val machine = XModemUpload("/a", bytesOf(10), blockTimeoutMs = 1000)
         machine.start(0)
-        val step = machine.onTick(1000)
-        assertEquals(FileTransferFailure.Timeout, failure(step))
-        assertTrue(step.send.isEmpty())
+        machine.onTick(1000)
+        val nak = machine.onFrame(ctl(XModem.Control.NAK), 1001)
+        assertEquals(listOf(XModem.Control.CAN), controls(nak))
+        assertEquals(null, nak.outcome)
+        assertEquals(null, machine.onFrame(ctl(XModem.Control.EOT), 1002).outcome)
+        assertEquals(FileTransferFailure.Timeout, failure(machine.onFrame(ctl(XModem.Control.ACK), 1003)))
+    }
+
+    @Test
+    fun uploadLostStartRequestIsRecoveredByProbeAck() {
+        val machine = XModemUpload("/a", bytesOf(10), blockTimeoutMs = 1000)
+        machine.start(0)
+        machine.onTick(1000)
+        val step = machine.onFrame(ctl(XModem.Control.ACK), 1001)
+        assertEquals(1, step.send.single().seq)
+        assertEquals(XModem.Control.SOH, step.send.single().control)
+    }
+
+    @Test
+    fun uploadCancelBeforeStartAckSendsNoCan() {
+        val machine = XModemUpload("/a", bytesOf(10))
+        machine.start(0)
+        val step = machine.cancel(1)
+        assertTrue(step.send.none { it.control == XModem.Control.CAN })
+        assertEquals(XModem.Control.SOH, step.send.single().control)
+        assertEquals(0, step.send.single().seq)
+        // device was idle and ACKs the probe: close it with EOT, never CAN
+        val ack = machine.onFrame(ctl(XModem.Control.ACK), 2)
+        assertEquals(listOf(XModem.Control.EOT), controls(ack))
+        assertTrue(machine.onFrame(ctl(XModem.Control.ACK), 3).outcome != null)
+    }
+
+    @Test
+    fun uploadCancelBeforeStartAckThenNakUsesCanOnOwnPath() {
+        val machine = XModemUpload("/a", bytesOf(10))
+        machine.start(0)
+        machine.cancel(1)
+        assertEquals(listOf(XModem.Control.CAN), controls(machine.onFrame(ctl(XModem.Control.NAK), 2)))
+    }
+
+    @Test
+    fun uploadFinishedMachineIgnoresLateFrames() {
+        val first = XModemUpload("/a", bytesOf(10), blockTimeoutMs = 1000)
+        first.start(0)
+        first.onTick(1000)
+        first.onTick(2000)
+        val late = first.onFrame(ctl(XModem.Control.ACK), 3001)
+        assertTrue(late.send.isEmpty())
+        assertEquals(null, late.outcome)
     }
 
     @Test
@@ -381,8 +485,18 @@ class XModemMachineTest {
         val resend = machine.onTick(1010)
         assertEquals(block.send, resend.send)
         val last = machine.onTick(2010)
-        assertEquals(FileTransferFailure.Timeout, failure(last))
         assertEquals(listOf(XModem.Control.CAN), controls(last))
+        assertEquals(FileTransferFailure.Timeout, failure(machine.onFrame(ctl(XModem.Control.ACK), 2011)))
+    }
+
+    @Test
+    fun uploadEotAckTimeoutDoesNotResendEot() {
+        val machine = XModemUpload("/a", ByteString.EMPTY, blockTimeoutMs = 1000)
+        machine.start(0)
+        assertEquals(listOf(XModem.Control.EOT), controls(machine.onFrame(ctl(XModem.Control.ACK), 1)))
+        val end = machine.onTick(1001)
+        assertTrue(end.send.isEmpty())
+        assertEquals(FileTransferFailure.Timeout, failure(end))
     }
 
     @Test
@@ -398,7 +512,11 @@ class XModemMachineTest {
         val machine = XModemUpload("/a", bytesOf(10))
         machine.start(0)
         machine.onFrame(ctl(XModem.Control.ACK), 1)
-        assertEquals(listOf(XModem.Control.CAN), machine.cancel().map { it.control })
-        assertTrue(machine.cancel().isEmpty())
+        // the device ACKed this upload's request, so firmware's filename is the upload target
+        val step = machine.cancel(2)
+        assertEquals(listOf(XModem.Control.CAN), controls(step))
+        assertEquals(null, step.outcome)
+        assertTrue(machine.cancel(3).send.isEmpty())
+        assertTrue(machine.onFrame(ctl(XModem.Control.ACK), 4).outcome != null)
     }
 }

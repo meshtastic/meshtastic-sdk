@@ -588,7 +588,7 @@ public sealed interface FileTransferFailure {
 }
 ```
 
-One transfer runs per client at a time; a second call returns `Busy`. Each block waits 10 s for the device and is retried up to 10 times. Cancelling the calling coroutine aborts the transfer: an upload sends `CAN` (firmware deletes the partial file), a download sends a frame that makes firmware close the file without deleting it. The transfer reads device frames from `RadioClient.events`; firmware sends one frame and waits for the reply, so the drop-oldest buffer does not overflow from the transfer alone.
+One transfer runs per client at a time; a second call returns `Busy`. Each block waits 10 s for the device and is retried up to 10 times. Cancelling the calling coroutine aborts the transfer: an upload sends `CAN` once the device has acknowledged the request (firmware deletes the partial file) and, before that, re-sends the request to find out whether the device is receiving, never `CAN`; a download sends a frame that makes firmware close the file without deleting it. The transfer reads device frames from `RadioClient.events`; firmware sends one frame and waits for the reply, so the drop-oldest buffer does not overflow from the transfer alone.
 
 ## Config Builder Extensions *(since 0.2.0)*
 

@@ -18,7 +18,9 @@ import okio.ByteString
  *
  * One transfer runs at a time per client; a second call fails fast with
  * [FileTransferFailure.Busy]. Cancelling the calling coroutine aborts the transfer and leaves
- * the device idle: an upload sends `CAN`, which makes firmware delete the partial file; a
+ * the device idle: once the device has acknowledged the upload request, an upload sends `CAN`,
+ * which makes firmware delete the partial file; before that it re-sends the request to learn
+ * the device's state and never sends `CAN`, which could delete an unrelated file. A
  * download sends a frame firmware treats as unexpected, so the source file is kept (firmware
  * deletes the file named by the last request when it receives `CAN`).
  *
