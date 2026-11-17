@@ -60,6 +60,9 @@ public interface FileTransferApi {
      * The device answers a request for a path it cannot open with a refusal, reported as
      * [FileTransferFailure.Refused]. An empty file returns an empty [ByteString].
      *
+     * The download completes once the device's last block (shorter than 128 bytes) is accepted: if
+     * the device's closing frame is a `CAN` or never arrives, the bytes are still returned.
+     *
      * @param path device filesystem path, 1 to [MAX_PATH_BYTES] UTF-8 bytes, no NUL
      * @return the file contents, or the reason the transfer did not complete. A file larger than
      *   [MAX_FILE_BYTES] fails with [FileTransferFailure.TooLarge] as soon as the limit is crossed.

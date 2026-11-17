@@ -42,6 +42,11 @@ private class FirmwareXModem(val files: MutableMap<String, ByteString> = mutable
     var corrupt = 0
     var nakNext = 0
 
+    enum class Closing { Eot, Can, Nothing }
+
+    /** What the device sends after the ACK of the short block; the file is already closed either way. */
+    var closing = Closing.Eot
+
     private fun block(): XModem {
         val data = transmitting!!
         val from = (packetNo - 1) * 128
@@ -111,7 +116,11 @@ private class FirmwareXModem(val files: MutableMap<String, ByteString> = mutable
                 if (sendingEot) {
                     transmitting = null
                     sendingEot = false
-                    return ctl(XModem.Control.EOT)
+                    return when (closing) {
+                        Closing.Eot -> ctl(XModem.Control.EOT)
+                        Closing.Can -> ctl(XModem.Control.CAN)
+                        Closing.Nothing -> null
+                    }
                 }
                 packetNo++
                 return block()
@@ -472,6 +481,44 @@ class FileTransferApiTest {
         assertEquals(2, beats.size)
         assertTrue(beats.all { it.nonce >= 2 })
         assertTrue(beats[0] != beats[1])
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun downloadSucceedsWhenDeviceAnswersTheFinalAckWithCan() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(225)
+        val firmware = FirmwareXModem(mutableMapOf("/prefs/config.proto" to content))
+        firmware.closing = FirmwareXModem.Closing.Can
+        val op = async { client.files.download("/prefs/config.proto") }
+        pump(transport, firmware, op)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun downloadSucceedsAfterTimeoutWhenDeviceSendsNothingAfterTheFinalAck() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(225)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        firmware.closing = FirmwareXModem.Closing.Nothing
+        val op = async { client.files.download("/a") }
+        pump(transport, firmware, op)
+        assertTrue(!op.isCompleted)
+        advanceTimeBy(10_001)
+        pump(transport, firmware, op, from = sentXModem(transport).size - 1)
+        advanceTimeBy(10_001)
+        runCurrent()
+        assertEquals(FileTransferResult.Success(content), op.await())
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        // the device is idle again: the next download is clean
+        firmware.closing = FirmwareXModem.Closing.Eot
+        val next = async { client.files.download("/a") }
+        pump(transport, firmware, next, from = sentXModem(transport).size)
+        assertEquals(FileTransferResult.Success(content), next.await())
         runCatching { client.disconnect() }
     }
 

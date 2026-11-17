@@ -203,11 +203,53 @@ class XModemMachineTest {
     }
 
     @Test
-    fun downloadCanAfterLastBlockBeforeEot() {
+    fun downloadCanAfterShortBlockStillSucceedsWithAllBytes() {
+        val file = bytesOf(5)
         val machine = XModemDownload("/a")
         machine.start(0)
-        machine.onFrame(deviceBlock(1, bytesOf(5)), 1)
+        machine.onFrame(deviceBlock(1, file), 1)
+        assertEquals(XModemOutcome.Done(file), machine.onFrame(ctl(XModem.Control.CAN), 2).outcome)
+    }
+
+    @Test
+    fun downloadCanAfterEmptyFinalBlockStillSucceeds() {
+        val file = bytesOf(128)
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, file), 1)
+        machine.onFrame(deviceBlock(2, ByteString.EMPTY), 2)
+        assertEquals(XModemOutcome.Done(file), machine.onFrame(ctl(XModem.Control.CAN), 3).outcome)
+    }
+
+    @Test
+    fun downloadCanAfterFullBlockIsStillDeviceCancelled() {
+        val machine = XModemDownload("/a")
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, bytesOf(128)), 1)
         assertEquals(FileTransferFailure.DeviceCancelled, failure(machine.onFrame(ctl(XModem.Control.CAN), 2)))
+    }
+
+    @Test
+    fun downloadSilenceAfterShortBlockAcksAgainAndSucceeds() {
+        val file = bytesOf(97)
+        val machine = XModemDownload("/a", blockTimeoutMs = 1000)
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, file), 10)
+        val confirm = machine.onTick(1010)
+        assertEquals(listOf(XModem.Control.ACK), controls(confirm))
+        assertEquals(null, confirm.outcome)
+        assertTrue(confirm.send.single().control == XModem.Control.ACK)
+        assertEquals(XModemOutcome.Done(file), machine.onFrame(ctl(XModem.Control.EOT), 1011).outcome)
+    }
+
+    @Test
+    fun downloadSilenceAfterShortBlockStillSucceedsWhenNothingAnswersTheConfirm() {
+        val file = bytesOf(97)
+        val machine = XModemDownload("/a", blockTimeoutMs = 1000)
+        machine.start(0)
+        machine.onFrame(deviceBlock(1, file), 10)
+        machine.onTick(1010)
+        assertEquals(XModemOutcome.Done(file), machine.onTick(2010).outcome)
     }
 
     @Test

@@ -138,7 +138,7 @@ internal interface XModemMachine<T> {
     fun cancel(nowMs: Long): XModemStep<T>
 }
 
-private class Settling<T>(val expect: XModem.Control, val outcome: XModemOutcome<T>)
+private class Settling<T>(val expect: Set<XModem.Control>, val outcome: XModemOutcome<T>)
 
 /** Device to host. The host sends the request (`STX`, `seq = 0`, path) and acknowledges each block. */
 internal class XModemDownload(
@@ -170,9 +170,11 @@ internal class XModemDownload(
 
     override fun onFrame(frame: XModem, nowMs: Long): XModemStep<ByteString> {
         if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
-        if (phase == Phase.Settling) return if (frame.control == settling!!.expect) endSettling() else XModemStep()
+        if (phase == Phase.Settling) return if (frame.control in settling!!.expect) endSettling() else XModemStep()
         return when (frame.control) {
-            XModem.Control.CAN -> fail(FileTransferFailure.DeviceCancelled)
+            // A short block is always the last (xmodem.cpp:189,274): the bytes are complete, CAN only closes.
+            XModem.Control.CAN ->
+                if (phase == Phase.AwaitEot) finish() else fail(FileTransferFailure.DeviceCancelled)
 
             XModem.Control.NAK ->
                 if (phase == Phase.AwaitFirst) fail(FileTransferFailure.Refused) else XModemStep()
@@ -193,9 +195,21 @@ internal class XModemDownload(
         return when (phase) {
             Phase.Settling -> endSettling()
             Phase.AwaitBlock -> retry(nowMs, FileTransferFailure.Timeout, shortFrame = false)
-            Phase.AwaitEot -> fail(FileTransferFailure.Timeout)
+            Phase.AwaitEot -> confirmComplete(nowMs)
             else -> abort(nowMs, FileTransferFailure.Timeout)
         }
+    }
+
+    /**
+     * The bytes are complete but the device's closing frame did not arrive: our ACK may have been lost,
+     * leaving it transmitting with `isEOT` set. Another ACK makes it send `EOT` (or, if it was already
+     * idle, `CAN`); either reply means it is clean. The result is `Done` whatever comes back.
+     */
+    private fun confirmComplete(nowMs: Long): XModemStep<ByteString> {
+        phase = Phase.Settling
+        settling = Settling(setOf(XModem.Control.EOT, XModem.Control.CAN), XModemOutcome.Done(data.readByteString()))
+        deadlineMs = nowMs + blockTimeoutMs
+        return log.step(log.control(XModem.Control.ACK))
     }
 
     override fun cancel(nowMs: Long): XModemStep<ByteString> = when (phase) {
@@ -242,9 +256,9 @@ internal class XModemDownload(
      */
     private fun abort(nowMs: Long, failure: FileTransferFailure, shortFrame: Boolean = false): XModemStep<ByteString> {
         val (frame, expect) = if (shortFrame) {
-            log.control(XModem.Control.ACK) to XModem.Control.EOT
+            log.control(XModem.Control.ACK) to setOf(XModem.Control.EOT, XModem.Control.CAN)
         } else {
-            XModemProtocol.downloadAbort() to XModem.Control.CAN
+            XModemProtocol.downloadAbort() to setOf(XModem.Control.CAN)
         }
         phase = Phase.Settling
         settling = Settling(expect, XModemOutcome.Failed(failure))
@@ -302,7 +316,7 @@ internal class XModemUpload(
 
     override fun onFrame(frame: XModem, nowMs: Long): XModemStep<Unit> {
         if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
-        if (phase == Phase.Settling) return if (frame.control == settling!!.expect) endSettling() else XModemStep()
+        if (phase == Phase.Settling) return if (frame.control in settling!!.expect) endSettling() else XModemStep()
         return when (frame.control) {
             XModem.Control.CAN -> fail(FileTransferFailure.DeviceCancelled)
 
@@ -425,7 +439,7 @@ internal class XModemUpload(
     /** Sends [control] to put the device back to idle and waits for its `ACK`. */
     private fun settle(nowMs: Long, control: XModem.Control, outcome: XModemOutcome<Unit>): XModemStep<Unit> {
         phase = Phase.Settling
-        settling = Settling(XModem.Control.ACK, outcome)
+        settling = Settling(setOf(XModem.Control.ACK), outcome)
         deadlineMs = nowMs + blockTimeoutMs
         return log.step(log.control(control))
     }
