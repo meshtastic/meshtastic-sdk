@@ -576,6 +576,17 @@ public data class NodeLastByte(val value: Int) {          // 1..255
 
 A `NodeLastByte` is not a node id: more than one node can match it, so resolve it with `candidates` against the nodes you know and treat several matches as ambiguous.
 
+## Store-and-forward replay dedupe *(since 0.3.0)*
+
+A server replays stored text under a fresh packet id, with the stored id in `StoreAndForward.original_id` and the original sender in `MeshPacket.from`. `HistoryReplayComplete.delivered` counts each `(from, original_id)` once. The `packets` flow still carries every replay as received; a consumer drops repeats with:
+
+```kotlin
+public fun MeshPacket.storeForwardOriginalId(): Int?   // null unless a ROUTER_TEXT_* reply with original_id != 0
+public fun Flow<MeshPacket>.dropDuplicateStoreForwardReplays(window: Int = 256): Flow<MeshPacket>
+```
+
+Each collection remembers the last `window` keys (replays and plain `TEXT_MESSAGE_APP` packets) and forgets the oldest first.
+
 ## Config Builder Extensions *(since 0.2.0)*
 
 Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:

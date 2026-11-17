@@ -1940,6 +1940,12 @@ public final class org/meshtastic/sdk/StoreForwardEvent$SfppLinkProvided : org/m
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/StoreForwardReplaysKt {
+	public static final fun dropDuplicateStoreForwardReplays (Lkotlinx/coroutines/flow/Flow;I)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun dropDuplicateStoreForwardReplays$default (Lkotlinx/coroutines/flow/Flow;IILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun storeForwardOriginalId (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/Integer;
+}
+
 public final class org/meshtastic/sdk/StoreForwardStats {
 	public fun <init> ()V
 	public fun <init> (IIIIIZ)V

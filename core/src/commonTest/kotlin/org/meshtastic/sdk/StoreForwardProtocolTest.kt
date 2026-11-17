@@ -415,6 +415,65 @@ class StoreForwardProtocolTest {
     }
 
     @Test
+    fun historyReplayCountsOriginalIdOnceAcrossFreshPacketIds() = runTest {
+        val (transport, client) = connectedClient("history-original-id")
+        client.connect()
+        runCurrent()
+
+        val observed = mutableListOf<StoreForwardEvent>()
+        val collector = backgroundScope.launch {
+            client.storeForward.events.collect { observed += it }
+        }
+        runCurrent()
+
+        val server = NodeId(0x71727375)
+        transport.injectLegacyStoreForward(
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.history_messages = 2
+                    wb.window = 30
+                }.build()
+            }.build(),
+            fromNode = server.raw,
+        )
+        runCurrent()
+
+        listOf(51 to 900, 52 to 900).forEach { (packetId, originalId) ->
+            transport.injectLegacyStoreForward(
+                packetId = packetId,
+                message = StoreAndForward.Builder().also { wb ->
+                    wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT
+                    wb.text = "same".encodeToByteArray().toByteString()
+                    wb.original_id = originalId
+                }.build(),
+                fromNode = server.raw,
+            )
+            runCurrent()
+        }
+        assertFalse(observed.any { it is StoreForwardEvent.HistoryReplayComplete })
+
+        transport.injectLegacyStoreForward(
+            packetId = 53,
+            message = StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.ROUTER_TEXT_DIRECT
+                wb.text = "other".encodeToByteArray().toByteString()
+                wb.original_id = 901
+            }.build(),
+            fromNode = server.raw,
+        )
+        runCurrent()
+
+        assertEquals(
+            listOf(StoreForwardEvent.HistoryReplayComplete(server, 2)),
+            observed.filterIsInstance<StoreForwardEvent.HistoryReplayComplete>(),
+        )
+
+        collector.cancel()
+        client.disconnect()
+    }
+
+    @Test
     fun historyReplayMessagesAreEmittedInOrder() = runTest {
         val (transport, client) = connectedClient("history-order")
         client.connect()
