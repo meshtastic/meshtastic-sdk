@@ -76,6 +76,10 @@ A heartbeat with `nonce = ++counter` is sent **once** between Stage 1 settle and
 
 The 30 s scheduled heartbeat (`protocol.md` §16) starts only on entry to `Ready`.
 
+### No wake heartbeat before Stage 1
+
+The SDK sends the four `0x94` resync bytes on stream transports and nothing else before `want_config_id`; it sends no pre-handshake heartbeat on any transport. Firmware runs `powerFSM.trigger(EVENT_CONTACT_FROM_PHONE)` and refreshes `lastContactMsec` at the top of `PhoneAPI::handleToRadio` (`PhoneAPI.cpp:519-520`) for every `ToRadio` variant, so `want_config_id` itself is the contact event. `EVENT_CONTACT_FROM_PHONE` has a single transition, `stateDARK -> stateDARK` (`PowerFSM.cpp:470`), none from light sleep, and BLE writes reach `handleToRadio` through the same queue whatever the payload (`NimbleBluetooth.cpp:479-522`, `:256`).
+
 ## Failure transitions and reconnect
 
 `Failed(cause)` always returns to `Idle`. The engine then runs a fixed reconnect policy: **exponential backoff (initial 500 ms, factor 2, capped at 60 s, with ±20 % jitter), infinite attempts** while the consumer holds the `RadioClient`. Each retry begins a new attempt with `Connecting(attempt + 1)`. The policy is intentionally not configurable in 0.x — Phase 5 may revisit and add `Builder.reconnect(...)` if real-world adopters report concrete needs (recorded as a separate ADR if/when it lands).
