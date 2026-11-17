@@ -69,7 +69,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Packets to the local node and RPCs are not held, and `MessageHandle.cancel()` withdraws a
   held send. A burst to a device that reports no `QueueStatus` is written 16 at a time. While
   sends are held behind a full queue the engine polls with a keep-alive heartbeat every second,
-  because firmware only reports a `QueueStatus` when it enqueues a packet.
+  because firmware only reports a `QueueStatus` when it enqueues a packet. A `QueueStatus` counts
+  the packets written before it, so the many per-packet statuses firmware drops under a burst
+  no longer hold sends back, and the status that answers the handshake heartbeat seeds `free`.
 - `org.meshtastic:protobufs` 2.8.2, which only adds fields, so the SDK's API is unchanged.
 - kotlinx-coroutines is compiled against 1.8.1, the floor a host can run the SDK on, down from
   1.11.0. Bytecode built against 1.9+ calls `Job.cancel$default` and `SendChannel.close$default`

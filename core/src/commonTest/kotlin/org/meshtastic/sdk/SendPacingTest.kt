@@ -349,6 +349,66 @@ class SendPacingTest {
         }
     }
 
+    @Test
+    fun deviceThatAnswersOnlySomeWrites_isReleasedByTheFirstPollReply() = runTest {
+        withClient(warmFree = 16) { client, transport ->
+            val handles = List(20) { client.sendText("m$it", to = destination) }
+            runCurrent()
+            assertEquals(handles.take(16).ids(), transport.textIds())
+
+            transport.injectFrame(queueStatus(handles[0].id.raw, free = 15))
+            transport.injectFrame(queueStatus(handles[1].id.raw, free = 7))
+            runCurrent()
+            assertEquals(handles.take(16).ids(), transport.textIds(), "14 writes are not yet covered by a status")
+
+            advanceTimeBy(1_001)
+            runCurrent()
+            transport.injectFrame(queueStatus(meshPacketId = 0, free = 8))
+            runCurrent()
+
+            assertEquals(handles.ids(), transport.textIds(), "the poll reply accounts for every earlier write")
+            assertTrue(testScheduler.currentTime < 5_000)
+        }
+    }
+
+    @Test
+    fun perPacketStatus_coversEveryEarlierWrite() = runTest {
+        withClient(warmFree = 4) { client, transport ->
+            val handles = List(6) { client.sendText("m$it", to = destination) }
+            runCurrent()
+            assertEquals(handles.take(4).ids(), transport.textIds())
+
+            transport.injectFrame(queueStatus(handles[2].id.raw, free = 2))
+            runCurrent()
+
+            assertEquals(handles.take(5).ids(), transport.textIds(), "free 2 minus one write after packet 3")
+        }
+    }
+
+    @Test
+    fun unsolicitedIdZeroStatus_withNoPollOutstanding_doesNotCoverWrites() = runTest {
+        withClient(warmFree = 3) { client, transport ->
+            val handles = List(5) { client.sendText("m$it", to = destination) }
+            runCurrent()
+            assertEquals(handles.take(3).ids(), transport.textIds())
+
+            transport.injectFrame(queueStatus(meshPacketId = 0, free = 3))
+            runCurrent()
+
+            assertEquals(handles.take(3).ids(), transport.textIds())
+        }
+    }
+
+    @Test
+    fun freeLearnedInTheHandshake_limitsTheFirstBurst() = runTest {
+        withClient(handshakeFree = 3) { client, transport ->
+            val handles = List(6) { client.sendText("m$it", to = destination) }
+            runCurrent()
+
+            assertEquals(handles.take(3).ids(), transport.textIds())
+        }
+    }
+
     private fun List<MessageHandle>.ids(): List<Int> = map { it.id.raw }
 
     private var warmId = 0
@@ -387,9 +447,14 @@ class SendPacingTest {
         warmFree: Int? = null,
         identity: String = "fake:send-pacing",
         bleHeartbeat: Boolean = true,
+        handshakeFree: Int? = null,
         block: suspend (RadioClient, FakeRadioTransport) -> Unit,
     ) {
-        val transport = FakeRadioTransport(identity = TransportIdentity(identity), autoHandshake = true)
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity(identity),
+            frames = listOfNotNull(handshakeFree?.let { queueStatus(meshPacketId = 0, free = it) }),
+            autoHandshake = true,
+        )
         val client = RadioClient.Builder()
             .transport(transport)
             .storage(InMemoryStorageProvider())

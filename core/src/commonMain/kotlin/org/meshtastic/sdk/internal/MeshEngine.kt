@@ -177,6 +177,9 @@ internal class MeshEngine(
     // Ticks while sends are held and the device reports no room; each tick asks for a QueueStatus.
     private var pacePollJob: Job? = null
 
+    // In-flight ids written before the oldest unanswered poll; the next id-0 status covers them.
+    private var pollCovers: List<MessageId>? = null
+
     // `free` from the freshest QueueStatus; null until one is heard this session.
     private var deviceQueueFree: Int? = null
 
@@ -1797,7 +1800,8 @@ internal class MeshEngine(
         // queueStatus arriving mid-handshake is not actionable (we have no
         // pendingSends yet) — surface it explicitly so it's not silently dropped.
         stage != HandshakeStage.Ready && fromRadio.queueStatus != null -> {
-            warnUnhandledVariant("queue_status", stage)
+            // The reply to the inter-stage heartbeat: the first free count of the session.
+            deviceQueueFree = fromRadio.queueStatus!!.free
             true
         }
 
@@ -2382,6 +2386,7 @@ internal class MeshEngine(
             updatePacePolling()
             return
         }
+        if (pollCovers == null) pollCovers = paceInFlight.toList()
         sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
     }
 
@@ -2400,13 +2405,30 @@ internal class MeshEngine(
         pumpHeldSends()
     }
 
+    // `free` is the device's own count when the status was generated, so it already includes every
+    // packet the device had read by then. Firmware reads ToRadio in order and delivers statuses in
+    // generation order, so a status for packet X covers X and every packet written before it, and
+    // the reply to a heartbeat poll covers every packet written before that poll. A status the
+    // phone never receives (the to-phone status queue holds 2) is covered by the next one.
     private fun noteQueueStatus(queueStatus: org.meshtastic.proto.QueueStatus) {
         deviceQueueFree = queueStatus.free
         deviceQueueSilent = false
         if (queueStatus.mesh_packet_id != 0) {
             val key = MessageId(queueStatus.mesh_packet_id)
-            if (paceInFlight.remove(key)) paceTimeoutJobs.remove(key)?.cancel()
+            if (key in paceInFlight) {
+                val covered = paceInFlight.takeWhile { it != key } + key
+                covered.forEach { releasePaceSlot(it) }
+            }
+        } else {
+            // An id-0 status with no poll outstanding may be unsolicited and older than recent
+            // writes, so it only refreshes `free`.
+            pollCovers?.forEach { releasePaceSlot(it) }
+            pollCovers = null
         }
+    }
+
+    private fun releasePaceSlot(id: MessageId) {
+        if (paceInFlight.remove(id)) paceTimeoutJobs.remove(id)?.cancel()
     }
 
     private fun resetPacing() {
@@ -2416,6 +2438,7 @@ internal class MeshEngine(
         paceStallJob = null
         pacePollJob?.cancel()
         pacePollJob = null
+        pollCovers = null
         paceInFlight.clear()
         deviceQueueFree = null
         deviceQueueSilent = false
