@@ -396,6 +396,7 @@ After `Connected` the SDK folds these into the node DB, each emitting `NodeChang
 - **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
 - **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
 - **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
+- **`NODE_STATUS_APP` and `PAXCOUNTER_APP`** only refresh the sender as any other packet does. `NodeInfo` has no field for a status string or a paxcount, and firmware keeps the status in a separate per-node map (`firmware:src/mesh/NodeDB.h:337`, `NodeDB.cpp:2184`) and the paxcount in no node entry, so a host that wants either decodes the packet from `RadioClient.packets` (`StatusMessage.ADAPTER`, `Paxcount.ADAPTER`) and stores it itself.
 
 A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
 
