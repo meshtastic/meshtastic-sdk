@@ -1685,8 +1685,8 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            // Legacy text log. Drop explicitly — the firmware has a richer log channel via
-            // ClientNotification; we don't persist these.
+            // Firmware debug log (debug_log_api_enabled). Surfaced as an event, never persisted.
+            events.tryEmit(MeshEvent.DeviceLog(fromRadio.log_record!!))
             true
         }
 

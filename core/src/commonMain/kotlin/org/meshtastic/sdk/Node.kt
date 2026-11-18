@@ -132,6 +132,15 @@ public sealed interface MeshEvent {
     public data class Notification(val notification: org.meshtastic.proto.ClientNotification) : MeshEvent
 
     /**
+     * A firmware debug log line. The device sends these over BLE, TCP and serial when
+     * `debug_log_api_enabled` is set; with it off none arrive. Messages can be frequent and
+     * are never persisted by the SDK.
+     *
+     * @param record the wire [LogRecord] type
+     */
+    public data class DeviceLog(val record: org.meshtastic.proto.LogRecord) : MeshEvent
+
+    /**
      * Emitted when congestion metrics cross a threshold level.
      * Clients should use [metrics] to decide whether to delay non-urgent sends.
      */

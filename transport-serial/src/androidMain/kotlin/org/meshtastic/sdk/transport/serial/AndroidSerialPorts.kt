@@ -77,7 +77,20 @@ public object AndroidSerialPorts {
      *   (most often because permission has not yet been granted, or the
      *   device has been physically detached).
      */
-    public fun open(portName: String, baudRate: Int = DEFAULT_BAUD): RadioTransport {
+    public fun open(portName: String, baudRate: Int = DEFAULT_BAUD): RadioTransport =
+        openTransport(portName, baudRate, onTextLine = null)
+
+    /**
+     * Like [open], and [onTextLine] receives each line of text the device prints between frames,
+     * which carries the firmware's serial debug log. It runs on the reader thread, so it must not
+     * block; an exception it throws is swallowed.
+     *
+     * @since 0.3.0
+     */
+    public fun open(portName: String, baudRate: Int, onTextLine: (String) -> Unit): RadioTransport =
+        openTransport(portName, baudRate, onTextLine)
+
+    private fun openTransport(portName: String, baudRate: Int, onTextLine: ((String) -> Unit)?): RadioTransport {
         val port = runCatching { JSerialPort.getCommPort(portName) }.getOrElse { e ->
             throw MeshtasticException.Transport(
                 "Serial port `$portName` not found (missing USB permission?)",
@@ -85,7 +98,7 @@ public object AndroidSerialPorts {
             )
         }
         val identity = TransportIdentity.of(TransportSpec.SerialAndroid(portName))
-        return JSerialCommTransport(port, identity, baudRate)
+        return JSerialCommTransport(port, identity, baudRate, onTextLine = onTextLine)
     }
 
     public const val DEFAULT_BAUD: Int = 115_200

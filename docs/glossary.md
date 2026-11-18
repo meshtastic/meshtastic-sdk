@@ -65,7 +65,7 @@
 | **`MeshtasticException`** | Sealed throwable hierarchy. Used for programmer errors and pre-validation failures (`PayloadTooLarge`, `FirmwareTooOld`, `NotConnected`, transport errors). |
 | **`AdminResult<T>`** | Sealed: `Success(T) | SessionKeyExpired | Unauthorized | Timeout | NodeUnreachable | Failed(routingError)`. Used for routine admin RPC outcomes that callers handle, not raise. |
 | **`SendFailure`** | Sealed reason inside `SendState.Failed`: `Disconnected | Cancelled | Timeout(after) | Routing(error: Routing.Error) | Other(...)`. **Does NOT include `PayloadTooLarge`** — that's an exception. ADR-005. |
-| **`MeshEvent`** | Sealed observability stream: `QueueStatusChanged(status)`, `Notification(notification)`, `TransportError(error)`, `ProtocolWarning(message)`, `KeyVerification(prompt)`, `PacketsDropped(flow, count)`. |
+| **`MeshEvent`** | Sealed observability stream: `QueueStatusChanged(status)`, `Notification(notification)`, `DeviceLog(record)`, `TransportError(error)`, `ProtocolWarning(message)`, `KeyVerification(prompt)`, `PacketsDropped(flow, count)`. |
 
 ## Transports
 
