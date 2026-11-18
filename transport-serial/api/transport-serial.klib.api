@@ -59,3 +59,8 @@ final class org.meshtastic.sdk.transport.serial/SerialPortInfo { // org.meshtast
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk.transport.serial/SerialPortInfo.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk.transport.serial/SerialPortInfo.toString|toString(){}[0]
 }
+
+final val org.meshtastic.sdk.transport.serial/MESHTASTIC_USB_VENDOR_IDS // org.meshtastic.sdk.transport.serial/MESHTASTIC_USB_VENDOR_IDS|{}MESHTASTIC_USB_VENDOR_IDS[0]
+    final fun <get-MESHTASTIC_USB_VENDOR_IDS>(): kotlin.collections/Set<kotlin/Int> // org.meshtastic.sdk.transport.serial/MESHTASTIC_USB_VENDOR_IDS.<get-MESHTASTIC_USB_VENDOR_IDS>|<get-MESHTASTIC_USB_VENDOR_IDS>(){}[0]
+
+final fun (org.meshtastic.sdk.transport.serial/SerialPortInfo).org.meshtastic.sdk.transport.serial/isLikelyMeshtastic(): kotlin/Boolean // org.meshtastic.sdk.transport.serial/isLikelyMeshtastic|isLikelyMeshtastic@org.meshtastic.sdk.transport.serial.SerialPortInfo(){}[0]
