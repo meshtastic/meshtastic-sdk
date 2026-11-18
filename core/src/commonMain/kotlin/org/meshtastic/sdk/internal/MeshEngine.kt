@@ -135,6 +135,12 @@ internal class MeshEngine(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
+    /** Every decoded inbound envelope, unfiltered. Lossy by design so a slow tap never stalls the engine. */
+    val rawFromRadio = MutableSharedFlow<FromRadio>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     private val inbox = Channel<EngineMessage>(Channel.UNLIMITED)
 
     private val outbound = Channel<Frame>(Channel.UNLIMITED)
@@ -966,6 +972,8 @@ internal class MeshEngine(
             )
             return
         }
+
+        rawFromRadio.tryEmit(fromRadio)
 
         // liveness watchdog only resets on successfully decoded envelopes,
         // not raw-byte arrivals. A stuck framer on a half-open socket could still deliver

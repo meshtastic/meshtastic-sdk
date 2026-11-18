@@ -1495,6 +1495,8 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun <get-connection>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/ConnectionState> // org.meshtastic.sdk/RadioClient.connection.<get-connection>|<get-connection>(){}[0]
     final val events // org.meshtastic.sdk/RadioClient.events|{}events[0]
         final fun <get-events>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/MeshEvent> // org.meshtastic.sdk/RadioClient.events.<get-events>|<get-events>(){}[0]
+    final val fromRadio // org.meshtastic.sdk/RadioClient.fromRadio|{}fromRadio[0]
+        final fun <get-fromRadio>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/FromRadio> // org.meshtastic.sdk/RadioClient.fromRadio.<get-fromRadio>|<get-fromRadio>(){}[0]
     final val nodes // org.meshtastic.sdk/RadioClient.nodes|{}nodes[0]
         final fun <get-nodes>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/NodeChange> // org.meshtastic.sdk/RadioClient.nodes.<get-nodes>|<get-nodes>(){}[0]
     final val ownNode // org.meshtastic.sdk/RadioClient.ownNode|{}ownNode[0]
