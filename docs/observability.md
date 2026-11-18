@@ -81,25 +81,29 @@ construction run.
 
 Wire-byte / frame-level dumps are a **separate**, opt-in hook
 controlled by `Builder.protocolLogging(level, redactor)`. `LogLevel.NONE`
-is the default. Enabling this hook emits every encoded `FromRadio` /
-`ToRadio` envelope at the specified level — including pre-shared keys,
-session passkeys, and node positions unless a redactor strips them.
+is the default. Enabling this hook logs every `FromRadio` / `ToRadio`
+envelope (tag `Protocol`, prefixed `rx` / `tx`) at the specified level,
+rendered by the redactor.
 
 ```kotlin
 val client = RadioClient.Builder()
     .transport(tcp)
     .logger(myLogSink)
     .protocolLogging(
-        level = LogLevel.DEBUG,            // ⚠ raw bytes — dev only
-        redactor = PayloadRedactor.Default // masks PSKs/passkeys/positions
+        level = LogLevel.DEBUG,
+        redactor = PayloadRedactor.Default // variant and routing metadata only
     )
     .build()
 ```
 
-`PayloadRedactor.Default` is on unless explicitly overridden; pass
-`PayloadRedactor.None` to disable redaction. Even with redaction,
+`PayloadRedactor.Default` logs the envelope variant and routing
+metadata (`from`, `to`, packet id, port, payload size) and never payload
+bytes, text, positions, PSKs or passkeys. A custom `PayloadRedactor`
+overrides `describe(FromRadio)` and `describe(ToRadio)`; what it
+includes is its owner's responsibility under the rules in
+[`security.md`](./security.md). Even with the default redactor,
 **do not enable protocol logging in a production build** — the
-encoded envelopes still reveal mesh structure and timing.
+envelopes still reveal mesh structure and timing.
 
 ## Engine event surface
 
