@@ -160,6 +160,7 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
 | `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
 | `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
+| `fromRadio: Flow<FromRadio>` *(since 0.3.0)* | every decoded inbound envelope, unredacted; lossy by design, drops are not reported | 256 / `DROP_OLDEST` |
 
 `nodes` seeds **each** subscription with a `NodeChange.Snapshot` of the engine's current node
 map (via `onSubscription`) before deltas — late subscribers never miss the baseline even though
