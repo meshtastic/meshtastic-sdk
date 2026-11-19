@@ -73,6 +73,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out
   with zero hops and nothing relayed them.
+- Remote admin writes that request an ACK wait for confirmation from the addressed radio.
+  A relay ACK could previously report success even if the destination later rejected the write.
 - `AdminApi.setConfig` and `setModuleConfig` update `configBundle` once the device acks the
   write, as `editSettings` already did. Remote-node writes leave the local bundle alone.
 

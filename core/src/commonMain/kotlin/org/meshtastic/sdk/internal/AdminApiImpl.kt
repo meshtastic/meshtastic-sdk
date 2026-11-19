@@ -535,10 +535,11 @@ internal class AdminApiImpl(
             }.build()
         }.build()
         val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
+        val localWrite = to.raw == engine.myNodeNumOrNull()
         engine.trySend(packet, id, stateFlow)
         val terminal = withTimeoutOrNull(rpcTimeout) {
             stateFlow.first {
-                it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
+                it is SendState.Failed || it == SendState.Acked || (localWrite && it == SendState.Delivered)
             }
         } ?: return AdminResult.Timeout
         return when (terminal) {

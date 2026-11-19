@@ -38,6 +38,50 @@ class AckVersusDeliveredTest {
     private val otherNode = 0x33333333
 
     @Test
+    fun remoteAdminWaitsForDestinationAck() = runTest {
+        withClient { client, transport ->
+            val result = async { client.admin.forNode(destination).setRingtone("test") }
+            runCurrent()
+            val packet = transport.outboundPackets().last { it.to == destination.raw }
+
+            transport.injectRoutingAck(packet.id, fromNode = transport.nodeNum)
+            runCurrent()
+            assertFalse(result.isCompleted)
+
+            transport.injectRoutingAck(packet.id, fromNode = destination.raw)
+            runCurrent()
+            assertEquals(AdminResult.Success(Unit), result.await())
+        }
+    }
+
+    @Test
+    fun remoteAdminReportsDestinationRejectionAfterRelayAck() = runTest {
+        withClient { client, transport ->
+            val result = async { client.admin.forNode(destination).setRingtone("test") }
+            runCurrent()
+            val packet = transport.outboundPackets().last { it.to == destination.raw }
+
+            transport.injectRoutingAck(packet.id, fromNode = otherNode)
+            runCurrent()
+            transport.injectRoutingError(packet.id, Routing.Error.NOT_AUTHORIZED, fromNode = destination.raw)
+            runCurrent()
+            assertEquals(AdminResult.Unauthorized, result.await())
+        }
+    }
+
+    @Test
+    fun remoteAdminTimesOutWhenOnlyRelayAcknowledges() = runTest {
+        withClient { client, transport ->
+            val result = async { client.admin.forNode(destination).setRingtone("test") }
+            runCurrent()
+            val packet = transport.outboundPackets().last { it.to == destination.raw }
+            transport.injectRoutingAck(packet.id, fromNode = otherNode)
+
+            assertEquals(AdminResult.Timeout, result.await())
+        }
+    }
+
+    @Test
     fun dm_ackedByDestination_isAcked() = runTest {
         withClient { client, transport ->
             val handle = client.sendText("hi", to = destination)

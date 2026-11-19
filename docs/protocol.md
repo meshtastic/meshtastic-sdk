@@ -785,6 +785,8 @@ See §16 for the heartbeat policy by transport.
 
 Device administration (changing configs, rebooting, factory-reset, key management) goes through `PortNum.ADMIN_APP` carrying an `AdminMessage` payload.
 
+For a remote admin write that requests a routing ACK, a relay ACK only establishes that the packet was relayed. The SDK waits for the addressed node’s ACK, a routing failure, or the timeout before returning the admin result.
+
 > **Field numbers below are authoritative** — verified against `meshtastic/protobufs@develop`
 > (and the published `org.meshtastic:protobufs` artifact). Always reconcile against `admin.proto`
 > before relying on a tag value; this table is a reading aid, not the schema.
