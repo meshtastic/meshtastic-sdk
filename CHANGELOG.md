@@ -52,6 +52,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   statics that 1.8.x does not have, so on a 1.8.1 runtime `:core` failed at 351 call sites;
   the SDK's own suite now compiles and passes against 1.8.1. Consumers on a newer pin keep
   it: Gradle resolves the highest version.
+- Editing another node with `forNode` preserves the connected radio's cached channels,
+  config and module config for `setChannel`, `editSettings` and `batch`.
 - `:storage-sqldelight` runs its SQLite work on a fixed four-thread pool instead of
   `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled

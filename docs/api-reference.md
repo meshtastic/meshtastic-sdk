@@ -436,6 +436,8 @@ Full mapping from wire-level errors to exceptions vs results lives in [`error-ta
 
 Each method maps onto a single `AdminMessage` round-trip with the device. Setters resolve when the engine sees the wire-level routing ACK; getters resolve when the dispatcher correlates the response payload by `request_id`. `SessionKeyExpired` triggers a single-shot retry: a fresh `get_owner_request` re-seeds the session passkey, then the original call is replayed once.
 
+`RadioClient.channels` and `RadioClient.configBundle` describe the connected radio. Editing another radio through `admin.forNode(dest)` preserves those values in memory and in device storage, including writes made through `editSettings` and `batch`.
+
 ```kotlin
 public interface AdminApi {
     /** Returns a copy of this AdminApi that targets a remote node. All subsequent calls route to [dest]. @since 0.2.0 */
