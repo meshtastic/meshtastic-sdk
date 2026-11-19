@@ -486,6 +486,28 @@ public sealed interface AdminResult<out T> {
 
 `SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified. `RateLimited` indicates the device rejected the call due to rate limiting (`Routing.Error.RATE_LIMIT_EXCEEDED`); callers should back off before retrying.
 
+### Ham mode *(since 0.3.0)*
+
+```kotlin
+suspend fun RadioClient.enableHamMode(
+    callSign: String, shortName: String? = null, longName: String? = null,
+    txPower: Int? = null, frequency: Float? = null,
+): AdminResult<Unit>
+```
+
+`AdminApi.setHamMode(HamParameters)` sends exactly what it is given. Firmware copies `tx_power` and `frequency` into the LoRa config unconditionally, so 0 resets TX power to the regional maximum and clears `override_frequency`. `enableHamMode` fills a null `txPower` or `frequency` from the loaded LoRa config and returns `AdminResult.Failed(Routing.Error.BAD_REQUEST)`, sending nothing, when a value is needed and the config has not loaded.
+
+### Device profiles *(since 0.3.0)*
+
+```kotlin
+suspend fun RadioClient.exportDeviceProfile(includePrivateKey: Boolean = false, includeDeviceText: Boolean = true): AdminResult<DeviceProfile>
+suspend fun RadioClient.installDeviceProfile(profile: DeviceProfile, installSecurity: Boolean = false): AdminResult<Unit>
+```
+
+A `DeviceProfile` holds owner names, a channel share URL, `LocalConfig`, `LocalModuleConfig`, a fixed position, ringtone and canned messages. Encode and decode it with `DeviceProfile.ADAPTER`; file I/O is the host's.
+
+Export omits `security.private_key` unless `includePrivateKey` is true. Install writes only fields the profile has, in one `editSettings` transaction: owner, device, position, power, network, display, bluetooth, module configs, channels (eight slots replaced), then LoRa config when it differs. The fixed position is written after the commit. `security` is skipped unless `installSecurity` is true. `is_licensed`, `traffic_management`, ringtone and canned messages are not installed. A malformed channel URL fails with `Failed(BAD_REQUEST)` before any write.
+
 ### `AdminResult` extensions *(since 0.2.0)*
 
 ```kotlin
