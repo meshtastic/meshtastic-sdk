@@ -192,6 +192,23 @@ public class RadioClient internal constructor(
     public val packets: Flow<MeshPacket> = engine.packets.hide()
 
     /**
+     * Ordered handshake snapshots, packets and session boundaries for one consumer.
+     *
+     * Enable this stream with [Builder.sessionReceive] and start collecting before [connect].
+     * A new session starts with [RadioSessionEvent.Ready], then retained handshake packets,
+     * then live packets. The stream spans automatic reconnects and completes when the client
+     * shuts down. Collect it directly for ordered delivery.
+     *
+     * If the SDK loses receive coverage, the stream drains accepted events and then throws
+     * [RadioSessionOverflowException]. The radio continues processing frames. Create a new
+     * client to restart this stream after overflow or collector cancellation. Delivery
+     * sequences measure SDK coverage. The radio or transport may lose packets upstream.
+     *
+     * `null` if session receive was left disabled.
+     */
+    public val sessionEvents: Flow<RadioSessionEvent>? = engine.sessionEvents
+
+    /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
      * drop notifications, and identity-rebind signals
      * ([MeshEvent.IdentityRebound] — emitted before the engine clears storage when the
@@ -683,6 +700,7 @@ public class RadioClient internal constructor(
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
         private var skipNodeDb: Boolean = false
+        private var sessionReceiveCapacity: Int? = null
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -885,6 +903,17 @@ public class RadioClient internal constructor(
         public fun skipNodeDb(skip: Boolean = true): Builder = apply { skipNodeDb = skip }
 
         /**
+         * Enable [RadioClient.sessionEvents] with a bounded buffer for one collector.
+         *
+         * @param capacity Maximum number of queued events, including session boundaries.
+         * @throws IllegalArgumentException if capacity is nonpositive or unlimited.
+         */
+        public fun sessionReceive(capacity: Int = 256): Builder = apply {
+            require(capacity in 1 until Int.MAX_VALUE) { "Session receive capacity must be positive and finite" }
+            sessionReceiveCapacity = capacity
+        }
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -907,6 +936,7 @@ public class RadioClient internal constructor(
                 skipNodeDb = skipNodeDb,
                 protocolLogLevel = protocolLogLevel,
                 payloadRedactor = payloadRedactor,
+                sessionReceiveCapacity = sessionReceiveCapacity,
             )
 
             return RadioClient(

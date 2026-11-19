@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
@@ -62,6 +64,8 @@ import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.PayloadRedactor
+
+import org.meshtastic.sdk.RadioSessionEvent
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
@@ -104,6 +108,7 @@ internal class MeshEngine(
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
     private val protocolLogLevel: LogLevel = LogLevel.NONE,
     private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
+    sessionReceiveCapacity: Int? = null,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -136,6 +141,8 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
+    private val sessionReceive = sessionReceiveCapacity?.let(::SessionReceive)
+    val sessionEvents = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
@@ -177,6 +184,8 @@ internal class MeshEngine(
 
     private var handshakeStage = HandshakeStage.Idle
     private var engineScope: CoroutineScope? = null
+    private var frameReaderJob: Job? = null
+    private var receiveGeneration = 0L
 
     // Firmware drops a ToRadio write byte-identical to the previous one and reads heartbeat
     // nonce 1 as "broadcast NodeInfo", so keep-alive nonces count up from 2 and never reach 0 or 1.
@@ -332,29 +341,6 @@ internal class MeshEngine(
 
         scope.launch(CoroutineName("meshtastic-engine-actor")) {
             runEngine()
-        }
-
-        // frames(), then forwards each inbound transport frame as a FrameRx message.
-        // Gating on TransportState avoids racing with handleConnect() (the transport's
-        // readChannel is null until connect() completes, and TcpTransport.frames() throws
-        // if collected before then). Failures are surfaced as Disconnect messages so the
-        // coroutine doesn't die silently.
-        scope.launch(CoroutineName("meshtastic-frame-reader")) {
-            try {
-                transport.state.first { it is org.meshtastic.sdk.TransportState.Connected }
-                transport.frames().collect { frame ->
-                    inbox.send(EngineMessage.FrameRx(frame))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
-                inbox.trySend(
-                    EngineMessage.Disconnect(
-                        MeshtasticException.Transport(e.message ?: "frame reader failed", e),
-                    ),
-                )
-            }
         }
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
@@ -521,6 +507,7 @@ internal class MeshEngine(
      * 9. Emit [ConnectionState.Disconnected] — unblocks `disconnect()` callers.
      */
     private suspend fun cleanup() {
+        sessionReceive?.finish()
         // stop the liveness watchdog before any other work so it cannot race with the
         // already disconnecting).
         disconnecting = true
@@ -660,24 +647,49 @@ internal class MeshEngine(
     private suspend fun processMessage(msg: EngineMessage) {
         when (msg) {
             is EngineMessage.Connect -> handleConnect(msg)
+
             is EngineMessage.Disconnect -> handleDisconnect(msg)
-            is EngineMessage.FrameRx -> handleFrameRx(msg)
+
+            is EngineMessage.FrameRx -> {
+                if (acceptsFramesFrom(msg.generation)) handleFrameRx(msg)
+            }
+
+            is EngineMessage.FrameReaderFailed -> {
+                if (acceptsFramesFrom(msg.generation)) handleDisconnect(EngineMessage.Disconnect(msg.cause))
+            }
+
             is EngineMessage.TransportStateChanged -> handleTransportStateChanged(msg)
+
             is EngineMessage.Send -> handleSend(msg)
+
             is EngineMessage.CancelHandle -> handleCancelHandle(msg)
+
             is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
+
             EngineMessage.HeartbeatTick -> handleHeartbeatTick()
+
             EngineMessage.LivenessTick -> handleLivenessTick()
+
             EngineMessage.PresenceCheckTick -> handlePresenceCheckTick()
+
             is EngineMessage.HandshakeTimeout -> handleHandshakeTimeout(msg)
+
             EngineMessage.HandshakeStage1SettleComplete -> handleStage1SettleComplete()
+
             EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
+
             EngineMessage.Stage1RetryWantConfig -> handleStage1RetryWantConfig()
+
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
+
             is EngineMessage.PostRpc -> handlePostRpc(msg)
+
             is EngineMessage.PendingResponseTimeout -> handlePendingResponseTimeout(msg)
+
             is EngineMessage.SendAckTimeout -> handleSendAckTimeout(msg)
+
             is EngineMessage.ReconnectTick -> handleReconnectTick(msg)
+
             is EngineMessage.ReconnectAttemptResult -> handleReconnectAttemptResult(msg)
         }
     }
@@ -885,7 +897,11 @@ internal class MeshEngine(
      * supervisor can re-enter the handshake without re-running storage activation.
      */
     private fun startStage1Handshake() {
+        handshakeStage = HandshakeStage.Stage1Draining
+        val generation = ++receiveGeneration
+        sessionReceive?.begin(generation)
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+        startFrameReader(generation)
 
         // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
         // want_config_id to resync the firmware's frame decoder after an unclean disconnect.
@@ -896,8 +912,6 @@ internal class MeshEngine(
         }
 
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
-        handshakeStage = HandshakeStage.Stage1Draining
-
         engineScope?.launch {
             delay(STAGE1_RETRY_MS)
             inbox.trySend(EngineMessage.Stage1RetryWantConfig)
@@ -908,6 +922,38 @@ internal class MeshEngine(
         }
 
         logger.info(TAG) { "Handshake Stage 1 started (want_config_id=$NONCE_STAGE1)" }
+    }
+
+    private fun acceptsFramesFrom(generation: Long): Boolean =
+        generation == receiveGeneration && handshakeStage != HandshakeStage.Idle
+
+    private fun startFrameReader(generation: Long) {
+        // Subscribe before sending Stage 1 so transports with a hot flow can deliver an
+        // immediate response. Yield after the first frame so a preloaded transport returns
+        // control to the actor even while it still has frames to read.
+        frameReaderJob =
+            engineScope?.launch(CoroutineName("meshtastic-frame-reader"), start = CoroutineStart.UNDISPATCHED) {
+                var firstFrame = true
+                try {
+                    transport.frames().collect { frame ->
+                        inbox.send(EngineMessage.FrameRx(frame, generation))
+                        if (firstFrame) {
+                            firstFrame = false
+                            yield()
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
+                    inbox.trySend(
+                        EngineMessage.FrameReaderFailed(
+                            MeshtasticException.Transport(e.message ?: "frame reader failed", e),
+                            generation,
+                        ),
+                    )
+                }
+            }
     }
 
     private fun handleDisconnect(msg: EngineMessage.Disconnect) {
@@ -1061,6 +1107,7 @@ internal class MeshEngine(
                 // spot pathological backlogs — silent loss is forbidden per
                 // ADR-005 public-surface rules).
                 if (settleBuffer.size >= SETTLE_BUFFER_CAP) {
+                    sessionReceive?.handshakeOverflow()
                     val dropped = settleBuffer.removeFirst()
                     logger.warn(TAG) {
                         "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropping oldest frame ($dropped)"
@@ -1414,6 +1461,7 @@ internal class MeshEngine(
             // shared auxiliary handler.
             fromRadio.node_info?.let {
                 processInboundNodeInfo(it)
+                if (sessionReceive != null) pendingNodes[NodeId(it.num)] = it
                 return
             }
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.SeedingSession)
@@ -1512,6 +1560,7 @@ internal class MeshEngine(
     /** Buffer a mid-handshake `FromRadio.packet` for delivery once the session reaches Ready. */
     private fun bufferHandshakePacket(packet: MeshPacket) {
         if (handshakePacketBuffer.size >= HANDSHAKE_PACKET_BUFFER_CAP) {
+            sessionReceive?.handshakeOverflow()
             handshakePacketBuffer.removeFirst()
             logger.warn(TAG) {
                 "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — dropping oldest"
@@ -1540,6 +1589,19 @@ internal class MeshEngine(
         preSendQueue.clear()
 
         connectionState.value = ConnectionState.Connected
+        sessionReceive?.let { receive ->
+            receive.ready(
+                RadioSessionEvent.Ready(
+                    sessionId = receive.sessionId,
+                    myInfo = pendingMyInfo,
+                    configBundle = configBundleState.value.takeIf {
+                        pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty()
+                    },
+                    channels = pendingChannels.takeIf { it.isNotEmpty() }?.toList(),
+                    nodes = pendingNodes.toMap(),
+                ),
+            )
+        }
 
         // Start the 30 s periodic heartbeat scheduler.
         engineScope?.launch {
@@ -1825,6 +1887,7 @@ internal class MeshEngine(
         // External config change detection: unsolicited admin messages from firmware
         // indicating another client modified channels/config on this device.
         if (adminMsg != null) maybeProcessExternalAdminChange(packet, adminMsg)
+        sessionReceive?.packet(packet)
     }
 
     /**
@@ -2244,6 +2307,8 @@ internal class MeshEngine(
     }
 
     private fun scheduleReconnect(cause: MeshtasticException) {
+        sessionReceive?.end()
+        frameReaderJob?.cancel()
         val cap = autoReconnectConfig.maxAttempts
         if (cap != null && reconnectAttempt >= cap) {
             logger.warn(TAG, cause) {
@@ -2301,10 +2366,12 @@ internal class MeshEngine(
     private fun handleReconnectTick(msg: EngineMessage.ReconnectTick) {
         if (!autoReconnectInProgress) return
         val scope = engineScope ?: return
+        val previousReader = frameReaderJob
         scope.launch {
             val outcome = try {
                 autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
                 runCatching { transport.disconnect() }
+                previousReader?.join()
                 transport.connect()
                 EngineMessage.ReconnectAttemptResult(success = true, cause = null)
             } catch (e: CancellationException) {

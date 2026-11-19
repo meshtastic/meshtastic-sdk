@@ -396,6 +396,10 @@ The firmware emits these `FromRadio` payloads in this order (`firmware:src/mesh/
 6. On TCP/Serial close, the device resets its `config_nonce` to `0` and clears all session state. On reconnection, both stages are mandatory. The SDK treats TCP peer EOF as a transport failure so the next handshake can begin promptly.
 7. While the device is mid-handshake, queued outbound packets in the device router are NOT dropped — they will be sent after `config_complete_id`. However, the device WILL drop incoming `MqttClientProxyMessage` from the phone during handshake with a warning log.
 
+The SDK’s optional [session receive stream](./api-reference.md#session-receive) emits its
+handshake snapshot before delivering retained mesh packets. Overflow in the SDK handshake
+buffers ends that application stream while the protocol engine continues the handshake.
+
 ### Node DB after the handshake
 
 After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):

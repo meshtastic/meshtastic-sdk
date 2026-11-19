@@ -161,6 +161,7 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `nodes: Flow<NodeChange>` | snapshot+delta over `MutableSharedFlow(replay=0)` | 256 / `SUSPEND` |
 | `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
 | `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
+| `sessionEvents: Flow<RadioSessionEvent>?` | Optional single-consumer queue | Bounded by `Builder.sessionReceive(capacity)` |
 | `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
 | `fromRadio: Flow<FromRadio>` *(since 0.3.0)* | every decoded inbound envelope, unredacted; lossy by design, drops are not reported | 256 / `DROP_OLDEST` |
 
@@ -171,6 +172,12 @@ the engine's backing `SharedFlow` has `replay = 0`. The handshake additionally e
 a flow of the full `Map<NodeId, NodeInfo>`; the underlying
 `Flow<NodeChange>.asNodeMap()` extension is also public for transforming an existing
 `nodes` collection.
+
+### Session receive
+
+Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, reported channels and nodes. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. `Ended` marks the end of that session. An automatic reconnect creates a new ID on the same stream.
+
+The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
 
 ### Outbound
 

@@ -1668,6 +1668,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getOwnNode ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getPackets ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getRouting ()Lorg/meshtastic/sdk/RoutingApi;
+	public final fun getSessionEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getStoreForward ()Lorg/meshtastic/sdk/StoreForwardApi;
 	public final fun getTelemetry ()Lorg/meshtastic/sdk/TelemetryApi;
 	public final fun nodeSnapshot (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -1707,6 +1708,8 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public final fun rpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun sessionReceive (I)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public static synthetic fun sessionReceive$default (Lorg/meshtastic/sdk/RadioClient$Builder;IILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun skipNodeDb (Z)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public static synthetic fun skipNodeDb$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun storage (Lorg/meshtastic/sdk/StorageProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
@@ -1742,6 +1745,60 @@ public final class org/meshtastic/sdk/RadioMetrics {
 public final class org/meshtastic/sdk/RadioMetricsKt {
 	public static final fun signalQuality (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/Integer;
 	public static final fun toRadioMetrics (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/RadioMetrics;
+}
+
+public abstract interface class org/meshtastic/sdk/RadioSessionEvent {
+	public abstract fun getSessionId ()J
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Ended : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Lorg/meshtastic/sdk/RadioSessionEvent$Ended;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ended;JILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ended;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Packet : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JJLorg/meshtastic/proto/MeshPacket;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()Lorg/meshtastic/proto/MeshPacket;
+	public final fun copy (JJLorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/RadioSessionEvent$Packet;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Packet;JJLorg/meshtastic/proto/MeshPacket;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Packet;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPacket ()Lorg/meshtastic/proto/MeshPacket;
+	public final fun getSequence ()J
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Ready : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;)V
+	public final fun component1 ()J
+	public final fun component2 ()Lorg/meshtastic/proto/MyNodeInfo;
+	public final fun component3 ()Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun copy (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ready;JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChannels ()Ljava/util/List;
+	public final fun getConfigBundle ()Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun getMyInfo ()Lorg/meshtastic/proto/MyNodeInfo;
+	public final fun getNodes ()Ljava/util/Map;
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionOverflowException : java/lang/Exception {
+	public final fun getFirstMissedSequence ()Ljava/lang/Long;
+	public final fun getSessionId ()J
 }
 
 public abstract interface class org/meshtastic/sdk/RadioTransport {
