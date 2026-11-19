@@ -1566,10 +1566,17 @@ public final class org/meshtastic/sdk/PayloadAccessorsKt {
 
 public abstract interface class org/meshtastic/sdk/PayloadRedactor {
 	public static final field Companion Lorg/meshtastic/sdk/PayloadRedactor$Companion;
+	public fun describe (Lorg/meshtastic/proto/FromRadio;)Ljava/lang/String;
+	public fun describe (Lorg/meshtastic/proto/ToRadio;)Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/PayloadRedactor$Companion {
 	public final fun getDefault ()Lorg/meshtastic/sdk/PayloadRedactor;
+}
+
+public final class org/meshtastic/sdk/PayloadRedactor$DefaultImpls {
+	public static fun describe (Lorg/meshtastic/sdk/PayloadRedactor;Lorg/meshtastic/proto/FromRadio;)Ljava/lang/String;
+	public static fun describe (Lorg/meshtastic/sdk/PayloadRedactor;Lorg/meshtastic/proto/ToRadio;)Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/PortPayloadAccessorsKt {

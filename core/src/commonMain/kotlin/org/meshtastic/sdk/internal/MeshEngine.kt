@@ -52,6 +52,7 @@ import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.LogLevel
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
@@ -59,6 +60,7 @@ import org.meshtastic.sdk.MessageId
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
+import org.meshtastic.sdk.PayloadRedactor
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
@@ -99,6 +101,8 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val protocolLogLevel: LogLevel = LogLevel.NONE,
+    private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -348,6 +352,7 @@ internal class MeshEngine(
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
             for (frame in outbound) {
                 try {
+                    logProtocolTx(frame)
                     transport.send(frame)
                 } catch (e: CancellationException) {
                     throw e
@@ -578,7 +583,9 @@ internal class MeshEngine(
                             wb.disconnect = true
                         }.build(),
                     )
-                    transport.send(Frame(encoded.toByteString()))
+                    val goodbye = Frame(encoded.toByteString())
+                    logProtocolTx(goodbye)
+                    transport.send(goodbye)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -991,6 +998,8 @@ internal class MeshEngine(
             )
             return
         }
+
+        logProtocol { "rx ${payloadRedactor.describe(fromRadio)}" }
 
         rawFromRadio.tryEmit(fromRadio)
 
@@ -2734,10 +2743,25 @@ internal class MeshEngine(
         }
     }
 
+    private inline fun logProtocol(message: () -> String) {
+        if (protocolLogLevel != LogLevel.NONE && logger !== LogSink.Silent) {
+            logger.log(protocolLogLevel, PROTOCOL_TAG, message(), null)
+        }
+    }
+
+    private fun logProtocolTx(frame: Frame) = logProtocol {
+        val bytes = frame.bytes.toByteArray()
+        val toRadio = runCatching {
+            ToRadio.ADAPTER.decode(bytes.copyOfRange(WireFraming.HEADER_SIZE, bytes.size))
+        }.getOrNull()
+        "tx " + (toRadio?.let(payloadRedactor::describe) ?: "undecodable frame bytes=${bytes.size}")
+    }
+
     private companion object {
         private const val TAG = "MeshEngine"
         private const val REASON_IDENTITY_MISMATCH = "identity_mismatch"
         private const val REASON_NODE_RENUMBERED = "node_renumbered"
+        private const val PROTOCOL_TAG = "Protocol"
 
         // Handshake nonces (protocol.md §6).
         const val NONCE_STAGE1 = 69420
