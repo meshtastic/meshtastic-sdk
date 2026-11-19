@@ -23,7 +23,7 @@ import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.User
 import org.meshtastic.proto.Waypoint
 import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
-private fun MeshPacket.payloadOrNull(expected: PortNum): ByteString? {
+internal fun MeshPacket.payloadOrNull(expected: PortNum): ByteString? {
     val data = decoded ?: return null
     if (data.portnum != expected) return null
     val payload = data.payload
@@ -31,7 +31,7 @@ private fun MeshPacket.payloadOrNull(expected: PortNum): ByteString? {
     return payload
 }
 
-private fun <T> MeshPacket.decodeIfPort(expected: PortNum, adapter: ProtoAdapter<T>): T? {
+internal fun <T> MeshPacket.decodeIfPort(expected: PortNum, adapter: ProtoAdapter<T>): T? {
     val payload = payloadOrNull(expected) ?: return null
     return runCatching { adapter.decode(payload) }.getOrNull()
 }
