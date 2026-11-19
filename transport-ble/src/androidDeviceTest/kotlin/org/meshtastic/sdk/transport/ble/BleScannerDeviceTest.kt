@@ -17,6 +17,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
+import org.meshtastic.sdk.TransportIdentity
+import org.meshtastic.sdk.TransportSpec
 
 /**
  * Real-hardware check for [BleScanner]: scan, pick a result, build a transport from it.
@@ -41,7 +43,7 @@ class BleScannerDeviceTest {
 
         val transport = BleTransport(radio)
         try {
-            assertEquals(radio.address, transport.identity.raw)
+            assertEquals(TransportIdentity.of(TransportSpec.Ble(radio.address)), transport.identity)
         } finally {
             transport.shutdown()
         }
