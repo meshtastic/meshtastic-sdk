@@ -81,6 +81,29 @@ public object AndroidUsbSerialPorts {
         device: UsbDevice,
         baudRate: Int = DEFAULT_BAUD,
         logger: LogSink = LogSink.Silent,
+    ): RadioTransport = openTransport(context, device, baudRate, logger, onTextLine = null)
+
+    /**
+     * Like [open], and [onTextLine] receives each line of text the device prints between frames,
+     * which carries the firmware's serial debug log. It runs on the reader thread, so it must not
+     * block; an exception it throws is swallowed.
+     *
+     * @since 0.3.0
+     */
+    public fun open(
+        context: Context,
+        device: UsbDevice,
+        baudRate: Int,
+        logger: LogSink,
+        onTextLine: (String) -> Unit,
+    ): RadioTransport = openTransport(context, device, baudRate, logger, onTextLine)
+
+    private fun openTransport(
+        context: Context,
+        device: UsbDevice,
+        baudRate: Int,
+        logger: LogSink,
+        onTextLine: ((String) -> Unit)?,
     ): RadioTransport {
         val manager = context.usbManager()
         val driver = prober.probeDevice(device) ?: throw MeshtasticException.Transport(
@@ -105,6 +128,7 @@ public object AndroidUsbSerialPorts {
             identity = TransportIdentity.of(TransportSpec.SerialAndroid(device.deviceName)),
             baudRate = baudRate,
             logger = logger,
+            onTextLine = onTextLine,
         )
     }
 
