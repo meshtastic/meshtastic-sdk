@@ -43,12 +43,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
-- `:transport-websocket` with `WebSocketTransport`: connects to firmware's WebSocket phone API at
-  `ws://host[:port]/api/v1/ws` or `wss://`, one protobuf per binary message, on Ktor (CIO on JVM
-  and Android, Darwin on iOS). It stays under the node's 15 minute idle close on the engine's
-  heartbeat and sends no pings, and reports close 4001 (another client took the slot) and 1009
-  as non-recoverable errors. Messages over 512 bytes end the session. ESP32 needs firmware#12412 and meshtasticd needs #12413 (plain
-  `ws://` needs #12414's `HTTPPort`), all unmerged.
 
 ### Changed
 
