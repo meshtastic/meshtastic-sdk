@@ -165,6 +165,8 @@ internal class MeshEngine(
      */
     private val activeConnectDeferred = atomic<CompletableDeferred<Unit>?>(null)
 
+    private val connectionGeneration = atomic(0L)
+
     private val pendingSends = mutableMapOf<MessageId, MutableStateFlow<SendState>>()
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
@@ -172,17 +174,17 @@ internal class MeshEngine(
     private var handshakeStage = HandshakeStage.Idle
     private var engineScope: CoroutineScope? = null
 
-    // Inter-stage and periodic keep-alive heartbeats are sent with nonce = 0. Firmware
-    // (PhoneAPI.cpp:202-209) interprets nonce == 1 as "broadcast our nodeinfo over LoRa";
-    // nonces > 0 are reserved for explicit "ping our nodeinfo" semantics that we don't
-    // expose today. Sending 0 is the safe keep-alive value and matches Android's reference
-    // client.
-    private val keepaliveHeartbeat = Heartbeat.Builder().also { wb -> wb.nonce = 0 }.build()
+    // Firmware drops a ToRadio write byte-identical to the previous one and reads heartbeat
+    // nonce 1 as "broadcast NodeInfo", so keep-alive nonces count up from 2 and never reach 0 or 1.
+    private var heartbeatNonce = FIRST_HEARTBEAT_NONCE
     private var myNodeNum = 0
 
     // R-9: snapshot of the previously-persisted my_node_num, captured at connect time so
     // we can synchronously detect identity rebinds on Stage 2 commit (before storage is cleared).
     private var previousMyNodeNum: Int? = null
+
+    // Hardware id persisted with previousMyNodeNum; null when storage holds none (never logged).
+    private var previousDeviceId: okio.ByteString? = null
 
     /**
      * Per-node admin session passkeys, keyed by the node num that issued them. Each node
@@ -478,6 +480,11 @@ internal class MeshEngine(
      */
     fun myNodeNumOrNull(): Int? = if (myNodeNum != 0) myNodeNum else null
 
+    fun connectionGeneration(): Long = connectionGeneration.value
+
+    fun isConnectedAtGeneration(generation: Long): Boolean =
+        connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
+
     private suspend fun runEngine() {
         try {
             for (msg in inbox) {
@@ -598,6 +605,7 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Idle
         myNodeNum = 0
         previousMyNodeNum = null
+        previousDeviceId = null
         clearSessionPasskeys()
         handshakePacketBuffer.clear()
         pendingNodes.clear()
@@ -786,6 +794,7 @@ internal class MeshEngine(
     }
 
     private suspend fun handleConnect(msg: EngineMessage.Connect) {
+        connectionGeneration.incrementAndGet()
         pendingConnectDeferred = msg.deferred
         connectionState.value = ConnectionState.Connecting(1)
         // reset watchdog gate so a prior session's `disconnecting = true` doesn't stick.
@@ -817,6 +826,14 @@ internal class MeshEngine(
             throw e
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to load previous identity for rebind detection" }
+            null
+        }
+        previousDeviceId = try {
+            trustedDeviceIdOrNull(storage?.loadOwnDeviceId())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG, e) { "Failed to load previous device id for rebind detection" }
             null
         }
 
@@ -1154,9 +1171,8 @@ internal class MeshEngine(
             handshakeStage = HandshakeStage.Stage1Settling
         }
 
-        // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
-        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
-        logger.debug(TAG) { "Sent inter-stage heartbeat nonce=0" }
+        val nonce = sendKeepaliveHeartbeat()
+        logger.debug(TAG) { "Sent inter-stage heartbeat nonce=$nonce" }
         engineScope?.launch {
             delay(INTER_STAGE_SETTLE_MS)
             inbox.trySend(EngineMessage.HandshakeHeartbeatSettleComplete)
@@ -1243,11 +1259,13 @@ internal class MeshEngine(
                     // any consumer-observable state (NodeChange.Snapshot below) and BEFORE the
                     // async storage.recordOwnNode → clear() runs.
                     val prev = previousMyNodeNum
+                    val incomingDeviceId = trustedDeviceIdOrNull(myInfo.device_id)
                     if (prev != null && prev != myInfo.my_node_num) {
+                        val renumbered = incomingDeviceId != null && incomingDeviceId == previousDeviceId
                         logger.warn(TAG) {
                             "Identity rebind detected — previous=0x${prev.toString(
                                 16,
-                            )} new=0x${myInfo.my_node_num.toString(16)}"
+                            )} new=0x${myInfo.my_node_num.toString(16)} renumbered=$renumbered"
                         }
                         // passkeys issued under the previous identity are meaningless now.
                         clearSessionPasskeys()
@@ -1255,15 +1273,12 @@ internal class MeshEngine(
                             MeshEvent.IdentityRebound(
                                 previousNodeNum = NodeId(prev),
                                 newNodeNum = NodeId(myInfo.my_node_num),
-                                // populate reason so host UX can choose
-                                // copy. Without the firmware specifically signalling "factory
-                                // reset", we report "identity_mismatch" — the NodeNum changed
-                                // under an identity that the host persisted.
-                                reason = "identity_mismatch",
+                                reason = if (renumbered) REASON_NODE_RENUMBERED else REASON_IDENTITY_MISMATCH,
                             ),
                         )
                     }
                     previousMyNodeNum = myInfo.my_node_num.takeIf { it != 0 }
+                    previousDeviceId = incomingDeviceId ?: previousDeviceId.takeIf { prev == myInfo.my_node_num }
 
                     myNodeNum = myInfo.my_node_num
                     meshState = meshState.withMyInfo(myInfo)
@@ -1313,7 +1328,11 @@ internal class MeshEngine(
                         val s = storage ?: return@launch
                         try {
                             if (myInfo != null) {
-                                s.recordOwnNode(NodeId(myInfo.my_node_num), firmwareVersion)
+                                s.recordOwnNode(
+                                    NodeId(myInfo.my_node_num),
+                                    firmwareVersion,
+                                    trustedDeviceIdOrNull(myInfo.device_id),
+                                )
                             }
                             for ((nodeId, node) in nodesSnapshot) {
                                 s.saveNode(node)
@@ -2432,12 +2451,19 @@ internal class MeshEngine(
         publishAdminSessions()
         if (handshakeStage != HandshakeStage.Ready) return
         if (!bleHeartbeatEnabled && transport.identity.raw.startsWith("ble:")) return
-        // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
-        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
-        logger.verbose(TAG) { "Heartbeat sent nonce=0" }
+        val nonce = sendKeepaliveHeartbeat()
+        logger.verbose(TAG) { "Heartbeat sent nonce=$nonce" }
         // piggy-back heartbeat persistence on the 30 s heartbeat tick so we write at most
         // a bounded number of rows per session tick, even on busy meshes.
         flushDirtyHeartbeats()
+    }
+
+    private fun sendKeepaliveHeartbeat(): Int {
+        val nonce = heartbeatNonce
+        heartbeatNonce = if (nonce == Int.MAX_VALUE) FIRST_HEARTBEAT_NONCE else nonce + 1
+        val heartbeat = Heartbeat.Builder().also { hb -> hb.nonce = nonce }.build()
+        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = heartbeat }.build())
+        return nonce
     }
 
     private fun handlePresenceCheckTick() {
@@ -2764,11 +2790,14 @@ internal class MeshEngine(
 
     private companion object {
         private const val TAG = "MeshEngine"
+        private const val REASON_IDENTITY_MISMATCH = "identity_mismatch"
+        private const val REASON_NODE_RENUMBERED = "node_renumbered"
         private const val REQUEST_GENERATION_CAP = 64
 
         // Handshake nonces (protocol.md §6).
         const val NONCE_STAGE1 = 69420
         const val NONCE_STAGE2 = 69421
+        const val FIRST_HEARTBEAT_NONCE = 2
 
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
