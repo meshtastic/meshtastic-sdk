@@ -19,7 +19,16 @@ public data class DeviceVersion(val versionString: String) : Comparable<DeviceVe
     override fun compareTo(other: DeviceVersion): Int = asInt.compareTo(other.asInt)
 
     public companion object {
+        /**
+         * Recommended minimum firmware. A device below it (and at or above [ABS_MIN_SUPPORTED])
+         * still connects; the engine emits one [MeshEvent.ProtocolWarning] per session.
+         */
         public val MIN_SUPPORTED: DeviceVersion = DeviceVersion("2.5.14")
+
+        /**
+         * Absolute minimum firmware. A device below it fails `connect()` with
+         * [MeshtasticException.FirmwareTooOld].
+         */
         public val ABS_MIN_SUPPORTED: DeviceVersion = DeviceVersion("2.3.15")
 
         private fun parseVersion(s: String): Int {

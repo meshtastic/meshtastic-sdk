@@ -125,12 +125,14 @@ Documented in `docs/compatibility.md` (TBD) and the README:
 
 | SDK version | Proto artifact (`meshtasticProtobufs`) | Min firmware (capability-gated) | Kotlin | Gradle | Min Android SDK | iOS deployment |
 |---|---|---|---|---|---|---|
-| `0.x.y` | pinned in `gradle/libs.versions.toml` (see CHANGELOG for the version) | No hard minimum; capabilities gate on proto fields (e.g. `DeviceMetadata.hasPKC` for PKI, `ClientNotification` variants for security warnings). Practical floor tracks the pinned proto artifact — currently ≈ firmware `2.6.x`. | latest stable at release | 9.x | 26 | iOS 14 |
+| `0.x.y` | pinned in `gradle/libs.versions.toml` (see CHANGELOG for the version) | `2.3.15` hard floor (`DeviceVersion.ABS_MIN_SUPPORTED`, `connect()` throws `FirmwareTooOld` below it); `2.5.14` recommended (`DeviceVersion.MIN_SUPPORTED`, a `ProtocolWarning` below it). Newer features gate on proto fields (e.g. `DeviceMetadata.hasPKC` for PKI, `ClientNotification` variants for security warnings). | latest stable at release | 9.x | 26 | iOS 14 |
 
-The SDK is forward-compatible for additive proto fields and does **not** hard-fail on
-firmware-version mismatch today. `MeshtasticException.FirmwareTooOld` is reserved for a
-future opt-in check (see `docs/error-taxonomy.md`). `docs/compatibility.md` will be added
-when a real hard minimum is enforced.
+The SDK is forward-compatible for additive proto fields. The only firmware check is the
+floor, in two tiers: a `firmware_version` that parses below `2.3.15`
+(`DeviceVersion.ABS_MIN_SUPPORTED`) fails the connect with `MeshtasticException.FirmwareTooOld`
+(see `docs/error-taxonomy.md`); one from `2.3.15` up to `2.5.13` connects and emits one
+`MeshEvent.ProtocolWarning` per session recommending an update to `2.5.14`. A version that is
+missing or does not parse never fails the connect.
 
 ## Yanking a release
 

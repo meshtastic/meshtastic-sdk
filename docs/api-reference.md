@@ -158,6 +158,12 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
 | `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
 | `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
+| `deviceLogs: Flow<LogRecord>` *(since 0.3.0)* | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST`, drops are silent |
+
+`deviceLogs` carries `FromRadio.log_record`, which firmware sends on serial and TCP while
+`security.debug_log_api_enabled` is set (enable it with `AdminApi.setConfig`; the SDK never
+does). It is a separate flow so a high-volume log stream cannot push rare events out of
+`events`. The BLE LogRadio characteristic is not read by the SDK.
 
 `nodes` seeds **each** subscription with a `NodeChange.Snapshot` of the engine's current node
 map (via `onSubscription`) before deltas — late subscribers never miss the baseline even though

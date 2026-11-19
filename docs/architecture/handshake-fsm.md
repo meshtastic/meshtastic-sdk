@@ -61,6 +61,12 @@ stateDiagram-v2
 
 While in `TransportConnecting` and during the gap between `transport.connect()` returning Connected and `Stage1Sending` posting the first byte, **the engine drops every inbound frame**. Stale `FromRadio` from a prior PhoneAPI session can otherwise corrupt the early state. Once Stage 1's nonce is on the wire, every inbound frame is dispatched.
 
+### Mid-handshake frames
+
+Live `FromRadio.packet` frames that arrive before `Ready` are held in a 128-packet buffer and flushed through the normal packet pipeline, in order, when the session reaches `Ready`. The bound covers the firmware to-phone queue: 8 to 32 packets depending on target (`mesh-pb-constants.h` `MAX_RX_TOPHONE`) and 100 by default on Portduino (`PortduinoGlue.h` `maxtophone`, set by `MaxMessageQueue`). Beyond 128 the oldest packets are dropped, with one summarizing warning and one `MeshEvent.PacketsDropped(Packets, count)` at `Ready`.
+
+`queue_status` frames are discarded and `log_record` frames go straight to `RadioClient.deviceLogs`; neither is buffered: no send is in flight before `Ready`, and log records are unbounded in number. During the settle window only non-packet frames wait for replay (cap 64, one warning on overflow).
+
 ### Heartbeat in handshake
 
 A heartbeat with `nonce = ++counter` is sent **once** between Stage 1 settle and Stage 2 send. It serves two purposes:
@@ -75,7 +81,7 @@ The 30 s scheduled heartbeat (`protocol.md` §16) starts only on entry to `Ready
 `Failed(cause)` always returns to `Idle`. The engine then runs a fixed reconnect policy: **exponential backoff (initial 500 ms, factor 2, capped at 60 s, with ±20 % jitter), infinite attempts** while the consumer holds the `RadioClient`. Each retry begins a new attempt with `Connecting(attempt + 1)`. The policy is intentionally not configurable in 0.x — Phase 5 may revisit and add `Builder.reconnect(...)` if real-world adopters report concrete needs (recorded as a separate ADR if/when it lands).
 
 Causes that DO NOT auto-reconnect:
-- `MeshtasticException.FirmwareTooOld` (firmware build below `MIN_SUPPORTED_FIRMWARE`, surfaced once `metadata` envelope arrives).
+- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
 
 Causes that DO auto-reconnect:
 - `MeshtasticException.Transport(...)`

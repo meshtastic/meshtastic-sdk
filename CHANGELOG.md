@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `RadioClient.deviceLogs`: the device's `log_record` frames as a `Flow<LogRecord>`, handshake
+  included. Firmware sends them on serial and TCP when `security.debug_log_api_enabled` is set;
+  the SDK does not change that setting. Drop-oldest at 64, no replay, so a slow collector never
+  slows the engine and the logs never reach `events`.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
@@ -56,6 +60,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
   coroutines 1.11 into the storage POM.
+- `connect()` throws `MeshtasticException.FirmwareTooOld` when the device reports firmware below
+  2.3.15 (`DeviceVersion.ABS_MIN_SUPPORTED`), instead of continuing into a handshake it may
+  not complete. Auto-reconnect does not retry it. Firmware from 2.3.15 up to 2.5.13 (below
+  `DeviceVersion.MIN_SUPPORTED`, 2.5.14) still connects and emits one
+  `MeshEvent.ProtocolWarning` per session recommending an update, with `present` and
+  `recommended` in `details`. A missing or unparseable version still connects. No new API: the
+  exception was already declared, so this needs no code change unless a host connects to
+  firmware older than 2.3.15.
 
 ### Fixed
 
@@ -65,6 +77,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with zero hops and nothing relayed them.
 - `AdminApi.setConfig` and `setModuleConfig` update `configBundle` once the device acks the
   write, as `editSettings` already did. Remote-node writes leave the local bundle alone.
+- Mesh packets that arrive during the handshake are kept up to 128 instead of 64, and
+  `queue_status` and `log_record` frames no longer fill the handshake buffers, so a device with
+  a backlog or debug logging on no longer loses live packets. An overflow now logs one warning
+  and emits one `MeshEvent.PacketsDropped` at `Ready` instead of one per frame.
 
 ## [0.2.0] — 2026-10-03
 
