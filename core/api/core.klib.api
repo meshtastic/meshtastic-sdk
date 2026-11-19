@@ -415,19 +415,6 @@ sealed interface org.meshtastic.sdk/MeshEvent { // org.meshtastic.sdk/MeshEvent|
         final fun toString(): kotlin/String // org.meshtastic.sdk/MeshEvent.CongestionWarning.toString|toString(){}[0]
     }
 
-    final class DeviceLog : org.meshtastic.sdk/MeshEvent { // org.meshtastic.sdk/MeshEvent.DeviceLog|null[0]
-        constructor <init>(org.meshtastic.proto/LogRecord) // org.meshtastic.sdk/MeshEvent.DeviceLog.<init>|<init>(org.meshtastic.proto.LogRecord){}[0]
-
-        final val record // org.meshtastic.sdk/MeshEvent.DeviceLog.record|{}record[0]
-            final fun <get-record>(): org.meshtastic.proto/LogRecord // org.meshtastic.sdk/MeshEvent.DeviceLog.record.<get-record>|<get-record>(){}[0]
-
-        final fun component1(): org.meshtastic.proto/LogRecord // org.meshtastic.sdk/MeshEvent.DeviceLog.component1|component1(){}[0]
-        final fun copy(org.meshtastic.proto/LogRecord = ...): org.meshtastic.sdk/MeshEvent.DeviceLog // org.meshtastic.sdk/MeshEvent.DeviceLog.copy|copy(org.meshtastic.proto.LogRecord){}[0]
-        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/MeshEvent.DeviceLog.equals|equals(kotlin.Any?){}[0]
-        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/MeshEvent.DeviceLog.hashCode|hashCode(){}[0]
-        final fun toString(): kotlin/String // org.meshtastic.sdk/MeshEvent.DeviceLog.toString|toString(){}[0]
-    }
-
     final class DeviceRebooted : org.meshtastic.sdk/MeshEvent { // org.meshtastic.sdk/MeshEvent.DeviceRebooted|null[0]
         constructor <init>(kotlin/String = ...) // org.meshtastic.sdk/MeshEvent.DeviceRebooted.<init>|<init>(kotlin.String){}[0]
 

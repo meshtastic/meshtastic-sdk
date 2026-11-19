@@ -43,8 +43,9 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
     /**
      * Called with each newline-terminated line of text the device prints between frames, which is
      * where the firmware's serial debug log goes. The terminator is stripped and empty lines are
-     * skipped; a line longer than 1024 bytes is dropped. `null` (the default) discards the text.
-     * Called synchronously from [feed].
+     * skipped; a line longer than 1024 bytes is dropped. A START1 byte (0x94) that is not followed
+     * by START2 stays in the line, so UTF-8 text containing it decodes intact. `null` (the
+     * default) discards the text. Called synchronously from [feed].
      */
     public var onTextLine: ((String) -> Unit)? = null
 
@@ -59,9 +60,13 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
                     State.READ_LEN_HI
                 }
 
-                START1 -> State.EXPECT_START2
+                START1 -> {
+                    collectText(START1)
+                    State.EXPECT_START2
+                }
 
                 else -> {
+                    collectText(START1)
                     collectText(byte)
                     State.SCAN_FOR_START1
                 }

@@ -113,9 +113,6 @@ lines.
 
 - `QueueStatusChanged(status)` — firmware queue update.
 - `Notification(notification)` — `ClientNotification` from device.
-- `DeviceLog(record)` — firmware debug `LogRecord`; arrives only with `debug_log_api_enabled`
-  set. Shares the 64-slot `DROP_OLDEST` buffer with the other events, so a collector that
-  falls behind a log burst can lose older events.
 - `TransportError(error)` — recoverable transport failure mid-session.
 - `ProtocolWarning(message)` — protocol-level anomaly (e.g. identity rebind).
 - `KeyVerification(prompt)` — peer key-verification prompt.

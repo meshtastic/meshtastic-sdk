@@ -80,6 +80,27 @@ class SerialFrameAssemblerTest {
     }
 
     @Test
+    fun startByteInsideUtf8TextStaysInTheLine() {
+        val frames = mutableListOf<Frame>()
+        val lines = mutableListOf<String>()
+        val a = SerialFrameAssembler { frames += it }.also { it.onTextLine = { line -> lines += line } }
+        a.feed(frame(byteArrayOf(1)))
+        a.feed("a — b\n".encodeToByteArray())
+        a.feed("x".encodeToByteArray() + byteArrayOf(0x94.toByte(), 0x94.toByte()) + "y\n".encodeToByteArray())
+        a.feed("end".encodeToByteArray() + byteArrayOf(0x94.toByte()) + "\n".encodeToByteArray())
+        a.feed(frame(byteArrayOf(2)))
+        assertEquals(
+            listOf(
+                "a — b",
+                "x" + byteArrayOf(0x94.toByte(), 0x94.toByte()).decodeToString() + "y",
+                "end" + byteArrayOf(0x94.toByte()).decodeToString(),
+            ),
+            lines,
+        )
+        assertEquals(2, frames.size)
+    }
+
+    @Test
     fun textIsDiscardedWhenNoListenerIsSet() {
         val frames = mutableListOf<Frame>()
         val a = SerialFrameAssembler { frames += it }

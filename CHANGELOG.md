@@ -41,6 +41,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   published on JitPack, so a host adds it and the repository itself.
 - `SerialFrameAssembler` is public (`org.meshtastic.sdk.transport.serial`) so a host with its
   own byte stream can build a `RadioTransport` on the same framing.
+- `SerialFrameAssembler.onTextLine` and `open(..., onTextLine)` overloads on `JvmSerialPorts`,
+  `AndroidSerialPorts` and `AndroidUsbSerialPorts` deliver each line of text a radio prints
+  between frames, which carries the firmware's serial debug log.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
 
