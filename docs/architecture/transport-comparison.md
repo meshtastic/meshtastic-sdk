@@ -11,14 +11,14 @@ and [ADR-012](../decisions/012-transport-threading.md) for the threading contrac
 
 | Feature | `:transport-tcp` | `:transport-ble` | `:transport-serial` |
 |---|---|---|---|
-| Backing library | Ktor `ktor-network` | JuulLabs Kable (`kable-core`) | jSerialComm |
+| Backing library | Ktor `ktor-network` | JuulLabs Kable (`kable-core`) | jSerialComm (JVM, Android); usb-serial-for-android (Android, host-supplied) |
 | Typical use case | Dev / testing, LAN-attached routers, gateways, JVM samples | Phone ↔ handheld radio (the default consumer path) | USB-tethered desktop debugging, Android USB-OTG, headless setups |
 | Latency | Lowest (native sockets) | Highest — GATT round-trips, optional bonding | Low (raw byte stream) |
 | Throughput | Highest — TCP MSS / network-bound | Lowest — ATT MTU, acknowledged-write cadence | High — 115 200 baud (≈ 11 KB/s) |
 | Requires hardware | None (just a routable host) | BLE radio on host **and** device | USB host port + USB-serial bridge IC |
 | Multiple devices per host | Yes — one `RadioClient` per `(host, port)` | Yes — one `RadioClient` per peripheral | Yes — one `RadioClient` per port |
 | Bonding / pairing | None | Yes — surfaced as [`TransportState.Bonding`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) on first encrypted read | None |
-| Auto-discovery | mDNS `_meshtastic._tcp` via `TcpDiscovery.discover()`: `JvmTcpDiscovery` (JmDNS), `AndroidTcpDiscovery` (`NsdManager`), `IosTcpDiscovery` (`NSNetServiceBrowser`); a known host:port still works without it | Kable `Scanner` filtered on `BleConstants.MESH_SERVICE_UUID` | OS port enumeration via `JvmSerialPorts.list()` / `AndroidSerialPorts.list()` |
+| Auto-discovery | mDNS `_meshtastic._tcp` via `TcpDiscovery.discover()`: `JvmTcpDiscovery` (JmDNS), `AndroidTcpDiscovery` (`NsdManager`), `IosTcpDiscovery` (`NSNetServiceBrowser`); a known host:port still works without it | None (the consumer supplies discovery and passes the peripheral address; `BleConstants.MESH_SERVICE_UUID` is the scan filter to use) | OS port enumeration via `JvmSerialPorts.list()` / `AndroidSerialPorts.list()`; USB host devices via `AndroidUsbSerialPorts.list(context)` |
 | Idle behavior | **15 min** firmware-side idle close (`protocol.md` §1A) | Link kept alive by GATT; OS may drop on radio reset | None — link dies only on cable detach |
 | Wake-byte preamble | Yes (4× `0x94`) | Not applicable (GATT message boundaries) | Yes (4× `0x94`) |
 | Module docs | [`transport-tcp/Module.md`](../../transport-tcp/Module.md) | [`transport-ble/Module.md`](../../transport-ble/Module.md) | [`transport-serial/Module.md`](../../transport-serial/Module.md) |
@@ -32,7 +32,8 @@ and [ADR-012](../decisions/012-transport-threading.md) for the threading contrac
 | macOS (JVM) | ✓ | ✓ (CoreBluetooth via JNA) | ✓ (jSerialComm bundled `.dylib`) |
 | Linux (JVM) | ✓ | ✓ (`bluez` 5.x) | ✓ (jSerialComm bundled `.so`) |
 | Windows (JVM) | ✓ | ✓ (Win10 1709+) | ✓ (jSerialComm bundled `.dll`) |
-| Linux x64 native | ✓ | — | — |
+
+The SDK modules declare `jvm`, `android`, `iosArm64`, `iosX64` and `iosSimulatorArm64` targets; there are no macOS, Linux or Windows native targets.
 
 Per-target Android / FGS detail: [`android-platform-constraints.md`](./android-platform-constraints.md).
 

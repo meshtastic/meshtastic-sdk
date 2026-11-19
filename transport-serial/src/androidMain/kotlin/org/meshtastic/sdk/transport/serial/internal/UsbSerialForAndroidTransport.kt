@@ -53,6 +53,7 @@ internal class UsbSerialForAndroidTransport(
     private val logger: LogSink = LogSink.Silent,
     private val parentContext: CoroutineContext = EmptyCoroutineContext,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val onTextLine: ((String) -> Unit)? = null,
 ) : RadioTransport {
 
     private val _state: MutableStateFlow<TransportState> = MutableStateFlow(TransportState.Disconnected)
@@ -139,7 +140,7 @@ internal class UsbSerialForAndroidTransport(
     override fun frames(): Flow<Frame> = frameChannel.consumeAsFlow()
 
     private fun runReader(port: UsbSerialPort) {
-        val assembler = SerialFrameAssembler { frame -> publisher.publish(frame) }
+        val assembler = SerialFrameAssembler { frame -> publisher.publish(frame) }.also { it.onTextLine = onTextLine }
         val buf = ByteArray(READ_CHUNK_BYTES)
         try {
             while (!cleanedUp.get()) {
