@@ -51,7 +51,6 @@ import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
-import org.meshtastic.sdk.LogLevel
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
@@ -59,7 +58,6 @@ import org.meshtastic.sdk.MessageId
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
-import org.meshtastic.sdk.PayloadRedactor
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
@@ -100,8 +98,6 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
-    private val protocolLogLevel: LogLevel = LogLevel.NONE,
-    private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -570,7 +566,7 @@ internal class MeshEngine(
         if (transport.state.value is TransportState.Connected) {
             try {
                 withTimeoutOrNull(GOODBYE_TIMEOUT_MS) {
-                    val encoded = encodeToRadio(
+                    val encoded = WireCodec.encodeToRadio(
                         ToRadio.Builder().also { wb ->
                             wb.disconnect = true
                         }.build(),
@@ -672,7 +668,7 @@ internal class MeshEngine(
         dispatcher.register(msg.requestId, msg.kind, msg.deferred)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
-        val encoded = encodeToRadio(
+        val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = outboundPacket
             }.build(),
@@ -985,8 +981,6 @@ internal class MeshEngine(
             )
             return
         }
-
-        protocolLog { "RX ${describe(fromRadio)}" }
 
         // liveness watchdog only resets on successfully decoded envelopes,
         // not raw-byte arrivals. A stuck framer on a half-open socket could still deliver
@@ -2299,7 +2293,7 @@ internal class MeshEngine(
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
 
-        val encoded = encodeToRadio(
+        val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = packet
             }.build(),
@@ -2462,96 +2456,10 @@ internal class MeshEngine(
 
     internal fun sendToRadio(msg: ToRadio) {
         try {
-            val encoded = encodeToRadio(msg)
+            val encoded = WireCodec.encodeToRadio(msg)
             outbound.trySend(Frame(encoded.toByteString()))
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
-        }
-    }
-
-    /** The single outbound encode site: every `ToRadio` frame is protocol-logged here. */
-    private fun encodeToRadio(msg: ToRadio): ByteArray = WireCodec.encodeToRadio(msg).also {
-        protocolLog { "TX ${describe(msg)}" }
-    }
-
-    private inline fun protocolLog(message: () -> String) {
-        if (protocolLogLevel != LogLevel.NONE && logger !== LogSink.Silent) {
-            logger.log(protocolLogLevel, PROTOCOL_TAG, message(), null)
-        }
-    }
-
-    private fun describe(msg: ToRadio): String = when {
-        msg.packet != null -> describe(msg.packet!!)
-        msg.want_config_id != null -> "ToRadio want_config_id=${msg.want_config_id}"
-        msg.heartbeat != null -> "ToRadio heartbeat nonce=${msg.heartbeat!!.nonce}"
-        msg.disconnect != null -> "ToRadio disconnect"
-        msg.xmodemPacket != null -> "ToRadio ${describe(msg.xmodemPacket!!)}"
-        msg.mqttClientProxyMessage != null -> "ToRadio mqttClientProxyMessage"
-        else -> "ToRadio other"
-    }
-
-    private fun describe(msg: FromRadio): String = when {
-        msg.packet != null -> describe(msg.packet!!)
-
-        msg.config_complete_id != null -> "FromRadio config_complete_id=${msg.config_complete_id}"
-
-        msg.my_info != null -> "FromRadio my_info"
-
-        msg.node_info != null -> "FromRadio node_info"
-
-        msg.config != null -> "FromRadio config"
-
-        msg.moduleConfig != null -> "FromRadio moduleConfig"
-
-        msg.channel != null -> "FromRadio channel"
-
-        msg.metadata != null -> "FromRadio metadata"
-
-        msg.queueStatus != null -> msg.queueStatus!!.let {
-            "FromRadio queueStatus free=${it.free} res=${it.res} id=${it.mesh_packet_id}"
-        }
-
-        msg.rebooted != null -> "FromRadio rebooted"
-
-        msg.xmodemPacket != null -> "FromRadio ${describe(msg.xmodemPacket!!)}"
-
-        msg.log_record != null -> "FromRadio log_record"
-
-        msg.fileInfo != null -> "FromRadio fileInfo"
-
-        msg.clientNotification != null -> "FromRadio clientNotification"
-
-        msg.mqttClientProxyMessage != null -> "FromRadio mqttClientProxyMessage"
-
-        msg.deviceuiConfig != null -> "FromRadio deviceuiConfig"
-
-        msg.lockdown_status != null -> "FromRadio lockdown_status"
-
-        msg.region_presets != null -> "FromRadio region_presets"
-
-        msg.display_frame != null -> "FromRadio display_frame"
-
-        msg.display_palette != null -> "FromRadio display_palette"
-
-        else -> "FromRadio other"
-    }
-
-    // Control, sequence and length only: a file's bytes never reach the log.
-    private fun describe(frame: org.meshtastic.proto.XModem): String =
-        "xmodem ${frame.control} seq=${frame.seq} len=${frame.buffer.size}"
-
-    private fun describe(packet: MeshPacket): String {
-        val head = "packet id=${packet.id} from=0x${packet.from.toString(16)} to=0x${packet.to.toString(16)} " +
-            "channel=${packet.channel}"
-        val data = packet.decoded
-        val encrypted = packet.encrypted
-        return when {
-            data != null -> "$head port=${data.portnum} payload=${payloadRedactor.redact(data.portnum, data.payload)}"
-
-            encrypted != null && encrypted.size > 0 ->
-                "$head encrypted=${payloadRedactor.redact(PortNum.UNKNOWN_APP, encrypted)}"
-
-            else -> head
         }
     }
 
@@ -2769,7 +2677,6 @@ internal class MeshEngine(
 
     private companion object {
         private const val TAG = "MeshEngine"
-        private const val PROTOCOL_TAG = "Protocol"
         private const val REQUEST_GENERATION_CAP = 64
 
         // Handshake nonces (protocol.md §6).

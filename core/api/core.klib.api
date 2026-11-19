@@ -216,13 +216,9 @@ abstract interface org.meshtastic.sdk/DeviceStorage : kotlin/AutoCloseable { // 
 abstract interface org.meshtastic.sdk/KeyVerificationPrompt // org.meshtastic.sdk/KeyVerificationPrompt|null[0]
 
 abstract interface org.meshtastic.sdk/PayloadRedactor { // org.meshtastic.sdk/PayloadRedactor|null[0]
-    open fun redact(org.meshtastic.proto/PortNum, okio/ByteString): kotlin/String // org.meshtastic.sdk/PayloadRedactor.redact|redact(org.meshtastic.proto.PortNum;okio.ByteString){}[0]
-
     final object Companion { // org.meshtastic.sdk/PayloadRedactor.Companion|null[0]
         final val Default // org.meshtastic.sdk/PayloadRedactor.Companion.Default|{}Default[0]
             final fun <get-Default>(): org.meshtastic.sdk/PayloadRedactor // org.meshtastic.sdk/PayloadRedactor.Companion.Default.<get-Default>|<get-Default>(){}[0]
-        final val None // org.meshtastic.sdk/PayloadRedactor.Companion.None|{}None[0]
-            final fun <get-None>(): org.meshtastic.sdk/PayloadRedactor // org.meshtastic.sdk/PayloadRedactor.Companion.None.<get-None>|<get-None>(){}[0]
     }
 }
 

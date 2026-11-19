@@ -81,14 +81,9 @@ construction run.
 
 Wire-byte / frame-level dumps are a **separate**, opt-in hook
 controlled by `Builder.protocolLogging(level, redactor)`. `LogLevel.NONE`
-is the default. Enabling this hook emits one line, tagged `Protocol`, for
-every `ToRadio` frame written and every `FromRadio` frame received, at the
-specified level. A line starts with `TX` or `RX` and names the frame variant;
-for a packet it adds `id`, `from`, `to`, `channel`, the port and the payload
-as rendered by the redactor. Config and node contents are never printed. With the default
-redactor no key material appears; `PayloadRedactor.None`, or a custom redactor that returns
-payload bytes, can expose session passkeys, PSKs and private keys, so never use either with a
-log sink that leaves the device.
+is the default. Enabling this hook emits every encoded `FromRadio` /
+`ToRadio` envelope at the specified level — including pre-shared keys,
+session passkeys, and node positions unless a redactor strips them.
 
 ```kotlin
 val client = RadioClient.Builder()
@@ -96,15 +91,13 @@ val client = RadioClient.Builder()
     .logger(myLogSink)
     .protocolLogging(
         level = LogLevel.DEBUG,            // ⚠ raw bytes — dev only
-        redactor = PayloadRedactor.Default // prints the payload size only
+        redactor = PayloadRedactor.Default // masks PSKs/passkeys/positions
     )
     .build()
 ```
 
-`PayloadRedactor.Default` prints only the payload size, so positions, text,
-PSKs and session passkeys stay out of the log. It is used unless overridden;
-pass `PayloadRedactor.None` to print payloads as hex, or implement
-`PayloadRedactor.redact(portnum, payload)`. Even with redaction,
+`PayloadRedactor.Default` is on unless explicitly overridden; pass
+`PayloadRedactor.None` to disable redaction. Even with redaction,
 **do not enable protocol logging in a production build** — the
 encoded envelopes still reveal mesh structure and timing.
 
