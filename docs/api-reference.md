@@ -198,7 +198,7 @@ The `send { … }` lambda configures a `MeshPacket` builder. Available DSL metho
 
 ### Sub-API namespaces
 
-`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi`, `client.storeForward: StoreForwardApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
+`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi`, `client.storeForward: StoreForwardApi`, `client.files: FileTransferApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
 
 ## `MessageHandle`
 
@@ -581,6 +581,41 @@ public sealed interface StoreForwardEvent {
     public data class SfppCanonAnnounced(val messageHash: ByteArray, val rxTime: Long) : StoreForwardEvent
 }
 ```
+
+## `FileTransferApi` *(since 0.3.0)*
+
+Reads and writes files on the device's filesystem over the phone API with firmware's XModem-style exchange (see [protocol.md §15](./protocol.md#15-file-transfer-xmodem)). Access via `client.files`. File transfer only: flashing firmware is out of scope.
+
+```kotlin
+public interface FileTransferApi {
+    /** Progress of the transfer in flight, or null while idle. */
+    public val progress: StateFlow<FileTransferProgress?>
+
+    public suspend fun download(path: String): FileTransferResult<ByteString>
+    public suspend fun upload(path: String, data: ByteString): FileTransferResult<Unit>
+
+    public companion object {
+        public const val MAX_FILE_BYTES: Int = 1 shl 20
+        public const val MAX_PATH_BYTES: Int = 127
+    }
+}
+
+public data class FileTransferProgress(
+    val path: String, val direction: FileTransferDirection,
+    val bytesTransferred: Int, val totalBytes: Int?,   // null for downloads
+)
+
+public sealed interface FileTransferResult<out T> {
+    public data class Success<T>(val value: T) : FileTransferResult<T>
+    public data class Failure(val reason: FileTransferFailure) : FileTransferResult<Nothing>
+}
+
+public sealed interface FileTransferFailure {
+    NotConnected, Busy, InvalidPath, TooLarge, Refused, DeviceCancelled, RetriesExhausted, Timeout  // data objects
+}
+```
+
+One transfer runs per client at a time; a second call returns `Busy`. A block that does not arrive within 3 s is re-requested, up to 10 times; a download from a silent device fails within 13.5 s (see the `FileTransferApi` KDoc for the worst cases). Cancelling the calling coroutine aborts the transfer: an upload sends `CAN` once the device has acknowledged the request (firmware deletes the partial file) and, before that, re-sends the request to find out whether the device is receiving, never `CAN`; a download sends a frame that makes firmware close the file without deleting it. The transfer reads device frames from `RadioClient.events`; firmware sends one frame and waits for the reply, so the drop-oldest buffer does not overflow from the transfer alone.
 
 ## Packet provenance accessors *(since 0.3.0)*
 

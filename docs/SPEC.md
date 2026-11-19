@@ -634,7 +634,7 @@ public interface StoreForwardApi {
 }
 ```
 
-Firmware update is omitted from MVP — XModem file transfer is a Phase 6 add.
+Firmware update (flashing) is omitted from MVP. XModem file transfer ships as `RadioClient.files` (`FileTransferApi`).
 
 ### 3.3 Storage contract
 

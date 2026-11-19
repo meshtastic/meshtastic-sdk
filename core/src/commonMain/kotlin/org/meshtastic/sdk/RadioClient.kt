@@ -25,6 +25,7 @@ import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.internal.AdminApiImpl
+import org.meshtastic.sdk.internal.FileTransferApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.RoutingApiImpl
 import org.meshtastic.sdk.internal.StoreForwardApiImpl
@@ -553,6 +554,13 @@ public class RadioClient internal constructor(
      */
     public val routing: RoutingApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
         RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout)
+    }
+
+    /**
+     * File transfer API for reading and writing files on the device. Available while connected.
+     */
+    public val files: FileTransferApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        FileTransferApiImpl(client = this)
     }
 
     /**
