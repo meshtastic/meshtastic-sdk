@@ -128,7 +128,15 @@ subprojects {
 
 // Every module on meshtastic.kmp.library; the dokka and kover aggregation list.
 val libraryModules =
-    setOf("core", "transport-ble", "transport-tcp", "transport-serial", "storage-sqldelight", "testing")
+    setOf(
+        "core",
+        "transport-ble",
+        "transport-tcp",
+        "transport-serial",
+        "transport-websocket",
+        "storage-sqldelight",
+        "testing",
+    )
 dependencies {
     libraryModules.forEach {
         dokka(project(":$it"))

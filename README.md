@@ -40,7 +40,7 @@ dependencies {
 
 > Released versions are published to Maven Central. For bleeding-edge builds from `main`, use the snapshot repository below.
 
-Available transport modules: `transport-ble`, `transport-tcp`, `transport-serial` (single multiplatform module covering JVM and Android; on Android, jSerialComm or usb-serial-for-android).
+Available transport modules: `transport-ble`, `transport-tcp`, `transport-websocket`, `transport-serial` (single multiplatform module covering JVM and Android; on Android, jSerialComm or usb-serial-for-android).
 Available storage modules: `storage-sqldelight`, or `InMemoryStorageProvider` from `core` when nothing needs to survive the process. Or roll your own `StorageProvider`.
 Optionally, depend on `sdk-bom` to align all module versions; see [`bom/README.md`](bom/README.md) for usage and [`docs/versioning.md`](docs/versioning.md#bom) for the versioning policy.
 
@@ -227,6 +227,7 @@ authoritative dependency graph.
 | `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
 | `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
 | `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | Built on Ktor sockets.                                                |
+| `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | Ktor client (CIO on JVM and Android, Darwin on iOS). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, host adds it). iOS targets compile (empty actuals) but no USB-serial API on iOS. |
 | `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
 | `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |

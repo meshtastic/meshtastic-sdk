@@ -84,6 +84,7 @@ BOM itself (axion-release-driven from the git tag). Source of truth:
 | `org.meshtastic:sdk-core`                  | `:core`                 | `RadioClient`, engine, public API surface.                |
 | `org.meshtastic:sdk-transport-ble`         | `:transport-ble`        | BLE GATT transport (Kable). Android / iOS / JVM.          |
 | `org.meshtastic:sdk-transport-tcp`         | `:transport-tcp`        | TCP/4403 transport (Ktor). All targets.                   |
+| `org.meshtastic:sdk-transport-websocket`   | `:transport-websocket`  | WebSocket phone API transport (Ktor client). All targets. |
 | `org.meshtastic:sdk-transport-serial`      | `:transport-serial`     | USB-serial transport (jSerialComm + usb-serial-for-android). JVM/Android only. |
 | `org.meshtastic:sdk-storage-sqldelight`    | `:storage-sqldelight`   | Persistent `StorageProvider` backed by SQLDelight.        |
 | `org.meshtastic:sdk-testing`               | `:testing`              | `FakeRadioTransport`, `InMemoryStorage`, `TestClock`.     |

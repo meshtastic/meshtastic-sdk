@@ -22,6 +22,7 @@ dependencies {
         api("org.meshtastic:sdk-transport-ble:${project.version}")
         api("org.meshtastic:sdk-transport-tcp:${project.version}")
         api("org.meshtastic:sdk-transport-serial:${project.version}")
+        api("org.meshtastic:sdk-transport-websocket:${project.version}")
         api("org.meshtastic:sdk-storage-sqldelight:${project.version}")
         api("org.meshtastic:sdk-testing:${project.version}")
     }

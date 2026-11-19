@@ -33,6 +33,7 @@
 /transport-ble/                                         @meshtastic/sdk-maintainers @meshtastic/transport-ble
 /transport-tcp/                                         @meshtastic/sdk-maintainers @meshtastic/transport-net
 /transport-serial/                                      @meshtastic/sdk-maintainers @meshtastic/android @meshtastic/transport-net
+/transport-websocket/                                   @meshtastic/sdk-maintainers @meshtastic/transport-net
 
 # Storage
 /storage-sqldelight/                                    @meshtastic/sdk-maintainers @meshtastic/storage
