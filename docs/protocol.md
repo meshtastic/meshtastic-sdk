@@ -1107,41 +1107,61 @@ Each `ChannelSettings` carries:
 
 ### LoRa regions
 
-`LoRaConfig.region` (enum `RegionCode`) — selects frequency band, duty-cycle limits, and legal max TX power. Full list (from docs):
+`LoRaConfig.region` (enum `RegionCode`) selects the frequency band, duty-cycle limit and legal max TX power. The rows below are firmware's `regions[]` table (`src/mesh/RadioInterface.cpp`), the bounds the slot calculation uses; `LoRaRegionInfo` carries the same rows. A regulatory band can be wider than the span firmware plans slots in. `UA_868`, `EU_874` and `EU_917` exist in `RegionCode` with no firmware row and resolve to `UNSET`.
 
-| Code | Coverage | Frequency band | Notes |
-|---|---|---|---|
-| `US` | North America | 902–928 MHz | |
-| `EU_433` | Europe | 433–435 MHz | 10% hourly duty-cycle limit |
-| `EU_868` | Europe | 863–870 MHz | 10% hourly duty-cycle limit |
-| `CN` | China | 470–510 MHz | |
-| `JP` | Japan | 920–923 MHz | |
-| `ANZ` | Australia/NZ | 915–928 MHz | |
-| `ANZ_433` | Australia/NZ | 433–435 MHz | |
-| `KR` | South Korea | 920–923 MHz | |
-| `TW` | Taiwan | 920–928 MHz | |
-| `RU` | Russia | 866–869 MHz | |
-| `IN` | India | 865–867 MHz | |
-| `NZ_865` | New Zealand | 865–867 MHz | |
-| `TH` | Thailand | 920–925 MHz | |
-| `LORA_24` | (worldwide ISM 2.4 GHz) | 2400–2483.5 MHz | Experimental; SX1280 hardware |
-| `UA_433` | Ukraine | 433–435 MHz | |
-| `MY_433` | Malaysia | 433–435 MHz | |
-| `MY_919` | Malaysia | 919–923 MHz | |
-| `SG_923` | Singapore | 923–925 MHz | |
-| `KZ_433` | Kazakhstan | 433–435 MHz | |
-| `KZ_863` | Kazakhstan | 863–865 MHz | |
-| `BR_902` | Brazil | 902–928 MHz | |
-| `NP_865` | Nepal | 865–867 MHz | |
-| `PH_868` | Philippines | 863–870 MHz | |
-| `PH_915` | Philippines | 902–928 MHz | |
-| `ITU1_2M` | ITU Region 1 | 144–146 MHz | Amateur Radio 2m band |
-| `ITU23_2M`| ITU Region 2/3 | 144–148 MHz | Amateur Radio 2m band |
-| `EU_866` | Europe | 866 MHz | Band no. 47b of 2006/771/EC (Non-specific SRD) |
-| `EU_874` | Europe | 874 MHz | Band no. 1 and 4 of 2022/172/EC |
-| `EU_917` | Europe | 917 MHz | Band no. 1 and 4 of 2022/172/EC |
-| `EU_N_868` | Europe | 868 MHz | Narrow presets |
-| `UNSET` | — | — | Device refuses TX until set |
+| Code | Slot-planning band (MHz) | Duty cycle | Max power (dBm) | Default preset | Notes |
+|---|---|---|---|---|---|
+| `US` | 902 to 928 | 100% | 30 | `LONG_FAST` |  |
+| `EU_433` | 433 to 434 | 10% | 10 | `LONG_FAST` |  |
+| `EU_868` | 869.4 to 869.65 | 10% | 27 | `LONG_FAST` |  |
+| `EU_866` | 865.6 to 867.6 | 2.5% | 27 | `LITE_FAST` |  |
+| `EU_N_868` | 869.4 to 869.65 | 10% | 27 | `NARROW_SLOW` | default slot 1 |
+| `CN` | 470 to 510 | 100% | 19 | `LONG_FAST` |  |
+| `JP` | 920.5 to 923.5 | 100% | 13 | `LONG_FAST` |  |
+| `ANZ` | 915 to 928 | 100% | 30 | `LONG_FAST` |  |
+| `ANZ_433` | 433.05 to 434.79 | 100% | 14 | `LONG_FAST` |  |
+| `RU` | 868.7 to 869.2 | 100% | 20 | `LONG_FAST` |  |
+| `KR` | 920 to 923 | 100% | 23 | `LONG_FAST` |  |
+| `TW` | 920 to 925 | 100% | 27 | `LONG_FAST` |  |
+| `IN` | 865 to 867 | 100% | 30 | `LONG_FAST` |  |
+| `NZ_865` | 864 to 868 | 100% | 36 | `LONG_FAST` |  |
+| `TH` | 920 to 925 | 10% | 27 | `LONG_FAST` |  |
+| `UA_433` | 433 to 434.7 | 10% | 10 | `LONG_FAST` |  |
+| `MY_433` | 433 to 435 | 100% | 20 | `LONG_FAST` |  |
+| `MY_919` | 919 to 924 | 100% | 27 | `LONG_FAST` |  |
+| `SG_923` | 917 to 925 | 100% | 20 | `LONG_FAST` |  |
+| `PH_433` | 433 to 434.7 | 100% | 10 | `LONG_FAST` |  |
+| `PH_868` | 868 to 869.4 | 100% | 14 | `LONG_FAST` |  |
+| `PH_915` | 915 to 918 | 100% | 24 | `LONG_FAST` |  |
+| `KZ_433` | 433.075 to 434.775 | 100% | 10 | `LONG_FAST` |  |
+| `KZ_863` | 863 to 868 | 100% | 30 | `LONG_FAST` |  |
+| `NP_865` | 865 to 868 | 100% | 30 | `LONG_FAST` |  |
+| `BR_902` | 902 to 907.5 | 100% | 30 | `LONG_FAST` |  |
+| `ITU1_2M` | 144 to 146 | 100% | 30 | `TINY_FAST` | default slot 26 |
+| `ITU2_2M` | 144 to 148 | 100% | 30 | `TINY_FAST` | default slot 51 |
+| `ITU3_2M` | 144 to 148 | 100% | 30 | `TINY_FAST` | default slot 33 |
+| `ITU2_125CM` | 220 to 225 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `ITU1_70CM` | 430 to 440 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `ITU2_70CM` | 420 to 450 | 100% | 30 | `NARROW_SLOW` | default slot 137 |
+| `ITU3_70CM` | 430 to 450 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `LORA_24` | 2400 to 2483.5 | 100% | 10 | `LONG_FAST` | wide LoRa (SX128x) |
+| `UNSET` | 902 to 928 | 100% | 30 | `LONG_FAST` | placeholder band; 0 slots, device refuses TX until a region is set |
+
+### Frequency slots
+
+Firmware (`RadioInterface::applyModemConfig`, `frequencySlotCount` and `resolveFrequencySlot` in `src/mesh/RadioInterface.cpp`; `modemPresetToParams` and `bwCodeToKHz` in `src/mesh/MeshRadio.h`) derives the radio frequency from the region row and modem bandwidth `bw` in kHz, all in `float`:
+
+```
+slotWidth = spacing + 2 * padding + bw / 1000                     // MHz
+numSlots  = round((freqEnd - freqStart + spacing) / slotWidth)    // half away from zero; 0 for UNSET
+slot      = channel_num            if 1 <= channel_num <= numSlots
+          = region.overrideSlot    else if 1 <= overrideSlot <= numSlots
+          = djb2(name) % numSlots + 1                             // name: UTF-8 bytes, hash = hash * 33 + byte, seed 5381
+freq      = freqStart + bw / 2000 + padding + (slot - 1) * slotWidth + frequency_offset
+freq      = override_frequency + frequency_offset                 // when override_frequency != 0
+```
+
+`name` is the primary channel name; when empty it is the preset display name (`LongFast`, `LongMod`, ...), or `Custom` when `use_preset` is false. `bw` is the preset bandwidth (wide regions use the 812.5 / 1625 / 406.25 kHz variants) or `bwCodeToKHz(bandwidth)` with `use_preset` false, where a custom bandwidth wider than the band falls back to the region default preset's. `spacing` and `padding` come from the region profile. The SDK implements this as `LoRaFrequency`.
 
 ### Modem presets
 

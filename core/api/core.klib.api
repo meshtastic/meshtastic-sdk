@@ -1403,6 +1403,87 @@ final class org.meshtastic.sdk/LatLng { // org.meshtastic.sdk/LatLng|null[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk/LatLng.toString|toString(){}[0]
 }
 
+final class org.meshtastic.sdk/LoRaFrequencyPlan { // org.meshtastic.sdk/LoRaFrequencyPlan|null[0]
+    constructor <init>(org.meshtastic.sdk/LoRaRegionInfo, kotlin/Float, kotlin/Int, kotlin/Int?, kotlin/Float?) // org.meshtastic.sdk/LoRaFrequencyPlan.<init>|<init>(org.meshtastic.sdk.LoRaRegionInfo;kotlin.Float;kotlin.Int;kotlin.Int?;kotlin.Float?){}[0]
+
+    final val bandwidthKHz // org.meshtastic.sdk/LoRaFrequencyPlan.bandwidthKHz|{}bandwidthKHz[0]
+        final fun <get-bandwidthKHz>(): kotlin/Float // org.meshtastic.sdk/LoRaFrequencyPlan.bandwidthKHz.<get-bandwidthKHz>|<get-bandwidthKHz>(){}[0]
+    final val frequencyMHz // org.meshtastic.sdk/LoRaFrequencyPlan.frequencyMHz|{}frequencyMHz[0]
+        final fun <get-frequencyMHz>(): kotlin/Float? // org.meshtastic.sdk/LoRaFrequencyPlan.frequencyMHz.<get-frequencyMHz>|<get-frequencyMHz>(){}[0]
+    final val numChannels // org.meshtastic.sdk/LoRaFrequencyPlan.numChannels|{}numChannels[0]
+        final fun <get-numChannels>(): kotlin/Int // org.meshtastic.sdk/LoRaFrequencyPlan.numChannels.<get-numChannels>|<get-numChannels>(){}[0]
+    final val region // org.meshtastic.sdk/LoRaFrequencyPlan.region|{}region[0]
+        final fun <get-region>(): org.meshtastic.sdk/LoRaRegionInfo // org.meshtastic.sdk/LoRaFrequencyPlan.region.<get-region>|<get-region>(){}[0]
+    final val slot // org.meshtastic.sdk/LoRaFrequencyPlan.slot|{}slot[0]
+        final fun <get-slot>(): kotlin/Int? // org.meshtastic.sdk/LoRaFrequencyPlan.slot.<get-slot>|<get-slot>(){}[0]
+
+    final fun component1(): org.meshtastic.sdk/LoRaRegionInfo // org.meshtastic.sdk/LoRaFrequencyPlan.component1|component1(){}[0]
+    final fun component2(): kotlin/Float // org.meshtastic.sdk/LoRaFrequencyPlan.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // org.meshtastic.sdk/LoRaFrequencyPlan.component3|component3(){}[0]
+    final fun component4(): kotlin/Int? // org.meshtastic.sdk/LoRaFrequencyPlan.component4|component4(){}[0]
+    final fun component5(): kotlin/Float? // org.meshtastic.sdk/LoRaFrequencyPlan.component5|component5(){}[0]
+    final fun copy(org.meshtastic.sdk/LoRaRegionInfo = ..., kotlin/Float = ..., kotlin/Int = ..., kotlin/Int? = ..., kotlin/Float? = ...): org.meshtastic.sdk/LoRaFrequencyPlan // org.meshtastic.sdk/LoRaFrequencyPlan.copy|copy(org.meshtastic.sdk.LoRaRegionInfo;kotlin.Float;kotlin.Int;kotlin.Int?;kotlin.Float?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/LoRaFrequencyPlan.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/LoRaFrequencyPlan.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/LoRaFrequencyPlan.toString|toString(){}[0]
+}
+
+final class org.meshtastic.sdk/LoRaRegionInfo { // org.meshtastic.sdk/LoRaRegionInfo|null[0]
+    constructor <init>(org.meshtastic.proto/Config.LoRaConfig.RegionCode, kotlin/Float, kotlin/Float, kotlin/Float, kotlin/Int, kotlin/Boolean, kotlin/Boolean, kotlin/Float, kotlin/Float, kotlin/Boolean, kotlin/Boolean, org.meshtastic.proto/Config.LoRaConfig.ModemPreset, kotlin/Int) // org.meshtastic.sdk/LoRaRegionInfo.<init>|<init>(org.meshtastic.proto.Config.LoRaConfig.RegionCode;kotlin.Float;kotlin.Float;kotlin.Float;kotlin.Int;kotlin.Boolean;kotlin.Boolean;kotlin.Float;kotlin.Float;kotlin.Boolean;kotlin.Boolean;org.meshtastic.proto.Config.LoRaConfig.ModemPreset;kotlin.Int){}[0]
+
+    final val audioPermitted // org.meshtastic.sdk/LoRaRegionInfo.audioPermitted|{}audioPermitted[0]
+        final fun <get-audioPermitted>(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.audioPermitted.<get-audioPermitted>|<get-audioPermitted>(){}[0]
+    final val defaultPreset // org.meshtastic.sdk/LoRaRegionInfo.defaultPreset|{}defaultPreset[0]
+        final fun <get-defaultPreset>(): org.meshtastic.proto/Config.LoRaConfig.ModemPreset // org.meshtastic.sdk/LoRaRegionInfo.defaultPreset.<get-defaultPreset>|<get-defaultPreset>(){}[0]
+    final val dutyCyclePercent // org.meshtastic.sdk/LoRaRegionInfo.dutyCyclePercent|{}dutyCyclePercent[0]
+        final fun <get-dutyCyclePercent>(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.dutyCyclePercent.<get-dutyCyclePercent>|<get-dutyCyclePercent>(){}[0]
+    final val freqEndMHz // org.meshtastic.sdk/LoRaRegionInfo.freqEndMHz|{}freqEndMHz[0]
+        final fun <get-freqEndMHz>(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.freqEndMHz.<get-freqEndMHz>|<get-freqEndMHz>(){}[0]
+    final val freqStartMHz // org.meshtastic.sdk/LoRaRegionInfo.freqStartMHz|{}freqStartMHz[0]
+        final fun <get-freqStartMHz>(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.freqStartMHz.<get-freqStartMHz>|<get-freqStartMHz>(){}[0]
+    final val freqSwitching // org.meshtastic.sdk/LoRaRegionInfo.freqSwitching|{}freqSwitching[0]
+        final fun <get-freqSwitching>(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.freqSwitching.<get-freqSwitching>|<get-freqSwitching>(){}[0]
+    final val licensedOnly // org.meshtastic.sdk/LoRaRegionInfo.licensedOnly|{}licensedOnly[0]
+        final fun <get-licensedOnly>(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.licensedOnly.<get-licensedOnly>|<get-licensedOnly>(){}[0]
+    final val overrideSlot // org.meshtastic.sdk/LoRaRegionInfo.overrideSlot|{}overrideSlot[0]
+        final fun <get-overrideSlot>(): kotlin/Int // org.meshtastic.sdk/LoRaRegionInfo.overrideSlot.<get-overrideSlot>|<get-overrideSlot>(){}[0]
+    final val paddingMHz // org.meshtastic.sdk/LoRaRegionInfo.paddingMHz|{}paddingMHz[0]
+        final fun <get-paddingMHz>(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.paddingMHz.<get-paddingMHz>|<get-paddingMHz>(){}[0]
+    final val powerLimitDbm // org.meshtastic.sdk/LoRaRegionInfo.powerLimitDbm|{}powerLimitDbm[0]
+        final fun <get-powerLimitDbm>(): kotlin/Int // org.meshtastic.sdk/LoRaRegionInfo.powerLimitDbm.<get-powerLimitDbm>|<get-powerLimitDbm>(){}[0]
+    final val region // org.meshtastic.sdk/LoRaRegionInfo.region|{}region[0]
+        final fun <get-region>(): org.meshtastic.proto/Config.LoRaConfig.RegionCode // org.meshtastic.sdk/LoRaRegionInfo.region.<get-region>|<get-region>(){}[0]
+    final val spacingMHz // org.meshtastic.sdk/LoRaRegionInfo.spacingMHz|{}spacingMHz[0]
+        final fun <get-spacingMHz>(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.spacingMHz.<get-spacingMHz>|<get-spacingMHz>(){}[0]
+    final val wideLora // org.meshtastic.sdk/LoRaRegionInfo.wideLora|{}wideLora[0]
+        final fun <get-wideLora>(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.wideLora.<get-wideLora>|<get-wideLora>(){}[0]
+
+    final fun component1(): org.meshtastic.proto/Config.LoRaConfig.RegionCode // org.meshtastic.sdk/LoRaRegionInfo.component1|component1(){}[0]
+    final fun component10(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.component10|component10(){}[0]
+    final fun component11(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.component11|component11(){}[0]
+    final fun component12(): org.meshtastic.proto/Config.LoRaConfig.ModemPreset // org.meshtastic.sdk/LoRaRegionInfo.component12|component12(){}[0]
+    final fun component13(): kotlin/Int // org.meshtastic.sdk/LoRaRegionInfo.component13|component13(){}[0]
+    final fun component2(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.component2|component2(){}[0]
+    final fun component3(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.component3|component3(){}[0]
+    final fun component4(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.component4|component4(){}[0]
+    final fun component5(): kotlin/Int // org.meshtastic.sdk/LoRaRegionInfo.component5|component5(){}[0]
+    final fun component6(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.component6|component6(){}[0]
+    final fun component7(): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.component7|component7(){}[0]
+    final fun component8(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.component8|component8(){}[0]
+    final fun component9(): kotlin/Float // org.meshtastic.sdk/LoRaRegionInfo.component9|component9(){}[0]
+    final fun copy(org.meshtastic.proto/Config.LoRaConfig.RegionCode = ..., kotlin/Float = ..., kotlin/Float = ..., kotlin/Float = ..., kotlin/Int = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Float = ..., kotlin/Float = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., org.meshtastic.proto/Config.LoRaConfig.ModemPreset = ..., kotlin/Int = ...): org.meshtastic.sdk/LoRaRegionInfo // org.meshtastic.sdk/LoRaRegionInfo.copy|copy(org.meshtastic.proto.Config.LoRaConfig.RegionCode;kotlin.Float;kotlin.Float;kotlin.Float;kotlin.Int;kotlin.Boolean;kotlin.Boolean;kotlin.Float;kotlin.Float;kotlin.Boolean;kotlin.Boolean;org.meshtastic.proto.Config.LoRaConfig.ModemPreset;kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/LoRaRegionInfo.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/LoRaRegionInfo.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/LoRaRegionInfo.toString|toString(){}[0]
+
+    final object Companion { // org.meshtastic.sdk/LoRaRegionInfo.Companion|null[0]
+        final val all // org.meshtastic.sdk/LoRaRegionInfo.Companion.all|{}all[0]
+            final fun <get-all>(): kotlin.collections/List<org.meshtastic.sdk/LoRaRegionInfo> // org.meshtastic.sdk/LoRaRegionInfo.Companion.all.<get-all>|<get-all>(){}[0]
+
+        final fun forRegion(org.meshtastic.proto/Config.LoRaConfig.RegionCode): org.meshtastic.sdk/LoRaRegionInfo // org.meshtastic.sdk/LoRaRegionInfo.Companion.forRegion|forRegion(org.meshtastic.proto.Config.LoRaConfig.RegionCode){}[0]
+    }
+}
+
 final class org.meshtastic.sdk/MeshNode { // org.meshtastic.sdk/MeshNode|null[0]
     constructor <init>(org.meshtastic.proto/NodeInfo, kotlin/Boolean, org.meshtastic.sdk/ConnectionQuality, org.meshtastic.sdk/SignalQuality) // org.meshtastic.sdk/MeshNode.<init>|<init>(org.meshtastic.proto.NodeInfo;kotlin.Boolean;org.meshtastic.sdk.ConnectionQuality;org.meshtastic.sdk.SignalQuality){}[0]
 
@@ -1516,6 +1597,25 @@ final class org.meshtastic.sdk/MessageHandle { // org.meshtastic.sdk/MessageHand
 
     final fun cancel() // org.meshtastic.sdk/MessageHandle.cancel|cancel(){}[0]
     final suspend fun await(): org.meshtastic.sdk/SendOutcome // org.meshtastic.sdk/MessageHandle.await|await(){}[0]
+}
+
+final class org.meshtastic.sdk/ModemParams { // org.meshtastic.sdk/ModemParams|null[0]
+    constructor <init>(kotlin/Float, kotlin/Int, kotlin/Int) // org.meshtastic.sdk/ModemParams.<init>|<init>(kotlin.Float;kotlin.Int;kotlin.Int){}[0]
+
+    final val bandwidthKHz // org.meshtastic.sdk/ModemParams.bandwidthKHz|{}bandwidthKHz[0]
+        final fun <get-bandwidthKHz>(): kotlin/Float // org.meshtastic.sdk/ModemParams.bandwidthKHz.<get-bandwidthKHz>|<get-bandwidthKHz>(){}[0]
+    final val codingRate // org.meshtastic.sdk/ModemParams.codingRate|{}codingRate[0]
+        final fun <get-codingRate>(): kotlin/Int // org.meshtastic.sdk/ModemParams.codingRate.<get-codingRate>|<get-codingRate>(){}[0]
+    final val spreadFactor // org.meshtastic.sdk/ModemParams.spreadFactor|{}spreadFactor[0]
+        final fun <get-spreadFactor>(): kotlin/Int // org.meshtastic.sdk/ModemParams.spreadFactor.<get-spreadFactor>|<get-spreadFactor>(){}[0]
+
+    final fun component1(): kotlin/Float // org.meshtastic.sdk/ModemParams.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // org.meshtastic.sdk/ModemParams.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // org.meshtastic.sdk/ModemParams.component3|component3(){}[0]
+    final fun copy(kotlin/Float = ..., kotlin/Int = ..., kotlin/Int = ...): org.meshtastic.sdk/ModemParams // org.meshtastic.sdk/ModemParams.copy|copy(kotlin.Float;kotlin.Int;kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/ModemParams.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/ModemParams.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/ModemParams.toString|toString(){}[0]
 }
 
 final class org.meshtastic.sdk/NeighborInfo { // org.meshtastic.sdk/NeighborInfo|null[0]
@@ -2017,6 +2117,16 @@ final object org.meshtastic.sdk/ChannelUrl { // org.meshtastic.sdk/ChannelUrl|nu
     final fun parse(kotlin/String): org.meshtastic.proto/ChannelSet? // org.meshtastic.sdk/ChannelUrl.parse|parse(kotlin.String){}[0]
 }
 
+final object org.meshtastic.sdk/LoRaFrequency { // org.meshtastic.sdk/LoRaFrequency|null[0]
+    final fun bandwidthKHzForCode(kotlin/Int): kotlin/Float // org.meshtastic.sdk/LoRaFrequency.bandwidthKHzForCode|bandwidthKHzForCode(kotlin.Int){}[0]
+    final fun centerFrequencyMHz(org.meshtastic.sdk/LoRaRegionInfo, kotlin/Float, kotlin/Int, kotlin/Float = ...): kotlin/Float // org.meshtastic.sdk/LoRaFrequency.centerFrequencyMHz|centerFrequencyMHz(org.meshtastic.sdk.LoRaRegionInfo;kotlin.Float;kotlin.Int;kotlin.Float){}[0]
+    final fun hashedChannelName(kotlin/String, kotlin/Boolean, org.meshtastic.proto/Config.LoRaConfig.ModemPreset): kotlin/String // org.meshtastic.sdk/LoRaFrequency.hashedChannelName|hashedChannelName(kotlin.String;kotlin.Boolean;org.meshtastic.proto.Config.LoRaConfig.ModemPreset){}[0]
+    final fun numChannels(org.meshtastic.sdk/LoRaRegionInfo, kotlin/Float): kotlin/Int // org.meshtastic.sdk/LoRaFrequency.numChannels|numChannels(org.meshtastic.sdk.LoRaRegionInfo;kotlin.Float){}[0]
+    final fun plan(org.meshtastic.proto/Config.LoRaConfig, kotlin/String): org.meshtastic.sdk/LoRaFrequencyPlan // org.meshtastic.sdk/LoRaFrequency.plan|plan(org.meshtastic.proto.Config.LoRaConfig;kotlin.String){}[0]
+    final fun resolveSlot(org.meshtastic.sdk/LoRaRegionInfo, kotlin/Int, kotlin/String, kotlin/Int = ...): kotlin/Int? // org.meshtastic.sdk/LoRaFrequency.resolveSlot|resolveSlot(org.meshtastic.sdk.LoRaRegionInfo;kotlin.Int;kotlin.String;kotlin.Int){}[0]
+    final fun slotWidthMHz(org.meshtastic.sdk/LoRaRegionInfo, kotlin/Float): kotlin/Float // org.meshtastic.sdk/LoRaFrequency.slotWidthMHz|slotWidthMHz(org.meshtastic.sdk.LoRaRegionInfo;kotlin.Float){}[0]
+}
+
 final object org.meshtastic.sdk/PositionUtils { // org.meshtastic.sdk/PositionUtils|null[0]
     final fun bearing(kotlin/Double, kotlin/Double, kotlin/Double, kotlin/Double): kotlin/Double // org.meshtastic.sdk/PositionUtils.bearing|bearing(kotlin.Double;kotlin.Double;kotlin.Double;kotlin.Double){}[0]
     final fun bearing(org.meshtastic.sdk/LatLng, org.meshtastic.sdk/LatLng): kotlin/Double // org.meshtastic.sdk/PositionUtils.bearing|bearing(org.meshtastic.sdk.LatLng;org.meshtastic.sdk.LatLng){}[0]
@@ -2114,6 +2224,7 @@ final fun (kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/NodeChange>).org.mesh
 final fun (org.meshtastic.proto/Channel.Companion).org.meshtastic.sdk/default(): org.meshtastic.proto/Channel // org.meshtastic.sdk/default|default@org.meshtastic.proto.Channel.Companion(){}[0]
 final fun (org.meshtastic.proto/ChannelSet).org.meshtastic.sdk/toUrl(): kotlin/String // org.meshtastic.sdk/toUrl|toUrl@org.meshtastic.proto.ChannelSet(){}[0]
 final fun (org.meshtastic.proto/ChannelSettings.Companion).org.meshtastic.sdk/hash(kotlin/String, kotlin/ByteArray): kotlin/Int // org.meshtastic.sdk/hash|hash@org.meshtastic.proto.ChannelSettings.Companion(kotlin.String;kotlin.ByteArray){}[0]
+final fun (org.meshtastic.proto/Config.LoRaConfig.ModemPreset).org.meshtastic.sdk/modemParams(kotlin/Boolean = ...): org.meshtastic.sdk/ModemParams // org.meshtastic.sdk/modemParams|modemParams@org.meshtastic.proto.Config.LoRaConfig.ModemPreset(kotlin.Boolean){}[0]
 final fun (org.meshtastic.proto/DeviceMetrics).org.meshtastic.sdk/toBatteryStatus(): org.meshtastic.sdk/BatteryStatus? // org.meshtastic.sdk/toBatteryStatus|toBatteryStatus@org.meshtastic.proto.DeviceMetrics(){}[0]
 final fun (org.meshtastic.proto/FromRadio).org.meshtastic.sdk/toByteArray(): kotlin/ByteArray // org.meshtastic.sdk/toByteArray|toByteArray@org.meshtastic.proto.FromRadio(){}[0]
 final fun (org.meshtastic.proto/MeshPacket).org.meshtastic.sdk/asAdminMessage(): org.meshtastic.proto/AdminMessage? // org.meshtastic.sdk/asAdminMessage|asAdminMessage@org.meshtastic.proto.MeshPacket(){}[0]
