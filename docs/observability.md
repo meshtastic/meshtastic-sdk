@@ -97,8 +97,11 @@ val client = RadioClient.Builder()
 ```
 
 `PayloadRedactor.Default` logs the envelope variant and routing
-metadata (`from`, `to`, packet id, port, payload size) and never payload
-bytes, text, positions, PSKs or passkeys. A custom `PayloadRedactor`
+metadata (`from`, `to`, packet id, port, payload size), the section name
+of a `config` or `moduleConfig` message, the `queueStatus` counters
+(`free`, `maxlen`, `res`, `mesh_packet_id`), the `heartbeat` nonce and
+the `xmodemPacket` `control`, `seq` and buffer length, and never payload
+bytes, text, positions, PSKs, passkeys, config values or file contents. A custom `PayloadRedactor`
 overrides `describe(FromRadio)` and `describe(ToRadio)`; what it
 includes is its owner's responsibility under the rules in
 [`security.md`](./security.md). Even with the default redactor,
