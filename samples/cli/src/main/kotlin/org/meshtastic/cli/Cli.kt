@@ -34,8 +34,8 @@ import org.meshtastic.cli.cmd.SendCmd
 import org.meshtastic.cli.cmd.TuiCmd
 import org.meshtastic.cli.internal.DEFAULT_CONNECT_TIMEOUT_MS
 import org.meshtastic.cli.internal.Output
-import org.meshtastic.cli.internal.TransportRef
 import org.meshtastic.cli.internal.parseDurationMs
+import org.meshtastic.sdk.TransportTarget
 
 /**
  * `cli` — Meshtastic physical test harness. Clikt owns argv parsing, `--help` generation,
@@ -96,7 +96,7 @@ internal class TransportOptions : OptionGroup(name = "Transport") {
         help = "ble:NEEDLE | tcp:HOST[:PORT] | serial:PORT[:BAUD]",
         metavar = "SPEC",
     ).convert { spec ->
-        TransportRef.parse(spec) ?: fail(
+        TransportTarget.parse(spec) ?: fail(
             "malformed transport '$spec' (expected ble:NEEDLE | tcp:HOST[:PORT] | serial:PORT[:BAUD])",
         )
     }.required()

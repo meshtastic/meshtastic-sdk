@@ -6,6 +6,7 @@ public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtasti
 	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun frames ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getAutoHandshake ()Z
+	public final fun getDeviceId ()Lokio/ByteString;
 	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
 	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
 	public final fun getNodeNum ()I
@@ -29,6 +30,7 @@ public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtasti
 	public final fun outboundFrames ()Ljava/util/List;
 	public final fun outboundPackets ()Ljava/util/List;
 	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun setDeviceId (Lokio/ByteString;)V
 	public final fun simulateError (Ljava/lang/Throwable;Z)V
 	public static synthetic fun simulateError$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;Ljava/lang/Throwable;ZILjava/lang/Object;)V
 }

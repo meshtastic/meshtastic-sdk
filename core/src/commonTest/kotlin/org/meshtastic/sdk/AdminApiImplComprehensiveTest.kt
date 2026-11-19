@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -1258,7 +1259,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun batchBlockExceptionSkipsCommit() = runTest {
+    fun batchBlockExceptionStillCommitsAndPreservesFailure() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -1280,8 +1281,9 @@ class AdminApiImplComprehensiveTest {
             val result = deferred.await()
             assertEquals("boom", result.exceptionOrNull()?.message)
             assertTrue(
-                transport.outboundPackets().drop(outboundBefore)
-                    .none { adminOf(it)?.commit_edit_settings == true },
+                transport.outboundPackets().drop(outboundBefore).any {
+                    adminOf(it)?.commit_edit_settings == true
+                },
             )
         } finally {
             runCatching { client.disconnect() }
@@ -1405,6 +1407,70 @@ class AdminApiImplComprehensiveTest {
             runCurrent()
 
             assertEquals(AdminResult.Unauthorized, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsBlockFailureStillCommitsAndPreservesFailure() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val gate = CompletableDeferred<Unit>()
+            val deferred = async {
+                runCatching {
+                    client.admin.editSettings {
+                        gate.await()
+                        error("block failed")
+                    }
+                }
+            }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+            gate.complete(Unit)
+            runCurrent()
+
+            val commit = latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.injectRoutingAck(commit.id)
+            runCurrent()
+
+            assertEquals("block failed", deferred.await().exceptionOrNull()?.message)
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsCancellationStillCommitsAndRethrowsCancellation() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val gate = CompletableDeferred<Unit>()
+            val deferred = async {
+                client.admin.editSettings {
+                    gate.await()
+                }
+            }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            val cancellation = CancellationException("cancel edit")
+            deferred.cancel(cancellation)
+            runCurrent()
+            val commit = latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.injectRoutingAck(commit.id)
+            runCurrent()
+
+            assertTrue(runCatching { deferred.await() }.exceptionOrNull() is CancellationException)
         } finally {
             runCatching { client.disconnect() }
         }

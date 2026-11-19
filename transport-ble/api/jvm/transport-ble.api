@@ -9,6 +9,10 @@ public final class org/meshtastic/sdk/transport/ble/BleConstants {
 	public final fun getTORADIO_UUID ()Lkotlin/uuid/Uuid;
 }
 
+public final class org/meshtastic/sdk/transport/ble/BleScanMatchKt {
+	public static final fun bleAdvertisementMatches (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z
+}
+
 public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtastic/sdk/RadioTransport {
 	public fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;)V
 	public synthetic fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V

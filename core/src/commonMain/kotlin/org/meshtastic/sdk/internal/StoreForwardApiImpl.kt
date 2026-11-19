@@ -191,11 +191,15 @@ internal class StoreForwardApiImpl(
             -> {
                 rememberServer(server)
                 val progress = activeReplays[server] ?: return
-                val fingerprint = ReplayMessageFingerprint(
-                    packetId = packet.id,
-                    response = message.rr,
-                    payload = message.text?.toByteArray(),
-                )
+                val fingerprint: Any = if (message.original_id != 0) {
+                    ReplayOriginalKey(from = packet.from, originalId = message.original_id)
+                } else {
+                    ReplayMessageFingerprint(
+                        packetId = packet.id,
+                        response = message.rr,
+                        payload = message.text?.toByteArray(),
+                    )
+                }
                 if (fingerprint in progress.seenMessages) return
                 val delivered = progress.delivered + 1
                 val updated = progress.copy(
@@ -423,8 +427,10 @@ internal class StoreForwardApiImpl(
     private data class ReplayProgress(
         val expected: Int,
         val delivered: Int = 0,
-        val seenMessages: Set<ReplayMessageFingerprint> = emptySet(),
+        val seenMessages: Set<Any> = emptySet(),
     )
+
+    private data class ReplayOriginalKey(val from: Int, val originalId: Int)
 
     private data class ReplayMessageFingerprint(
         val packetId: Int,

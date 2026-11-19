@@ -40,8 +40,9 @@ properties.
    Every FAIL is either fixed or explained in the release's changelog section. Flags are
    in [`samples/cli/README.md`](samples/cli/README.md#pre-release-conformance-sweep);
    the scenarios are in [`docs/manual-tests.md`](docs/manual-tests.md).
-3. On a branch, run `scripts/changelog.sh cut X.Y.Z`. That moves `## [Unreleased]` under
-   a dated `## [X.Y.Z]` heading and touches nothing else. It refuses an empty Unreleased.
+3. On a branch, run `scripts/changelog.sh cut X.Y.Z`. It folds every `changelog.d/` fragment into
+   `## [Unreleased]` and deletes the files, then moves `## [Unreleased]` under a dated
+   `## [X.Y.Z]` heading and touches nothing else. `scripts/changelog.sh preview` shows the result first. It refuses an empty Unreleased.
 4. If the public API changed, `./gradlew updateKotlinAbi` and commit the `api/` dumps.
 5. Commit `chore(release): X.Y.Z` with the transcript (signed off), open the PR and
    merge it.
