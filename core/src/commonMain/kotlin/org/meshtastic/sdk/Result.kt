@@ -8,6 +8,7 @@
 package org.meshtastic.sdk
 
 import org.meshtastic.proto.Routing
+import kotlin.time.Instant
 
 /**
  * Lifecycle state of a packet sent via [RadioClient.send].
@@ -176,11 +177,11 @@ public sealed interface SendOutcome {
  * Transitions from [Disconnected] → [Connecting] → [Configuring] → [Connected].
  * May also transition back through [Reconnecting] if the transport drops or hangs.
  *
- * **Device sleep is not represented:** devices do not announce sleep on the wire (the PhoneAPI
- * simply goes silent). The SDK cannot reliably distinguish "device sleeping for ls_secs" from
- * "transport hung". Sleep timing is observable via `Config.power.ls_secs` from the handshake; when
- * the device stops responding, the state machine transitions through [Reconnecting] just as for
- * any other disconnect.
+ * **Device sleep:** devices do not announce sleep on the wire. The engine reports
+ * [DeviceSleeping] instead of [Reconnecting] only when a transport drop follows a fully
+ * handshaken session and the device's last known configuration says firmware drops this kind of
+ * link by design (see [DeviceSleeping]). Every other loss, including a liveness timeout, a
+ * reboot announcement and a failed first connect, is reported as before.
  *
  * @since 0.1.0
  */
@@ -217,6 +218,28 @@ public sealed interface ConnectionState {
      * @param attempt the reconnect attempt count (1-indexed)
      */
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
+
+    /**
+     * The device dropped the link because its power-saving configuration puts it to sleep.
+     *
+     * Reported only over BLE after a fully handshaken session, when the last known config shows
+     * firmware sleeping that link by design: a router role, or `is_power_saving` on ESP32-class
+     * hardware (light sleep turns Bluetooth off), or a tracker or sensor role with
+     * `is_power_saving` (deep sleep, the device restarts on wake). With auto-reconnect enabled the
+     * engine keeps trying to reach the device; with it disabled the session ends and this is the
+     * terminal state until [RadioClient.connect] or [RadioClient.disconnect] is called.
+     *
+     * While [expectedWakeSeconds] is known, reconnect attempts made before `since` plus
+     * [expectedWakeSeconds] plus a grace of twice [AutoReconnectConfig.maxBackoff] do not count against
+     * [AutoReconnectConfig.maxAttempts]; after that the state becomes [Reconnecting]. When
+     * [expectedWakeSeconds] is `null` the attempts count as usual.
+     *
+     * @param since when the link drop was observed
+     * @param expectedWakeSeconds the longest the device sleeps before it surfaces again, from
+     *   `Config.power.ls_secs`; `null` when firmware gives no bound
+     * @since 0.3.0
+     */
+    public data class DeviceSleeping(val since: Instant, val expectedWakeSeconds: Int?) : ConnectionState
 }
 
 /** Whether the connection is fully established and ready for use. */
@@ -238,6 +261,7 @@ public val ConnectionState.statusMessage: String
         is ConnectionState.Configuring -> "Configuring: ${phase.name} (${(progress * 100).toInt()}%)"
         is ConnectionState.Connected -> "Connected"
         is ConnectionState.Reconnecting -> "Reconnecting (attempt $attempt)"
+        is ConnectionState.DeviceSleeping -> "Device sleeping"
     }
 
 /**

@@ -169,6 +169,9 @@ fun MeshScreen(viewModel: MeshViewModel) {
         is ConnectionState.Reconnecting -> {
             Text("Reconnecting...")
         }
+        is ConnectionState.DeviceSleeping -> {
+            Text("Device is sleeping")
+        }
     }
 
     when (uiState) {
