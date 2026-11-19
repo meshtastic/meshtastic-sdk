@@ -168,6 +168,10 @@ previously persisted for this transport identity. The event is emitted
 **before** the engine clears its storage and before the subsequent
 fresh `NodeChange.Snapshot` lands on `RadioClient.nodes`, so subscribers
 have a single ordered signal they can snapshot in-memory state from.
+`reason` is `"identity_mismatch"` when storage is cleared, and
+`"node_renumbered"` when the radio reported the same trusted
+`MyNodeInfo.device_id` under a new NodeNum (firmware 2.8 derives the
+NodeNum from the public key), in which case storage is kept.
 See [`architecture/storage.md`](./architecture/storage.md#consumer-observable-signal-r-9)
 for the rationale and on-disk behaviour. (Resolved audit finding
 **S-P0-2** / roadmap R-9; previously this rebind was silent.)
