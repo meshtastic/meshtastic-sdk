@@ -313,7 +313,7 @@ Device → FromRadio.my_info / metadata / channel × N
         / config_complete_id = 69420                  ── Stage 1 end
 
 Phone:  wait 100 ms
-Phone → ToRadio(heartbeat = Heartbeat(nonce = ++n))   ── pre-handshake heartbeat (settle)
+Phone → ToRadio(heartbeat = Heartbeat(nonce = n))   ── pre-handshake heartbeat (settle)
 Phone:  wait 100 ms
 
 Phone → ToRadio(want_config_id = 69421)              ── Stage 2 begin
@@ -343,7 +343,7 @@ sequenceDiagram
     Device-->>Phone: FromRadio(config_complete_id = 69420)
 
     Note over Phone: wait 100 ms
-    Phone->>Device: ToRadio(heartbeat = nonce++)
+    Phone->>Device: ToRadio(heartbeat = Heartbeat(nonce = n))
     Note over Phone: wait 100 ms
 
     Note over Phone,Device: Stage 2 — NodeDB
@@ -436,11 +436,12 @@ message MeshPacket {
   uint32  hop_start      = 14; // Original hop_limit at send time. (hop_start - hop_limit) = hops_away
   bytes   public_key     = 15; // (PKI) Sender's 32-byte X25519 public key, if PKI used
   bool    pki_encrypted  = 16; // True if `encrypted` is PKI-encrypted (X25519+AES-CCM, see §10)
-  fixed32 next_hop       = 17; // Next-hop node ID (uint32) for unicast routing hint
-  fixed32 relay_node     = 18; // The node that relayed this to me (uint32)
-  uint32  tx_after       = 19; // Transmit-after delay (seconds), used by router for backoff
-  Delayed delayed        = 20; // Whether this is a delayed/store-and-forward packet
-  TransportMechanism transport = 21; // How this packet arrived (LoRa, MQTT, API, etc.)
+  uint32  next_hop       = 18; // LAST BYTE of the next-hop node number; 0 = no preference
+  uint32  relay_node     = 19; // LAST BYTE of the node that relayed this to the device; 0 = none
+  uint32  tx_after       = 20; // Never sent over the radio
+  TransportMechanism transport_mechanism = 21; // How this packet arrived (LoRa, MQTT, API, etc.)
+  bool    xeddsa_signed  = 22; // Set by the device after it verified an XEdDSA signature
+  AckProofStatus ack_proof_status = 23; // Device verdict on a Routing ack proof; never on the air
 }
 
 enum Priority {
@@ -461,6 +462,16 @@ enum Priority {
 - **`HOP_LIMIT_MAX` = 7** (3-bit field; max useful hop_limit)
 - **Broadcast address: `0xFFFFFFFF`** (NOT `0` and NOT `0xFF`)
 - **`PublicKey` size: always 32 bytes** (Curve25519)
+
+### Provenance fields
+
+None of these has proto presence except where noted, so the SDK reads them through `PacketProvenance.kt`.
+
+- **`relay_node` / `next_hop`** are one byte: the low byte of a node number, with `0x00` reported as `0xFF` (`NodeDB.h:443`). `0` means none (`MeshTypes.h:44,46`). Several nodes can share a byte, so it is never a node id. `NodeLastByte.candidates(nodes)` lists the known nodes that match. Firmware resolves a relay byte only when exactly one known node matches (`Router.cpp:280-286`).
+- **`transport_mechanism`** is the last hop into the device (`RadioInterface.cpp:1559` sets LoRa, `MQTT.cpp:161` MQTT, `PacketAPI.cpp:74` API). `TRANSPORT_INTERNAL` is the default `0`, so it also reads from firmware that predates the field. Store-and-forward replays carry the stored value (`StoreForwardModule.cpp:272`). `via_mqtt` is separate: the packet crossed an MQTT bridge somewhere.
+- **`xeddsa_signed`** is set only by the device, after `xeddsa_verify` succeeds against an authoritative key or a first-contact NodeInfo; any inbound value is cleared first (`Router.cpp:720-745`, `Router.cpp:692-702`). The 64-byte `decoded.xeddsa_signature` is forwarded to the phone as received. A signature with `xeddsa_signed` false is one the device did not check (no key for the sender, outside Strict mode), not one that failed: a failed or wrong-length signature drops the packet (`Router.cpp:746-776`). The SDK holds no XEdDSA implementation, so `PacketSignature.CheckedByDevice` repeats the device's verdict.
+- **`ack_proof_status`** is set by the device on a received ack or nak (`MeshService.cpp:126-129`, `ReliableRouter.cpp:198-218`). `ACK_PROOF_ABSENT` is also what an unchecked proof reads, so it proves nothing negative. `ACK_PROOF_VALID` means the node the packet was addressed to proved receipt; it says nothing about authorship, which is `xeddsa_signed`.
+- **`NodeInfo.heard_on_current_lora`** is derived on the device from the slot a node was last heard on and the committed LoRa configuration (`TypeConversions.cpp:25`). `NodeInfo.has_xeddsa_signed` is the device's persisted "this node signs" bit.
 
 ### Payload paths
 
@@ -1027,7 +1038,7 @@ When a device enters DFU mode (XModem firmware update) or reboots (triggered via
 
 - The device's `config_complete_id` counter does NOT persist across reboot; the first reconnect after a reboot is indistinguishable from a cold connect.
 - If the host's `NodeDB` or other state was persisted to storage, the app may compare the incoming `node_info` stream against its prior view to detect changes (e.g., a new node, channel change, role change).
-- Heartbeat nonce is reset; the host must start a fresh counter after reconnect.
+- The firmware's last-write dedup buffer is cleared on connect; the SDK's heartbeat counter keeps counting for the life of the engine.
 
 ---
 
@@ -1048,9 +1059,9 @@ message Heartbeat {
 }
 ```
 
-`ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter is sufficient).
+`ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter starting at 2 is sufficient; firmware drops a write byte-identical to the previous one on BLE).
 
-> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK sends all keep-alive heartbeats with `nonce = 0` (a safe constant that avoids the nonce-1 trigger and satisfies the firmware's liveness watchdog).
+> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK counts keep-alive nonces up from 2 for the life of the engine, so they are never 0 or 1 and no two consecutive writes are identical.
 
 **Cadence by transport** (cross-validated against `Meshtastic-Apple:Transport.swift` + `AccessoryManager.setupPeriodicHeartbeat` and `Meshtastic-Android:SharedRadioInterfaceService.kt` + `HeartbeatSender.kt`):
 
@@ -1125,41 +1136,61 @@ Each `ChannelSettings` carries:
 
 ### LoRa regions
 
-`LoRaConfig.region` (enum `RegionCode`) — selects frequency band, duty-cycle limits, and legal max TX power. Full list (from docs):
+`LoRaConfig.region` (enum `RegionCode`) selects the frequency band, duty-cycle limit and legal max TX power. The rows below are firmware's `regions[]` table (`src/mesh/RadioInterface.cpp`), the bounds the slot calculation uses; `LoRaRegionInfo` carries the same rows. A regulatory band can be wider than the span firmware plans slots in. `UA_868`, `EU_874` and `EU_917` exist in `RegionCode` with no firmware row and resolve to `UNSET`.
 
-| Code | Coverage | Frequency band | Notes |
-|---|---|---|---|
-| `US` | North America | 902–928 MHz | |
-| `EU_433` | Europe | 433–435 MHz | 10% hourly duty-cycle limit |
-| `EU_868` | Europe | 863–870 MHz | 10% hourly duty-cycle limit |
-| `CN` | China | 470–510 MHz | |
-| `JP` | Japan | 920–923 MHz | |
-| `ANZ` | Australia/NZ | 915–928 MHz | |
-| `ANZ_433` | Australia/NZ | 433–435 MHz | |
-| `KR` | South Korea | 920–923 MHz | |
-| `TW` | Taiwan | 920–928 MHz | |
-| `RU` | Russia | 866–869 MHz | |
-| `IN` | India | 865–867 MHz | |
-| `NZ_865` | New Zealand | 865–867 MHz | |
-| `TH` | Thailand | 920–925 MHz | |
-| `LORA_24` | (worldwide ISM 2.4 GHz) | 2400–2483.5 MHz | Experimental; SX1280 hardware |
-| `UA_433` | Ukraine | 433–435 MHz | |
-| `MY_433` | Malaysia | 433–435 MHz | |
-| `MY_919` | Malaysia | 919–923 MHz | |
-| `SG_923` | Singapore | 923–925 MHz | |
-| `KZ_433` | Kazakhstan | 433–435 MHz | |
-| `KZ_863` | Kazakhstan | 863–865 MHz | |
-| `BR_902` | Brazil | 902–928 MHz | |
-| `NP_865` | Nepal | 865–867 MHz | |
-| `PH_868` | Philippines | 863–870 MHz | |
-| `PH_915` | Philippines | 902–928 MHz | |
-| `ITU1_2M` | ITU Region 1 | 144–146 MHz | Amateur Radio 2m band |
-| `ITU23_2M`| ITU Region 2/3 | 144–148 MHz | Amateur Radio 2m band |
-| `EU_866` | Europe | 866 MHz | Band no. 47b of 2006/771/EC (Non-specific SRD) |
-| `EU_874` | Europe | 874 MHz | Band no. 1 and 4 of 2022/172/EC |
-| `EU_917` | Europe | 917 MHz | Band no. 1 and 4 of 2022/172/EC |
-| `EU_N_868` | Europe | 868 MHz | Narrow presets |
-| `UNSET` | — | — | Device refuses TX until set |
+| Code | Slot-planning band (MHz) | Duty cycle | Max power (dBm) | Default preset | Notes |
+|---|---|---|---|---|---|
+| `US` | 902 to 928 | 100% | 30 | `LONG_FAST` |  |
+| `EU_433` | 433 to 434 | 10% | 10 | `LONG_FAST` |  |
+| `EU_868` | 869.4 to 869.65 | 10% | 27 | `LONG_FAST` |  |
+| `EU_866` | 865.6 to 867.6 | 2.5% | 27 | `LITE_FAST` |  |
+| `EU_N_868` | 869.4 to 869.65 | 10% | 27 | `NARROW_SLOW` | default slot 1 |
+| `CN` | 470 to 510 | 100% | 19 | `LONG_FAST` |  |
+| `JP` | 920.5 to 923.5 | 100% | 13 | `LONG_FAST` |  |
+| `ANZ` | 915 to 928 | 100% | 30 | `LONG_FAST` |  |
+| `ANZ_433` | 433.05 to 434.79 | 100% | 14 | `LONG_FAST` |  |
+| `RU` | 868.7 to 869.2 | 100% | 20 | `LONG_FAST` |  |
+| `KR` | 920 to 923 | 100% | 23 | `LONG_FAST` |  |
+| `TW` | 920 to 925 | 100% | 27 | `LONG_FAST` |  |
+| `IN` | 865 to 867 | 100% | 30 | `LONG_FAST` |  |
+| `NZ_865` | 864 to 868 | 100% | 36 | `LONG_FAST` |  |
+| `TH` | 920 to 925 | 10% | 27 | `LONG_FAST` |  |
+| `UA_433` | 433 to 434.7 | 10% | 10 | `LONG_FAST` |  |
+| `MY_433` | 433 to 435 | 100% | 20 | `LONG_FAST` |  |
+| `MY_919` | 919 to 924 | 100% | 27 | `LONG_FAST` |  |
+| `SG_923` | 917 to 925 | 100% | 20 | `LONG_FAST` |  |
+| `PH_433` | 433 to 434.7 | 100% | 10 | `LONG_FAST` |  |
+| `PH_868` | 868 to 869.4 | 100% | 14 | `LONG_FAST` |  |
+| `PH_915` | 915 to 918 | 100% | 24 | `LONG_FAST` |  |
+| `KZ_433` | 433.075 to 434.775 | 100% | 10 | `LONG_FAST` |  |
+| `KZ_863` | 863 to 868 | 100% | 30 | `LONG_FAST` |  |
+| `NP_865` | 865 to 868 | 100% | 30 | `LONG_FAST` |  |
+| `BR_902` | 902 to 907.5 | 100% | 30 | `LONG_FAST` |  |
+| `ITU1_2M` | 144 to 146 | 100% | 30 | `TINY_FAST` | default slot 26 |
+| `ITU2_2M` | 144 to 148 | 100% | 30 | `TINY_FAST` | default slot 51 |
+| `ITU3_2M` | 144 to 148 | 100% | 30 | `TINY_FAST` | default slot 33 |
+| `ITU2_125CM` | 220 to 225 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `ITU1_70CM` | 430 to 440 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `ITU2_70CM` | 420 to 450 | 100% | 30 | `NARROW_SLOW` | default slot 137 |
+| `ITU3_70CM` | 430 to 450 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `LORA_24` | 2400 to 2483.5 | 100% | 10 | `LONG_FAST` | wide LoRa (SX128x) |
+| `UNSET` | 902 to 928 | 100% | 30 | `LONG_FAST` | placeholder band; 0 slots, device refuses TX until a region is set |
+
+### Frequency slots
+
+Firmware (`RadioInterface::applyModemConfig`, `frequencySlotCount` and `resolveFrequencySlot` in `src/mesh/RadioInterface.cpp`; `modemPresetToParams` and `bwCodeToKHz` in `src/mesh/MeshRadio.h`) derives the radio frequency from the region row and modem bandwidth `bw` in kHz, all in `float`:
+
+```
+slotWidth = spacing + 2 * padding + bw / 1000                     // MHz
+numSlots  = round((freqEnd - freqStart + spacing) / slotWidth)    // half away from zero; 0 for UNSET
+slot      = channel_num            if 1 <= channel_num <= numSlots
+          = region.overrideSlot    else if 1 <= overrideSlot <= numSlots
+          = djb2(name) % numSlots + 1                             // name: UTF-8 bytes, hash = hash * 33 + byte, seed 5381
+freq      = freqStart + bw / 2000 + padding + (slot - 1) * slotWidth + frequency_offset
+freq      = override_frequency + frequency_offset                 // when override_frequency != 0
+```
+
+`name` is the primary channel name; when empty it is the preset display name (`LongFast`, `LongMod`, ...), or `Custom` when `use_preset` is false. `bw` is the preset bandwidth (wide regions use the 812.5 / 1625 / 406.25 kHz variants) or `bwCodeToKHz(bandwidth)` with `use_preset` false, where a custom bandwidth wider than the band falls back to the region default preset's. `spacing` and `padding` come from the region profile. The SDK implements this as `LoRaFrequency`.
 
 ### Modem presets
 

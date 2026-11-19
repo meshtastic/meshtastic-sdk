@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import okio.ByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.NodeInfo
 import kotlin.time.Clock
@@ -19,7 +20,8 @@ import kotlin.time.Clock
  * [StorageProvider] with no database driver, no files and no platform `Context`, for
  * one-shot tools, gateways that rebuild state from the handshake anyway, and the time
  * before a persistent backend is chosen. It honors the [recordOwnNode] factory-reset
- * contract: a changed NodeNum clears everything before the new tuple is recorded.
+ * contract: a changed NodeNum clears everything before the new tuple is recorded, unless the same hardware device id comes back under the new
+ * NodeNum.
  *
  * Calls are serialized by the engine actor, as the [DeviceStorage] contract states, so the
  * maps need no locking.
@@ -32,6 +34,7 @@ public class InMemoryStorage : DeviceStorage {
     private val channelsList = mutableListOf<Channel>()
     private var recordedNodeNum: NodeId? = null
     private var recordedFirmwareVersion: String? = null
+    private var recordedDeviceId: ByteString? = null
     private var sessionPasskey: SessionPasskey? = null
     private val heartbeats = mutableMapOf<NodeId, Long>()
 
@@ -59,13 +62,25 @@ public class InMemoryStorage : DeviceStorage {
     }
 
     override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) {
+        recordOwnNode(nodeNum, firmwareVersion, null)
+    }
+
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?) {
         val prevNodeNum = recordedNodeNum
         if (prevNodeNum != null && prevNodeNum != nodeNum) {
-            clear()
+            if (deviceId != null && deviceId == recordedDeviceId) {
+                nodes.remove(prevNodeNum)
+                heartbeats.remove(prevNodeNum)
+            } else {
+                clear()
+            }
         }
         recordedNodeNum = nodeNum
         recordedFirmwareVersion = firmwareVersion
+        if (deviceId != null) recordedDeviceId = deviceId
     }
+
+    override suspend fun loadOwnDeviceId(): ByteString? = recordedDeviceId
 
     override suspend fun clear() {
         nodes.clear()
@@ -73,6 +88,7 @@ public class InMemoryStorage : DeviceStorage {
         channelsList.clear()
         recordedNodeNum = null
         recordedFirmwareVersion = null
+        recordedDeviceId = null
         sessionPasskey = null
         heartbeats.clear()
     }

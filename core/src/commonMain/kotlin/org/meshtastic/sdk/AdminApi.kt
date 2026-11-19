@@ -175,7 +175,13 @@ public interface AdminApi {
 
     // ── Ham radio ───────────────────────────────────────────────────────────
 
-    /** Configure the device for amateur radio use (sets call sign, disables encryption). */
+    /**
+     * Configure the device for amateur radio use (sets call sign, disables encryption).
+     *
+     * [params] is sent verbatim. Firmware writes `tx_power` and `frequency` into the LoRa config
+     * unconditionally, so 0 resets TX power to the regional maximum and clears
+     * `override_frequency`. Use [RadioClient.enableHamMode] to keep the current values.
+     */
     public suspend fun setHamMode(params: HamParameters): AdminResult<Unit>
 
     // ── DFU / file management ───────────────────────────────────────────────
