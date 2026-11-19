@@ -557,6 +557,41 @@ public sealed interface StoreForwardEvent {
 }
 ```
 
+## Payload accessors
+
+Extension functions on `MeshPacket` that check `decoded.portnum` and decode the payload. Each
+returns `null` for another portnum, a packet with no `decoded`, or (for protobuf payloads) bytes
+that fail to decode. Text accessors also return `null` for an empty payload. Raw-bytes ports
+(`PRIVATE_APP`, `ATAK_FORWARDER`) and `ATAK_PLUGIN_V2`, whose `TAKPacketV2` is zstd-compressed,
+have no accessor; use `decoded.payload` or `decodeAs(adapter)`.
+
+| Accessor | Portnum | Returns |
+|---|---|---|
+| `asText()` | `TEXT_MESSAGE_APP` | `String` |
+| `asAlertText()` *(since 0.3.0)* | `ALERT_APP` | `String` |
+| `asRangeTestText()` *(since 0.3.0)* | `RANGE_TEST_APP` | `String` |
+| `asDetectionSensorText()` *(since 0.3.0)* | `DETECTION_SENSOR_APP` | `String` |
+| `asPosition()` | `POSITION_APP` | `Position` |
+| `asNodeInfoUser()`, `asNodeInfo()` | `NODEINFO_APP` | `User`, `NodeInfo` |
+| `asTelemetry()` | `TELEMETRY_APP` | `Telemetry` |
+| `asAdminMessage()` | `ADMIN_APP` | `AdminMessage` |
+| `asRouting()` | `ROUTING_APP` | `Routing` |
+| `asWaypoint()` | `WAYPOINT_APP` | `Waypoint` |
+| `asTraceroute()` | `TRACEROUTE_APP` | `RouteDiscovery` |
+| `asNeighborInfo()` | `NEIGHBORINFO_APP` | `NeighborInfo` (proto) |
+| `asPaxcount()` *(since 0.3.0)* | `PAXCOUNTER_APP` | `Paxcount` |
+| `asRemoteHardware()` *(since 0.3.0)* | `REMOTE_HARDWARE_APP` | `HardwareMessage` |
+| `asNodeStatus()` *(since 0.3.0)* | `NODE_STATUS_APP` | `StatusMessage` |
+| `asMapReport()` *(since 0.3.0)* | `MAP_REPORT_APP` | `MapReport` |
+| `asMeshBeacon()` *(since 0.3.0)* | `MESH_BEACON_APP` | `MeshBeacon` |
+| `asRemoteShell()` *(since 0.3.0)* | `REMOTE_SHELL_APP` | `RemoteShell` |
+| `asPowerStress()` *(since 0.3.0)* | `POWERSTRESS_APP` | `PowerStressMessage` |
+| `asKeyVerification()` *(since 0.3.0)* | `KEY_VERIFICATION_APP` | `KeyVerification` |
+| `asAtakPacket()` *(since 0.3.0)* | `ATAK_PLUGIN` | `TAKPacket` |
+
+Store-and-forward traffic (`STORE_FORWARD_APP`, `STORE_FORWARD_PLUSPLUS_APP`) surfaces as
+`StoreForwardApi.events` instead.
+
 ## Config Builder Extensions *(since 0.2.0)*
 
 Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:

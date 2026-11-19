@@ -1273,6 +1273,21 @@ public final class org/meshtastic/sdk/PayloadRedactor$Companion {
 	public final fun getDefault ()Lorg/meshtastic/sdk/PayloadRedactor;
 }
 
+public final class org/meshtastic/sdk/PortPayloadAccessorsKt {
+	public static final fun asAlertText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
+	public static final fun asAtakPacket (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/TAKPacket;
+	public static final fun asDetectionSensorText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
+	public static final fun asKeyVerification (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/KeyVerification;
+	public static final fun asMapReport (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/MapReport;
+	public static final fun asMeshBeacon (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/MeshBeacon;
+	public static final fun asNodeStatus (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/StatusMessage;
+	public static final fun asPaxcount (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/Paxcount;
+	public static final fun asPowerStress (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/PowerStressMessage;
+	public static final fun asRangeTestText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
+	public static final fun asRemoteHardware (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/HardwareMessage;
+	public static final fun asRemoteShell (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/RemoteShell;
+}
+
 public final class org/meshtastic/sdk/PositionUtils {
 	public static final field INSTANCE Lorg/meshtastic/sdk/PositionUtils;
 	public final fun bearing (DDDD)D
