@@ -7,6 +7,8 @@
  */
 package org.meshtastic.sdk
 
+import org.meshtastic.sdk.internal.toDecimalString
+
 /**
  * Parsed neighbor information for a node, representing its directly-reachable peers.
  *
@@ -33,7 +35,7 @@ public data class NeighborInfo(
     public fun format(resolveNode: (NodeId) -> String = { it.toHex() }): String = buildString {
         appendLine("Neighbors of ${resolveNode(nodeId)} (${neighbors.size}):")
         neighbors.forEach { neighbor ->
-            appendLine("  ${resolveNode(neighbor.nodeId)} — SNR: ${neighbor.snr} dB")
+            appendLine("  ${resolveNode(neighbor.nodeId)} — SNR: ${neighbor.snr.toDecimalString()} dB")
         }
     }
 

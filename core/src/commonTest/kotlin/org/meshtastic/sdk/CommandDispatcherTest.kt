@@ -40,7 +40,7 @@ class CommandDispatcherTest {
         val expected = Telemetry.Builder().also { wb ->
             wb.device_metrics = DeviceMetrics.Builder().also { wb ->
                 wb.battery_level = 87
-                wb.voltage = 4.1f
+                wb.voltage = 4.125f
             }.build()
         }.build()
         assertTrue(dispatcher.tryComplete(telemetryPacket(requestId = 101, telemetry = expected)))
