@@ -156,6 +156,8 @@ internal class MeshEngine(
      */
     private val activeConnectDeferred = atomic<CompletableDeferred<Unit>?>(null)
 
+    private val connectionGeneration = atomic(0L)
+
     private val pendingSends = mutableMapOf<MessageId, MutableStateFlow<SendState>>()
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
@@ -462,6 +464,11 @@ internal class MeshEngine(
      */
     fun myNodeNumOrNull(): Int? = if (myNodeNum != 0) myNodeNum else null
 
+    fun connectionGeneration(): Long = connectionGeneration.value
+
+    fun isConnectedAtGeneration(generation: Long): Boolean =
+        connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
+
     private suspend fun runEngine() {
         try {
             for (msg in inbox) {
@@ -763,6 +770,7 @@ internal class MeshEngine(
     }
 
     private suspend fun handleConnect(msg: EngineMessage.Connect) {
+        connectionGeneration.incrementAndGet()
         pendingConnectDeferred = msg.deferred
         connectionState.value = ConnectionState.Connecting(1)
         // reset watchdog gate so a prior session's `disconnecting = true` doesn't stick.
