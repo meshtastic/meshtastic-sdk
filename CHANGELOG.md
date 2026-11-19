@@ -32,10 +32,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `BleScanner.scan()` and `DiscoveredRadio` in `:transport-ble`: a cold `Flow` of Meshtastic radios
-  found by the mesh service UUID, on Android, iOS and JVM, with no Kable types in the signature.
-  `BleTransport(radio)` connects to a result on every target. The caller holds the BLE
-  permissions; a scan that cannot start fails with `MeshtasticException.Transport`.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
