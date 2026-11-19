@@ -158,13 +158,12 @@ Workflow:
      source change. The PR description must call out what changed and
      the SemVer impact (per [`docs/versioning.md`](docs/versioning.md)).
 3. Pre-1.0: any breaking change is allowed but requires the dump
-   refresh + a CHANGELOG `### Breaking` entry. 1.0+: the ABI baseline
+   refresh + a `*.breaking.md` changelog fragment. 1.0+: the ABI baseline
    is treated as the contract.
-4. **Any dump move needs a changelog entry, breaking or not.** A dump that
+4. **Any dump move needs a changelog fragment, breaking or not.** A dump that
    moved is by definition a public-API change; if a consumer can carry on
-   after a recompile it goes under `### Added`, `### Changed`,
-   `### Deprecated` or `### Removed`, and only under `### Breaking` if they
-   have to change code. See [Changelog](#changelog).
+   after a recompile it is an `added`, `changed`, `deprecated` or `removed`
+   fragment, and only a `breaking` one if they have to change code. See [Changelog](#changelog).
 
 > **Never** edit `api/*.api` files by hand. They are generated artefacts.
 
@@ -172,29 +171,37 @@ Workflow:
 
 [`CHANGELOG.md`](CHANGELOG.md) is hand-written in
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) form, and nothing
-generates an entry from a commit. `scripts/changelog.sh` cuts and reads sections
-without re-rendering the file, so prose under any heading survives a release.
+generates an entry from a commit. A PR never edits it: the entry is a fragment
+file, `changelog.d/<name>.<section>.md`, where `<name>` is the PR number or a
+short slug and `<section>` is `breaking`, `added`, `changed`, `deprecated`,
+`removed`, `fixed` or `security`. The file holds the `- ` bullets exactly as
+they will read in the changelog; [`changelog.d/README.md`](changelog.d/README.md)
+has the format. `scripts/changelog.sh check` validates fragments in CI and
+`scripts/changelog.sh preview` shows what the next cut will fold in.
+`scripts/changelog.sh` folds, cuts and reads sections without re-rendering the
+file, so prose under any heading survives a release.
 
 Three rules already live elsewhere and are not restated here: constitution
-principle V (a pre-1.0 breaking change MUST add a `### Breaking` section),
+principle V (a pre-1.0 breaking change MUST add a `### Breaking` section, which the cut writes from `*.breaking.md` fragments),
 [`GOVERNANCE.md`](GOVERNANCE.md) §3 (every breaking change is called out in the
 changelog), and the SQLDelight migration rule above (`### Breaking` if an
 on-disk database loses data, `### Changed` otherwise). This section is the
 general case they are instances of.
 
-Add an entry under `## [Unreleased]` for anything a consumer would notice — a
+Add a fragment for anything a consumer would notice — a
 new or changed public API, a behaviour change, a fix to something they could
 have hit, a security property, a schema migration. Refactors, test-only changes,
 sample-only changes and CI work need none.
 
-**A change that moves any `api/*.api` or `api/*.klib.api` dump always needs an
-entry.** `### Breaking` comes first in a section because principle V requires
+**A change that moves any `api/*.api` or `api/*.klib.api` dump always needs a
+fragment.** `### Breaking` comes first in a section because principle V requires
 that group to exist, and because with committed ABI dumps the first thing a
 consumer needs to know is whether recompiling is enough.
 
 The changelog is also what the GitHub Release page says: `release.yml` puts
 `scripts/changelog.sh notes X.Y.Z` in the release body. A release PR cuts the
-section with `scripts/changelog.sh cut X.Y.Z`, not by hand; releasing is in
+section with `scripts/changelog.sh cut X.Y.Z`, which folds the fragments into
+`## [Unreleased]` first, not by hand; releasing is in
 [RELEASING.md](RELEASING.md).
 
 ## SQLDelight schema migrations
@@ -227,8 +234,8 @@ When you change the `.sq` schema:
    ```
 5. Add a manual-test entry in [`docs/manual-tests.md`](docs/manual-tests.md)
    under section H if the migration touches user-visible data.
-6. CHANGELOG `### Breaking` entry if existing on-disk databases will
-   lose data; `### Changed` otherwise. Cross-reference
+6. A `breaking` changelog fragment if existing on-disk databases will
+   lose data; `changed` otherwise. Cross-reference
    [`docs/architecture/storage.md`](docs/architecture/storage.md).
 
 In-memory databases (`:memory:` driver, used by tests and by

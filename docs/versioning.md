@@ -22,7 +22,7 @@ While version is `0.x.y`:
 2. Every breaking change MUST:
     - Bump MINOR.
     - Regenerate `api/` files via `./gradlew updateKotlinAbi` in the same commit.
-    - Add a `## [0.MINOR.0]` section to `CHANGELOG.md` with `### Breaking` subsection.
+    - Add a `*.breaking.md` changelog fragment, so the `## [0.MINOR.0]` section the cut writes has a `### Breaking` subsection.
     - Be called out in the GitHub release notes as `**BREAKING**`. The release workflow adds that line to the notes of any version whose changelog section has `### Breaking`.
 3. **Deprecation is optional** but encouraged for changes a consumer can adapt to: mark with `@Deprecated(level = WARNING)` for one MINOR, then remove in the next.
 4. Kotlin's built-in klib ABI validation runs in PR CI as **hard-gate from Phase 0** (matches `mqtt-client`'s day-1 enforcement). A PR that changes `api/*.api` MUST commit the regenerated dump.

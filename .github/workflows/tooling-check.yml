@@ -5,11 +5,15 @@ on:
     paths:
       - '.github/**'
       - '.githooks/**'
+      - 'changelog.d/**'
+      - 'scripts/changelog*.sh'
   push:
     branches: [ main ]
     paths:
       - '.github/**'
       - '.githooks/**'
+      - 'changelog.d/**'
+      - 'scripts/changelog*.sh'
 
 concurrency:
   group: tooling-${{ github.workflow }}-${{ github.ref }}
