@@ -234,17 +234,19 @@ public interface AdminApi {
     // ── Lockdown (hardened builds) ──────────────────────────────────────────
 
     /**
-     * Provision, unlock, or lock the device's storage lockdown
+     * Provision, unlock, lock, or disable the device's storage lockdown
      * (`MESHTASTIC_LOCKDOWN` hardened firmware builds only).
      *
      * The device reports its current state via [MeshEvent.LockdownStatusChanged] — observe that to
      * decide which [LockdownAuth] to send and to learn the outcome:
      * - **Provision / unlock:** set [LockdownAuth.passphrase] (1–32 bytes). On success the device
      *   issues a session token bounded by [LockdownAuth.boots_remaining] (boot-count TTL, `0` =
-     *   firmware default) and [LockdownAuth.valid_until_epoch] (absolute wall-clock expiry, `0` =
-     *   no time limit).
+     *   firmware default), [LockdownAuth.valid_until_epoch] (absolute wall-clock expiry, `0` = no
+     *   time limit), and [LockdownAuth.max_session_seconds].
      * - **Lock now:** set [LockdownAuth.lock_now] = `true` (ignores the passphrase) to immediately
      *   revoke admin authorization and reboot into the locked state.
+     * - **Disable:** set [LockdownAuth.disable] = `true` to turn the feature off on a provisioned
+     *   device.
      *
      * **Local device only.** The firmware consumes `lockdown_auth` inline on the direct phone link
      * (BLE/serial/TCP) and wipes the passphrase from memory before it can reach the mesh/admin
