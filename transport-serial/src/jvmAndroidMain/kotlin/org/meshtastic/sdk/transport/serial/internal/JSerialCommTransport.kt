@@ -51,6 +51,7 @@ internal class JSerialCommTransport(
     private val baudRate: Int,
     private val logger: LogSink = LogSink.Silent,
     private val parentContext: CoroutineContext = EmptyCoroutineContext,
+    private val onTextLine: ((String) -> Unit)? = null,
 ) : RadioTransport {
 
     private val _state: MutableStateFlow<TransportState> =
@@ -170,7 +171,7 @@ internal class JSerialCommTransport(
     private fun runReader() {
         val assembler = SerialFrameAssembler { frame ->
             publisher.publish(frame)
-        }
+        }.also { it.onTextLine = onTextLine }
         val buf = ByteArray(READ_CHUNK_BYTES)
         try {
             while (!cleanedUp.get()) {
