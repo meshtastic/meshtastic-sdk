@@ -99,7 +99,7 @@ them did not pass. DCO is enforced separately by the GitHub DCO App
 ## `tooling-check.yml` — agent-tooling guardrails
 
 Runs `bash .github/tooling/check.sh` whenever anything under
-`.github/` or `.githooks/` changes. Validates:
+`.github/`, `.githooks/` or `changelog.d/`, or `scripts/changelog*.sh`, changes. Validates:
 
 - Every action reference is SHA-pinned (no bare `@v4`); the bash check
   greps every `uses:` line and fails on anything that isn't 40 hex chars.
@@ -209,6 +209,13 @@ check did not pass; builds, checks and stages signed artifacts; refuses a
 `-SNAPSHOT` dependency; then pushes the tag, publishes with
 `publishAndReleaseToMavenCentral` and creates the GitHub Release. The full
 sequence and the secrets are in [`RELEASING.md`](../RELEASING.md).
+
+## Changelog fragments
+
+`.github/tooling/check.sh` runs `scripts/changelog.sh check`, which rejects a malformed
+`changelog.d/` fragment, and `scripts/changelog_test.sh`, which tests the script. The release cut
+folds the fragments into `CHANGELOG.md`, so `release.yml` still reads a plain section with
+`scripts/changelog.sh notes`.
 
 ## Renovate
 

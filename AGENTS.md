@@ -60,6 +60,7 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 
 - Keep changes minimal and scoped.
 - Add or update tests for behavioral changes.
+- Record a changelog entry as a `changelog.d/<name>.<section>.md` fragment (format in `changelog.d/README.md`); never edit `CHANGELOG.md` in a PR. A breaking change adds a `*.breaking.md` fragment.
 - Update docs under `docs/` when behavior, protocol handling, or contributor workflow changes.
 - Sign commits with DCO (`git commit -s`) when creating commits.
 
