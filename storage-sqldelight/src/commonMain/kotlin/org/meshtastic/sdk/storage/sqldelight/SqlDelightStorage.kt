@@ -7,8 +7,13 @@
  */
 package org.meshtastic.sdk.storage.sqldelight
 
+import app.cash.sqldelight.async.coroutines.awaitAsList
+import app.cash.sqldelight.async.coroutines.awaitAsOneOrNull
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
@@ -41,28 +46,73 @@ internal class SqlDelightStorage(
     private val dispatcher: CoroutineDispatcher = defaultStorageDispatcher,
 ) : DeviceStorage {
 
-    private val db = MeshDatabase(driver).also {
-        // Create schema idempotently: the `sqlite_master` check avoids `table … already exists`
-        // when reopening a previously-initialised database file (node-keyed DBs are reopened on
-        // every reconnect).
+    private val db = MeshDatabase(driver)
+    private val opMutex = Mutex()
+    private var schemaReady = false
+
+    private suspend fun <T> op(block: suspend () -> T): T = withContext(dispatcher) {
+        opMutex.withLock {
+            ensureSchema()
+            block()
+        }
+    }
+
+    // Schema creation is a suspending call under generateAsync (QueryResult.AsyncValue is lazy:
+    // un-awaited, it never runs). Done once, on first use, instead of in the constructor.
+    private suspend fun ensureSchema() {
+        if (schemaReady) return
         val alreadyInitialised = driver
             .executeQuery(
                 identifier = null,
                 sql = "SELECT name FROM sqlite_master WHERE type='table' AND name='session' LIMIT 1",
-                mapper = { cursor -> app.cash.sqldelight.db.QueryResult.Value(cursor.next().value) },
+                // Sync drivers close the cursor when executeQuery returns, so the row check must
+                // run eagerly; only the async (web worker) cursor is awaited later.
+                mapper = { cursor ->
+                    when (val hasRow = cursor.next()) {
+                        is QueryResult.Value -> hasRow
+                        is QueryResult.AsyncValue -> QueryResult.AsyncValue { hasRow.await() }
+                    }
+                },
                 parameters = 0,
             )
-            .value
+            .await()
+        // Android/Native drivers create+migrate themselves and stamp user_version. JDBC and the
+        // web worker driver take no schema, so stamp and migrate here.
+        val schema = MeshDatabase.Schema
+        val version = scalarLong("PRAGMA user_version")
         if (!alreadyInitialised) {
-            MeshDatabase.Schema.create(driver)
+            schema.create(driver).await()
+            driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
+        } else if (version in 1 until schema.version) {
+            schema.migrate(driver, version, schema.version).await()
+            driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
         }
+        schemaReady = true
     }
+
+    private suspend fun scalarLong(sql: String): Long = driver
+        .executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                when (val hasRow = cursor.next()) {
+                    is QueryResult.Value -> QueryResult.Value(if (hasRow.value) cursor.getLong(0) ?: 0L else 0L)
+
+                    is QueryResult.AsyncValue -> QueryResult.AsyncValue {
+                        if (hasRow.await()) cursor.getLong(0) ?: 0L else 0L
+                    }
+                }
+            },
+            parameters = 0,
+        )
+        .await()
+
     private val q get() = db.meshQueries
 
     // ── Nodes ─────────────────────────────────────────────────────────────────
 
-    override suspend fun loadNodes(): Map<NodeId, NodeInfo> = withContext(dispatcher) {
-        val rows = q.selectAllNodes().executeAsList()
+    override suspend fun loadNodes(): Map<NodeId, NodeInfo> = op {
+        val rows = q.selectAllNodes().awaitAsList()
         buildMap {
             for (row in rows) {
                 val nodeId = NodeId(row.node_num.toInt())
@@ -78,7 +128,7 @@ internal class SqlDelightStorage(
         }
     }
 
-    override suspend fun saveNode(node: NodeInfo): Unit = withContext(dispatcher) {
+    override suspend fun saveNode(node: NodeInfo): Unit = op {
         val user = node.user
         q.upsertNode(
             node_num = node.num.toLong(),
@@ -99,21 +149,21 @@ internal class SqlDelightStorage(
         )
     }
 
-    override suspend fun removeNode(nodeId: NodeId): Unit = withContext(dispatcher) {
+    override suspend fun removeNode(nodeId: NodeId): Unit = op {
         q.deleteNode(nodeId.raw.toLong())
     }
 
     // ── Config ────────────────────────────────────────────────────────────────
 
-    override suspend fun loadConfig(): ConfigBundle? = withContext(dispatcher) {
-        val myInfoBytes = q.selectSession(SESSION_KEY_MY_INFO).executeAsOneOrNull()?.value_
-            ?: return@withContext null
-        val metaBytes = q.selectSession(SESSION_KEY_METADATA).executeAsOneOrNull()?.value_
+    override suspend fun loadConfig(): ConfigBundle? = op {
+        val myInfoBytes = q.selectSession(SESSION_KEY_MY_INFO).awaitAsOneOrNull()?.value_
+            ?: return@op null
+        val metaBytes = q.selectSession(SESSION_KEY_METADATA).awaitAsOneOrNull()?.value_
 
         val myInfo: MyNodeInfo = try {
             MyNodeInfo.ADAPTER.decode(myInfoBytes)
         } catch (_: Exception) {
-            return@withContext null
+            return@op null
         }
         val metadata: DeviceMetadata = metaBytes?.let {
             try {
@@ -123,7 +173,7 @@ internal class SqlDelightStorage(
             }
         } ?: DeviceMetadata.Builder().build()
 
-        val allConfigs = q.selectAllConfigs().executeAsList()
+        val allConfigs = q.selectAllConfigs().awaitAsList()
         val configs: List<Config> = allConfigs
             .filter { it.section.startsWith("config:") }
             .mapNotNull { row ->
@@ -152,7 +202,7 @@ internal class SqlDelightStorage(
         )
     }
 
-    override suspend fun saveConfig(config: ConfigBundle) = withContext(dispatcher) {
+    override suspend fun saveConfig(config: ConfigBundle) = op {
         db.transaction {
             q.upsertSession(SESSION_KEY_MY_INFO, MyNodeInfo.ADAPTER.encode(config.myInfo))
             q.upsertSession(SESSION_KEY_METADATA, DeviceMetadata.ADAPTER.encode(config.metadata))
@@ -170,8 +220,8 @@ internal class SqlDelightStorage(
 
     // ── Channels ──────────────────────────────────────────────────────────────
 
-    override suspend fun loadChannels(): List<Channel> = withContext(dispatcher) {
-        q.selectAllChannels().executeAsList().mapNotNull { row ->
+    override suspend fun loadChannels(): List<Channel> = op {
+        q.selectAllChannels().awaitAsList().mapNotNull { row ->
             row.settings_raw?.let { bytes ->
                 try {
                     Channel.ADAPTER.decode(bytes)
@@ -182,7 +232,7 @@ internal class SqlDelightStorage(
         }
     }
 
-    override suspend fun saveChannels(channels: List<Channel>) = withContext(dispatcher) {
+    override suspend fun saveChannels(channels: List<Channel>) = op {
         db.transaction {
             q.deleteAllChannels()
             channels.forEachIndexed { idx, channel ->
@@ -202,18 +252,18 @@ internal class SqlDelightStorage(
 
     // ── Identity / factory-reset detection ───────────────────────────────────
 
-    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) = withContext(dispatcher) {
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) = op {
         db.transaction {
-            val storedNumBytes = q.selectSession(SESSION_KEY_NODE_NUM).executeAsOneOrNull()?.value_
+            val storedNumBytes = q.selectSession(SESSION_KEY_NODE_NUM).awaitAsOneOrNull()?.value_
             if (storedNumBytes != null) {
                 val stored = storedNumBytes.decodeToString().toIntOrNull()
                 if (stored != null && stored != nodeNum.raw) {
-                    q.clearAll()
+                    q.clearAll().await() // grouped statement: returns a lazy AsyncValue under generateAsync
                 }
             }
             q.upsertSession(SESSION_KEY_NODE_NUM, nodeNum.raw.toString().encodeToByteArray())
             q.upsertSession(SESSION_KEY_FIRMWARE, firmwareVersion.encodeToByteArray())
-            q.selectNode(nodeNum.raw.toLong()).executeAsOneOrNull()?.let {
+            q.selectNode(nodeNum.raw.toLong()).awaitAsOneOrNull()?.let {
                 q.upsertNode(
                     node_num = it.node_num,
                     user_id = it.user_id,
@@ -237,7 +287,7 @@ internal class SqlDelightStorage(
 
     // ── Session passkey (R-P0-4) ──────────────────────────────────────────────
 
-    override suspend fun saveSessionPasskey(passkey: SessionPasskey) = withContext(dispatcher) {
+    override suspend fun saveSessionPasskey(passkey: SessionPasskey) = op {
         db.transaction {
             q.upsertSession(SESSION_KEY_PASSKEY, passkey.bytes.toByteArray())
             q.upsertSession(
@@ -247,39 +297,39 @@ internal class SqlDelightStorage(
         }
     }
 
-    override suspend fun loadSessionPasskey(): SessionPasskey? = withContext(dispatcher) {
-        val bytes = q.selectSession(SESSION_KEY_PASSKEY).executeAsOneOrNull()?.value_
-            ?: return@withContext null
-        val expiresBytes = q.selectSession(SESSION_KEY_PASSKEY_EXPIRES_MS).executeAsOneOrNull()?.value_
-            ?: return@withContext null
-        val expiresAtMs = expiresBytes.decodeToString().toLongOrNull() ?: return@withContext null
+    override suspend fun loadSessionPasskey(): SessionPasskey? = op {
+        val bytes = q.selectSession(SESSION_KEY_PASSKEY).awaitAsOneOrNull()?.value_
+            ?: return@op null
+        val expiresBytes = q.selectSession(SESSION_KEY_PASSKEY_EXPIRES_MS).awaitAsOneOrNull()?.value_
+            ?: return@op null
+        val expiresAtMs = expiresBytes.decodeToString().toLongOrNull() ?: return@op null
         val now = Clock.System.now().toEpochMilliseconds()
         if (expiresAtMs <= now) {
             db.transaction {
                 q.deleteSession(SESSION_KEY_PASSKEY)
                 q.deleteSession(SESSION_KEY_PASSKEY_EXPIRES_MS)
             }
-            return@withContext null
+            return@op null
         }
         SessionPasskey(bytes.toByteString(), expiresAtMs)
     }
 
     // ── Heartbeat persistence (P1-6) ──────────────────────────────────────────
 
-    override suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long): Unit = withContext(dispatcher) {
-        q.upsertHeartbeat(node_num = nodeId.raw.toLong(), last_heartbeat_at = epochMillis)
+    override suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long): Unit = op {
+        q.upsertHeartbeat(node_num = nodeId.raw.toLong(), last_heartbeat_at = epochMillis).await()
     }
 
-    override suspend fun loadHeartbeats(): Map<NodeId, Long> = withContext(dispatcher) {
-        q.selectAllHeartbeats().executeAsList().associate { row ->
+    override suspend fun loadHeartbeats(): Map<NodeId, Long> = op {
+        q.selectAllHeartbeats().awaitAsList().associate { row ->
             NodeId(row.node_num.toInt()) to row.last_heartbeat_at
         }
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    override suspend fun clear(): Unit = withContext(dispatcher) {
-        q.clearAll()
+    override suspend fun clear(): Unit = op {
+        q.clearAll().await() // grouped statement: returns a lazy AsyncValue under generateAsync
     }
 
     override fun close() {

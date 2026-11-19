@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.storage.sqldelight
 
+import app.cash.sqldelight.async.coroutines.synchronous
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import org.meshtastic.sdk.storage.sqldelight.internal.MeshDatabase
@@ -16,5 +17,5 @@ internal actual fun createDriver(dbPath: String): SqlDriver {
     // even for in-memory databases (use any non-empty string for in-memory)
     val fileBacked = dbPath != ":memory:"
     val name = if (fileBacked) dbPath.substringAfterLast('/') else ":memory:"
-    return NativeSqliteDriver(MeshDatabase.Schema, name).also { applyStoragePragmas(it, fileBacked) }
+    return NativeSqliteDriver(MeshDatabase.Schema.synchronous(), name).also { applyStoragePragmas(it, fileBacked) }
 }

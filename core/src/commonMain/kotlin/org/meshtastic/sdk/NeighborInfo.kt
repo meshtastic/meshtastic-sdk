@@ -33,8 +33,13 @@ public data class NeighborInfo(
     public fun format(resolveNode: (NodeId) -> String = { it.toHex() }): String = buildString {
         appendLine("Neighbors of ${resolveNode(nodeId)} (${neighbors.size}):")
         neighbors.forEach { neighbor ->
-            appendLine("  ${resolveNode(neighbor.nodeId)} — SNR: ${neighbor.snr} dB")
+            appendLine("  ${resolveNode(neighbor.nodeId)} — SNR: ${neighbor.snr.toDecimalString()} dB")
         }
+    }
+
+    private fun Float.toDecimalString(): String {
+        val text = toString()
+        return if (text.all { it.isDigit() || it == '-' }) "$text.0" else text
     }
 
     public companion object {
