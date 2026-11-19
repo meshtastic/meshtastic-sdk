@@ -96,7 +96,9 @@ seeding the admin session passkey and then `Connected`.
 | `admin`, `telemetry`, `routing`, `storeForward` | `nodeSnapshot()` likewise starts with only the local node |
 | `send` / `sendText`, `packets`, `events` | presence events cover only nodes actually heard this session |
 
-Peers still appear as they are heard live (`NODEINFO_APP`, position, telemetry traffic). Persisted
+Peers appear as they are heard live: any decoded packet creates the sender and refreshes its
+`last_heard`, `snr`, `hops_away` and `via_mqtt`; `NODEINFO_APP` merges `user` and `POSITION_APP`
+merges `position` (see `docs/protocol.md`, "Node DB after the handshake"). Persisted
 node rows from earlier sessions are left untouched but are not loaded into the session's node map.
 
 Use it for config editors, provisioning tools and CLI one-shots. Leave it off for chat and map UIs.
