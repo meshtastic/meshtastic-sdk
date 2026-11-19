@@ -43,9 +43,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
-- `Builder.protocolLogging` now logs every `FromRadio` and `ToRadio` envelope (tag `Protocol`).
-  `PayloadRedactor.Default` prints the variant, routing metadata, queue status counters,
-  heartbeat nonce and XModem control, sequence and buffer length, never payload content.
 
 ### Changed
 
