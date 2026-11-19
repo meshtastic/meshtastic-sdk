@@ -171,14 +171,15 @@ have a single ordered signal they can snapshot in-memory state from.
 See [`architecture/storage.md`](./architecture/storage.md#consumer-observable-signal-r-9)
 for the rationale and on-disk behaviour. (Resolved audit finding
 **S-P0-2** / roadmap R-9; previously this rebind was silent.)
-| `KeyVerification(prompt)` | Key-verification flow initiated by `protocol.md` §10 PKI handshake | Show user-facing comparison UI; respond via host-defined affordance (out of MVP). |
+| `KeyVerification(prompt)` | One step of the device's key-verification exchange (`protocol.md` §10): `EnterSecurityNumber`, `ShowSecurityNumber` or `ConfirmVerification` | Show the number or the comparison UI; answer with `AdminApi.keyVerification` using the prompt's `nonce`. |
+| `SecurityWarning.PublicKeyMismatch(node, offeredKey)` | A `NODEINFO_APP` offered a key different from the stored one and was dropped; once per node and offered key. | Warn that the contact's key changed; the stored key still applies to DMs. |
 | `PacketsDropped(flow, count)` | Subscriber to `packets`/`events` flow could not keep up; engine shed `count` items | Tell user "you missed N messages"; consider increasing host buffering. |
 | `SecurityWarning.DuplicatedPublicKey` | Firmware observed another node broadcasting the *same* public key as one already in its NodeDB — cloned device, or a near-field identity-theft attempt. | Surface prominently to the user; pair with a "verify your contacts" UX. |
 | `SecurityWarning.LowEntropyKey` | Firmware reports the current private key was generated with insufficient entropy (freshly flashed board before RNG warmed up). | Prompt the user to regenerate keys via admin UI. |
 
 ### Security warnings
 
-The two `SecurityWarning` sub-variants arrive from the firmware's
+`PublicKeyMismatch` is raised by the engine itself; the other two `SecurityWarning` sub-variants arrive from the firmware's
 `ClientNotification.payload_variant` oneof (`duplicated_public_key`,
 `low_entropy_key` — see `proto:meshtastic/mesh.proto`). The engine emits
 the raw `MeshEvent.Notification` **and** the typed variant so consumers

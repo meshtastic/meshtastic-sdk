@@ -35,9 +35,11 @@ import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.ToRadio
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ChannelIndex
@@ -50,6 +52,7 @@ import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.KeyVerificationPrompt
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
@@ -1604,6 +1607,96 @@ internal class MeshEngine(
     }
 
     /**
+     * Fold a decoded mesh packet into the sender's node entry, creating it when unknown, and
+     * emit one [NodeChange.Added] or [NodeChange.Updated]. Mirrors firmware `NodeDB::updateFrom`,
+     * `updateUser` and `updatePosition`; own-node packets skip the link metrics.
+     */
+    private fun mergeLivePacketIntoNodeDb(packet: MeshPacket, decoded: Data) {
+        if (packet.from == 0) return
+        val nodeId = NodeId(packet.from)
+        val isOwn = packet.from == myNodeNum
+        val existing = meshState.nodes[nodeId]
+        val wb = (existing ?: NodeInfo.Builder().also { b -> b.num = packet.from }.build()).newBuilder()
+
+        wb.last_heard = packet.rx_time.takeIf { it != 0 } ?: clock.now().epochSeconds.toInt()
+        if (!isOwn) {
+            // An SNR is ours only when heard over our own radio; firmware replays carry no rx_rssi.
+            if (packet.transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && packet.rx_rssi != null) {
+                wb.snr = packet.rx_snr
+            }
+            wb.via_mqtt = packet.via_mqtt
+            if (packet.hop_start != 0 && packet.hop_start >= packet.hop_limit) {
+                wb.hops_away = packet.hop_start - packet.hop_limit
+            }
+        }
+
+        when (decoded.portnum) {
+            PortNum.NODEINFO_APP -> {
+                val user = runCatching { User.ADAPTER.decode(decoded.payload) }.getOrNull()
+                val knownKey = existing?.user?.public_key
+                val placeholder = user != null && user.long_name.isEmpty() && user.short_name.isEmpty() &&
+                    user.public_key.size == 0
+                val keyMismatch = user != null && knownKey != null && knownKey.size == 32 && user.public_key != knownKey
+                if (user != null && keyMismatch && !placeholder) {
+                    announceKeyMismatch(nodeId, user.public_key)
+                }
+                if (user != null && !placeholder && !keyMismatch) {
+                    val id = "!" + packet.from.toUInt().toString(16).padStart(8, '0')
+                    wb.user = user.newBuilder().also { ub -> ub.id = id }.build()
+                    if (!isOwn) wb.channel = packet.channel
+                }
+            }
+
+            PortNum.POSITION_APP -> {
+                val pos = runCatching { Position.ADAPTER.decode(decoded.payload) }.getOrNull()
+                if (pos != null) mergePosition(wb, existing?.position, pos)
+            }
+
+            else -> Unit
+        }
+
+        val updated = wb.build()
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (isOwn) ownNode.value = updated
+        if (existing == null) {
+            emitNodeChangeOrLog(NodeChange.Added(updated))
+        } else {
+            val changed = diffNodeFields(existing, updated)
+            if (changed.isNotEmpty()) emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
+        }
+    }
+
+    // Bounded, insertion-ordered: the oldest (node, key) pair is forgotten first.
+    private val reportedKeyMismatches = LinkedHashSet<Pair<Int, ByteString>>()
+
+    private fun announceKeyMismatch(nodeId: NodeId, offered: ByteString) {
+        if (!reportedKeyMismatches.add(nodeId.raw to offered)) return
+        if (reportedKeyMismatches.size > MAX_REPORTED_KEY_MISMATCHES) {
+            reportedKeyMismatches.remove(reportedKeyMismatches.first())
+        }
+        events.tryEmit(MeshEvent.SecurityWarning.PublicKeyMismatch(nodeId, offered))
+    }
+
+    private fun mergePosition(wb: NodeInfo.Builder, previous: Position?, pos: Position) {
+        val noFix = (pos.latitude_i ?: 0) == 0 && (pos.longitude_i ?: 0) == 0
+        when {
+            // A request, or a position with nothing in it.
+            noFix && pos.time == 0 && pos.timestamp == 0 -> Unit
+
+            // Time-only update (clock sync from a client): keeps the stored fix.
+            noFix && pos.timestamp == 0 && pos.location_source == Position.LocSource.LOC_UNSET ->
+                wb.position =
+                    (previous ?: Position.Builder().build()).newBuilder().also { pb -> pb.time = pos.time }.build()
+
+            else -> wb.position = if (pos.time == 0 && previous != null) {
+                pos.newBuilder().also { pb -> pb.time = previous.time }.build()
+            } else {
+                pos
+            }
+        }
+    }
+
+    /**
      * The Ready-stage pipeline for a single inbound [MeshPacket]: presence, dedup, public
      * `packets` emission, session-passkey latching, RPC/ACK correlation, telemetry merge, and
      * external-config-change detection. Called for live packets in [routeNormalEnvelope] and
@@ -1638,6 +1731,7 @@ internal class MeshEngine(
             )
             return
         }
+        mergeLivePacketIntoNodeDb(packet, decoded)
         emitPacketOrLog(packet)
         // Decode the admin payload once; both the passkey latch and external-change detection
         // need it, and inbound ADMIN_APP traffic is hot during config syncs.
@@ -1702,6 +1796,39 @@ internal class MeshEngine(
 
                 cn.low_entropy_key != null ->
                     events.tryEmit(MeshEvent.SecurityWarning.LowEntropyKey)
+
+                cn.key_verification_number_request != null -> cn.key_verification_number_request!!.let { r ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.EnterSecurityNumber(r.nonce, r.remote_longname),
+                        ),
+                    )
+                }
+
+                cn.key_verification_number_inform != null -> cn.key_verification_number_inform!!.let { i ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.ShowSecurityNumber(
+                                i.nonce,
+                                i.remote_longname,
+                                i.security_number,
+                            ),
+                        ),
+                    )
+                }
+
+                cn.key_verification_final != null -> cn.key_verification_final!!.let { f ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.ConfirmVerification(
+                                f.nonce,
+                                f.remote_longname,
+                                f.isSender,
+                                f.verification_characters,
+                            ),
+                        ),
+                    )
+                }
             }
             true
         }
@@ -2663,6 +2790,9 @@ internal class MeshEngine(
         // hard-cap was 120s — reduce to 60s to match upstream reference
         // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
         const val STAGE2_HARD_CAP_MS = 60_000L
+
+        // (node, offered key) pairs remembered so a repeated mismatch is reported once.
+        const val MAX_REPORTED_KEY_MISMATCHES = 256
 
         // maximum frames buffered during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64

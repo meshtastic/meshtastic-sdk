@@ -29,6 +29,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Published JVM and Android bytecode is JDK 17 (class file 61) and compiled with
   `-Xjdk-release=17`, as the README and constitution already stated; 0.2.0 shipped JDK 21
   bytecode. JDK 17 hosts can now load the artifacts.
+- `MeshEvent.SecurityWarning.PublicKeyMismatch` is a new case, so an exhaustive `when` over
+  `SecurityWarning` needs a branch.
+- `KeyVerificationPrompt` is a sealed interface with three concrete prompts
+  (`EnterSecurityNumber`, `ShowSecurityNumber`, `ConfirmVerification`) instead of an empty
+  marker interface. An external implementer no longer compiles; a collector that only
+  `is`-checks it is unaffected.
+- `sendDirectMessageEncrypted` is `suspend`, because it reads the recipient's key from the
+  node DB. Callers outside a coroutine need a scope.
 
 ### Added
 
@@ -43,6 +51,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
+- `MeshEvent.SecurityWarning.PublicKeyMismatch(node, offeredKey)`: a `NODEINFO_APP` offering a
+  key different from the stored 32-byte key is still dropped, and is now reported once per
+  node and offered key.
+- `MeshEvent.KeyVerification` is emitted for the three `ClientNotification` key-verification
+  payloads, next to the raw `MeshEvent.Notification`. With `AdminApi.keyVerification` a host
+  can run the whole exchange.
 
 ### Changed
 
@@ -59,6 +73,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `sendDirectMessageEncrypted` fills `public_key` with the recipient's stored key, as the
+  Android app does. Firmware rejects a packet whose `public_key` differs from its own copy.
+- Live mesh traffic now updates the node DB. Every decoded packet creates or refreshes its
+  sender (`last_heard`, `snr`, `hops_away`, `via_mqtt`), `NODEINFO_APP` merges the sender's
+  `user` and `POSITION_APP` its `position`, each emitting one `NodeChange.Added` or
+  `NodeChange.Updated`. Before, peers only changed through `FromRadio.node_info` and device
+  metrics from already-known nodes.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out

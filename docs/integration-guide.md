@@ -413,8 +413,9 @@ val client = RadioClient.Builder()
 Direct messages between two nodes are encrypted end-to-end with X25519 + AES-CTR keys derived from each peer's `User.public_key`. The SDK does not perform the crypto itself — the firmware does — but it does surface everything you need to verify peers:
 
 - Inbound DM payloads arrive as `MeshPacket` with `decoded.public_key` populated whenever the firmware decrypted them with a known peer key. An empty `public_key` on a `decoded.portnum == TEXT_MESSAGE_APP` packet from a non-broadcast `to` field means the peer's identity could not be verified.
-- The first time a peer's `public_key` is observed (or when it changes), the engine emits `MeshEvent.KeyVerification` with a `KeyVerificationPrompt` describing the new fingerprint. Consumers should surface this to the user (TOFU/SAS-style) and persist the accepted key alongside the `NodeId`.
-- `MeshEvent.SecurityWarning.DuplicatedPublicKey` and `MeshEvent.SecurityWarning.LowEntropyKey` flag `node_info` records whose `public_key` is suspect; treat the affected `NodeId` as untrusted for DMs until a manual re-verification round trips.
+- `MeshEvent.KeyVerification` carries the steps of the device's numeric key verification (`KeyVerificationPrompt.EnterSecurityNumber`, `ShowSecurityNumber`, `ConfirmVerification`); start it and answer it with `AdminApi.keyVerification` (see `docs/protocol.md` §10).
+- `MeshEvent.SecurityWarning.PublicKeyMismatch` reports a `NODEINFO_APP` dropped because its key differs from the stored one, once per node and offered key.
+- `MeshEvent.SecurityWarning.DuplicatedPublicKey` and `MeshEvent.SecurityWarning.LowEntropyKey` flag device-reported key problems; treat the affected `NodeId` as untrusted for DMs until a manual re-verification round trips.
 
 Sending DMs is the same as any other text message — call `client.sendText(...)` with a non-broadcast `to` — but you should refuse the call if the destination's last-seen `public_key` does not match what the user previously verified. The engine will not reject the send for you.
 
