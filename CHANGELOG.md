@@ -32,11 +32,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `LoRaRegionInfo`, `ModemParams`, `ModemPreset.modemParams` and `LoRaFrequency`: firmware's
-  region table, modem preset parameters and frequency slot math as pure functions.
-  `LoRaFrequency.plan(config, primaryChannelName)` returns the region, bandwidth, slot count,
-  default slot and center frequency in MHz a `Config.LoRaConfig` resolves to, matching
-  `RadioInterface.cpp` in single precision.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
