@@ -38,16 +38,38 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
     private var payloadLen = 0
     private var bytesRemaining = 0
     private val payloadBuf = Buffer()
+    private val textBuf = Buffer()
+
+    /**
+     * Called with each newline-terminated line of text the device prints between frames, which is
+     * where the firmware's serial debug log goes. The terminator is stripped and empty lines are
+     * skipped; a line longer than 1024 bytes is dropped. A START1 byte (0x94) that is not followed
+     * by START2 stays in the line, so UTF-8 text containing it decodes intact. `null` (the
+     * default) discards the text. Called synchronously from [feed].
+     */
+    public var onTextLine: ((String) -> Unit)? = null
 
     /** Feed one byte; emits through `onFrame` when it completes a frame. */
     public fun feed(byte: Byte) {
         when (state) {
-            State.SCAN_FOR_START1 -> if (byte == START1) state = State.EXPECT_START2
+            State.SCAN_FOR_START1 -> if (byte == START1) state = State.EXPECT_START2 else collectText(byte)
 
             State.EXPECT_START2 -> state = when (byte) {
-                START2 -> State.READ_LEN_HI
-                START1 -> State.EXPECT_START2
-                else -> State.SCAN_FOR_START1
+                START2 -> {
+                    textBuf.clear()
+                    State.READ_LEN_HI
+                }
+
+                START1 -> {
+                    collectText(START1)
+                    State.EXPECT_START2
+                }
+
+                else -> {
+                    collectText(START1)
+                    collectText(byte)
+                    State.SCAN_FOR_START1
+                }
             }
 
             State.READ_LEN_HI -> {
@@ -95,6 +117,23 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
         }
     }
 
+    private fun collectText(byte: Byte) {
+        val listener = onTextLine ?: return
+        if (byte == NEWLINE) {
+            val line = textBuf.readUtf8().trimEnd('\r')
+            textBuf.clear()
+            // A throwing listener must not unwind into the reader loop, where it would close the frame channel.
+            if (line.isNotEmpty() && !oversizeLine) runCatching { listener(line) }
+            oversizeLine = false
+        } else if (textBuf.size < MAX_TEXT_LINE_BYTES) {
+            textBuf.writeByte(byte.toInt())
+        } else {
+            oversizeLine = true
+        }
+    }
+
+    private var oversizeLine = false
+
     /** Feed the first [length] bytes of [bytes], a read buffer straight from the port. */
     public fun feed(bytes: ByteArray, length: Int = bytes.size) {
         for (i in 0 until length) feed(bytes[i])
@@ -102,6 +141,8 @@ public class SerialFrameAssembler(private val onFrame: (Frame) -> Unit) {
 
     internal companion object {
         const val MAX_PAYLOAD_SIZE = WireFraming.MAX_PAYLOAD_SIZE
+        const val MAX_TEXT_LINE_BYTES = 1024L
+        const val NEWLINE: Byte = 0x0A
         val START1: Byte = WireFraming.MAGIC_0
         val START2: Byte = WireFraming.MAGIC_1
     }
