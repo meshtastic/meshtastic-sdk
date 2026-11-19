@@ -169,6 +169,32 @@ public class RadioClient internal constructor(
      */
     public val events: Flow<MeshEvent> = engine.events.hide()
 
+    /**
+     * Complete frames of the device display, emitted while mirroring is on
+     * ([AdminApi.setDisplayMirror]) or after [AdminApi.requestDisplayFrame].
+     *
+     * The engine reassembles the firmware's chunks; a frame with a gap, an interrupted chunk
+     * sequence or an oversize `total_size` (over 1 MiB) is dropped and logged, never delivered
+     * partially. **Buffering:** no replay, and a buffer of 2 that drops the **oldest** frame when a
+     * collector falls behind, so a slow renderer skips to recent frames and never stalls the
+     * engine. Frames emitted while nothing collects are discarded. Dropped frames are not
+     * reported on [events].
+     *
+     * @since 0.3.0
+     */
+    public val displayFrames: Flow<DisplayMirrorFrame> = engine.displayFrames.hide()
+
+    /**
+     * The most recent complete display palette, or `null` until the device sends one this
+     * session. Match [DisplayMirrorFrame.paletteSignature] against
+     * [org.meshtastic.proto.DisplayPalette.signature]; a frame whose palette has not arrived yet
+     * should be drawn monochrome. Reset to `null` on disconnect.
+     *
+     * @since 0.3.0
+     */
+    public val displayPalette: StateFlow<org.meshtastic.proto.DisplayPalette?> =
+        engine.displayPalette.asStateFlow()
+
     // ── On-demand query ─────────────────────────────────────────────────────
 
     /**

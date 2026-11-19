@@ -8,7 +8,7 @@
 
 | Package | Stability | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
+| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `DisplayMirrorFrame`, `Clock`, `Constants`, `SessionPasskey` |
 | `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
@@ -158,6 +158,19 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
 | `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
 | `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
+| `displayFrames: Flow<DisplayMirrorFrame>` *(since 0.3.0)* | `MutableSharedFlow(replay=0)` | 2 / `DROP_OLDEST` |
+
+#### Display mirror *(since 0.3.0)*
+
+`AdminApi.setDisplayMirror(true)` starts a continuous stream and `AdminApi.requestDisplayFrame()`
+asks for one frame; both are local-device only. The engine reassembles the firmware's chunks and
+emits each complete frame on `displayFrames` as a `DisplayMirrorFrame` (`width`, `height`,
+`format`, `frameId`, `data`, the partial-update rectangle `rectX`/`rectY`/`rectWidth`/`rectHeight`,
+and `paletteSignature`). A collector that falls behind loses the oldest undelivered frame, so a
+slow renderer skips ahead without stalling the engine. Frames are not retained when nothing
+collects. `displayPalette: StateFlow<DisplayPalette?>` holds the latest complete palette that
+`DisplayMirrorFrame.paletteSignature` refers to; it is `null` until one arrives and after a
+disconnect. The SDK delivers bytes only: it does not decode, composite or render.
 
 `nodes` seeds **each** subscription with a `NodeChange.Snapshot` of the engine's current node
 map (via `onSubscription`) before deltas — late subscribers never miss the baseline even though
@@ -460,6 +473,10 @@ public interface AdminApi {
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
     public suspend fun nodeDbReset(): AdminResult<Unit>
+
+    /** Local device only; a `forNode` instance returns `Unauthorized`. See "Display mirror". @since 0.3.0 */
+    public suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit>
+    public suspend fun requestDisplayFrame(): AdminResult<Unit>
 
     /** See pitfall §19.17. `autoSyncTimeOnConnect=true` calls this once post-handshake on >60s skew. */
     public suspend fun setTime(at: Instant = Clock.System.now()): AdminResult<Unit>

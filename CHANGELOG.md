@@ -26,12 +26,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AutoReconnectConfig` gained a seventh constructor parameter, `recoveryStep`. Named and
   default-argument call sites are unaffected; binaries built against the six-parameter
   constructor do not link.
+- `AdminApi` gained `setDisplayMirror` and `requestDisplayFrame`. Callers are unaffected; a
+  class that implements `AdminApi` must add them.
 - Published JVM and Android bytecode is JDK 17 (class file 61) and compiled with
   `-Xjdk-release=17`, as the README and constitution already stated; 0.2.0 shipped JDK 21
   bytecode. JDK 17 hosts can now load the artifacts.
 
 ### Added
 
+- Device display mirroring: `AdminApi.setDisplayMirror` and `AdminApi.requestDisplayFrame`
+  (local device only), `RadioClient.displayFrames` with reassembled `DisplayMirrorFrame`s, and
+  `RadioClient.displayPalette`. Frames with a gap or over 1 MiB are dropped, and a slow collector
+  loses the oldest frame.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
