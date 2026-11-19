@@ -221,7 +221,7 @@ ESP32-based devices with WiFi (or Ethernet) expose a REST API used by browser-ba
 
 ### Polling pattern
 
-The SDK polls `GET /api/v1/fromradio?all=true` periodically (typically 1–5 seconds depending on UI responsiveness needs). The empty body sentinel signals "queue drained, no need to re-poll until next user action or wakeup." Future firmware revisions are expected to add a `chunked=true` long-polling mode (per docs).
+The SDK does not implement an HTTP transport. A client of the device HTTP API polls `GET /api/v1/fromradio?all=true` periodically (typically 1–5 seconds depending on UI responsiveness needs). The empty body sentinel signals "queue drained, no need to re-poll until next user action or wakeup." Future firmware revisions are expected to add a `chunked=true` long-polling mode (per docs).
 
 ### Reference implementation
 
@@ -395,6 +395,16 @@ The firmware emits these `FromRadio` payloads in this order (`firmware:src/mesh/
 5. If the device emits `FromRadio.rebooted = true`, treat as a forced disconnect — clear all state and re-issue Stage 1 with a fresh nonce pair (`69420` then `69421`).
 6. On TCP/Serial close, the device resets its `config_nonce` to `0` and clears all session state. On reconnection, both stages are mandatory.
 7. While the device is mid-handshake, queued outbound packets in the device router are NOT dropped — they will be sent after `config_complete_id`. However, the device WILL drop incoming `MqttClientProxyMessage` from the phone during handshake with a warning log.
+
+### Node DB after the handshake
+
+After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
+
+- **`FromRadio.node_info`** replaces the node's entry.
+- **Every decoded `MeshPacket` with `from != 0`** creates or refreshes the sender (firmware `NodeDB::updateFrom`): `last_heard` from `rx_time`, or the engine clock when `rx_time` is 0; `snr` only when `transport_mechanism` is `TRANSPORT_LORA` and `rx_rssi` is present; `via_mqtt`; `hops_away = hop_start - hop_limit` only when `hop_start != 0` and `hop_start >= hop_limit`, otherwise unchanged. Packets from our own node refresh only `last_heard`. Encrypted packets (no `decoded`) never touch the DB.
+- **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
+- **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
+- **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
 
 ### Generating the nonce
 

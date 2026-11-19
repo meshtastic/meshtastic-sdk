@@ -172,6 +172,19 @@ public class RadioClient internal constructor(
      */
     public val events: Flow<MeshEvent> = engine.events.hide()
 
+    /**
+     * Every [FromRadio] envelope the device sends, decoded and unfiltered: handshake frames,
+     * config, channels, log records and packets alike. [packets] carries mesh packets only, so a
+     * recorder or protocol analyzer subscribes here instead.
+     *
+     * Hot, no replay, and lossy: a collector that falls more than 256 envelopes behind loses the
+     * oldest, so the engine is never stalled by a slow tap. Envelopes can carry channel PSKs and
+     * node positions; the SDK does not redact or persist them.
+     *
+     * @since 0.3.0
+     */
+    public val fromRadio: Flow<FromRadio> = engine.rawFromRadio.hide()
+
     // ── On-demand query ─────────────────────────────────────────────────────
 
     /**
