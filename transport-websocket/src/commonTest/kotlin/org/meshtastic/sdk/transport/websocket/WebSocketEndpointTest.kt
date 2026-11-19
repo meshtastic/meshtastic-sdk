@@ -42,6 +42,13 @@ class WebSocketEndpointTest {
     }
 
     @Test
+    fun unbracketedIpv6HostIsRefused() {
+        for (bad in listOf("ws://fe80::1", "ws://::1", "ws://a:b:80", "ws://2001:db8::1:8080")) {
+            assertFailsWith<IllegalArgumentException>(bad) { parseWebSocketEndpoint(bad) }
+        }
+    }
+
+    @Test
     fun portBoundsAreEnforced() {
         assertEquals("ws://h:1/api/v1/ws", url("ws://h:1"))
         assertEquals("ws://h:65535/api/v1/ws", url("ws://h:65535"))

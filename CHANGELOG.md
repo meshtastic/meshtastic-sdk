@@ -47,7 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ws://host[:port]/api/v1/ws` or `wss://`, one protobuf per binary message, on Ktor (CIO on JVM
   and Android, Darwin on iOS). It stays under the node's 15 minute idle close on the engine's
   heartbeat and sends no pings, and reports close 4001 (another client took the slot) and 1009
-  as non-recoverable errors. ESP32 needs firmware#12412 and meshtasticd needs #12413 (plain
+  as non-recoverable errors. Messages over 512 bytes end the session. ESP32 needs firmware#12412 and meshtasticd needs #12413 (plain
   `ws://` needs #12414's `HTTPPort`), all unmerged.
 
 ### Changed

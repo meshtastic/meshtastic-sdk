@@ -23,6 +23,8 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -30,7 +32,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
@@ -108,6 +112,59 @@ class WebSocketTransportTest {
                     flush()
                 }
                 afterUpgrade.invoke(client)
+            } catch (_: Exception) {
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+        fun stop() = socket.close()
+    }
+
+    /** Reads the upgrade request, holds the 101 until [gate] completes, and reports when the client socket closes. */
+    private class GatedServer {
+        val gate = CompletableDeferred<Unit>()
+        val requestSeen = CompletableDeferred<Unit>()
+        val clientClosed = CompletableDeferred<Unit>()
+        private val socket = ServerSocket(0)
+        val port: Int = socket.localPort
+        private val worker = Thread {
+            try {
+                val client = socket.accept()
+                val input = client.getInputStream().bufferedReader()
+                var key = ""
+                while (true) {
+                    val line = input.readLine() ?: return@Thread
+                    if (line.isEmpty()) break
+                    if (line.startsWith("Sec-WebSocket-Key:", ignoreCase = true)) key = line.substringAfter(':').trim()
+                }
+                requestSeen.complete(Unit)
+                Thread {
+                    try {
+                        while (input.read() != -1) {
+                        }
+                    } catch (_: Exception) {
+                    }
+                    clientClosed.complete(Unit)
+                }.apply {
+                    isDaemon = true
+                    start()
+                }
+                runBlocking { gate.await() }
+                val accept = Base64.getEncoder().encodeToString(
+                    MessageDigest.getInstance(
+                        "SHA-1",
+                    ).digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()),
+                )
+                client.getOutputStream().apply {
+                    write(
+                        (
+                            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                                "Sec-WebSocket-Accept: $accept\r\n\r\n"
+                            ).toByteArray(),
+                    )
+                    flush()
+                }
             } catch (_: Exception) {
             }
         }.apply {
@@ -329,5 +386,94 @@ class WebSocketTransportTest {
         withTimeout(5_000) { collected.receive() }
         t.disconnect()
         collector.cancelAndJoin()
+    }
+
+    @Test
+    fun cancellingConnectClosesTheUpgradeOnASuppliedClient() = run {
+        val gated = GatedServer()
+        servers += gated::stop
+        val client = HttpClient(CIO) { install(WebSockets) }.also { clients += it }
+        val t = WebSocketTransport("ws://127.0.0.1:${gated.port}", client)
+        val job = launch(Dispatchers.Default) { t.connect() }
+        withTimeout(5_000) { gated.requestSeen.await() }
+        job.cancelAndJoin()
+        withTimeout(5_000) { gated.clientClosed.await() }
+        assertEquals(TransportState.Disconnected, t.state.value)
+        assertTrue(client.coroutineContext[Job]!!.isActive)
+    }
+
+    @Test
+    fun disconnectDuringUpgradeFailsConnectAndStaysDisconnected() = run {
+        val gated = GatedServer()
+        servers += gated::stop
+        val client = HttpClient(CIO) { install(WebSockets) }.also { clients += it }
+        val t = WebSocketTransport("ws://127.0.0.1:${gated.port}", client)
+        val connecting = async(Dispatchers.Default) { runCatching { t.connect() } }
+        withTimeout(5_000) { gated.requestSeen.await() }
+        t.disconnect()
+        gated.gate.complete(Unit)
+        val outcome = withTimeout(10_000) { connecting.await() }
+        assertIs<MeshtasticException.Transport>(outcome.exceptionOrNull())
+        assertEquals(TransportState.Disconnected, t.state.value)
+        withTimeout(5_000) { gated.clientClosed.await() }
+        assertTrue(client.coroutineContext[Job]!!.isActive)
+    }
+
+    @Test
+    fun stalePumpEndingAfterReconnectLeavesTheNewSession() = run {
+        val sessions = java.util.concurrent.atomic.AtomicInteger()
+        val s = server {
+            if (sessions.incrementAndGet() == 1) {
+                close(CloseReason(1013, "oom"))
+            } else {
+                incoming.receiveCatching()
+            }
+        }
+        val t = transportFor(s.port)
+        val entered = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val ended = CompletableDeferred<Unit>()
+        t.pumpProbe = { phase ->
+            if (phase == "ending" && entered.complete(Unit)) {
+                withContext(NonCancellable) { release.await() }
+            }
+            if (phase == "ended") ended.complete(Unit)
+        }
+        t.connect()
+        withTimeout(10_000) { entered.await() }
+        t.disconnect()
+        t.connect()
+        release.complete(Unit)
+        withTimeout(10_000) { ended.await() }
+        assertEquals(TransportState.Connected, t.state.value)
+        t.disconnect()
+    }
+
+    @Test
+    fun messageOverFirmwareLimitFailsTheSessionWithoutDelivery() = run {
+        val s = server {
+            send(WsFrame.Binary(true, ByteArray(WireFraming.MAX_PAYLOAD_SIZE + 1)))
+            incoming.receiveCatching()
+        }
+        val t = transportFor(s.port)
+        t.connect()
+        val e = t.awaitError()
+        assertFalse(e.recoverable)
+        assertTrue(e.cause.message!!.contains("512"))
+        assertTrue(t.frames().let { withTimeoutOrNull(300) { it.first() } } == null)
+        t.disconnect()
+    }
+
+    @Test
+    fun messageOverTheClientFrameBoundIsNotDelivered() = run {
+        val s = server {
+            send(WsFrame.Binary(true, ByteArray(MAX_INBOUND_FRAME_BYTES.toInt() * 2)))
+            incoming.receiveCatching()
+        }
+        val t = transportFor(s.port)
+        t.connect()
+        t.awaitError()
+        assertTrue(t.frames().let { withTimeoutOrNull(300) { it.first() } } == null)
+        t.disconnect()
     }
 }

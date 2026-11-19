@@ -48,6 +48,9 @@ internal fun parseWebSocketEndpoint(raw: String): WebSocketEndpoint {
         require(after.isEmpty() || after.startsWith(":")) { "Invalid authority in WebSocket URL: '$raw'" }
         portText = if (after.isEmpty()) null else after.substring(1)
     } else {
+        require(authority.count { it == ':' } <= 1) {
+            "An IPv6 host in a WebSocket URL must be bracketed, as in ws://[::1]:80: '$raw'"
+        }
         val colon = authority.lastIndexOf(':')
         host = if (colon < 0) authority else authority.substring(0, colon)
         portText = if (colon < 0) null else authority.substring(colon + 1)

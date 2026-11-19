@@ -9,5 +9,8 @@ package org.meshtastic.sdk.transport.websocket
 
 import io.ktor.client.HttpClient
 
-/** Builds the SDK-owned client: the platform engine with the WebSockets plugin and no pings. */
+/** Receive limit on SDK-created clients: a small bound above firmware's 512 byte message limit. */
+internal const val MAX_INBOUND_FRAME_BYTES: Long = 1024
+
+/** Builds the SDK-owned client: the platform engine with the WebSockets plugin, no pings and a bounded frame size. */
 internal expect fun createDefaultHttpClient(): HttpClient

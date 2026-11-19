@@ -9,11 +9,12 @@ package org.meshtastic.sdk.transport.websocket
 
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
-import io.ktor.client.plugins.websocket.webSocketSession
+import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,6 +30,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString
@@ -67,7 +70,8 @@ import io.ktor.websocket.Frame as WsFrame
  *   a fragment, any other scheme or a port outside 1..65535 throws [IllegalArgumentException].
  * @param httpClient a client to connect with, for example one that trusts a self-signed
  *   certificate. It must have the Ktor WebSockets plugin installed and should leave its ping
- *   interval unset. The SDK never closes a client it was given; when `null` the SDK creates a
+ *   interval unset. It keeps its own `maxFrameSize`; set one near 1 KiB to bound memory, since
+ *   the SDK-created client does (messages over 512 bytes are refused either way). The SDK never closes a client it was given; when `null` the SDK creates a
  *   client per connection and closes it on [disconnect].
  * @since 0.3.0
  */
@@ -84,39 +88,83 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
     private val inbound = Channel<Frame>(INBOUND_CAPACITY)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    // Guards the fields below and `generation`; held only for short non-network sections.
+    private val lock = Mutex()
+    private var generation = 0L
+
     @kotlin.concurrent.Volatile
     private var session: DefaultClientWebSocketSession? = null
     private var ownedClient: HttpClient? = null
     private var pump: Job? = null
+    private var attempt: Job? = null
+
+    internal var pumpProbe: (suspend (String) -> Unit)? = null
+
+    private class Detached(val session: DefaultClientWebSocketSession?, val jobs: List<Job?>, val client: HttpClient?)
 
     override suspend fun connect() {
         release()
-        _state.value = TransportState.Connecting
-        @Suppress("ControlFlowWithEmptyBody")
-        while (inbound.tryReceive().isSuccess) {
+        val upgraded = CompletableDeferred<DefaultClientWebSocketSession>()
+        val (gen, attemptJob) = lock.withLock {
+            val next = ++generation
+            _state.value = TransportState.Connecting
+            @Suppress("ControlFlowWithEmptyBody")
+            while (inbound.tryReceive().isSuccess) {
+            }
+            val client = httpClient ?: createDefaultHttpClient().also { ownedClient = it }
+            val job = scope.launch {
+                try {
+                    client.webSocket(endpoint.url) {
+                        upgraded.complete(this)
+                        runCatching { closeReason.await() }
+                    }
+                } catch (t: Throwable) {
+                    upgraded.completeExceptionally(t)
+                }
+            }
+            attempt = job
+            next to job
         }
-        val client = httpClient ?: createDefaultHttpClient().also { ownedClient = it }
         val opened = try {
-            client.webSocketSession(endpoint.url)
+            upgraded.await()
         } catch (e: CancellationException) {
-            release()
-            _state.value = TransportState.Disconnected
-            throw e
+            abandon(gen, TransportState.Disconnected)
+            currentCoroutineContext().ensureActive()
+            throw MeshtasticException.Transport("WebSocket connect was interrupted by disconnect()")
         } catch (e: Exception) {
-            release()
             val failure = MeshtasticException.Transport(describeConnectFailure(endpoint, e), e)
-            _state.value = TransportState.Error(failure, recoverable = true)
+            if (!abandon(gen, TransportState.Error(failure, recoverable = true))) {
+                throw MeshtasticException.Transport("WebSocket connect was interrupted by disconnect()")
+            }
             throw failure
         }
-        session = opened
-        _state.value = TransportState.Connected
-        pump = scope.launch { readUntilClosed(opened) }
+        val installed = lock.withLock {
+            if (generation != gen) {
+                false
+            } else {
+                session = opened
+                _state.value = TransportState.Connected
+                pump = scope.launch { readUntilClosed(opened, gen) }
+                true
+            }
+        }
+        if (!installed) {
+            withContext(NonCancellable) {
+                runCatching { opened.cancel() }
+                attemptJob.cancel()
+            }
+            throw MeshtasticException.Transport("WebSocket connect was interrupted by disconnect()")
+        }
     }
 
     override suspend fun disconnect() {
         withContext(NonCancellable) {
-            _state.value = TransportState.Disconnected
-            release()
+            val detached = lock.withLock {
+                generation++
+                _state.value = TransportState.Disconnected
+                detachLocked()
+            }
+            detached.close()
         }
     }
 
@@ -145,44 +193,100 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
 
     override fun frames(): Flow<Frame> = inbound.receiveAsFlow()
 
+    private fun detachLocked(): Detached {
+        val d = Detached(session, listOf(pump, attempt), ownedClient)
+        session = null
+        pump = null
+        attempt = null
+        ownedClient = null
+        return d
+    }
+
+    private suspend fun Detached.close() {
+        jobs[0]?.cancel()
+        val open = session
+        if (open != null) {
+            withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
+                runCatching { open.close(CloseReason(CloseReason.Codes.NORMAL, "")) }
+            }
+            runCatching { open.cancel() }
+        }
+        jobs[1]?.cancel()
+        client?.let { runCatching { it.close() } }
+    }
+
     private suspend fun release() {
         withContext(NonCancellable) {
-            val open = session
-            session = null
-            pump?.cancel()
-            pump = null
-            if (open != null) {
-                withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
-                    runCatching { open.close(CloseReason(CloseReason.Codes.NORMAL, "")) }
-                }
-                runCatching { open.cancel() }
-            }
-            ownedClient?.let { runCatching { it.close() } }
-            ownedClient = null
+            lock.withLock {
+                generation++
+                detachLocked()
+            }.close()
         }
     }
 
-    private suspend fun readUntilClosed(open: DefaultClientWebSocketSession) {
+    /** Tears down attempt [gen] and publishes [final], unless a newer lifecycle call already owns the state. */
+    private suspend fun abandon(gen: Long, final: TransportState): Boolean = withContext(NonCancellable) {
+        val detached = lock.withLock {
+            if (generation != gen) {
+                null
+            } else {
+                generation++
+                _state.value = final
+                detachLocked()
+            }
+        }
+        detached?.close()
+        detached != null
+    }
+
+    private suspend fun readUntilClosed(open: DefaultClientWebSocketSession, gen: Long) {
         var dropped: Throwable? = null
+        var oversize = -1
         try {
             for (message in open.incoming) {
-                if (message is WsFrame.Binary) inbound.send(Frame(withHeader(message.readBytes())))
+                if (message !is WsFrame.Binary) continue
+                val size = message.data.size
+                if (size > WireFraming.MAX_PAYLOAD_SIZE) {
+                    oversize = size
+                    break
+                }
+                inbound.send(Frame(withHeader(message.readBytes())))
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             dropped = e
         }
-        val reason = try {
-            withTimeoutOrNull(CLOSE_TIMEOUT_MS) { open.closeReason.await() }
-        } catch (e: Exception) {
-            currentCoroutineContext().ensureActive()
-            null
+        val ended: TransportState.Error
+        if (oversize >= 0) {
+            withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
+                runCatching { open.close(CloseReason(CloseReason.Codes.TOO_BIG, "")) }
+            }
+            val failure = MeshtasticException.Transport(
+                "WebSocket message of $oversize bytes exceeds ${WireFraming.MAX_PAYLOAD_SIZE}; closed with 1009",
+            )
+            ended = TransportState.Error(failure, recoverable = false)
+        } else {
+            val reason = try {
+                withTimeoutOrNull(CLOSE_TIMEOUT_MS) { open.closeReason.await() }
+            } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
+                null
+            }
+            val (message, recoverable) = describeSessionEnd(reason?.code?.toInt(), reason?.message, dropped)
+            ended = TransportState.Error(MeshtasticException.Transport(message, dropped), recoverable)
         }
-        if (session !== open) return
-        session = null
-        val (message, recoverable) = describeSessionEnd(reason?.code?.toInt(), reason?.message, dropped)
-        _state.value = TransportState.Error(MeshtasticException.Transport(message, dropped), recoverable)
+        pumpProbe?.invoke("ending")
+        try {
+            lock.withLock {
+                if (generation == gen && session === open) {
+                    session = null
+                    _state.value = ended
+                }
+            }
+        } finally {
+            pumpProbe?.invoke("ended")
+        }
     }
 
     internal companion object {
