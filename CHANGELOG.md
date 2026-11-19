@@ -43,13 +43,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
-- Per-packet provenance accessors on `MeshPacket`: `transport`, `relayNode` and `nextHop` (a
-  `NodeLastByte`, one byte that several nodes can share, with `candidates(nodes)`), `signature`
-  and `xeddsaSignature` (what the device verified, not an SDK check), and `ackProof`. `NodeInfo`
-  gains `heardOnCurrentLora` and `signsPackets`.
-- `MeshPacket.storeForwardOriginalId()` and `Flow<MeshPacket>.dropDuplicateStoreForwardReplays()`:
-  drop store-and-forward text replays already delivered, keyed on the sender and
-  `StoreAndForward.original_id`, over a bounded window.
 
 ### Changed
 
@@ -72,9 +65,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with zero hops and nothing relayed them.
 - `AdminApi.setConfig` and `setModuleConfig` update `configBundle` once the device acks the
   write, as `editSettings` already did. Remote-node writes leave the local bundle alone.
-- `HistoryReplayComplete.delivered` counts a store-and-forward text once per sender and
-  `original_id`. A server replays each message under a fresh packet id, so a repeated replay was
-  counted again and could end the replay early.
 
 ## [0.2.0] — 2026-10-03
 
