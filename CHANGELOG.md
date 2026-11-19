@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- mDNS discovery in `:transport-tcp`: `TcpDiscovery.discover()` is a cold `Flow<TcpDiscoveryEvent>`
+  (`Found` / `Lost`) of radios advertising `_meshtastic._tcp`, each a `DiscoveredTcpRadio` with
+  its addresses, port and TXT attributes and `toTransport()` / `toTransportSpec()` for
+  connecting. Implementations are `JvmTcpDiscovery` (JmDNS 3.6.5, Apache-2.0, a new JVM-only
+  dependency of `:transport-tcp`), `AndroidTcpDiscovery(context)` (`NsdManager`) and
+  `IosTcpDiscovery` (`NSNetServiceBrowser`). The iOS implementation compiles on every iOS
+  target but has not been run on a device or simulator.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
