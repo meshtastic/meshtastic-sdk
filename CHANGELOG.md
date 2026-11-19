@@ -32,10 +32,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `RadioClient.files` (`FileTransferApi`): read a file from the device (`download`) and write
-  one to it (`upload`) over firmware's XModem exchange, with `progress`, one transfer at a time
-  (`FileTransferFailure.Busy`), a 1 MiB cap, per-block timeout and retries, and typed
-  `FileTransferResult` failures. File transfer only; firmware flashing is not covered.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
