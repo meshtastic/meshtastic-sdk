@@ -35,9 +35,11 @@ import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.ToRadio
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ChannelIndex
@@ -132,6 +134,12 @@ internal class MeshEngine(
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Every decoded inbound envelope, unfiltered. Lossy by design so a slow tap never stalls the engine. */
+    val rawFromRadio = MutableSharedFlow<FromRadio>(
+        extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
@@ -975,6 +983,8 @@ internal class MeshEngine(
             return
         }
 
+        rawFromRadio.tryEmit(fromRadio)
+
         // liveness watchdog only resets on successfully decoded envelopes,
         // not raw-byte arrivals. A stuck framer on a half-open socket could still deliver
         // resync garbage; that must not look like "the link is healthy" to the watchdog.
@@ -1612,6 +1622,82 @@ internal class MeshEngine(
     }
 
     /**
+     * Fold a decoded mesh packet into the sender's node entry, creating it when unknown, and
+     * emit one [NodeChange.Added] or [NodeChange.Updated]. Mirrors firmware `NodeDB::updateFrom`,
+     * `updateUser` and `updatePosition`; own-node packets skip the link metrics.
+     */
+    private fun mergeLivePacketIntoNodeDb(packet: MeshPacket, decoded: Data) {
+        if (packet.from == 0) return
+        val nodeId = NodeId(packet.from)
+        val isOwn = packet.from == myNodeNum
+        val existing = meshState.nodes[nodeId]
+        val wb = (existing ?: NodeInfo.Builder().also { b -> b.num = packet.from }.build()).newBuilder()
+
+        wb.last_heard = packet.rx_time.takeIf { it != 0 } ?: clock.now().epochSeconds.toInt()
+        if (!isOwn) {
+            // An SNR is ours only when heard over our own radio; firmware replays carry no rx_rssi.
+            if (packet.transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && packet.rx_rssi != null) {
+                wb.snr = packet.rx_snr
+            }
+            wb.via_mqtt = packet.via_mqtt
+            if (packet.hop_start != 0 && packet.hop_start >= packet.hop_limit) {
+                wb.hops_away = packet.hop_start - packet.hop_limit
+            }
+        }
+
+        when (decoded.portnum) {
+            PortNum.NODEINFO_APP -> {
+                val user = runCatching { User.ADAPTER.decode(decoded.payload) }.getOrNull()
+                val knownKey = existing?.user?.public_key
+                val placeholder = user != null && user.long_name.isEmpty() && user.short_name.isEmpty() &&
+                    user.public_key.size == 0
+                val keyMismatch = user != null && knownKey != null && knownKey.size == 32 && user.public_key != knownKey
+                if (user != null && !placeholder && !keyMismatch) {
+                    val id = "!" + packet.from.toUInt().toString(16).padStart(8, '0')
+                    wb.user = user.newBuilder().also { ub -> ub.id = id }.build()
+                    if (!isOwn) wb.channel = packet.channel
+                }
+            }
+
+            PortNum.POSITION_APP -> {
+                val pos = runCatching { Position.ADAPTER.decode(decoded.payload) }.getOrNull()
+                if (pos != null) mergePosition(wb, existing?.position, pos)
+            }
+
+            else -> Unit
+        }
+
+        val updated = wb.build()
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (isOwn) ownNode.value = updated
+        if (existing == null) {
+            emitNodeChangeOrLog(NodeChange.Added(updated))
+        } else {
+            val changed = diffNodeFields(existing, updated)
+            if (changed.isNotEmpty()) emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
+        }
+    }
+
+    private fun mergePosition(wb: NodeInfo.Builder, previous: Position?, pos: Position) {
+        val noFix = (pos.latitude_i ?: 0) == 0 && (pos.longitude_i ?: 0) == 0
+        when {
+            // A request, or a position with nothing in it.
+            noFix && pos.time == 0 && pos.timestamp == 0 -> Unit
+
+            // Time-only update (clock sync from a client): keeps the stored fix.
+            noFix && pos.timestamp == 0 && pos.location_source == Position.LocSource.LOC_UNSET ->
+                wb.position =
+                    (previous ?: Position.Builder().build()).newBuilder().also { pb -> pb.time = pos.time }.build()
+
+            else -> wb.position = if (pos.time == 0 && previous != null) {
+                pos.newBuilder().also { pb -> pb.time = previous.time }.build()
+            } else {
+                pos
+            }
+        }
+    }
+
+    /**
      * The Ready-stage pipeline for a single inbound [MeshPacket]: presence, dedup, public
      * `packets` emission, session-passkey latching, RPC/ACK correlation, telemetry merge, and
      * external-config-change detection. Called for live packets in [routeNormalEnvelope] and
@@ -1646,6 +1732,7 @@ internal class MeshEngine(
             )
             return
         }
+        mergeLivePacketIntoNodeDb(packet, decoded)
         emitPacketOrLog(packet)
         // Decode the admin payload once; both the passkey latch and external-change detection
         // need it, and inbound ADMIN_APP traffic is hot during config syncs.

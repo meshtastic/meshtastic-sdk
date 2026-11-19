@@ -157,7 +157,7 @@ internal class AdminApiImpl(
                 }.build(),
             )
         }
-        if (result is AdminResult.Success) engine.updateChannelAndPersist(channel)
+        if (result is AdminResult.Success && isLocalTarget()) engine.updateChannelAndPersist(channel)
         return result
     }
 
@@ -479,8 +479,7 @@ internal class AdminApiImpl(
         val commit = closeEditSettings(generation).getOrElse { throw it }
         if (commit !is AdminResult.Success) return commit.cast()
 
-        // Gap G: optimistically update configBundle with written values after successful commit.
-        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        edit.updateLocalConfigAfterCommit()
 
         return AdminResult.Success(payload)
     }
@@ -499,7 +498,7 @@ internal class AdminApiImpl(
         }
         closeEditSettings(generation).getOrElse { throw it }.getOrThrow()
 
-        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        edit.updateLocalConfigAfterCommit()
         return payload
     }
 
@@ -632,8 +631,12 @@ internal class AdminApiImpl(
     }
 
     private inner class AdminEditImpl(private val generation: Long) : AdminEdit {
-        val writtenConfigs = mutableListOf<Config>()
-        val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+        private val writtenConfigs = mutableListOf<Config>()
+        private val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+
+        fun updateLocalConfigAfterCommit() {
+            if (isLocalTarget()) engine.applyConfigEdits(writtenConfigs, writtenModuleConfigs)
+        }
 
         override suspend fun setConfig(config: Config) {
             enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_config = config }.build())

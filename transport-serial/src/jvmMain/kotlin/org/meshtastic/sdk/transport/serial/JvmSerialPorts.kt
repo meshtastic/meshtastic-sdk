@@ -42,10 +42,23 @@ public object JvmSerialPorts {
      * Build a [RadioTransport] that opens the named serial port at [baudRate].
      * Default baud is 115 200 — the rate used by Meshtastic firmware.
      */
-    public fun open(portName: String, baudRate: Int = DEFAULT_BAUD): RadioTransport {
+    public fun open(portName: String, baudRate: Int = DEFAULT_BAUD): RadioTransport =
+        openTransport(portName, baudRate, onTextLine = null)
+
+    /**
+     * Like [open], and [onTextLine] receives each line of text the device prints between frames,
+     * which carries the firmware's serial debug log. It runs on the reader thread, so it must not
+     * block; an exception it throws is swallowed.
+     *
+     * @since 0.3.0
+     */
+    public fun open(portName: String, baudRate: Int, onTextLine: (String) -> Unit): RadioTransport =
+        openTransport(portName, baudRate, onTextLine)
+
+    private fun openTransport(portName: String, baudRate: Int, onTextLine: ((String) -> Unit)?): RadioTransport {
         val port = JSerialPort.getCommPort(portName)
         val identity = TransportIdentity.of(TransportSpec.SerialJvm(portName))
-        return JSerialCommTransport(port, identity, baudRate)
+        return JSerialCommTransport(port, identity, baudRate, onTextLine = onTextLine)
     }
 
     public const val DEFAULT_BAUD: Int = 115_200
