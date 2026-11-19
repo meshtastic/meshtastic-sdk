@@ -214,7 +214,7 @@ class DeviceProfileTest {
     }
 
     @Test
-    fun installPlanWritesOnlyPresentSectionsInOrder() {
+    fun installPlanWritesOnlyPresentSectionsInOrder() = runTest {
         val profile = DeviceProfile.Builder().also { wb ->
             wb.long_name = "Bob"
             wb.config = allConfigs().toLocalConfig()
@@ -230,7 +230,7 @@ class DeviceProfileTest {
         }.build()
         val plan = assertNotNull(planProfileInstall(profile, current, Config.LoRaConfig.Builder().build(), false))
         val edit = RecordingEdit()
-        runTest { edit.applyProfilePlan(plan) }
+        edit.applyProfilePlan(plan)
         val kinds = edit.calls
         assertEquals("owner:Bob:OL", kinds.first())
         assertEquals(
@@ -249,13 +249,13 @@ class DeviceProfileTest {
     }
 
     @Test
-    fun installPlanSkipsAbsentSections() {
+    fun installPlanSkipsAbsentSections() = runTest {
         val profile = DeviceProfile.Builder().also { wb ->
             wb.config = localConfigOf(device = Config.DeviceConfig.Builder().build())
         }.build()
         val plan = assertNotNull(planProfileInstall(profile, null, null, false))
         val edit = RecordingEdit()
-        runTest { edit.applyProfilePlan(plan) }
+        edit.applyProfilePlan(plan)
         assertEquals(listOf("device"), edit.calls)
     }
 
@@ -414,7 +414,7 @@ class DeviceProfileTest {
 
     @Test
     fun enableHamModeSendsLoraValuesOnTheWire() = runTest {
-        val (transport, client) = connectedClient(listOf(loraFrame(power = 14, freq = 144.39f)))
+        val (transport, client) = connectedClient(listOf(loraFrame(power = 14, freq = 144.375f)))
         client.connect()
         runCurrent()
         val before = transport.outboundPackets().size
@@ -423,7 +423,7 @@ class DeviceProfileTest {
         val packet = admin(transport, before) { it.set_ham_mode != null }
         val sent = assertNotNull(adminOf(packet)?.set_ham_mode)
         assertEquals(14, sent.tx_power)
-        assertEquals(144.39f, sent.frequency)
+        assertEquals(144.375f, sent.frequency)
         transport.injectRoutingAck(packet.id)
         runCurrent()
         assertIs<AdminResult.Success<Unit>>(deferred.await())
