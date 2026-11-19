@@ -313,7 +313,7 @@ Device → FromRadio.my_info / metadata / channel × N
         / config_complete_id = 69420                  ── Stage 1 end
 
 Phone:  wait 100 ms
-Phone → ToRadio(heartbeat = Heartbeat(nonce = ++n))   ── pre-handshake heartbeat (settle)
+Phone → ToRadio(heartbeat = Heartbeat(nonce = n))   ── pre-handshake heartbeat (settle)
 Phone:  wait 100 ms
 
 Phone → ToRadio(want_config_id = 69421)              ── Stage 2 begin
@@ -343,7 +343,7 @@ sequenceDiagram
     Device-->>Phone: FromRadio(config_complete_id = 69420)
 
     Note over Phone: wait 100 ms
-    Phone->>Device: ToRadio(heartbeat = nonce++)
+    Phone->>Device: ToRadio(heartbeat = Heartbeat(nonce = n))
     Note over Phone: wait 100 ms
 
     Note over Phone,Device: Stage 2 — NodeDB
@@ -1009,7 +1009,7 @@ When a device enters DFU mode (XModem firmware update) or reboots (triggered via
 
 - The device's `config_complete_id` counter does NOT persist across reboot; the first reconnect after a reboot is indistinguishable from a cold connect.
 - If the host's `NodeDB` or other state was persisted to storage, the app may compare the incoming `node_info` stream against its prior view to detect changes (e.g., a new node, channel change, role change).
-- Heartbeat nonce is reset; the host must start a fresh counter after reconnect.
+- The firmware's last-write dedup buffer is cleared on connect; the SDK's heartbeat counter keeps counting for the life of the engine.
 
 ---
 
@@ -1030,9 +1030,9 @@ message Heartbeat {
 }
 ```
 
-`ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter is sufficient).
+`ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter starting at 2 is sufficient; firmware drops a write byte-identical to the previous one on BLE).
 
-> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK sends all keep-alive heartbeats with `nonce = 0` (a safe constant that avoids the nonce-1 trigger and satisfies the firmware's liveness watchdog).
+> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK counts keep-alive nonces up from 2 for the life of the engine, so they are never 0 or 1 and no two consecutive writes are identical.
 
 **Cadence by transport** (cross-validated against `Meshtastic-Apple:Transport.swift` + `AccessoryManager.setupPeriodicHeartbeat` and `Meshtastic-Android:SharedRadioInterfaceService.kt` + `HeartbeatSender.kt`):
 

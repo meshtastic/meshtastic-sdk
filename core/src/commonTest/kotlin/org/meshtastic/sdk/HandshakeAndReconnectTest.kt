@@ -76,7 +76,7 @@ class HandshakeAndReconnectTest {
 
         val outbound = transport.outboundFrames().mapNotNull(::decodeToRadioOrNull)
         val stage1Index = outbound.indexOfFirst { it.want_config_id == NONCE_STAGE1 }
-        val heartbeatIndex = outbound.indexOfFirst { it.heartbeat?.nonce == 0 }
+        val heartbeatIndex = outbound.indexOfFirst { it.heartbeat?.nonce == 2 }
         val stage2Index = outbound.indexOfFirst { it.want_config_id == NONCE_STAGE2 }
 
         assertTrue(stage1Index >= 0, "Stage 1 nonce must be sent")
