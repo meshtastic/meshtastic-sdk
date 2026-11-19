@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.transport.ble
 
+import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -18,8 +19,8 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * Real-hardware check for [BleTransport.deviceLogs]. Skips (does not fail) when no radio is in
- * range or the radio streams no logs (`security.debug_log_api_enabled` off).
+ * Real-hardware check for [BleTransport.deviceLogs]. Skips (does not fail) when no radio bonded to
+ * the phone is advertising or the radio streams no logs (`security.debug_log_api_enabled` off).
  */
 class BleDeviceLogsDeviceTest {
 
@@ -31,8 +32,9 @@ class BleDeviceLogsDeviceTest {
 
     @Test
     fun deviceLogsDeliversRecordsWhenTheRadioStreamsThem() = runBlocking {
-        val radio = withTimeoutOrNull(SCAN_WINDOW_MS) { BleScanner.scan().first() }
-        assumeTrue("No Meshtastic radio advertising in range - skipping", radio != null)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val radio = advertisingBondedRadio(context, SCAN_WINDOW_MS)
+        assumeTrue("No bonded radio advertising in range - skipping", radio != null)
 
         val transport = BleTransport(radio!!)
         try {

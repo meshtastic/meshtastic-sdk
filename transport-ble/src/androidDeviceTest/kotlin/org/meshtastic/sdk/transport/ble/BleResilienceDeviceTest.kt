@@ -19,8 +19,7 @@ import org.meshtastic.sdk.TransportState
 
 /**
  * Real-hardware check that a transport built with every [BleResilience] option on still connects
- * to a bonded radio. Skips (does not fail) when the phone has no bonded device or the first one
- * is not a reachable radio.
+ * to a bonded radio. Skips (does not fail) when no radio bonded to the phone is advertising.
  */
 class BleResilienceDeviceTest {
 
@@ -33,21 +32,15 @@ class BleResilienceDeviceTest {
     @Test
     fun bondedRadioConnectsWithEveryMechanismEnabled() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        val devices = bondedBleDevices(context)
-        assumeTrue("No bonded Bluetooth device - skipping", devices.isNotEmpty())
+        val device = advertisingBondedRadio(context)
+        assumeTrue("No bonded radio advertising in range - skipping", device != null)
 
         val transport = BleTransport(
-            devices.first(),
+            device!!,
             BleResilience(bondFirst = true, autoConnectFallback = true, refreshStaleGattCache = true),
         )
         try {
-            val connected = try {
-                withTimeout(CONNECT_WINDOW_MS) { transport.connect() }
-                true
-            } catch (_: Exception) {
-                false
-            }
-            assumeTrue("Bonded device is not a reachable radio - skipping", connected)
+            withTimeout(CONNECT_WINDOW_MS) { transport.connect() }
             assertEquals(TransportState.Connected, transport.state.value)
         } finally {
             transport.disconnect()

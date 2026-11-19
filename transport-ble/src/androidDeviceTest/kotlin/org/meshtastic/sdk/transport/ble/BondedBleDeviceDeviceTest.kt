@@ -14,6 +14,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
 import org.junit.Test
+import org.meshtastic.sdk.TransportIdentity
+import org.meshtastic.sdk.TransportSpec
 
 /**
  * Real-hardware check for [bondedBleDevices]. Skips (does not fail) when the phone has no
@@ -34,7 +36,7 @@ class BondedBleDeviceDeviceTest {
         assertTrue("address must be non-blank: $device", device.address.isNotBlank())
         val transport = BleTransport(device)
         try {
-            assertEquals(device.address, transport.identity.raw)
+            assertEquals(TransportIdentity.of(TransportSpec.Ble(device.address)), transport.identity)
         } finally {
             transport.shutdown()
         }
