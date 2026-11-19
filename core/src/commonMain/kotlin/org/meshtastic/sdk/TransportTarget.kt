@@ -65,6 +65,7 @@ public sealed interface TransportTarget {
 
         private fun parseTcp(rest: String): TransportTarget? {
             val parts = rest.split(":")
+            if (parts.size > 2) return null
             val host = parts[0].takeIf { it.isNotBlank() } ?: return null
             val port = parts.getOrNull(1)?.let { it.toIntOrNull() ?: return null } ?: DEFAULT_TCP_PORT
             return Tcp(host, port)
@@ -72,6 +73,7 @@ public sealed interface TransportTarget {
 
         private fun parseSerial(rest: String): TransportTarget? {
             val parts = rest.split(":")
+            if (parts.size > 2) return null
             val port = parts[0].takeIf { it.isNotBlank() } ?: return null
             val baud = parts.getOrNull(1)?.let { it.toIntOrNull() ?: return null } ?: DEFAULT_SERIAL_BAUD
             return Serial(port, baud)

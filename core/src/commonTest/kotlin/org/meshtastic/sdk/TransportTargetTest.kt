@@ -47,5 +47,7 @@ class TransportTargetTest {
         assertNull(TransportTarget.parse("tcp:host:notaport"))
         assertNull(TransportTarget.parse("serial:"))
         assertNull(TransportTarget.parse("serial:/dev/ttyACM0:fast"))
+        assertNull(TransportTarget.parse("tcp:host:4403:extra"))
+        assertNull(TransportTarget.parse("serial:/dev/ttyACM0:115200:extra"))
     }
 }
