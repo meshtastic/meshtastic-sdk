@@ -40,6 +40,76 @@ class SerialFrameAssemblerTest {
     }
 
     @Test
+    fun deliversTextLinesBetweenFrames() {
+        val frames = mutableListOf<Frame>()
+        val lines = mutableListOf<String>()
+        val a = SerialFrameAssembler { frames += it }.also { it.onTextLine = { line -> lines += line } }
+        a.feed("INFO  | boot\r\n".encodeToByteArray())
+        a.feed(frame(byteArrayOf(1, 2)))
+        a.feed("DEBUG | next\n\n".encodeToByteArray())
+        assertEquals(listOf("INFO  | boot", "DEBUG | next"), lines)
+        assertEquals(1, frames.size)
+    }
+
+    @Test
+    fun partialTextBeforeAFrameIsNotJoinedToLaterText() {
+        val lines = mutableListOf<String>()
+        val a = SerialFrameAssembler { }.also { it.onTextLine = { line -> lines += line } }
+        a.feed("half a li".encodeToByteArray())
+        a.feed(frame(byteArrayOf(9)))
+        a.feed("ne\n".encodeToByteArray())
+        assertEquals(listOf("ne"), lines)
+    }
+
+    @Test
+    fun oversizeTextLineIsDroppedAndTheNextLineStillArrives() {
+        val lines = mutableListOf<String>()
+        val a = SerialFrameAssembler { }.also { it.onTextLine = { line -> lines += line } }
+        a.feed(ByteArray(3000) { 'x'.code.toByte() })
+        a.feed("\nok\n".encodeToByteArray())
+        assertEquals(listOf("ok"), lines)
+    }
+
+    @Test
+    fun aThrowingTextListenerDoesNotBreakFrames() {
+        val frames = mutableListOf<Frame>()
+        val a = SerialFrameAssembler { frames += it }.also { it.onTextLine = { error("listener failed") } }
+        a.feed("boom\n".encodeToByteArray())
+        a.feed(frame(byteArrayOf(5)))
+        assertEquals(1, frames.size)
+    }
+
+    @Test
+    fun startByteInsideUtf8TextStaysInTheLine() {
+        val frames = mutableListOf<Frame>()
+        val lines = mutableListOf<String>()
+        val a = SerialFrameAssembler { frames += it }.also { it.onTextLine = { line -> lines += line } }
+        a.feed(frame(byteArrayOf(1)))
+        a.feed("a — b\n".encodeToByteArray())
+        a.feed("x".encodeToByteArray() + byteArrayOf(0x94.toByte(), 0x94.toByte()) + "y\n".encodeToByteArray())
+        a.feed("end".encodeToByteArray() + byteArrayOf(0x94.toByte()) + "\n".encodeToByteArray())
+        a.feed(frame(byteArrayOf(2)))
+        assertEquals(
+            listOf(
+                "a — b",
+                "x" + byteArrayOf(0x94.toByte(), 0x94.toByte()).decodeToString() + "y",
+                "end" + byteArrayOf(0x94.toByte()).decodeToString(),
+            ),
+            lines,
+        )
+        assertEquals(2, frames.size)
+    }
+
+    @Test
+    fun textIsDiscardedWhenNoListenerIsSet() {
+        val frames = mutableListOf<Frame>()
+        val a = SerialFrameAssembler { frames += it }
+        a.feed("noise\n".encodeToByteArray())
+        a.feed(frame(byteArrayOf(5)))
+        assertEquals(1, frames.size)
+    }
+
+    @Test
     fun emitsZeroLengthFrame() {
         val out = mutableListOf<Frame>()
         val a = SerialFrameAssembler { out += it }

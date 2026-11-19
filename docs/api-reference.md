@@ -96,7 +96,9 @@ seeding the admin session passkey and then `Connected`.
 | `admin`, `telemetry`, `routing`, `storeForward` | `nodeSnapshot()` likewise starts with only the local node |
 | `send` / `sendText`, `packets`, `events` | presence events cover only nodes actually heard this session |
 
-Peers still appear as they are heard live (`NODEINFO_APP`, position, telemetry traffic). Persisted
+Peers appear as they are heard live: any decoded packet creates the sender and refreshes its
+`last_heard`, `snr`, `hops_away` and `via_mqtt`; `NODEINFO_APP` merges `user` and `POSITION_APP`
+merges `position` (see `docs/protocol.md`, "Node DB after the handshake"). Persisted
 node rows from earlier sessions are left untouched but are not loaded into the session's node map.
 
 Use it for config editors, provisioning tools and CLI one-shots. Leave it off for chat and map UIs.
@@ -158,6 +160,7 @@ When enabled, the engine automatically reconnects on transport drops, transition
 | `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
 | `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
 | `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
+| `fromRadio: Flow<FromRadio>` *(since 0.3.0)* | every decoded inbound envelope, unredacted; lossy by design, drops are not reported | 256 / `DROP_OLDEST` |
 
 `nodes` seeds **each** subscription with a `NodeChange.Snapshot` of the engine's current node
 map (via `onSubscription`) before deltas — late subscribers never miss the baseline even though
@@ -586,6 +589,41 @@ public fun Flow<MeshPacket>.dropDuplicateStoreForwardReplays(window: Int = 256):
 ```
 
 Each collection remembers the last `window` keys (replays and plain `TEXT_MESSAGE_APP` packets) and forgets the oldest first.
+
+## Payload accessors
+
+Extension functions on `MeshPacket` that check `decoded.portnum` and decode the payload. Each
+returns `null` for another portnum, a packet with no `decoded`, or (for protobuf payloads) bytes
+that fail to decode. Text accessors also return `null` for an empty payload. Raw-bytes ports
+(`PRIVATE_APP`, `ATAK_FORWARDER`) and `ATAK_PLUGIN_V2`, whose `TAKPacketV2` is zstd-compressed,
+have no accessor; use `decoded.payload` or `decodeAs(adapter)`.
+
+| Accessor | Portnum | Returns |
+|---|---|---|
+| `asText()` | `TEXT_MESSAGE_APP` | `String` |
+| `asAlertText()` *(since 0.3.0)* | `ALERT_APP` | `String` |
+| `asRangeTestText()` *(since 0.3.0)* | `RANGE_TEST_APP` | `String` |
+| `asDetectionSensorText()` *(since 0.3.0)* | `DETECTION_SENSOR_APP` | `String` |
+| `asPosition()` | `POSITION_APP` | `Position` |
+| `asNodeInfoUser()`, `asNodeInfo()` | `NODEINFO_APP` | `User`, `NodeInfo` |
+| `asTelemetry()` | `TELEMETRY_APP` | `Telemetry` |
+| `asAdminMessage()` | `ADMIN_APP` | `AdminMessage` |
+| `asRouting()` | `ROUTING_APP` | `Routing` |
+| `asWaypoint()` | `WAYPOINT_APP` | `Waypoint` |
+| `asTraceroute()` | `TRACEROUTE_APP` | `RouteDiscovery` |
+| `asNeighborInfo()` | `NEIGHBORINFO_APP` | `NeighborInfo` (proto) |
+| `asPaxcount()` *(since 0.3.0)* | `PAXCOUNTER_APP` | `Paxcount` |
+| `asRemoteHardware()` *(since 0.3.0)* | `REMOTE_HARDWARE_APP` | `HardwareMessage` |
+| `asNodeStatus()` *(since 0.3.0)* | `NODE_STATUS_APP` | `StatusMessage` |
+| `asMapReport()` *(since 0.3.0)* | `MAP_REPORT_APP` | `MapReport` |
+| `asMeshBeacon()` *(since 0.3.0)* | `MESH_BEACON_APP` | `MeshBeacon` |
+| `asRemoteShell()` *(since 0.3.0)* | `REMOTE_SHELL_APP` | `RemoteShell` |
+| `asPowerStress()` *(since 0.3.0)* | `POWERSTRESS_APP` | `PowerStressMessage` |
+| `asKeyVerification()` *(since 0.3.0)* | `KEY_VERIFICATION_APP` | `KeyVerification` |
+| `asAtakPacket()` *(since 0.3.0)* | `ATAK_PLUGIN` | `TAKPacket` |
+
+Store-and-forward traffic (`STORE_FORWARD_APP`, `STORE_FORWARD_PLUSPLUS_APP`) surfaces as
+`StoreForwardApi.events` instead.
 
 ## Config Builder Extensions *(since 0.2.0)*
 
