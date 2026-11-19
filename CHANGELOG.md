@@ -43,10 +43,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   own byte stream can build a `RadioTransport` on the same framing.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
-- `DeviceStorage.recordOwnNode(nodeNum, firmwareVersion, deviceId)` and
-  `DeviceStorage.loadOwnDeviceId()`, both with default bodies, so existing implementations still
-  compile and keep clearing on every NodeNum change. `InMemoryStorage` and `:storage-sqldelight`
-  override them. `FakeRadioTransport.deviceId` sets the `MyNodeInfo.device_id` it reports.
 
 ### Changed
 
@@ -63,12 +59,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- A device that comes back under a new `my_node_num` with the same `MyNodeInfo.device_id` (firmware
-  2.8 derives the NodeNum from the public key, so an upgrade or key regeneration renumbers it)
-  keeps its persisted nodes, channels and config. `MeshEvent.IdentityRebound` fires with
-  `reason = "node_renumbered"` and only the old own-node row is dropped. Any other NodeNum change
-  still clears storage with `"identity_mismatch"`. Databases written before this release hold no
-  device id, so the first 2.8 connect after upgrading the SDK still clears.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out
