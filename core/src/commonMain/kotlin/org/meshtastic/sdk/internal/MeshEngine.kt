@@ -377,7 +377,8 @@ internal class MeshEngine(
 
         scope.launch(CoroutineName("meshtastic-transport-observer")) {
             transport.state.collect { state ->
-                inbox.send(EngineMessage.TransportStateChanged(state))
+                // A state update already in flight can reach the observer after the actor closes its inbox.
+                inbox.trySend(EngineMessage.TransportStateChanged(state))
             }
         }
 

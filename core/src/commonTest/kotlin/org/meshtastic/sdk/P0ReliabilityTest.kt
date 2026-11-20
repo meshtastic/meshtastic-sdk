@@ -7,11 +7,17 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
@@ -73,6 +79,44 @@ class P0ReliabilityTest {
 
         val result = runCatching { connectJob.await() }
         assertEquals(true, result.isFailure, "connect() should have failed once disconnect ran")
+    }
+
+    @OptIn(ExperimentalForInheritanceCoroutinesApi::class)
+    @Test
+    fun lateTransportStateUpdateDuringDisconnectIsIgnored() = runTest {
+        val transport = autoTransport()
+        val transportClosed = CompletableDeferred<Unit>()
+        val lateUpdateDelivered = CompletableDeferred<Unit>()
+        val client = RadioClient.Builder()
+            .transport(
+                object : RadioTransport by transport {
+                    override val state = object : StateFlow<TransportState> by transport.state {
+                        override suspend fun collect(collector: FlowCollector<TransportState>): Nothing = try {
+                            transport.state.collect(collector)
+                        } finally {
+                            withContext(NonCancellable) {
+                                // Model a state delivery already in flight when the engine stops.
+                                transportClosed.await()
+                                collector.emit(transport.state.value)
+                                lateUpdateDelivered.complete(Unit)
+                            }
+                        }
+                    }
+
+                    override suspend fun disconnect() {
+                        transport.disconnect()
+                        transportClosed.complete(Unit)
+                    }
+                },
+            )
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .build()
+
+        client.connect()
+        client.disconnect()
+        runCurrent()
+        assertTrue(lateUpdateDelivered.isCompleted)
     }
 
     // ── R-P0-6: unicast want_ack times out after sendTimeout ─────────────────────
