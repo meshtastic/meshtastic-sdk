@@ -158,7 +158,10 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 | `XmodemPacket(packet)` | An XModem frame arrived. `FileTransferApi` consumes these. | Use `client.files` rather than handling it yourself. |
 | `FileInfoReceived(info)` | The device announced a file on its filesystem. | Optional file listing. |
 | `LockdownStatusChanged(status)` | A hardened (`MESHTASTIC_LOCKDOWN`) build reports its lock state, after `config_complete_id` and after each `AdminApi.lockdown`. It's the only signal that lockdown exists, since it's a build option. | Drive provisioning or unlock UI. |
-| `QueueStatusChanged`, `KeyVerification`, `MqttConnected`, `MqttDisconnected` | Declared but not emitted by the engine. | None. |
+| `QueueStatusChanged(status)` | A `FromRadio.queue_status` arrives after the handshake: a send result, a heartbeat reply, or a freed slot in a full queue. The engine already applied it to the matching `MessageHandle`. | Optional queue indicator. Under heavy sending these can crowd older events out of the 64-slot buffer for a slow collector. |
+| `MqttConnected` | A local `getDeviceConnectionStatus()` response shows the device's own broker connection up, and the previous one on this connection did not. The device never pushes MQTT state, and client-proxied MQTT reads as down. | Refresh MQTT status UI. |
+| `MqttDisconnected(reason)` | A local `getDeviceConnectionStatus()` response shows the broker connection down after one on this connection showed it up. `reason` is always null. | Refresh MQTT status UI. |
+| `KeyVerification` | Declared but not emitted by the engine. | None. |
 
 ### Identity rebind
 

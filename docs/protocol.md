@@ -764,7 +764,7 @@ message QueueStatus {
 }
 ```
 
-The SDK correlates `queue_status` by `mesh_packet_id`: `res` 0 or 35 marks the send `Sent`, any other value fails it at once with `SendFailure.QueueRejected(res)` instead of waiting out the ACK timer. A status with `mesh_packet_id == 0` is ignored. The SDK does not throttle on `free`; the node's queue is small (about 16 packets), so a bulk sender paces itself against `QueueRejected`.
+The SDK correlates `queue_status` by `mesh_packet_id`: `res` 0 or 35 marks the send `Sent`, any other value fails it at once with `SendFailure.QueueRejected(res)` instead of waiting out the ACK timer. A status with `mesh_packet_id == 0` is ignored. The SDK does not throttle on `free`; the node's queue is small (about 16 packets), so a bulk sender paces itself against `QueueRejected`. Every `queue_status` after the handshake also surfaces as `MeshEvent.QueueStatusChanged`.
 
 ### Packet ID generation
 
