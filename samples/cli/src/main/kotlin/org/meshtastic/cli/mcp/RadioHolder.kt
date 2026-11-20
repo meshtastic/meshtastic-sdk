@@ -7,12 +7,17 @@
  */
 package org.meshtastic.cli.mcp
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.cli.internal.NoDeviceException
 import org.meshtastic.cli.internal.openTransport
@@ -38,8 +43,9 @@ internal data class LiveRadio(
 
 /**
  * Owns at most one [RadioClient] for the life of the `mcp` process. Session replacement runs
- * through a single consumer coroutine, so concurrent `connect` calls never interleave; reads take
- * the current value without waiting.
+ * through a single consumer coroutine, so concurrent `connect` calls never interleave. Each
+ * queued call runs as a child of its caller, so a call cancelled while it waits never replaces
+ * the live session; reads take the current value without waiting.
  */
 internal class RadioHolder(scope: CoroutineScope) {
     private val current = MutableStateFlow<LiveRadio?>(null)
@@ -70,15 +76,23 @@ internal class RadioHolder(scope: CoroutineScope) {
             .transport(opened.transport)
             .storage(SqlDelightStorageProvider(baseDir = ""))
             .build()
-        val outcome = withTimeoutOrNull(timeoutMs) {
-            try {
-                client.connect()
-                client.connection.first { it is ConnectionState.Connected }
-                OK
-            } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
-                "handshake: ${e::class.simpleName}: ${e.message}"
-            }
-        } ?: "timeout: no handshake in ${timeoutMs}ms"
+        val outcome = try {
+            withTimeoutOrNull(timeoutMs) {
+                try {
+                    client.connect()
+                    client.connection.first { it is ConnectionState.Connected }
+                    OK
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
+                    "handshake: ${e::class.simpleName}: ${e.message}"
+                }
+            } ?: "timeout: no handshake in ${timeoutMs}ms"
+        } catch (e: CancellationException) {
+            // The caller went away mid-handshake: do not leave a half-open client behind.
+            withContext(NonCancellable) { runCatching { client.disconnect() } }
+            throw e
+        }
         val error = outcome.takeUnless { it == OK }
         if (error != null) {
             runCatching { client.disconnect() }
@@ -102,10 +116,16 @@ internal class RadioHolder(scope: CoroutineScope) {
     }
 
     private suspend fun <T> serialized(block: suspend () -> T): T {
+        val caller = currentCoroutineContext().job
         val result = CompletableDeferred<T>()
         commands.send {
+            if (!caller.isActive) {
+                result.cancel()
+                return@send
+            }
             try {
-                result.complete(block())
+                // A child of the caller: its cancellation stops this work, not the consumer.
+                result.complete(withContext(caller) { block() })
             } catch (@Suppress("TooGenericExceptionCaught") e: Throwable) {
                 result.completeExceptionally(e)
             }

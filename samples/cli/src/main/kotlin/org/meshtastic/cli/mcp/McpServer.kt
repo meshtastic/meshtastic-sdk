@@ -68,6 +68,8 @@ internal class McpServer(private val input: InputStream, private val output: Out
         val session = server.createSession(transport)
         val closed = CompletableDeferred<Unit>()
         session.onClose { closed.complete(Unit) }
+        // A client that closed before the observer registered never fires it.
+        if (session.transport == null) closed.complete(Unit)
         System.err.println("mcp: serving on stdio")
         closed.await()
         System.err.println("mcp: client closed stdin; disconnecting radio")
