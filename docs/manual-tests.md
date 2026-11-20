@@ -417,6 +417,40 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
   5. On Android, run `./gradlew :transport-ble:connectedAndroidTest` (`BleScannerDeviceTest`).
 - **Expected:** the radio is emitted repeatedly with a current RSSI; `Connected` within 30 s; scanning stops on cancel; with Bluetooth off or a missing permission the flow fails with `MeshtasticException.Transport`.
 
+#### I4 — `bondedBleDevices()` lists a paired radio and connects without a scan
+- **Transport:** BLE (Android)
+- **Pre-req:** A Meshtastic radio already bonded in Android's Bluetooth settings; `BLUETOOTH_CONNECT` granted.
+- **Steps:**
+  1. Call `bondedBleDevices(context)` and confirm the radio is listed with its name and MAC.
+  2. Build `BleTransport(device)` from it and run `client.connect()` with the radio in range.
+  3. Power the radio off and repeat step 2.
+  4. Revoke `BLUETOOTH_CONNECT` and repeat step 1; unbond the radio in settings and repeat step 1.
+- **Expected:** the bonded radio is listed with no scan running; `Connected` within 30 s when in range; with the radio off the connect fails with `MeshtasticException.Transport` (the list still shows it); a missing permission throws `MeshtasticException.Transport`; an unbonded radio is no longer listed.
+
+#### I5 — `BleResilience` mechanisms recover a radio plain connect cannot
+- **Transport:** BLE (Android; iOS and JVM must behave exactly as without it)
+- **Pre-req:** A radio with a PIN pairing mode; a second radio that you can power off and on; `BLUETOOTH_CONNECT` granted.
+- **Steps:**
+  1. `bondFirst`: remove the radio's bond in Android settings, build `BleTransport(address, BleResilience(bondFirst = true))`, run `client.connect()`, and enter the PIN.
+  2. `bondFirst` refusal: repeat step 1 and cancel the pairing dialog.
+  3. `autoConnectFallback`: bond the radio, power it off, start `client.connect()`, power it on after 20 s.
+  4. `refreshStaleGattCache`: bond the radio, connect once, flash different firmware (service table changes) or update over OTA, then connect again without unpairing.
+  5. Run `./gradlew :transport-ble:connectedAndroidTest` (`BleResilienceDeviceTest`).
+  6. Repeat step 1 of I3 on iOS or the JVM with a non-default `BleResilience`.
+- **Expected:** step 1 shows `Connecting → Bonding → Connected`; step 2 fails with `MeshtasticException.Transport` before any GATT connect; step 3 connects after the radio returns, with `autoConnect = true` visible in the platform log; step 4 connects and the node's current service table is in use; step 6 behaves as with `BleResilience.None`.
+
+#### I6 — `BleTransport.deviceLogs()` streams device logs and never stalls the link
+- **Transport:** BLE (Android, iOS, JVM)
+- **Pre-req:** A connected radio with `security.debug_log_api_enabled` on (set it through admin config); a second run with it off.
+- **Steps:**
+  1. Collect `transport.deviceLogs()` while the session is `Connected` and print each `LogRecord` (`level`, `source`, `message`).
+  2. Add a 2 s `delay` per record in the collector, send 20 text messages from the app, and confirm the handshake and sends still complete.
+  3. Cancel the collector and confirm no further records are delivered.
+  4. Disconnect and reconnect, then collect again.
+  5. Turn `debug_log_api_enabled` off and repeat step 1.
+  6. On Android, run `./gradlew :transport-ble:connectedAndroidTest` (`BleDeviceLogsDeviceTest`).
+- **Expected:** records arrive in order with plausible levels; with the slow collector some records are skipped but sends and the link are unaffected; cancel stops delivery; step 4 delivers again; step 5 delivers nothing and does not fail.
+
 ## Recording results
 
 For each release, copy this template into `docs/release-history/vX.Y.Z-conformance.md` and fill in:

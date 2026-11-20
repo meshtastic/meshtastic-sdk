@@ -26,6 +26,7 @@ The Meshtastic firmware exposes a single primary service with three characterist
 | `fromradio` | `2c55e69e-4993-11ed-b878-0242ac120002` | READ — one full `FromRadio` per read; empty buffer means drained |
 | `toradio` | `f75c76d2-129e-4dad-a1dd-7866124401e7` | WRITE (acknowledged) — one full `ToRadio` per write; firmware declares `CHR_PROPS_WRITE` only |
 | `fromnum` | `ed9da18c-a800-4f66-a670-aa7547e34453` | NOTIFY+READ — 4-byte LE wake counter; treat as a wake signal only and always drain `fromradio` to empty |
+| `logradio` (optional) | `5a3d6e49-06e6-4423-9944-e9de8cdf9547` | NOTIFY+READ — one `LogRecord` protobuf per notification; not part of the handshake. Read through `BleTransport.deviceLogs()` |
 
 GATT message boundaries replace the stream framer (`0x94 0xC3 LEN_HI LEN_LO`) used by TCP/serial:
 the transport strips the 4-byte header on send and synthesises one on receive so the engine's
@@ -72,5 +73,26 @@ for the transport ↔ engine threading contract.
   `NSBluetoothAlwaysUsageDescription`); a missing one fails the flow with `MeshtasticException.Transport`.
   `BleTransport(radio: DiscoveredRadio)` connects to a result on every target (Android also applies
   its MTU and connection-priority tuning); on Android `BleTransport(address = radio.address)` works too.
+- `org.meshtastic.sdk.transport.ble.bondedBleDevices(context)` (Android only) — the host's bonded
+  devices as `BondedBleDevice(name, address)`, no scan. It lists every bonded device, because Android
+  gives no reliable Meshtastic marker, and a bond does not mean the radio is in range. Needs
+  `BLUETOOTH_CONNECT` on API 31+ (not requested by the SDK). `BleTransport(device)` is the one-liner
+  to a transport. iOS has no bonded list and the JVM backends expose none, so neither target has this.
+- `org.meshtastic.sdk.transport.ble.BleResilience` — opt-in Android link recovery, passed as
+  `resilience` to `BleTransport(radio, ...)` or `BleTransport(address | device, resilience)`; all off by
+  default, ignored on iOS and JVM. `bondFirst` bonds before the GATT connect (publishing
+  `TransportState.Bonding`, 30 s limit, a refused bond fails the connect). `autoConnectFallback` retries
+  with `autoConnect = true` when a direct connect has not completed in 15 s; the next `connect()` starts
+  direct again. `refreshStaleGattCache` calls the hidden `BluetoothGatt.refresh()` (reflection into
+  Kable 0.45's private fields, kept by `consumer-rules.pro`) and reconnects once when discovery lacks
+  the Meshtastic service or one of its characteristics; a refused refresh leaves the connect unchanged.
+  The write type stays write-with-response: firmware declares `toradio` as `CHR_PROPS_WRITE` only
+  (`NRF52Bluetooth.cpp:324`, `NimbleBluetooth.cpp:985`), so there is nothing to choose.
+- `BleTransport.deviceLogs(): Flow<LogRecord>` — opt-in device logs from the `logradio` characteristic. Cold:
+  it subscribes while collected and unsubscribes on cancel; collect again after a reconnect. Buffered
+  (64, drop-oldest) so a slow collector never backpressures the link. Firmware streams only while
+  `security.debug_log_api_enabled` is on. Undecodable or MTU-truncated notifications are skipped. The
+  legacy text characteristic (`6c6fd238-...`) is not read: current firmware does not create it. Separate
+  from the phone-API `FromRadio.log_record` path.
 - `org.meshtastic.sdk.transport.ble.BleConstants` — service / characteristic UUIDs as `kotlin.uuid.Uuid`
   and pre-built Kable `Characteristic` handles.

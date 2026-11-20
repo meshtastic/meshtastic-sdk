@@ -6,6 +6,26 @@
 // - Show declarations: true
 
 // Library unique name: <org.meshtastic:transport-ble>
+final class org.meshtastic.sdk.transport.ble/BleResilience { // org.meshtastic.sdk.transport.ble/BleResilience|null[0]
+    constructor <init>(kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...) // org.meshtastic.sdk.transport.ble/BleResilience.<init>|<init>(kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+
+    final val autoConnectFallback // org.meshtastic.sdk.transport.ble/BleResilience.autoConnectFallback|{}autoConnectFallback[0]
+        final fun <get-autoConnectFallback>(): kotlin/Boolean // org.meshtastic.sdk.transport.ble/BleResilience.autoConnectFallback.<get-autoConnectFallback>|<get-autoConnectFallback>(){}[0]
+    final val bondFirst // org.meshtastic.sdk.transport.ble/BleResilience.bondFirst|{}bondFirst[0]
+        final fun <get-bondFirst>(): kotlin/Boolean // org.meshtastic.sdk.transport.ble/BleResilience.bondFirst.<get-bondFirst>|<get-bondFirst>(){}[0]
+    final val refreshStaleGattCache // org.meshtastic.sdk.transport.ble/BleResilience.refreshStaleGattCache|{}refreshStaleGattCache[0]
+        final fun <get-refreshStaleGattCache>(): kotlin/Boolean // org.meshtastic.sdk.transport.ble/BleResilience.refreshStaleGattCache.<get-refreshStaleGattCache>|<get-refreshStaleGattCache>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk.transport.ble/BleResilience.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk.transport.ble/BleResilience.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk.transport.ble/BleResilience.toString|toString(){}[0]
+
+    final object Companion { // org.meshtastic.sdk.transport.ble/BleResilience.Companion|null[0]
+        final val None // org.meshtastic.sdk.transport.ble/BleResilience.Companion.None|{}None[0]
+            final fun <get-None>(): org.meshtastic.sdk.transport.ble/BleResilience // org.meshtastic.sdk.transport.ble/BleResilience.Companion.None.<get-None>|<get-None>(){}[0]
+    }
+}
+
 final class org.meshtastic.sdk.transport.ble/BleTransport : org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk.transport.ble/BleTransport|null[0]
     constructor <init>(com.juul.kable/Peripheral, kotlin/String, kotlin.coroutines/CoroutineContext = ...) // org.meshtastic.sdk.transport.ble/BleTransport.<init>|<init>(com.juul.kable.Peripheral;kotlin.String;kotlin.coroutines.CoroutineContext){}[0]
 
@@ -14,6 +34,7 @@ final class org.meshtastic.sdk.transport.ble/BleTransport : org.meshtastic.sdk/R
     final val state // org.meshtastic.sdk.transport.ble/BleTransport.state|{}state[0]
         final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk.transport.ble/BleTransport.state.<get-state>|<get-state>(){}[0]
 
+    final fun deviceLogs(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/LogRecord> // org.meshtastic.sdk.transport.ble/BleTransport.deviceLogs|deviceLogs(){}[0]
     final fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk.transport.ble/BleTransport.frames|frames(){}[0]
     final fun shutdown() // org.meshtastic.sdk.transport.ble/BleTransport.shutdown|shutdown(){}[0]
     final suspend fun connect() // org.meshtastic.sdk.transport.ble/BleTransport.connect|connect(){}[0]
@@ -43,6 +64,10 @@ final object org.meshtastic.sdk.transport.ble/BleConstants { // org.meshtastic.s
         final fun <get-FROMRADIO>(): com.juul.kable/Characteristic // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO.<get-FROMRADIO>|<get-FROMRADIO>(){}[0]
     final val FROMRADIO_UUID // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO_UUID|{}FROMRADIO_UUID[0]
         final fun <get-FROMRADIO_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.FROMRADIO_UUID.<get-FROMRADIO_UUID>|<get-FROMRADIO_UUID>(){}[0]
+    final val LOGRADIO // org.meshtastic.sdk.transport.ble/BleConstants.LOGRADIO|{}LOGRADIO[0]
+        final fun <get-LOGRADIO>(): com.juul.kable/Characteristic // org.meshtastic.sdk.transport.ble/BleConstants.LOGRADIO.<get-LOGRADIO>|<get-LOGRADIO>(){}[0]
+    final val LOGRADIO_UUID // org.meshtastic.sdk.transport.ble/BleConstants.LOGRADIO_UUID|{}LOGRADIO_UUID[0]
+        final fun <get-LOGRADIO_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.LOGRADIO_UUID.<get-LOGRADIO_UUID>|<get-LOGRADIO_UUID>(){}[0]
     final val MESH_SERVICE_UUID // org.meshtastic.sdk.transport.ble/BleConstants.MESH_SERVICE_UUID|{}MESH_SERVICE_UUID[0]
         final fun <get-MESH_SERVICE_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.MESH_SERVICE_UUID.<get-MESH_SERVICE_UUID>|<get-MESH_SERVICE_UUID>(){}[0]
     final val TORADIO // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO|{}TORADIO[0]
@@ -55,5 +80,5 @@ final object org.meshtastic.sdk.transport.ble/BleScanner { // org.meshtastic.sdk
     final fun scan(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk.transport.ble/DiscoveredRadio> // org.meshtastic.sdk.transport.ble/BleScanner.scan|scan(){}[0]
 }
 
-final fun org.meshtastic.sdk.transport.ble/BleTransport(org.meshtastic.sdk.transport.ble/DiscoveredRadio, kotlin.coroutines/CoroutineContext = ..., kotlin/Function1<com.juul.kable/PeripheralBuilder, kotlin/Unit> = ...): org.meshtastic.sdk.transport.ble/BleTransport // org.meshtastic.sdk.transport.ble/BleTransport|BleTransport(org.meshtastic.sdk.transport.ble.DiscoveredRadio;kotlin.coroutines.CoroutineContext;kotlin.Function1<com.juul.kable.PeripheralBuilder,kotlin.Unit>){}[0]
+final fun org.meshtastic.sdk.transport.ble/BleTransport(org.meshtastic.sdk.transport.ble/DiscoveredRadio, kotlin.coroutines/CoroutineContext = ..., org.meshtastic.sdk.transport.ble/BleResilience = ..., kotlin/Function1<com.juul.kable/PeripheralBuilder, kotlin/Unit> = ...): org.meshtastic.sdk.transport.ble/BleTransport // org.meshtastic.sdk.transport.ble/BleTransport|BleTransport(org.meshtastic.sdk.transport.ble.DiscoveredRadio;kotlin.coroutines.CoroutineContext;org.meshtastic.sdk.transport.ble.BleResilience;kotlin.Function1<com.juul.kable.PeripheralBuilder,kotlin.Unit>){}[0]
 final fun org.meshtastic.sdk.transport.ble/bleAdvertisementMatches(kotlin/String, kotlin/String?, kotlin/String?, kotlin/String): kotlin/Boolean // org.meshtastic.sdk.transport.ble/bleAdvertisementMatches|bleAdvertisementMatches(kotlin.String;kotlin.String?;kotlin.String?;kotlin.String){}[0]
