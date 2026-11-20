@@ -38,7 +38,7 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.ktorClientDarwin)
         }
-        jsMain.dependencies {
+        webMain.dependencies {
             implementation(libs.ktorClientJs)
         }
         jvmTest.dependencies {

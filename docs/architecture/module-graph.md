@@ -46,18 +46,19 @@ flowchart TB
 
 ## MVP per-target compile matrix
 
-| Module | android | jvm | iosArm64 | iosX64 | iosSimulatorArm64 | js |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| `:core` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `:transport-ble` | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `:transport-tcp` | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `:transport-serial` | ✓ | ✓ | stub | stub | stub | — |
-| `:storage-sqldelight` | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `:testing` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `:bom` | n/a (Maven BOM only) | | | | | |
+| Module | android | jvm | iosArm64 | iosX64 | iosSimulatorArm64 | js | wasmJs |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `:core` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `:transport-ble` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:transport-tcp` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:transport-websocket` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `:transport-serial` | ✓ | ✓ | stub | stub | stub | — | — |
+| `:storage-sqldelight` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:testing` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `:bom` | n/a (Maven BOM only) | | | | | | |
 
 **iOS posture:** the iOS targets of `:transport-serial` ship as headers/empty actuals only — iOS does not expose USB-serial without an MFi accessory + bespoke framing, so consumers should not attempt `JvmSerialPorts` / `AndroidSerialPorts` on Apple targets. All other transports (BLE, TCP) work on iOS. `:transport-ble` ships a JVM artifact in addition to Android/iOS — Kable's JVM backend powers macOS/Linux/Windows hosts; treat it as best-effort across desktop OSes.
-**JS posture:** `:core` and `:testing` publish a Kotlin/JS klib (`sdk-core-js`, `sdk-testing-js`) via the `meshtastic.js.library` convention plugin. It is a library for Kotlin/JS consumers (a browser facade compiles it into its own bundle); no transport ships for `js` yet, so a consumer supplies its own `RadioTransport` (Web Bluetooth, Web Serial or the device HTTP API).
+**Web posture:** `:core`, `:testing` and `:transport-websocket` publish Kotlin/JS and Kotlin/Wasm klibs (`js` and `wasmJs`) via the `meshtastic.js.library` convention plugin, with the websocket module's one platform file shared between them in `webMain`. They are libraries for web consumers, which compile them into their own bundle; `:transport-websocket` reaches a radio over the device's WebSocket phone API, or a consumer supplies its own `RadioTransport` (Web Bluetooth, Web Serial). Both targets run their tests on Node.js only.
 **JVM posture:** BLE is available via `Kable`'s JVM backend (macOS/Linux/Windows); treat as best-effort on desktop OSes (same as line above). Serial uses jSerialComm.
 **Android posture:** `:transport-serial` offers two Android backends from one artifact: `AndroidSerialPorts` on jSerialComm (bundled, [ADR-010](../decisions/010-jserialcomm-jvm-serial.md)) and `AndroidUsbSerialPorts` on usb-serial-for-android (`compileOnly`, the host adds the library and the JitPack repository, [ADR-016](../decisions/016-usb-serial-for-android-backend.md)).
 
@@ -94,7 +95,7 @@ Sample-specific scope and acceptance criteria live in [`../samples.md`](../sampl
 
 ## Roadmap (post-1.0, not in MVP)
 
-The following modules and the `wasmJs` target are tracked separately in [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) and are NOT part of the MVP graph above:
+The following modules are tracked separately in [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) and are NOT part of the MVP graph above:
 
 ```mermaid
 flowchart TB
@@ -104,10 +105,8 @@ flowchart TB
     transportRpc[":transport-rpc<br/>(Ktor WS client)"]:::future
     hostRpc[":host-rpc-server<br/>(JVM/Android)"]:::future
     transportMqttProxy[":transport-mqtt-proxy<br/>(MqttClientProxyMessage)"]:::future
-    wasmApp[":samples/wasm-app<br/>(wasmJs)"]:::future
 
     transportRpc -. WS .-> hostRpc
-    wasmApp --> transportRpc
 ```
 
 | Module | Targets (planned) | Depends on | Roadmap link |
@@ -116,7 +115,6 @@ flowchart TB
 | `:transport-rpc` | all incl. `wasmJs` | `:rpc`, `org.meshtastic:protobufs` (NOT `:core`) | wasm-rpc-roadmap |
 | `:host-rpc-server` | jvm, android | `:core`, `:rpc` | wasm-rpc-roadmap |
 | `:transport-mqtt-proxy` | android, jvm, ios | `:core`, `org.meshtastic:mqtt-client` | SPEC §6 Phase 6 |
-| `wasmJs` source set on `:core` | — | — | wasm-rpc-roadmap |
 
 These do not exist in the MVP graph; they are a destination, not a current state.
 
@@ -128,4 +126,4 @@ These do not exist in the MVP graph; they are a destination, not a current state
 - ADR-003 — tooling (justifies which library each transport module wraps).
 - `transport-isolation.md` — deep dive on why transports are separate modules, error handling differences, and how to add a new transport.
 - `transport-comparison.md` — feature × transport matrix (TCP / BLE / serial), OS support, and selection guidance.
-- [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) — post-1.0 wasm + RPC architecture.
+- [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) — post-1.0 remote-RPC architecture.

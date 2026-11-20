@@ -19,6 +19,7 @@ client that sends WebSocket pings is disconnected.
 | JVM (macOS, Linux, Windows) | CIO |
 | iOS (arm64, x64, Simulator arm64) | Darwin |
 | JS (browser, Node.js) | Js (platform `WebSocket`) |
+| Wasm (browser, Node.js) | Js (platform `WebSocket`) |
 
 ## Connection behavior
 
@@ -41,11 +42,11 @@ client that sends WebSocket pings is disconnected.
 
 ## Browser hosts
 
-On JS the transport uses the platform `WebSocket`, so TLS trust and mixed-content rules are the
+On JS and Wasm the transport uses the platform `WebSocket`, so TLS trust and mixed-content rules are the
 browser's: an `https` page cannot open `ws://` to another host, and a self-signed `wss://` node must
 be trusted in the browser first. `ws://localhost` from an `https` page is allowed, which fits
 meshtasticd's plain `HTTPPort` ([firmware#12414](https://github.com/meshtastic/firmware/pull/12414)).
-The 512 byte send check applies. Ktor's JS engine cannot cap the frame size, so on JS a message
+The 512 byte send check applies. Ktor's JS engine cannot cap the frame size, so on both a message
 over 512 bytes is received in full and then rejected: the session closes with 1009, as on other
 targets, but the oversized message is held in memory first.
 
