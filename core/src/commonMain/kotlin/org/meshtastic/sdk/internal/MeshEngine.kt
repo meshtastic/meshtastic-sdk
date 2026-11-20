@@ -41,6 +41,7 @@ import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminResult
+import org.meshtastic.sdk.AdminSessionStatus
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.ConfigBundle
@@ -81,8 +82,8 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Single-writer actor that owns all mutable SDK state.
@@ -194,10 +195,17 @@ internal class MeshEngine(
      * (local device and every remote admin target) hands out its **own** passkey in its admin
      * responses; remote admin writes must echo the *target's* passkey back, so a single shared
      * slot would cross-contaminate concurrent admin sessions against different nodes.
-     * Entries expire after [SESSION_PASSKEY_TTL]; only the local node's seed passkey is
-     * persisted to storage.
+     * Entries expire after [SESSION_PASSKEY_TTL], the firmware's validity window; they are
+     * never persisted.
      */
     private val sessionPasskeys = mutableMapOf<Int, SessionPasskeyEntry>()
+    private var nextPasskeyGeneration = 0
+
+    /** Wire id of an outbound admin request to the key generation it was stamped with; bounded. */
+    private val requestPasskeyGenerations = mutableMapOf<Int, Int>()
+
+    /** Public view of [sessionPasskeys] (no key bytes); recomputed by [publishAdminSessions]. */
+    val adminSessions = MutableStateFlow<Map<NodeId, AdminSessionStatus>>(emptyMap())
 
     // Node accumulator during Stage 2 draining.
     private val pendingNodes = mutableMapOf<NodeId, NodeInfo>()
@@ -257,7 +265,7 @@ internal class MeshEngine(
      * [HANDSHAKE_PACKET_BUFFER_CAP] (with a [MeshEvent.PacketsDropped] signal) and flushed
      * through the normal Ready packet pipeline in [transitionToReady].
      */
-    private val handshakePacketBuffer = ArrayDeque<MeshPacket>(HANDSHAKE_PACKET_BUFFER_CAP)
+    private val handshakePacketBuffer = ArrayDeque<BufferedPacket>(HANDSHAKE_PACKET_BUFFER_CAP)
 
     /**
      * Per-send ACK timeout jobs. Keyed by the wire packet `id`. Touched only by the
@@ -605,7 +613,7 @@ internal class MeshEngine(
         myNodeNum = 0
         previousMyNodeNum = null
         previousDeviceId = null
-        sessionPasskeys.clear()
+        clearSessionPasskeys()
         handshakePacketBuffer.clear()
         pendingNodes.clear()
         pendingConfigs = emptyList()
@@ -728,7 +736,14 @@ internal class MeshEngine(
 
         // 1. Session passkey re-stamp (skip when the caller already provided one).
         var outDecoded = decoded
-        val passkey = validSessionPasskeyFor(packet.to)
+        val keyEntry = validSessionEntryFor(packet.to)
+        val passkey = keyEntry?.bytes
+        if (keyEntry != null && packet.id != 0) {
+            if (requestPasskeyGenerations.size >= REQUEST_GENERATION_CAP) {
+                requestPasskeyGenerations.remove(requestPasskeyGenerations.keys.first())
+            }
+            requestPasskeyGenerations[packet.id] = keyEntry.generation
+        }
         if (passkey != null) {
             val originalAdmin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()
             if (originalAdmin != null && originalAdmin.session_passkey.size == 0) {
@@ -1262,7 +1277,7 @@ internal class MeshEngine(
                             )} new=0x${myInfo.my_node_num.toString(16)} renumbered=$renumbered"
                         }
                         // passkeys issued under the previous identity are meaningless now.
-                        sessionPasskeys.clear()
+                        clearSessionPasskeys()
                         events.tryEmit(
                             MeshEvent.IdentityRebound(
                                 previousNodeNum = NodeId(prev),
@@ -1429,15 +1444,41 @@ internal class MeshEngine(
      * Cache the session passkey carried in [adminMsg], keyed by the node that issued it.
      * Firmware refreshes the passkey in **every** admin response, so any admin packet from
      * [fromNum] keeps that node's admin session alive. Only the local node's seed passkey is
-     * persisted — remote passkeys are ephemeral by design (4-minute TTL).
+     * persisted — remote passkeys are ephemeral by design (firmware validity window).
      */
-    private fun latchSessionPasskey(fromNum: Int, adminMsg: AdminMessage) {
+    private fun latchSessionPasskey(fromNum: Int, adminMsg: AdminMessage, receivedAt: Instant = clock.now()) {
         if (adminMsg.session_passkey.size <= 0) return
         if (fromNum == 0) return
         val bytes = adminMsg.session_passkey.toByteArray()
-        val expiresAtMs = clock.now().toEpochMilliseconds() + SESSION_PASSKEY_TTL.inWholeMilliseconds
-        sessionPasskeys[fromNum] = SessionPasskeyEntry(bytes, expiresAtMs)
+        val previous = sessionPasskeys[fromNum]
+        val generation = if (previous != null && previous.bytes.contentEquals(bytes)) {
+            previous.generation
+        } else {
+            nextPasskeyGeneration++
+        }
+        sessionPasskeys[fromNum] = SessionPasskeyEntry(bytes, receivedAt, generation)
+        publishAdminSessions()
         logger.debug(TAG) { "Session passkey latched for 0x${fromNum.toString(16)} (${bytes.size} bytes)" }
+    }
+
+    private fun clearSessionPasskeys() {
+        sessionPasskeys.clear()
+        requestPasskeyGenerations.clear()
+        adminSessions.value = emptyMap()
+    }
+
+    /** Drop expired entries and republish [adminSessions]; the StateFlow ignores unchanged maps. */
+    private fun publishAdminSessions() {
+        val now = clock.now()
+        sessionPasskeys.entries.removeAll { now - it.value.refreshedAt >= SESSION_PASSKEY_TTL }
+        adminSessions.value = sessionPasskeys.entries.associate { (num, entry) ->
+            val refreshedAt = entry.refreshedAt
+            NodeId(num) to if (now - refreshedAt < SESSION_PASSKEY_ACTIVE_FOR) {
+                AdminSessionStatus.Active(refreshedAt, refreshedAt + SESSION_PASSKEY_ACTIVE_FOR)
+            } else {
+                AdminSessionStatus.Stale(refreshedAt, refreshedAt + SESSION_PASSKEY_TTL)
+            }
+        }
     }
 
     /**
@@ -1457,13 +1498,13 @@ internal class MeshEngine(
         get_ui_config_response != null
 
     /** Returns the unexpired session passkey for [nodeNum], pruning a stale entry if present. */
-    private fun validSessionPasskeyFor(nodeNum: Int): ByteArray? {
+    private fun validSessionEntryFor(nodeNum: Int): SessionPasskeyEntry? {
         val entry = sessionPasskeys[nodeNum] ?: return null
-        if (clock.now().toEpochMilliseconds() >= entry.expiresAtMs) {
-            sessionPasskeys.remove(nodeNum)
+        if (clock.now() - entry.refreshedAt >= SESSION_PASSKEY_TTL) {
+            publishAdminSessions()
             return null
         }
-        return entry.bytes
+        return entry
     }
 
     /** Buffer a mid-handshake `FromRadio.packet` for delivery once the session reaches Ready. */
@@ -1475,7 +1516,7 @@ internal class MeshEngine(
             }
             events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
         }
-        handshakePacketBuffer.addLast(packet)
+        handshakePacketBuffer.addLast(BufferedPacket(packet, clock.now()))
     }
 
     private fun transitionToReady() {
@@ -1536,7 +1577,8 @@ internal class MeshEngine(
         if (handshakePacketBuffer.isNotEmpty()) {
             logger.info(TAG) { "Flushing ${handshakePacketBuffer.size} packets received during handshake" }
             while (handshakePacketBuffer.isNotEmpty()) {
-                processInboundMeshPacket(handshakePacketBuffer.removeFirst())
+                val buffered = handshakePacketBuffer.removeFirst()
+                processInboundMeshPacket(buffered.packet, buffered.receivedAt)
             }
         }
 
@@ -1723,7 +1765,7 @@ internal class MeshEngine(
      * external-config-change detection. Called for live packets in [routeNormalEnvelope] and
      * for the mid-handshake backlog flushed in [transitionToReady].
      */
-    private fun processInboundMeshPacket(packet: MeshPacket) {
+    private fun processInboundMeshPacket(packet: MeshPacket, receivedAt: Instant = clock.now()) {
         logger.verbose(TAG) {
             "Rx packet id=${packet.id} from=0x${packet.from.toString(16)} " +
                 "port=${packet.decoded?.portnum ?: "encrypted"}"
@@ -1767,7 +1809,7 @@ internal class MeshEngine(
             // Requests are excluded: when a remote node administers US, its request carries
             // the passkey WE issued to it — latching that under the remote's key would poison
             // our next RPC to that node with a passkey it never issued.
-            latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg)
+            latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg, receivedAt)
         }
         // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
         // request matching this packet's request_id. Must run before processRoutingAck
@@ -1891,6 +1933,17 @@ internal class MeshEngine(
             return
         }
         val messageId = MessageId(decoded.request_id)
+
+        if (routing.error_reason == Routing.Error.ADMIN_BAD_SESSION_KEY) {
+            // Drop the key only if the rejected request used the current one; a newer key
+            // installed since must survive a late rejection of an older one.
+            val node = packet.from.takeIf { it != 0 } ?: myNodeNum
+            val usedGeneration = requestPasskeyGenerations.remove(decoded.request_id)
+            if (usedGeneration != null && sessionPasskeys[node]?.generation == usedGeneration) {
+                sessionPasskeys.remove(node)
+            }
+            publishAdminSessions()
+        }
 
         // RPC failure: a Routing.Error variant matching a pending getter / traceRoute
         // is the failure surface for that call. Try the dispatcher BEFORE checking pendingSends
@@ -2404,6 +2457,7 @@ internal class MeshEngine(
     }
 
     private fun handleHeartbeatTick() {
+        publishAdminSessions()
         if (handshakeStage != HandshakeStage.Ready) return
         if (!bleHeartbeatEnabled && transport.identity.raw.startsWith("ble:")) return
         val nonce = sendKeepaliveHeartbeat()
@@ -2761,6 +2815,7 @@ internal class MeshEngine(
         private const val TAG = "MeshEngine"
         private const val REASON_IDENTITY_MISMATCH = "identity_mismatch"
         private const val REASON_NODE_RENUMBERED = "node_renumbered"
+        private const val REQUEST_GENERATION_CAP = 64
         private const val PROTOCOL_TAG = "Protocol"
 
         // Handshake nonces (protocol.md §6).
@@ -2824,10 +2879,11 @@ internal class MeshEngine(
         const val ERRNO_BASE: Int = 32
         const val ERRNO_SHOULD_RELEASE: Int = 35
 
-        // Firmware regenerates session passkeys every ~150s and they remain valid for ~300s.
-        // A 4-minute TTL ensures we don't use a stale passkey on reconnect while still
-        // avoiding unnecessary re-seeding within a single connected session.
-        val SESSION_PASSKEY_TTL: Duration = 4.minutes
+        // AdminModule.cpp: checkPassKey accepts a key for 300 s from generation; setPassKey
+        // generates a new one on the first response after the key is 150 s old. A key seen in a
+        // response is thus expected to work for 150 s and never valid after 300 s.
+        val SESSION_PASSKEY_TTL: Duration = 300.seconds
+        val SESSION_PASSKEY_ACTIVE_FOR: Duration = 150.seconds
 
         // minimum interval between consecutive encrypted-packet skip warnings.
         const val ENCRYPTED_SKIP_WARNING_INTERVAL_MS: Long = 60_000L
@@ -2838,6 +2894,9 @@ internal class MeshEngine(
 
     private data class InboundPacketKey(val from: Int, val to: Int, val channel: Int, val id: Int)
 
-    /** In-memory per-node session passkey with absolute expiry (epoch ms). */
-    private class SessionPasskeyEntry(val bytes: ByteArray, val expiresAtMs: Long)
+    /** In-memory per-node session passkey and when it was last observed. */
+    private class SessionPasskeyEntry(val bytes: ByteArray, val refreshedAt: Instant, val generation: Int)
+
+    /** A mid-handshake packet with the instant it arrived. */
+    private class BufferedPacket(val packet: MeshPacket, val receivedAt: Instant)
 }

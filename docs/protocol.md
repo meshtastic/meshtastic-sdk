@@ -875,7 +875,7 @@ State-changing admin operations require a session passkey. Workflow:
 
 1. Phone sends `AdminMessage(get_device_metadata_request = true)` (no passkey required).
 2. Device responds with `DeviceMetadata` containing fields including the **session passkey** (8 bytes).
-3. Phone caches the passkey for ~4 minutes (firmware regenerates every ~150s with a 300s validity window).
+3. Phone caches the passkey per node. Firmware accepts a key for 300 s from generation and generates a new one on the first response after the key is 150 s old, so a key in a response was at most 150 s old when the device sent it and had at least 150 s of validity left then. The delivery delay over the mesh is not measurable, so the SDK reports a key as `AdminSessionStatus.Active` for 150 s from receipt (expected to be accepted, not guaranteed; a rejection is still possible and is handled by the single retry), `Stale` until 300 s from receipt (may be accepted), and `NoSession` after that (certainly rejected). See `RadioClient.adminSessions`.
 4. Phone includes the passkey in the `session_passkey` field of every state-changing admin request.
 5. If the passkey expires or doesn't match, the device responds with `Routing.error_reason = ADMIN_BAD_SESSION_KEY`.
 

@@ -183,6 +183,42 @@ public final class org/meshtastic/sdk/AdminResultException$Unauthorized : org/me
 	public fun <init> ()V
 }
 
+public abstract interface class org/meshtastic/sdk/AdminSessionStatus {
+}
+
+public final class org/meshtastic/sdk/AdminSessionStatus$Active : org/meshtastic/sdk/AdminSessionStatus {
+	public fun <init> (Lkotlin/time/Instant;Lkotlin/time/Instant;)V
+	public final fun component1 ()Lkotlin/time/Instant;
+	public final fun component2 ()Lkotlin/time/Instant;
+	public final fun copy (Lkotlin/time/Instant;Lkotlin/time/Instant;)Lorg/meshtastic/sdk/AdminSessionStatus$Active;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/AdminSessionStatus$Active;Lkotlin/time/Instant;Lkotlin/time/Instant;ILjava/lang/Object;)Lorg/meshtastic/sdk/AdminSessionStatus$Active;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRefreshedAt ()Lkotlin/time/Instant;
+	public final fun getStaleAt ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/AdminSessionStatus$NoSession : org/meshtastic/sdk/AdminSessionStatus {
+	public static final field INSTANCE Lorg/meshtastic/sdk/AdminSessionStatus$NoSession;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/AdminSessionStatus$Stale : org/meshtastic/sdk/AdminSessionStatus {
+	public fun <init> (Lkotlin/time/Instant;Lkotlin/time/Instant;)V
+	public final fun component1 ()Lkotlin/time/Instant;
+	public final fun component2 ()Lkotlin/time/Instant;
+	public final fun copy (Lkotlin/time/Instant;Lkotlin/time/Instant;)Lorg/meshtastic/sdk/AdminSessionStatus$Stale;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/AdminSessionStatus$Stale;Lkotlin/time/Instant;Lkotlin/time/Instant;ILjava/lang/Object;)Lorg/meshtastic/sdk/AdminSessionStatus$Stale;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpiresAt ()Lkotlin/time/Instant;
+	public final fun getRefreshedAt ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public static final field Companion Lorg/meshtastic/sdk/AutoReconnectConfig$Companion;
 	public fun <init> ()V
@@ -1616,9 +1652,12 @@ public final class org/meshtastic/sdk/ProtoBytesKt {
 public final class org/meshtastic/sdk/RadioClient {
 	public static final field Companion Lorg/meshtastic/sdk/RadioClient$Companion;
 	public fun <init> (Lorg/meshtastic/sdk/internal/MeshEngine;Lkotlin/time/Clock;Lkotlin/time/Duration;ZLkotlin/coroutines/CoroutineContext;)V
+	public final fun adminSessionStatus (Lorg/meshtastic/sdk/NodeId;)Lkotlinx/coroutines/flow/Flow;
+	public final fun adminSessionStatus-LO_6HKw (I)Lkotlinx/coroutines/flow/Flow;
 	public final fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getAdmin ()Lorg/meshtastic/sdk/AdminApi;
+	public final fun getAdminSessions ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getChannels ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConfigBundle ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConnection ()Lkotlinx/coroutines/flow/StateFlow;
