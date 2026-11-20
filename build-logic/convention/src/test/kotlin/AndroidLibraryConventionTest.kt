@@ -13,7 +13,10 @@ import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Plugin order must not matter: the Android config waits for the KMP plugin via withPlugin. */
+/**
+ * Plugin order must not matter: the Android config waits for the KMP plugin via withPlugin. A module's
+ * consumer-rules.pro, when present, is published into its AAR.
+ */
 class AndroidLibraryConventionTest {
     @Test
     fun `android applied before kmp still configures the namespace`() =
@@ -28,6 +31,16 @@ class AndroidLibraryConventionTest {
     @Test
     fun `android applied after kmp configures the same values`() = assertEquals(androidFirst, kmpFirst)
 
+    @Test
+    fun consumerRulesFileIsPublishedWhenPresent() {
+        assertEquals("true", withRules.getValue("consumerKeepRules.publish"))
+        assertEquals("consumer-rules.pro", withRules.getValue("consumerKeepRules.files"))
+    }
+
+    @Test
+    fun noConsumerRulesAreRegisteredWhenTheFileIsAbsent() =
+        assertEquals("", androidFirst.getValue("consumerKeepRules.files"))
+
     companion object {
         private val dirs = mutableListOf<File>()
 
@@ -40,8 +53,9 @@ class AndroidLibraryConventionTest {
             assumeTrue("ANDROID_HOME not set", hasSdk)
         }
 
-        private fun build(plugins: String): Map<String, String> {
+        private fun build(plugins: String, consumerRules: String? = null): Map<String, String> {
             val dir = Files.createTempDirectory("android-library-fixture").toFile().also(dirs::add)
+            consumerRules?.let { dir.resolve("consumer-rules.pro").writeText(it) }
             return ConventionPluginFixture(dir).run {
                 buildFile(
                     """
@@ -58,6 +72,9 @@ class AndroidLibraryConventionTest {
                             println("CFG:namespace=" + android.namespace)
                             println("CFG:compileSdk=" + android.compileSdk)
                             println("CFG:minSdk=" + android.minSdk)
+                            val consumer = android.optimization.consumerKeepRules
+                            println("CFG:consumerKeepRules.publish=" + consumer.publish)
+                            println("CFG:consumerKeepRules.files=" + consumer.files.joinToString(",") { it.name })
                         }
                     }
                     """.replace("\$plugins", plugins),
@@ -72,6 +89,13 @@ class AndroidLibraryConventionTest {
 
         private val kmpFirst: Map<String, String> by lazy {
             build("id(\"meshtastic.kmp.library\")\n id(\"meshtastic.android.library\")")
+        }
+
+        private val withRules: Map<String, String> by lazy {
+            build(
+                "id(\"meshtastic.kmp.library\")\n id(\"meshtastic.android.library\")",
+                consumerRules = "-keep class org.meshtastic.fixture.** { *; }\n",
+            )
         }
 
         @AfterClass

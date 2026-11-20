@@ -26,6 +26,13 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                     compileSdk = libs.findVersion("androidCompileSdk").get().requiredVersion.toInt()
                     minSdk = libs.findVersion("androidMinSdk").get().requiredVersion.toInt()
                     withHostTest {}
+                    val consumerRules = project.file("consumer-rules.pro")
+                    if (consumerRules.exists()) {
+                        optimization.consumerKeepRules.apply {
+                            publish = true
+                            file(consumerRules)
+                        }
+                    }
                 }
             }
         }
