@@ -1,44 +1,44 @@
-# Security & threat model
+# Security and threat model
 
-> Scope: what `meshtastic-sdk` is and isn't responsible for protecting, where keys live, and which attack vectors the SDK design considers. Not a substitute for a formal security audit — pre-1.0 this is a working document for review.
+This page sets out what `meshtastic-sdk` protects and what it leaves to the host, where key material lives, and which attacks the design considers. It is a working document for review, not a substitute for a security audit.
 
 ## What's in scope
 
-- The bytes between the host (phone/desktop/server running the SDK) and the device.
-- Cryptographic material the SDK handles in transit or persists: channel PSKs, the device's `session_passkey`, PKI public keys exchanged via the device.
-- The SDK's persistence layer (`DeviceStorage`) — what it stores, what callers must protect.
-- The transport adapters' attack surface (BLE pairing, TCP/HTTP endpoints, serial enumeration).
+- The bytes between the host (the phone, desktop or server running the SDK) and the node.
+- Key material the SDK handles in transit or persists: channel pre-shared keys (PSKs), each node's `session_passkey`, and PKI public keys learned through the node.
+- The persistence layer (`DeviceStorage`): what it stores and what callers must protect.
+- The transports' attack surface: Bluetooth pairing, TCP and WebSocket endpoints, serial enumeration, and mDNS and BLE discovery.
 
 ## What's out of scope
 
-- The mesh-side wire crypto. Channel encryption (AES-CTR/AES-256) and end-to-end PKI DM encryption are performed **by the firmware**, not by the SDK. The SDK never holds private keys for PKI DMs and never decrypts mesh PKI traffic — the device decrypts and hands the SDK the cleartext over PhoneAPI. (See [`references/meshtastic-firmware-behavior.md`](./references/meshtastic-firmware-behavior.md) lines 198-212.)
-- The host process's security posture. If the host process is compromised, all bets are off.
-- Network-layer attacks against the underlying radio (RF jamming, replay over the air). The SDK is downstream of these.
-- The MQTT broker and the firmware's MQTT side-channel — `meshtastic/mqtt-client` owns broker auth/TLS for direct broker use; PhoneAPI MQTT-proxy mode (`protocol.md` §14) is a transparent byte relay where credentials live on the device.
+- Mesh-side wire crypto. Channel encryption (AES-CTR) and PKI direct-message encryption run in firmware. The SDK holds no PKI private key and decrypts no mesh traffic: the node hands it cleartext over the PhoneAPI ([`protocol.md` §10](./protocol.md#key-material-storage), citing firmware `CryptoEngine.cpp`).
+- The security of the host process. A compromised host process exposes everything.
+- Attacks on the radio link, such as RF jamming or over-the-air replay. The SDK is downstream of them.
+- The MQTT broker and the firmware's MQTT connection. A consumer's own MQTT client owns broker authentication and TLS. In PhoneAPI MQTT proxy mode ([`protocol.md` §14](./protocol.md#14-mqtt-proxy-mode)) the consumer relays bytes and the broker settings live on the node.
 
 ## Asset inventory
 
 | Asset | Sensitivity | Where it lives in the SDK | Lifetime |
 |---|---|---|---|
-| **Channel PSK** | High — symmetric mesh-channel key | `Channel` proto inside `ConfigBundle`, persisted by `DeviceStorage`; passed in-memory through engine for decrypt | Until channel rotated or storage cleared |
-| **`session_passkey`** | Medium — 8-byte token gating admin RPCs for one connection | In-memory only inside `CommandDispatcher` while connected | Per connection (not persisted) |
-| **Device PKI public key** (own + peers) | Low — public material | `NodeInfo.public_key`; persisted by `DeviceStorage` | Until node leaves NodeDB |
-| **Device PKI private key** | Critical | **Never present in SDK.** Lives only on the device; SDK has no API to extract it. | n/a |
-| **Inbound mesh-channel cleartext** (`MeshPacket.decoded`) | Varies (text/position/telemetry) | Engine memory, `packets` Flow, optionally storage | Per packet; no persistence by default |
-| **Outbound mesh-channel cleartext** (caller-supplied) | Caller's responsibility | Engine memory, `outbound` Channel | Until handed to transport |
-| **Storage on disk** (NodeDB, channels incl. PSKs, configs) | High (PSKs are key material) | `:storage-sqldelight` SQLite DB | Until consumer deletes |
+| Channel PSK | High: symmetric channel key | `Channel` proto in `RadioClient.channels`, persisted by `DeviceStorage`; also inside raw envelopes on `RadioClient.fromRadio` | Until the channel is rotated or storage cleared |
+| `session_passkey` | Medium: 8-byte token gating admin requests to one node | Engine memory, per node; `RadioClient.adminSessions` exposes state and timestamps, never the bytes | Until it expires, the connection ends or the local identity changes; never persisted |
+| PKI public keys (own and peers) | Low: public | `User.public_key` in the NodeDB, persisted by `DeviceStorage` | Until the node leaves the NodeDB |
+| PKI private key | Critical | Never present in the SDK. It lives only on the node, and the SDK has no API to extract it. | n/a |
+| Inbound cleartext (`MeshPacket.decoded`) | Varies: text, position, telemetry | Engine memory, the `packets` and `fromRadio` flows | Per packet; not persisted |
+| Outbound cleartext (caller-supplied) | Caller's responsibility | Engine memory, the outbound queue | Until handed to the transport |
+| Storage on disk (NodeDB, channels with PSKs, configs) | High: PSKs are key material | `:storage-sqldelight` SQLite database | Until the consumer deletes it |
 
 ## Trust boundaries
 
-```
+```text
 ┌─ Mesh (RF, untrusted) ─┐
 │ Other nodes, repeaters │
 └────────────┬───────────┘
-             │ wire-crypto enforced by firmware (PSK + PKI)
+             │ wire crypto enforced by firmware (PSK + PKI)
 ┌────────────▼───────────┐
-│ Local Meshtastic device│ ← trusted; holds private keys
+│ Local Meshtastic node  │ ← trusted; holds private keys
 └────────────┬───────────┘
-             │ PhoneAPI (BLE GATT / TCP / Serial / HTTP)
+             │ PhoneAPI (BLE GATT / TCP / serial / WebSocket)
              │ ── trust boundary ──
 ┌────────────▼───────────┐
 │ Host process running   │ ← trusted with everything below this line
@@ -46,79 +46,76 @@
 └────────────┬───────────┘
              │ Storage write (DeviceStorage abstraction)
 ┌────────────▼───────────┐
-│ Persistent storage     │ ← consumer-controlled; SDK does NOT encrypt at rest
+│ Persistent storage     │ ← consumer-controlled; SDK does not encrypt at rest
 └────────────────────────┘
 ```
 
-The SDK assumes the link between the host process and the device is **untrusted but not actively MITM'd over BLE/serial** — see "Per-transport posture" below.
+The SDK treats the link between host and node as untrusted but not actively attacked; the next section gives each transport's posture.
 
-## Per-transport posture (MVP)
+## Per-transport posture
 
-| Transport | Confidentiality of PhoneAPI link | Notes |
+| Transport | Confidentiality of the PhoneAPI link | Notes |
 |---|---|---|
-| **BLE GATT** | None at PhoneAPI layer; relies on BLE pairing/bonding | Hosts SHOULD use bonded connections (Android: `createBond()`; iOS: standard CB pairing). Unpaired BLE traffic is sniffable from ~10 m. |
-| **TCP** | None | TCP/4403 is plaintext. **Do not expose to untrusted networks.** Recommend SSH tunneling or a VPN if the radio is remote. |
-| **Serial (USB)** | Physical access required | Treat physical access to the device or USB cable as a full compromise vector. |
+| BLE GATT | Only what Bluetooth pairing and bonding provide | Use bonded connections (Android `createBond()`, or the opt-in bond-first step in `BleResilience`; standard CoreBluetooth pairing on iOS). Unpaired traffic can be sniffed from about 10 m. |
+| TCP | None | Port 4403 is plaintext. Do not expose it to untrusted networks; use an SSH tunnel or VPN for a remote node. |
+| Serial (USB) | Physical access required | Treat physical access to the node or the cable as full compromise. |
+| WebSocket | None over `ws://`; TLS over `wss://` | The node presents a self-signed certificate. The host decides whether to trust it, through a custom Ktor `HttpClient` or, in a browser, the browser's own trust store. An `https` page can open `ws://` only to `localhost`. |
 
-Roadmap transports (`transport-mqtt-proxy`, `transport-rpc`, `transport-http`) carry their own posture rows in [`./future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md) and are not part of the MVP threat model.
+Discovery is unauthenticated. mDNS (`TcpDiscovery`) and BLE scan results (`BleScanner`) report whatever answers on the network or the air, and `bondedBleDevices(context)` lists every bonded device, so a host should confirm a node's identity after connecting rather than trust a discovered name.
+
+Planned transports such as `transport-rpc` carry their own posture in [`./future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md).
 
 ## Storage at rest
 
-`DeviceStorage` implementations persist channel PSKs and the NodeDB. **The SDK does not encrypt at rest.** Consumers requiring at-rest protection must:
+`DeviceStorage` implementations persist channel PSKs and the NodeDB, and the SDK does not encrypt them. A consumer that needs protection at rest has two options:
 
-- Wrap their `StorageProvider` with platform-native encrypted storage:
-  - Android: `EncryptedSharedPreferences` / `EncryptedFile` (Jetpack Security).
-  - iOS: Keychain-backed key material or `NSFileProtectionComplete` flags on the SQLDelight database file.
-  - JVM desktop: OS keystore + a KEK that decrypts the SQLDelight DB at startup.
-- Or, in headless server contexts, run on a filesystem with full-disk encryption.
+- Protect the SQLDelight database file with platform storage protection: an encrypted file or Keystore-held key on Android, `NSFileProtectionComplete` or Keychain-backed key material on iOS, and an OS keystore with a key-encryption key on desktop JVM.
+- On a headless server, run on a filesystem with full-disk encryption.
 
-`:storage-sqldelight` will optionally accept a SQLCipher driver in a follow-up artifact (`:storage-sqldelight-cipher`); pre-1.0 this is not in scope.
+A follow-up artifact accepting a SQLCipher driver (`:storage-sqldelight-cipher`) is out of scope before 1.0.
 
 ## `session_passkey` handling
 
-- **Never persisted.** Engine holds it in `CommandDispatcher` for the connection's lifetime.
-- **Never exposed.** `RadioClient.adminSessions` reports per-node state and timestamps only, never key bytes.
-- **Reset on every reconnect.** A fresh `get_owner_request` after handshake re-issues the value.
-- **Single in-flight retry on `ADMIN_BAD_SESSION_KEY`:** the engine refreshes once, replays the original admin call once, then surfaces `AdminResult.SessionKeyExpired` if still rejected. (Documented in [`error-taxonomy.md`](./error-taxonomy.md).)
+- Never persisted. The engine keeps each node's key in memory.
+- Never exposed. `RadioClient.adminSessions` reports per-node status and timestamps only.
+- Dropped when the connection ends or the local identity changes. The handshake's `get_owner_request` seeds a fresh key for the local node.
+- On `ADMIN_BAD_SESSION_KEY` the engine re-seeds once and replays the request once, then returns `AdminResult.SessionKeyExpired` if it is still rejected ([`error-taxonomy.md`](./error-taxonomy.md)).
 
 ## Logging hygiene
 
-`LogSink` MAY receive sensitive material if abused. Rules enforced by the engine:
+`LogSink` receives what the engine logs, and whatever a consumer chooses to log.
 
-- Channel PSKs are NEVER logged at any level. Internal `toString()` helpers redact them (`Channel.psk = <16 bytes redacted>`).
-- `session_passkey` is NEVER logged.
-- PKI public keys MAY be logged at `Debug` (they're public).
-- `MeshPacket.decoded.payload` MAY be logged at `Verbose` only. Production consumers should run with `Info` or higher.
-- Frame-level byte dumps are gated behind `LogLevel.Verbose` and the Builder opt-in `Builder.protocolLogging(level, redactor)` (see `SPEC.md` §3.1); off by default.
+- The engine's own log calls do not interpolate channel PSKs or session passkeys.
+- `Builder.protocolLogging(level, redactor)` is off by default (`LogLevel.NONE`). Its default `PayloadRedactor.Default` renders each envelope as its variant, routing metadata and flow-control counters only: no payload bytes, text, positions, PSKs, passkeys, keys, config values or file contents. A custom `PayloadRedactor` sees whole envelopes and is responsible for what it prints.
+- `RadioClient.fromRadio` emits raw envelopes, including channel PSKs and positions, unredacted. A consumer that records it is storing key material.
+- Wire-generated `toString()` does not redact `bytes` fields, so logging a `Channel` or `Config` prints its PSK.
 
-PSK redaction is a code-review invariant: reviewers inspect any new `LogSink.log(...)` call and reject interpolation of `psk` or `session_passkey` field names. Detekt's log-call inspection helps surface obvious cases, but there is no automated rule that proves redaction.
+PSK redaction is a code-review invariant: reviewers reject any new log call that interpolates `psk` or `session_passkey`. No automated rule proves it.
 
 ## Threat model: what the SDK defends against
 
-1. **Accidental on-disk leak of PSK to an untracked location.** Mitigation: only `DeviceStorage` writes PSKs; engine never tee's into a file or log. Consumer's `LogSink` impl is the only escape.
-2. **Stale NodeDB corrupting a swapped/factory-reset device's state.** Mitigation: `recordOwnNode` NodeNum-mismatch atomic-clear (ADR-005); fresh handshake repopulates.
-3. **Replay/identity confusion across address changes.** Mitigation: `TransportIdentity` is a stable cache key; the NodeNum-mismatch rule handles physical-radio swaps behind the same address.
-4. **Unauthorized admin RPCs via leaked `session_passkey`.** Mitigation: passkey not persisted; rotates per connection. An attacker would need both the live transport socket AND access to engine memory.
-5. **Backpressure-induced silent data loss.** Mitigation: `MeshEvent.PacketsDropped` is mandatory and observable.
-6. **Out-of-spec wire data crashing the engine.** Mitigation: `WireCodec` rejects malformed envelopes; `MeshtasticException.Protocol` surfaces; engine continues. Property-based tests (Kotest) fuzz the codec.
+1. Accidental on-disk leak of a PSK. Only `DeviceStorage` writes PSKs, and the engine never copies them into a file or log. The consumer's `LogSink`, a custom `PayloadRedactor` and the `fromRadio` tap are the only other ways out.
+2. A stale NodeDB carried into a swapped or factory-reset node's session. When the reported NodeNum changes, `recordOwnNode` clears storage atomically and the fresh handshake repopulates it. The exception is a node that renumbers under the same trusted `device_id`, which keeps its storage ([`architecture/storage.md`](./architecture/storage.md#renumbered-device-same-device_id)).
+3. Identity confusion across address changes. `TransportIdentity` is a stable cache key, and the NodeNum check catches a physical swap behind the same address.
+4. Admin requests through a leaked `session_passkey`. Keys are not persisted, expire within 300 s, and are dropped at disconnect. An attacker needs both the live transport link and access to engine memory.
+5. Silent data loss under backpressure. `MeshEvent.PacketsDropped` is emitted whenever the engine drops packets.
+6. Out-of-spec wire data crashing the engine. `WireCodec` rejects malformed envelopes, `MeshtasticException.Protocol` surfaces, and the engine continues. Kotest property tests fuzz the codec.
 
-## What the SDK does NOT defend against
+## What the SDK does not defend against
 
-1. **A compromised host process.** If the host can read SDK memory, it can read PSKs, session passkeys, and cleartext mesh packets. This is true of any library.
-2. **A compromised firmware.** The SDK trusts what the device tells it. A malicious device can lie about NodeDB contents, claim arbitrary `session_passkey`s, etc.
-3. **Physical access to the device.** USB serial gives full PhoneAPI access. The device's own admin-key gating (firmware feature) is the appropriate mitigation; the SDK exposes it via `AdminApi`.
-4. **Eavesdropping on TCP/4403.** As stated above — host's responsibility.
-5. **Side-channel attacks against AES on the device.** Out of scope; firmware concern.
+1. A compromised host process, which can read PSKs, session passkeys and cleartext packets from memory. This is true of any library.
+2. Compromised firmware. The SDK trusts what the node reports, including NodeDB contents and session passkeys.
+3. Physical access to the node. USB serial gives full PhoneAPI access. The node's admin-key gating is the mitigation, and the SDK exposes it through `AdminApi`.
+4. Eavesdropping on TCP port 4403 or `ws://`. Protecting those links is the host's responsibility.
+5. Side-channel attacks on AES in the node, which are a firmware concern.
 
 ## Reporting vulnerabilities
 
-Use the org's coordinated-disclosure process. See [`/SECURITY.md`](../SECURITY.md) at the repo root for the supported channels (private GitHub Security Advisory or the contacts listed there).
-
-Vulnerabilities in the underlying firmware go to the `meshtastic/firmware` security process.
+Use the org's coordinated-disclosure process; [`SECURITY.md`](../SECURITY.md) at the repository root lists the channels (a private GitHub Security Advisory or the listed contacts). Report firmware vulnerabilities through the `meshtastic/firmware` security process.
 
 ## Related
 
-- [`protocol.md`](./protocol.md) §9 (channel encryption), §10 (PKI DMs), §13 (admin/session_passkey)
-- [`references/meshtastic-firmware-behavior.md`](./references/meshtastic-firmware-behavior.md) — confirms the device, not the SDK, decrypts PKI
-- [ADR-005](./decisions/005-api-shape.md) — `recordOwnNode` rebind contract
-- [`error-taxonomy.md`](./error-taxonomy.md) — `SessionKeyExpired` retry behavior
+- [`protocol.md`](./protocol.md) §9 (channel encryption), §10 (PKI direct messages), §13 (admin and session passkey)
+- [`protocol.md` §7 payload paths](./protocol.md#payload-paths): the node, not the SDK, decrypts channel and PKI traffic
+- [ADR-005](./decisions/005-api-shape.md): the `recordOwnNode` rebind contract
+- [`error-taxonomy.md`](./error-taxonomy.md): `SessionKeyExpired` retry behavior

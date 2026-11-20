@@ -1,45 +1,32 @@
 # Support
 
-Thanks for using `meshtastic-sdk`. Here's how to get help.
+How to get help with `meshtastic-sdk`.
 
-## Before You Ask
+## Before you ask
 
-1. Check the [README](README.md) and the docs under [`docs/`](docs/) — start
-   with [`docs/SPEC.md`](docs/SPEC.md), [`docs/protocol.md`](docs/protocol.md),
-   and [`docs/error-taxonomy.md`](docs/error-taxonomy.md).
-2. Search existing
-   [issues](https://github.com/meshtastic/meshtastic-sdk/issues) and
-   [discussions](https://github.com/meshtastic/meshtastic-sdk/discussions) —
-   your question may already be answered.
-3. Re-run with the submodule fully initialized
-   (`git submodule update --init --recursive`) — most "missing proto symbol"
-   reports trace back to a stale submodule.
+1. Check the [README](README.md) and [`docs/`](docs/), starting with [`docs/integration-guide.md`](docs/integration-guide.md), [`docs/protocol.md`](docs/protocol.md) and [`docs/error-taxonomy.md`](docs/error-taxonomy.md).
+2. Search the existing [issues](https://github.com/meshtastic/meshtastic-sdk/issues).
+3. For a missing or renamed generated proto symbol, check the `meshtasticProtobufs` pin in `gradle/libs.versions.toml`; the types come from the published `org.meshtastic:protobufs` artifact.
 
-## Where to Ask
+## Where to ask
 
 | Need | Channel |
 | --- | --- |
-| **Usage question** ("how do I…") | GitHub Discussions |
-| **Bug report** (reproducible misbehavior) | GitHub Issues — use the bug template |
-| **Feature request** | GitHub Issues — use the feature template |
-| **Security vulnerability** | See [`SECURITY.md`](SECURITY.md) — do **not** open a public issue |
-| **General Meshtastic ecosystem questions** | The official [Meshtastic Discord and forums](https://meshtastic.org) |
+| Bug report (reproducible misbehavior) | GitHub Issues, bug template |
+| Feature request | GitHub Issues, feature template |
+| Security vulnerability | [`SECURITY.md`](SECURITY.md); do not open a public issue |
+| Usage and general Meshtastic questions | The [Meshtastic community channels](https://meshtastic.org/docs/community/) |
 
-## Filing a Good Bug Report
+## Filing a good bug report
 
 Include:
 
-- SDK version (`gradle.properties` `version` or the published artifact coords).
-- Target platform (JVM, Android API level, iOS version).
-- Transport in use (BLE / TCP / serial) and device firmware version.
-- Minimal reproducible snippet — ideally a failing test in
-  [`samples/cli`](samples/cli) or a small Gradle project.
-- The full stack trace, plus the `LogSink` output if you have one wired up
-  (see [`docs/observability.md`](docs/observability.md) once available).
+- The SDK version (the artifact coordinates).
+- The target platform (JVM, Android API level, iOS version, or browser for JS and Wasm).
+- The transport (Bluetooth LE, TCP, serial or WebSocket) and the node's firmware version.
+- A minimal reproduction, ideally a [`samples/cli`](samples/cli) command or a small Gradle project.
+- The full stack trace, plus `LogSink` output if one is wired up (see [`docs/observability.md`](docs/observability.md)).
 
-## Response Times
+## Response times
 
-This is a volunteer-maintained project. We aim to triage new issues within a
-week, but there are no guarantees. Sponsoring or contributing review/PR work
-is the fastest way to move something up the queue — see
-[`CONTRIBUTING.md`](CONTRIBUTING.md).
+Volunteers maintain the project. Maintainers aim to triage new issues within a week, without guarantees. Contributing reviews or pull requests is the fastest way to move something up the queue; see [`CONTRIBUTING.md`](CONTRIBUTING.md).

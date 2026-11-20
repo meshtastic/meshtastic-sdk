@@ -1,17 +1,14 @@
 # Module testing
 
-Testing utilities and fakes for the Meshtastic KMP SDK. Provides in-memory transport
-and storage fakes, test builders for common message types, and coroutine test helpers
-for use in unit tests across all modules.
+Test doubles for code built on the Meshtastic KMP SDK, so a consumer can test against `RadioClient` without a transport or hardware.
 
-This module is published so that SDK consumers can write tests against their own
-Meshtastic-based code without depending on real transports or hardware.
-
-Add as a `testImplementation` dependency:
+Add it to your test source set:
 
     commonTest.dependencies {
         implementation("org.meshtastic:sdk-testing:<version>")
     }
 
+`:testing` brings `:core`, Turbine and kotlinx-coroutines-test with it through `api`.
+
 Key packages:
-- `org.meshtastic.sdk.testing` — `FakeRadioTransport` (in-memory `RadioTransport` whose `frames()` flow is driven by tests) and `TestClock` (deterministic `kotlin.time.Clock` for time-sensitive tests — advance virtual time without `runTest`'s scheduler). `InMemoryStorage` and `InMemoryStorageProvider` live in `:core` as `org.meshtastic.sdk.InMemoryStorage(Provider)` since 0.3.0; the aliases here are deprecated.
+- `org.meshtastic.sdk.testing`: `FakeRadioTransport`, an in-memory `RadioTransport` driven by the test. It replays pre-loaded frames, injects packets and canned admin, telemetry, routing and store-and-forward responses, records outbound frames, and with `autoHandshake = true` answers the handshake so `RadioClient.connect()` completes. `TestClock` is a `kotlin.time.Clock` the test advances by hand. `FromRadio.toFrame()` wraps a message as a framed `Frame`. `InMemoryStorage` and `InMemoryStorageProvider` live in `:core` as `org.meshtastic.sdk.InMemoryStorage(Provider)`; the aliases here are deprecated.

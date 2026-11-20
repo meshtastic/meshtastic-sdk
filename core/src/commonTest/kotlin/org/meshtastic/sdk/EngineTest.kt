@@ -111,7 +111,7 @@ class EngineTest {
 
     @Test
     fun testCancelOnSentIsNoOp() = runTest {
-        // Per SPEC: cancel() on Sent or later is a no-op; state is unchanged.
+        // Per the MessageHandle.cancel() contract: cancel() on Sent or later is a no-op; state is unchanged.
         // Use a unicast packet so it stays in Sent (fire-and-forget broadcasts auto-resolve to Acked).
         val client = buildClient()
         client.connect()

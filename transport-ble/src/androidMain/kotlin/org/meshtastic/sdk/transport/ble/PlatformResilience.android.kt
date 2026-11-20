@@ -45,8 +45,9 @@ private class AndroidBondControl(private val device: BluetoothDevice) : BondCont
 
 /**
  * Calls the hidden `BluetoothGatt.refresh()` on the live connection. Kable keeps the gatt in private
- * fields (`connection` on the peripheral, `gatt` on the connection); consumer-rules.pro keeps both
- * names. False when either hop or the method is unreachable, e.g. a Kable bump or the hidden-API blocklist.
+ * fields (`connection` on the peripheral, `gatt` on the connection); consumer-rules.pro names both,
+ * but the build does not publish it, so a minified app must copy the rules. False when either hop
+ * or the method is unreachable, e.g. a Kable bump or the hidden-API blocklist.
  */
 @Suppress("TooGenericExceptionCaught", "SwallowedException")
 internal fun Peripheral.refreshHiddenGattCache(): Boolean = try {

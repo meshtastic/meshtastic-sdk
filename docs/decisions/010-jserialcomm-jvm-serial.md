@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Accepted |
+| **Status** | Accepted; superseded in part by [ADR-016](016-usb-serial-for-android-backend.md) (second Android backend) |
 | **Date** | 2026-04-19 |
 | **Deciders** | Maintainers |
 | **Supersedes** | — |
@@ -43,6 +43,11 @@ and frame-resync FSM live in `jvmAndroidMain`. Each port is driven by a
 dedicated background thread; reads are blocking on that thread and
 bridged to the engine via a coroutine `Channel` so the engine itself
 stays single-writer ([ADR-002](002-architecture.md)).
+
+> **Superseded in part by [ADR-016](016-usb-serial-for-android-backend.md):** Android also has
+> `AndroidUsbSerialPorts`, backed by usb-serial-for-android as a `compileOnly` dependency. The
+> jSerialComm path on Android is `AndroidSerialPorts.init(context)` then
+> `AndroidSerialPorts.open(portName)`; there is no `openFromDeviceConnection`.
 
 ## Rationale
 

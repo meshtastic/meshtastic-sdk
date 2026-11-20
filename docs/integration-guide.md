@@ -1,223 +1,122 @@
 # Integration guide
 
-End-to-end recipes for embedding `meshtastic-sdk` in an application.
-Pairs with [`api-reference.md`](./api-reference.md) (what exists) and
-[`observability.md`](./observability.md) (how to see what it's doing).
+Recipes for embedding `meshtastic-sdk` in an application: dependencies, building a client, per-transport setup, storage, sending, admin, and testing. [api-reference.md](./api-reference.md) lists what exists and [observability.md](./observability.md) covers seeing what it does.
 
-## Android setup checklist
+## Platform support
 
-If you target Android, work through this checklist once and you can skip
-the platform-specific call-outs scattered through later sections.
+| Module | JVM | Android | iOS | JS, Wasm |
+|---|---|---|---|---|
+| `sdk-core`, `sdk-testing` | yes | yes | yes | yes |
+| `sdk-transport-websocket` | yes | yes | yes | yes |
+| `sdk-transport-tcp` | yes | yes | yes | no |
+| `sdk-transport-ble` | yes | yes | yes | no |
+| `sdk-transport-serial` | yes | yes | no | no |
+| `sdk-storage-sqldelight` | yes | yes | yes | no |
 
-> **Minimum API: Android 8.0 Oreo (API 26).** All `sdk-*`
-> Android artifacts pin `minSdk = 26`. An app with `minSdk < 26` will
-> fail to resolve the dependency at build time. There is no runtime
-> fallback for older OS versions.
-
-### 1. AndroidManifest.xml — paste this block
-
-The block below covers every transport. Trim the permissions you do
-not use.
-
-```xml
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-          xmlns:tools="http://schemas.android.com/tools">
-
-    <!-- BLE transport (API 31+; for API ≤ 30, also add BLUETOOTH,
-         BLUETOOTH_ADMIN, and ACCESS_FINE_LOCATION) -->
-    <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
-                     android:usesPermissionFlags="neverForLocation"
-                     tools:targetApi="31" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"
-                     tools:targetApi="31" />
-
-    <!-- Foreground service (required on API 34+ to keep BLE/USB
-         connections alive in the background). -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- USB-serial transport -->
-    <uses-feature android:name="android.hardware.usb.host" />
-
-    <application>
-
-        <!-- Foreground service hosting your RadioClient -->
-        <service
-            android:name=".RadioConnectionService"
-            android:exported="false"
-            android:foregroundServiceType="connectedDevice" />
-
-        <!-- USB attach/detach intents (optional but recommended) -->
-        <receiver
-            android:name=".UsbDeviceReceiver"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-                <action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />
-            </intent-filter>
-            <meta-data
-                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/device_filter" />
-        </receiver>
-
-    </application>
-</manifest>
-```
-
-### 2. res/xml/device_filter.xml (USB only)
-
-```xml
-<resources>
-    <usb-device vendor-id="0x10c4" product-id="0xea60" />  <!-- CP2102 (Silicon Labs) -->
-    <usb-device vendor-id="0x1a86" product-id="0x7523" />  <!-- CH340 -->
-    <usb-device vendor-id="0x0403" product-id="0x6001" />  <!-- FTDI -->
-</resources>
-```
-
-### 3. Runtime work in code
-
-| Concern | Where to look |
-|---|---|
-| Requesting BLE runtime permissions | [§4 BLE](#ble) |
-| Starting a foreground service before `connect()` | [§4 BLE](#ble) (Android 14+ requirement) |
-| `UsbManager.requestPermission(...)` flow | [§4 Serial (USB)](#serial-usb) |
-| Wiring `AndroidContextHolder` for SqlDelight storage | [§5 Storage on Android](#5-storage-on-android) |
-| Lifecycle-safe `Flow` collection in Fragments / Compose | [Reactive lifecycle management guide](consumer-guides/reactive-lifecycle-management.md) |
-| Deciding what to retry vs surface to the user | [Error-handling guide](consumer-guides/error-handling.md) |
+Every Android artifact sets `minSdk = 26` (Android 8.0). A web host runs the engine in the page, connects with `WebSocketTransport`, and stores state with `InMemoryStorageProvider` ([ADR-017](./decisions/017-web-targets.md)).
 
 ## 1. Add the dependency
 
 ```kotlin
-// settings.gradle.kts — Maven Central is the only repository needed
+// settings.gradle.kts: Maven Central is the only repository needed
 dependencyResolutionManagement {
     repositories { mavenCentral() }
 }
 
-// build.gradle.kts (consumer module)
+// build.gradle.kts
 dependencies {
-    implementation(platform("org.meshtastic:sdk-bom:<version>"))
+    implementation(platform("org.meshtastic:sdk-bom:<VERSION>"))
     implementation("org.meshtastic:sdk-core")
     implementation("org.meshtastic:sdk-storage-sqldelight")
 
-    // Pick the transports your app supports:
+    // The transports your app supports:
     implementation("org.meshtastic:sdk-transport-tcp")
     implementation("org.meshtastic:sdk-transport-ble")
-    implementation("org.meshtastic:sdk-transport-serial")  // JVM + Android
+    implementation("org.meshtastic:sdk-transport-serial")
+    implementation("org.meshtastic:sdk-transport-websocket")
+
+    testImplementation("org.meshtastic:sdk-testing")
 }
 ```
 
-The BOM aligns every `sdk-*` artifact to one version (see
-[`bom/README.md`](../bom/README.md) for full details).
-`sdk-testing` is available as `testImplementation`.
+Replace `<VERSION>` with a release from [CHANGELOG.md](../CHANGELOG.md). The BOM aligns every `sdk-*` artifact ([bom/README.md](../bom/README.md)).
 
 ## 2. Build a `RadioClient`
 
-
 ```kotlin
-import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import org.meshtastic.sdk.transport.tcp.TcpTransport
 
 val client = RadioClient.Builder()
     .transport(TcpTransport(host = "meshtastic.local", port = 4403))
-    .storage(SqlDelightStorageProvider(baseDir = "/var/data"))   // "" = in-memory
+    .storage(SqlDelightStorageProvider(baseDir = "/var/data"))
     .build()
 
-client.connect()        // throws MeshtasticException on failure
+client.connect()   // throws MeshtasticException on failure
 ```
 
-Required Builder calls: `transport(...)`, `storage(...)`. Everything
-else has sensible defaults — see [`api-reference.md` §Construction](./api-reference.md#construction).
+`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). Pass `.autoReconnect(AutoReconnectConfig())` for the engine to reconnect after a drop.
 
-## 4. Per-transport setup
+## 3. Per-transport setup
 
 ### TCP
 
-Zero platform setup. Works on JVM, Android, iOS, and Linux.
+No platform setup. The node listens on TCP port 4403 when Wi-Fi or Ethernet is on; `meshtasticd` listens there too.
 
 ```kotlin
 val transport = TcpTransport(host = "192.168.1.50", port = 4403)
 ```
 
-The Meshtastic firmware listens on TCP/4403 when the WiFi/Ethernet
-interface is enabled.
+Radios advertise `_meshtastic._tcp` over mDNS. `JvmTcpDiscovery()`, `AndroidTcpDiscovery(context)`, and `IosTcpDiscovery()` implement `TcpDiscovery.discover()`, a flow of `TcpDiscoveryEvent.Found(radio)` and `Lost(serviceName)`; `radio.toTransport()` opens a `TcpTransport`.
 
-### BLE
+### Bluetooth
+
+Scan with `BleScanner` and build the transport from the result; this works on every target.
 
 ```kotlin
-import com.juul.kable.Peripheral
-import com.juul.kable.Scanner
+import kotlinx.coroutines.flow.first
+import org.meshtastic.sdk.transport.ble.BleScanner
+import org.meshtastic.sdk.transport.ble.BleTransport
 
-val ad = Scanner {
-    filters { match { services = listOf(/* Meshtastic service UUID */) } }
-}.advertisements.first()
-
-val transport = BleTransport(
-    peripheral = Peripheral(ad),
-    address    = ad.identifier.toString(),   // storage identity only
-)
+val radio = BleScanner.scan().first()
+val transport = BleTransport(radio)
 ```
+
+`BleScanner.scan()` filters on the Meshtastic service UUID; `DiscoveredRadio` carries `name`, `rssi`, and `address`. To pick a radio from a user-typed `ble:NEEDLE`, filter with `bleAdvertisementMatches`.
+
+On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` connects by MAC address without a fresh scan, and `bondedBleDevices(context)` lists the host's bonded devices for a picker. `BleResilience(bondFirst = true, autoConnectFallback = true, refreshStaleGattCache = true)` turns on link recovery for difficult radios. `refreshStaleGattCache` reads two private Kable fields by reflection; in a minified build, copy the keep rules from [`transport-ble/consumer-rules.pro`](../transport-ble/consumer-rules.pro) into your own rules, since the module's build doesn't publish them. `BleTransport.deviceLogs()` streams the radio's log ([observability.md](./observability.md#device-logs)).
 
 Platform requirements:
 
-- **Android** — declare and request the runtime permissions appropriate
-  to your `targetSdk`:
-  - SDK ≥ 31: `BLUETOOTH_SCAN`, `BLUETOOTH_CONNECT`. Add
-    `android:usesPermissionFlags="neverForLocation"` to `BLUETOOTH_SCAN`
-    if you do not need location-derived scan results.
-  - SDK ≤ 30: `BLUETOOTH`, `BLUETOOTH_ADMIN`, plus
-    `ACCESS_FINE_LOCATION` for scanning.
-  Bonding is handled by the OS once the SDK initiates GATT.
+- **Android**: request `BLUETOOTH_SCAN` and `BLUETOOTH_CONNECT` on API 31 and later; add `android:usesPermissionFlags="neverForLocation"` to `BLUETOOTH_SCAN` if you don't derive location from scans. API 30 and earlier need `BLUETOOTH`, `BLUETOOTH_ADMIN`, and `ACCESS_FINE_LOCATION`. The SDK requests none of them.
+- **iOS**: set `NSBluetoothAlwaysUsageDescription` in `Info.plist`, and add the `bluetooth-central` background mode for background use.
+- **JVM**: Linux needs BlueZ. On macOS and Windows, Bluetooth through Kable is best-effort.
 
-  **⚠️ Android 14+ Foreground Service requirement:** On API 34+, BLE and USB connections die in the background without a foreground service. The SDK does **not** start one for you. Wrap your `connect()`/`disconnect()` calls in an `Activity`/`Service` that declares foreground service permissions and type:
-
-  ```xml
-  <!-- AndroidManifest.xml -->
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
-
-  <application>
-    <service
-      android:name=".RadioConnectionService"
-      android:foregroundServiceType="connectedDevice" />
-  </application>
-  ```
-
-  Your `Service` must call `startForeground(...)` with a notification before `connect()` and stop it in `onDestroy()` or when disconnecting. See [Android system documentation](https://developer.android.com/develop/background-work/services/foreground-services) for details.
-
-- **iOS** — set `NSBluetoothAlwaysUsageDescription` in `Info.plist` and
-  request `CBCentralManager` authorization before scanning. Coordinate
-  background usage via `bluetooth-central` background mode if needed.
-- **JVM (desktop)** — Linux requires BlueZ; macOS/Windows BLE through
-  Kable is best-effort.
-
-### Serial (USB)
+### Serial
 
 JVM:
 
 ```kotlin
 import org.meshtastic.sdk.transport.serial.JvmSerialPorts
 
-val ports = JvmSerialPorts.list()                         // List<String>
-val transport = JvmSerialPorts.open(ports.first(), baudRate = 115200)
+val port = JvmSerialPorts.findMeshtastic().first()                 // List<SerialPortInfo>, filtered by USB vendor ID
+val transport = JvmSerialPorts.open(port.name, baudRate = 115_200)
 ```
 
-Android:
+On Linux, `JvmSerialPorts.byIdPath(port.name)` returns the stable `/dev/serial/by-id/…` path, which survives replugs; `ttyACM` numbers don't.
+
+Android, with jSerialComm:
 
 ```kotlin
 import org.meshtastic.sdk.transport.serial.AndroidSerialPorts
 
-// Application.onCreate() or DI bootstrap:
-AndroidSerialPorts.init(applicationContext)
-
-// After UsbManager.requestPermission(...) succeeds:
-val transport = AndroidSerialPorts.open(portName, baudRate = 115200)
+AndroidSerialPorts.init(applicationContext)                 // once, for example in Application.onCreate()
+// After UsbManager.requestPermission(...) is granted:
+val transport = AndroidSerialPorts.open(portName, baudRate = 115_200)
 ```
 
-Android on usb-serial-for-android (the driver stack Meshtastic-Android uses), for hosts that
-already carry it or need its probe table. The library is `compileOnly` in the SDK because it
-is published on JitPack, so add both the dependency and the repository:
+Android, with usb-serial-for-android, the driver stack Meshtastic-Android uses. The SDK depends on it `compileOnly` because it's published on JitPack, so add the dependency and the repository:
 
 ```kotlin
 // settings.gradle.kts
@@ -225,86 +124,52 @@ dependencyResolutionManagement.repositories {
     maven("https://jitpack.io") { content { includeGroup("com.github.mik3y") } }
 }
 // build.gradle.kts
-implementation("com.github.mik3y:usb-serial-for-android:3.11.0")
+implementation("com.github.mik3y:usb-serial-for-android:3.12.0")
 ```
 
 ```kotlin
 import org.meshtastic.sdk.transport.serial.AndroidUsbSerialPorts
 
-val ports = AndroidUsbSerialPorts.list(context)          // devices a driver claims, permission or not
-// After UsbManager.requestPermission(device, ...) succeeds:
+val ports = AndroidUsbSerialPorts.list(context)              // devices a driver claims, permission or not
+// After UsbManager.requestPermission(device, ...) is granted:
 val transport = AndroidUsbSerialPorts.open(context, ports.first().name)
 ```
 
-#### AndroidManifest.xml setup
+Every `open` has an overload with `onTextLine: (String) -> Unit`, which receives the text the device prints between frames.
 
-```xml
-<!-- Declare USB host hardware feature -->
-<uses-feature android:name="android.hardware.usb.host" />
+The host owns the USB permission flow:
 
-<!-- Declare USB device attachment broadcast receiver (optional but recommended) -->
-<application>
-  <receiver android:name=".UsbDeviceReceiver"
-            android:exported="true">
-    <intent-filter>
-      <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
-      <action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />
-    </intent-filter>
-    <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-               android:resource="@xml/device_filter" />
-  </receiver>
-</application>
+1. Declare `<uses-feature android:name="android.hardware.usb.host" />`, and optionally a receiver for `USB_DEVICE_ATTACHED` with a `res/xml/device_filter.xml` listing the USB vendor and product IDs to match.
+2. Call `UsbManager.requestPermission(device, pendingIntent)` before `open`.
+3. Open the port when the permission broadcast reports `EXTRA_PERMISSION_GRANTED`.
+
+`samples/cli` has a complete JVM example. iOS has no serial transport; use TCP, Bluetooth, or WebSocket.
+
+### WebSocket
+
+For nodes that serve the WebSocket phone API at `/api/v1/ws`. Firmware support is in open pull requests; the module's [Module.md](../transport-websocket/Module.md) lists them.
+
+```kotlin
+import org.meshtastic.sdk.transport.websocket.WebSocketTransport
+
+val transport = WebSocketTransport("ws://meshtastic.local")   // path defaults to /api/v1/ws
 ```
 
-#### Device detection and permission flow
+The node serves one client at a time; a newer client displaces the older one, which ends with `TransportState.Error(recoverable = false)`. A `wss://` node with a self-signed certificate needs an `HttpClient` that trusts it, passed as the second argument, or, in a browser, trust granted in the browser. Module.md has the close codes and browser constraints. On Android, declare the `INTERNET` permission.
 
-You are responsible for:
+### From a connection string
 
-1. **Filtering devices** — match Meshtastic device VID/PID in a `res/xml/device_filter.xml`:
+`TransportTarget.parse("tcp:192.168.1.50")` returns `TransportTarget.Tcp(host, port)`, and likewise for `ble:NEEDLE` and `serial:PORT[:BAUD]`, or `null` for anything else. Map the target to one of the transports in this section; the SDK leaves that step to the host so an app links only the transports it uses.
 
-   ```xml
-   <!-- res/xml/device_filter.xml -->
-   <resources>
-     <usb-device vendor-id="0x10c4" product-id="0xea60" />  <!-- CP2102 (Silicon Labs) -->
-     <usb-device vendor-id="0x1a86" product-id="0x7523" />  <!-- CH340 -->
-     <usb-device vendor-id="0x0403" product-id="0x6001" />  <!-- FTDI -->
-   </resources>
-   ```
+### Android background work
 
-2. **Requesting permission** — before calling `AndroidSerialPorts.open(...)` or `AndroidUsbSerialPorts.open(...)`:
+On API 34 and later, Bluetooth and USB connections stop in the background without a foreground service, and the SDK doesn't start one. Host the client in a `Service` with `android:foregroundServiceType="connectedDevice"`, declare `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_CONNECTED_DEVICE` (and `POST_NOTIFICATIONS` for the notification), call `startForeground(...)` before `connect()`, and stop it after `disconnect()`. See the [Android foreground service documentation](https://developer.android.com/develop/background-work/services/foreground-services).
 
-   ```kotlin
-   val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
-   usbManager.requestPermission(device, PendingIntent.getBroadcast(
-       context, 0, Intent(ACTION_USB_PERMISSION), PendingIntent.FLAG_MUTABLE
-   ))
-   ```
+## 4. Storage
 
-3. **Handling the broadcast** — in your `BroadcastReceiver`:
+`SqlDelightStorageProvider(baseDir)` keeps one SQLite database per radio under `baseDir`, shared by every transport that reaches the same node. `baseDir = ""` selects in-memory mode, lost on close. `InMemoryStorageProvider()` from `sdk-core` keeps everything in RAM on every target, including the web.
 
-   ```kotlin
-   class UsbDeviceReceiver : BroadcastReceiver() {
-       override fun onReceive(context: Context, intent: Intent) {
-           if (intent.action == ACTION_USB_PERMISSION) {
-               val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-               if (granted) {
-                   // User approved; now open the port
-                   val transport = AndroidSerialPorts.open(portName)
-               }
-           }
-       }
-   }
-   ```
-
-See `samples/cli` for a complete worked example.
-
-iOS is **not** supported — use TCP or BLE.
-
-## 3. Storage on Android
-
-`SqlDelightStorageProvider` needs an Android `Context` for its
-`AndroidSqliteDriver`. There is **no** `init(context)` method — set the
-holder once before the first `activate(...)`:
+On Android, set the context holder once before the first `connect()`:
 
 ```kotlin
 import org.meshtastic.sdk.storage.sqldelight.AndroidContextHolder
@@ -317,115 +182,104 @@ class MyApp : Application() {
 }
 ```
 
-Then construct as on any other platform:
+Then construct it as on other platforms, for example `SqlDelightStorageProvider(baseDir = filesDir.absolutePath)`.
 
-```kotlin
-val storage = SqlDelightStorageProvider(baseDir = filesDir.absolutePath)
-```
+## 5. Lifecycle and threading
 
-`baseDir = ""` selects in-memory mode (handy for tests; lost on close).
-Otherwise the provider creates one SQLite file per `TransportIdentity`
-under `$baseDir/`.
+- `connect()` suspends until `connection.value == ConnectionState.Connected` and throws `MeshtasticException` on failure ([error-taxonomy.md](./error-taxonomy.md)).
+- `connect()` isn't idempotent: calling it while connected throws `AlreadyConnected`. Check `client.connection.value` first.
+- `nodes`, `packets`, `events`, and `fromRadio` are hot flows that any number of collectors can share. `nodes` starts every subscription with a snapshot; the others deliver only what arrives while you collect. A slow collector loses items rather than slowing the engine ([api-reference.md, Streams](./api-reference.md#streams)).
+- `disconnect()` is idempotent and never throws. A pending `MessageHandle.await()` returns `SendOutcome.Failure(SendFailure.Disconnected)`.
+- `withConnection { … }` connects, runs a block, and always disconnects.
 
-## 4. Lifecycle, threading, and shutdown
+Build one `RadioClient` per radio and hold it at app scope, for example as a DI singleton, so a screen or configuration change doesn't tear the session down. [`samples/parity-android-app`](../samples/parity-android-app) is the compiled Android reference for building and connecting a client; it scopes its client to the activity to stay short.
 
-- `connect()` suspends until `connection.value == ConnectionState.Connected`
-  and throws `MeshtasticException` on any failure (see
-  [`error-taxonomy.md`](./error-taxonomy.md)).
-- A second call to `connect()` while already connected throws
-  `MeshtasticException.AlreadyConnected` — this is **not** idempotent
-  by design. Guard at your call site (`if (client.connection.value !is Connected)`).
-- All public flows (`nodes`, `packets`, `events`) are cold/Multi-collectorable;
-  collect from anywhere. Backpressure is `SUSPEND` for `nodes`/`packets`
-  and `DROP_OLDEST` for `events` (use `events` for soft observability,
-  not for accounting).
-- `disconnect()` is idempotent and never throws. Pending
-  `MessageHandle.await()` resolves to `SendOutcome.Failure(Disconnected)`.
-- The `RadioClient` owns a `SupervisorJob`. To run multiple radios in
-  parallel, build separate `RadioClient` instances.
-
-## 5. Sending messages
+## 6. Sending messages
 
 ```kotlin
 val handle = client.sendText("hello mesh")
 when (val outcome = handle.await()) {
-    SendOutcome.Success    -> println("acked / rebroadcast heard")
+    SendOutcome.Success -> println("acked, or a relay was heard")
     is SendOutcome.Failure -> println("failed: ${outcome.reason}")
 }
 ```
 
-Want progress instead of the terminal outcome? Collect `handle.state` —
-it transitions `Queued → Sent → Acked|Delivered|Failed(reason)`. See
-[`api-reference.md` §SendState](./api-reference.md#sendstate-sendfailure-sendoutcome).
+For progress, collect `handle.state`: `Queued`, `Sent`, then `Acked`, `Delivered`, or `Failed(reason)`. [consumer-guides/error-handling.md](./consumer-guides/error-handling.md) covers which failures to retry.
 
-## 6. Admin operations and config builders
+## 7. Admin operations
 
 ```kotlin
-// Read the device config
+// Read a config section
 when (val result = client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)) {
-    is AdminResult.Success -> println("LoRa region: ${result.value.lora.region}")
+    is AdminResult.Success -> println("LoRa region: ${result.value.lora?.region}")
     AdminResult.Timeout -> println("timed out")
-    AdminResult.RateLimited -> println("rate-limited; try again later")
+    AdminResult.RateLimited -> println("rate limited; try again later")
     else -> println("failed: $result")
 }
 
-// Write config using convenience builders (avoids manual proto construction):
-client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-
-// Batch multiple writes atomically:
-client.admin.editSettings {
-    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-    setMqttConfig { copy(enabled = true) }
+// Change one field, starting from the current section
+val lora = client.configBundle.value?.configs?.firstNotNullOfOrNull { it.lora } ?: return
+client.admin.setLoraConfig {
+    lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
 }
 
-// Target a remote node:
-val remote = client.admin.forNode(NodeId(0x12345678.toInt()))
-remote.reboot()
+// Write several sections in one transaction
+client.admin.editSettings {
+    setConfig(Config.Builder().also { it.lora = lora }.build())
+    setOwner(newOwner)
+}
+
+// Target another node
+client.admin.forNode(NodeId(0x12345678)).reboot()
 ```
 
-See [`api-reference.md` §AdminApi](./api-reference.md#adminapi-phase-2) for the full method inventory, [`api-reference.md` §Config Builder Extensions](./api-reference.md#config-builder-extensions-since-020) for all 23 builder functions, and [`error-taxonomy.md`](./error-taxonomy.md) for `AdminResult` variant meanings.
+A config builder's block starts from an empty section, not the device's values, and what it returns replaces the whole section, so build from the current config as shown. [api-reference.md, AdminApi](./api-reference.md#adminapi) has every method; [error-taxonomy.md](./error-taxonomy.md#adminresult) explains each `AdminResult`.
 
-## 7. Logging and diagnostics
+## 8. Logging and diagnostics
 
-By default the SDK is silent. Wire a `LogSink` at build time and, for
-deep debugging, opt into `protocolLogging` (with redaction). Full
-guide: [`observability.md`](./observability.md).
+The SDK is silent by default. Pass a `LogSink` to `Builder.logger(...)`; for frame-level debugging add `protocolLogging(...)`, which redacts payloads. [observability.md](./observability.md) also covers the raw `fromRadio` tap and device logs.
 
-## 8. Testing your integration
+## 9. Testing your integration
 
 ```kotlin
-// testImplementation("org.meshtastic:sdk-testing")
-import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.InMemoryStorageProvider
+import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.TransportIdentity
+import org.meshtastic.sdk.testing.FakeRadioTransport
 
-val transport = FakeRadioTransport()
+val transport = FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true)
 val client = RadioClient.Builder()
     .transport(transport)
     .storage(InMemoryStorageProvider())
     .build()
 
-// Drive the engine by feeding `FromRadio` envelopes through the fake transport.
-// See testing/Module.md and core/src/commonTest/ for working patterns.
+client.connect()                        // the fake answers the handshake
+transport.injectPacket(somePacket)      // drive inbound traffic
+val sent = transport.outboundPackets()  // inspect what the client sent
 ```
 
-## 9. PKI direct messages (DMs)
+`FakeRadioTransport` also injects admin, telemetry, traceroute, and routing replies. [testing/Module.md](../testing/Module.md) and `core/src/commonTest/` have working patterns.
 
-Direct messages between two nodes are encrypted end-to-end with X25519 + AES-CTR keys derived from each peer's `User.public_key`. The SDK does not perform the crypto itself — the firmware does — but it does surface everything you need to verify peers:
+## 10. PKI direct messages
 
-- Inbound DM payloads arrive as `MeshPacket` with `decoded.public_key` populated whenever the firmware decrypted them with a known peer key. An empty `public_key` on a `decoded.portnum == TEXT_MESSAGE_APP` packet from a non-broadcast `to` field means the peer's identity could not be verified.
-- The first time a peer's `public_key` is observed (or when it changes), the engine emits `MeshEvent.KeyVerification` with a `KeyVerificationPrompt` describing the new fingerprint. Consumers should surface this to the user (TOFU/SAS-style) and persist the accepted key alongside the `NodeId`.
-- `MeshEvent.SecurityWarning.DuplicatedPublicKey` and `MeshEvent.SecurityWarning.LowEntropyKey` flag `node_info` records whose `public_key` is suspect; treat the affected `NodeId` as untrusted for DMs until a manual re-verification round trips.
+The node encrypts and decrypts direct messages with X25519 keys; the SDK never handles a private key ([protocol.md §10](./protocol.md#10-pki-direct-messages-x25519--aes-ccm)).
 
-Sending DMs is the same as any other text message — call `client.sendText(...)` with a non-broadcast `to` — but you should refuse the call if the destination's last-seen `public_key` does not match what the user previously verified. The engine will not reject the send for you.
+- Inbound direct messages arrive on `packets` already decoded.
+- `sendDirectMessageEncrypted(to, text)` sets `pki_encrypted`, so the node encrypts to the recipient's key. `sendText` to a unicast destination also works when the node has the recipient's key.
+- Each node's key is `NodeInfo.user.public_key`, and the local one is in `ownNode`. To guard against impersonation, compare a peer's current key with one the user verified before sending, since the engine doesn't refuse the send.
+- `MeshEvent.SecurityWarning.DuplicatedPublicKey` means the node saw a key it already holds for another node; `LowEntropyKey` means the local key is weak.
+- Firmware's key verification exchange runs over `KEY_VERIFICATION_APP`: start it with `admin.keyVerification(...)` and read replies with `asKeyVerification()`.
 
-## 10. MQTT proxy mode (transparent)
+## 11. MQTT
 
-Some devices participate in a regional MQTT mesh. When the firmware has MQTT enabled, inbound packets that originated over MQTT arrive with `MeshPacket.via_mqtt = true` and outbound packets you send may be re-broadcast to the MQTT topic by the device itself. Both sides are transparent to the SDK: there is no `transport-mqtt` artifact (R-11 in [`roadmap.md`](./roadmap.md)) and you do not need to configure anything beyond the device. See [`protocol.md` §14](./protocol.md#14-mqtt-proxy-mode) for the wire details and the topic naming convention; `via_mqtt` is the only signal the SDK exposes today.
+When a node has MQTT on, packets that crossed MQTT arrive with `MeshPacket.via_mqtt = true` (also `MeshPacket.transport == PacketTransport.Mqtt`), and the node may publish what you send. Nothing on the client side needs configuring for that.
+
+When `mqtt.proxy_to_client_enabled` is set, the node reaches the broker through the client instead: its MQTT traffic arrives as `MeshEvent.MqttProxyMessage`, the host publishes it, and broker traffic goes back through `sendRaw` as a `ToRadio` with `mqttClientProxyMessage` set. The SDK doesn't bundle an MQTT client ([roadmap.md](./roadmap.md) R-11). [protocol.md §14](./protocol.md#14-mqtt-proxy-mode) has the wire details.
 
 ## Where to next
 
-- [API reference](./api-reference.md) — every public symbol
-- [Error taxonomy](./error-taxonomy.md) — which failures are throws vs. results vs. events
-- [Protocol notes](./protocol.md) — wire-level behavior the SDK speaks
-- [Sample CLI](../samples/cli) — a complete reference consumer for TCP, BLE, and serial
-- [ADR-005](./decisions/005-api-shape.md) — why the surface looks the way it does
+- [API reference](./api-reference.md): every public symbol
+- [Error taxonomy](./error-taxonomy.md): which failures throw, return, or arrive as events
+- [Protocol notes](./protocol.md): the wire behavior the SDK speaks
+- [Sample CLI](../samples/cli): a reference consumer for TCP, Bluetooth, and serial
+- [ADR-005](./decisions/005-api-shape.md): why the API looks the way it does

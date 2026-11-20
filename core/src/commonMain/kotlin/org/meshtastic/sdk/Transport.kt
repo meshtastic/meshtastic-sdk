@@ -59,9 +59,9 @@ public value class TransportIdentity(public val raw: String) {
 /**
  * Specification of which radio to connect to and how.
  *
- * The SDK supports multiple transports (BLE, TCP, HTTP, serial) depending on the target platform.
- * Each transport implementation provides its own constructor; consumers pick the matching
- * [TransportSpec] for their platform and pass it to [RadioClient.Builder.transport].
+ * A [TransportSpec] only derives a [TransportIdentity]; it opens nothing. A host builds the
+ * [RadioTransport] with the transport module's own constructor and passes that instance to
+ * [RadioClient.Builder.transport]. No HTTP transport ships for [Http].
  *
  * @since 0.1.0
  */

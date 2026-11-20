@@ -13,13 +13,18 @@ import org.meshtastic.proto.ModuleConfig
 /**
  * Convenience builders for common admin config writes.
  *
+ * Each block receives an empty section, not the device's current values, and the section it
+ * returns replaces the whole section on the device. Wire types are builders-only, so build the
+ * result with `newBuilder()`; start from the current section to change one field.
+ *
  * ```kotlin
  * client.admin.setDeviceConfig {
- *     copy(role = Config.DeviceConfig.Role.CLIENT)
+ *     newBuilder().also { it.role = Config.DeviceConfig.Role.CLIENT }.build()
  * }
  *
+ * val mqtt = client.configBundle.value?.moduleConfigs?.firstNotNullOfOrNull { it.mqtt }
  * client.admin.setMqttConfig {
- *     copy(enabled = true)
+ *     (mqtt ?: this).newBuilder().also { it.enabled = true }.build()
  * }
  * ```
  */

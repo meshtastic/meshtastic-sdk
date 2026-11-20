@@ -1,8 +1,6 @@
 # meshtastic-sdk
 
-> Kotlin Multiplatform SDK for [Meshtastic](https://meshtastic.org) mesh-network radios.
-> One library. Connects to Meshtastic devices over BLE, TCP, or USB-serial from Android, JVM, and iOS,
-> and over the device's WebSocket phone API from those and from browser or Node.js hosts (Kotlin/JS and Kotlin/Wasm).
+Kotlin Multiplatform SDK for [Meshtastic](https://meshtastic.org) nodes. It connects to a node over Bluetooth LE, TCP or USB serial from Android, JVM and iOS, and over the node's WebSocket phone API from those targets and from browser or Node.js hosts (Kotlin/JS and Kotlin/Wasm).
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/sdk-core)](https://central.sonatype.com/artifact/org.meshtastic/sdk-core)
@@ -11,21 +9,19 @@
 [![Revved up by Develocity](https://img.shields.io/badge/Revved%20up%20by-Develocity-06A0CE?logo=Gradle&labelColor=02303A)](https://community.develocity.cloud/scans?search.rootProjectNames=meshtastic-sdk)
 [![API Docs](https://img.shields.io/badge/docs-Dokka-blue)](https://meshtastic.github.io/meshtastic-sdk/)
 
-📚 **[API Reference (Dokka)](https://meshtastic.github.io/meshtastic-sdk/)** — published from `main`.
-
-> **Status:** pre-1.0. APIs may change between minor versions; see [`docs/versioning.md`](docs/versioning.md). Track [`docs/`](docs/) for spec evolution.
+The [API reference (Dokka)](https://meshtastic.github.io/meshtastic-sdk/) is published from `main`. The SDK is pre-1.0, so APIs can change between minor versions; see [`docs/versioning.md`](docs/versioning.md).
 
 ## What this is
 
-A Kotlin library that talks to Meshtastic radios using the device's PhoneAPI (the same protocol the official `Meshtastic-Android` and `Meshtastic-Apple` apps use). It owns the wire-protocol details — handshake, NodeDB, ACK correlation, channel decryption, deferred-decrypt, retries — and exposes them as ergonomic Kotlin coroutines + flows + sealed types.
+A Kotlin library that talks to Meshtastic nodes over the PhoneAPI, the protocol the official Android and Apple clients use. It owns the wire-protocol details (handshake, NodeDB, ACK correlation, channel decryption, retries) and exposes them as coroutines, flows and sealed types.
 
 Use it to build:
 
-- Companion apps (Android, iOS, desktop) that don't want to reinvent the protocol.
-- Headless gateways and mesh telemetry collectors on JVM/server.
+- Companion apps for Android, iOS and desktop.
+- Headless gateways and telemetry collectors on the JVM.
 - Browser and Node.js tools on Kotlin/JS or Kotlin/Wasm, running the engine in-process over `transport-websocket`.
 
-This SDK does **not** include UI components, navigation, or storage policy — see [`docs/decisions/000-charter.md`](docs/decisions/000-charter.md) for the explicit non-goals.
+The SDK has no UI components, navigation or storage policy. [`docs/decisions/000-charter.md`](docs/decisions/000-charter.md) lists the non-goals.
 
 ## Install
 
@@ -38,18 +34,16 @@ dependencies {
 }
 ```
 
-> Released versions are published to Maven Central. For bleeding-edge builds from `main`, use the snapshot repository below.
+Transport modules: `transport-ble`, `transport-tcp`, `transport-serial` (JVM and Android; on Android, jSerialComm or usb-serial-for-android) and `transport-websocket`. Storage: `storage-sqldelight`, `InMemoryStorageProvider` from `core` when nothing has to outlive the process, or your own `StorageProvider`. The `sdk-bom` platform aligns every module version; see [`bom/README.md`](bom/README.md).
 
-Available transport modules: `transport-ble`, `transport-tcp`, `transport-websocket`, `transport-serial` (single multiplatform module covering JVM and Android; on Android, jSerialComm or usb-serial-for-android).
-Available storage modules: `storage-sqldelight`, or `InMemoryStorageProvider` from `core` when nothing needs to survive the process. Or roll your own `StorageProvider`.
-Optionally, depend on `sdk-bom` to align all module versions; see [`bom/README.md`](bom/README.md) for usage and [`docs/versioning.md`](docs/versioning.md#bom) for the versioning policy.
+API marked `@since 0.3.0` is in snapshots only until 0.3.0 is released. That covers `transport-websocket`, the JS and Wasm klibs, and the discovery APIs.
 
 ### Snapshot artifacts
 
 Every push to `main` publishes the patch after the latest release as `-SNAPSHOT` (`0.2.1-SNAPSHOT` after `0.2.0`) to the Sonatype Central snapshot repository:
 
 ```kotlin
-// settings.gradle.kts (or root build.gradle.kts repositories block)
+// settings.gradle.kts
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
@@ -65,18 +59,16 @@ dependencies {
 }
 ```
 
-Snapshot artifacts are mutable and rebuilt on every commit to `main`. For reproducible builds, depend on a released version (e.g. `org.meshtastic:sdk-core:0.2.0`) rather than a `-SNAPSHOT`.
+Snapshots are rebuilt on every commit to `main`. Depend on a released version for reproducible builds.
 
-Roadmap (post-1.0, non-breaking adds): `transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server` — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
-
-Full module matrix: [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md).
+The full module matrix is in [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md). Deferred modules are tracked in [`docs/roadmap.md`](docs/roadmap.md): `transport-mqtt-proxy` is R-11, and the remote-RPC modules (`transport-rpc`, `host-rpc-server`) are R-12, designed in [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 
 ## Quick start
 
 ```kotlin
-import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.SendOutcome
+import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import org.meshtastic.sdk.transport.tcp.TcpTransport
 
 suspend fun run() {
@@ -97,7 +89,7 @@ suspend fun run() {
 }
 ```
 
-To **observe NodeDB changes** alongside sending, run the collector in its own coroutine so it doesn't block the rest of your flow. `client.nodes` never completes — collect it from a `launch { … }` (or use `take(N)` for a bounded sample):
+`client.nodes` never completes, so collect it in its own coroutine to observe NodeDB changes while sending:
 
 ```kotlin
 import kotlinx.coroutines.coroutineScope
@@ -113,191 +105,137 @@ suspend fun observeAndSend(client: RadioClient) = coroutineScope {
                 is NodeChange.Added    -> println("+ ${change.node.user?.long_name}")
                 is NodeChange.Updated  -> println("~ ${change.node.user?.long_name} (${change.changed})")
                 is NodeChange.Removed  -> println("- ${change.nodeId}")
-                is NodeChange.WentOffline -> println("⊘ ${change.nodeId} offline")
-                is NodeChange.CameOnline  -> println("● ${change.nodeId} online")
+                is NodeChange.WentOffline -> println("${change.nodeId} offline")
+                is NodeChange.CameOnline  -> println("${change.nodeId} online")
             }
         }
     }
 
     client.sendText("hello mesh").await()  // not blocked by the collector
-    nodesJob.cancel()                      // stop observing when you're done
+    nodesJob.cancel()
 }
 ```
 
-Notes:
-- Wire-generated proto fields are snake_case (e.g. `user.long_name`, not `user.longName`).
-- **On Android**, also set `AndroidContextHolder.context = applicationContext` once in your `Application.onCreate()` before constructing a `SqlDelightStorageProvider` — see the [integration guide](docs/integration-guide.md#5-storage-on-android).
-- For Android BLE, USB-serial setup, and `SqlDelightStorageProvider` Android `Context` wiring, see the [integration guide](docs/integration-guide.md).
+Wire-generated proto fields are snake_case (`user.long_name`, not `user.longName`). On Android, set `AndroidContextHolder.context = applicationContext` in `Application.onCreate()` before constructing a `SqlDelightStorageProvider`; the [integration guide](docs/integration-guide.md#4-storage) covers this and the Bluetooth and USB setup.
 
 ### Picking a transport
 
-The example above wires `TcpTransport`. The other two transports plug
-in identically — only the `Builder.transport(...)` line changes. Each
-ships in its own artifact; pull in the one(s) you need.
+Only the `Builder.transport(...)` line changes between transports. Each ships in its own artifact.
 
 ```kotlin
-// BLE — multiplatform (Android / iOS / JVM-desktop via Kable).
-// Android: see AndroidManifest checklist + permission notes in the integration guide.
-import androidx.activity.ComponentActivity
-import androidx.activity.result.contract.ActivityResultContracts
-import com.juul.kable.Peripheral
-import com.juul.kable.Scanner
+// Bluetooth LE: Android, iOS and JVM desktop, through Kable.
+// The caller holds the Bluetooth permissions; see the integration guide.
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import org.meshtastic.sdk.transport.ble.BleScanner
 import org.meshtastic.sdk.transport.ble.BleTransport
-import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
-import org.meshtastic.sdk.RadioClient
 
-class BleQuickStartActivity : ComponentActivity() {
-    private val permissions = registerForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions(),
-    ) { granted -> if (granted.values.all { it }) lifecycleScope.launch { connect() } }
-
-    override fun onStart() {
-        super.onStart()
-        permissions.launch(arrayOf(
-            android.Manifest.permission.BLUETOOTH_SCAN,
-            android.Manifest.permission.BLUETOOTH_CONNECT,
-        ))
-    }
-
-    private suspend fun connect() {
-        // Filter by the Meshtastic GATT service UUID in real code.
-        val ad = Scanner().advertisements.first()
-        val client = RadioClient.Builder()
-            .transport(BleTransport(Peripheral(ad), address = ad.identifier.toString()))
-            .storage(SqlDelightStorageProvider(baseDir = filesDir.absolutePath))
-            .build()
-        client.connect()
-        client.events.collect { println(it) }
-    }
-}
+suspend fun firstBleNode(): BleTransport = BleTransport(BleScanner.scan().first())
 ```
 
-Full BLE setup (manifest entries, foreground service for API 34+, iOS
-`Info.plist` keys, JVM/desktop notes) is in the
-[Android setup checklist](docs/integration-guide.md#android-setup-checklist)
-and the per-transport [BLE section](docs/integration-guide.md#ble) of
-the integration guide.
-
-### If your first send doesn't work, check
-
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| `connect()` throws `MeshtasticException.TransportFailure` on TCP | Host unreachable or firmware TCP API disabled | Verify the radio's IP/hostname and that WiFi/Ethernet is enabled. See [TCP setup](docs/integration-guide.md#tcp). |
-| `connect()` hangs or fails repeatedly on BLE | Device not bonded with the OS | Pair the radio in your OS Bluetooth settings before `connect()`. See [BLE platform requirements](docs/integration-guide.md#ble). |
-| `JvmSerialPorts.open(...)` throws permission denied | Serial device permission not granted | On Linux, add the user to `dialout`. On Android, request USB permission first. See [Serial (USB)](docs/integration-guide.md#serial-usb). |
-| `sendText` returns `SendFailure` immediately on long messages | Payload exceeds the SDK-enforced 233-byte payload limit (`DATA_PAYLOAD_LEN`) | Split the text or send a smaller payload. See [Sending messages](docs/integration-guide.md#7-sending-messages). |
-| `connect()` throws `MeshtasticException.HandshakeTimeout` | `want_config_id` reply never arrived from the device | Power-cycle the radio, verify firmware ≥ 2.3, then retry. See [Build a `RadioClient`](docs/integration-guide.md#3-build-a-radioclient). |
-
 ```kotlin
-// USB-serial — JVM (jSerialComm); Android: AndroidSerialPorts (jSerialComm) or AndroidUsbSerialPorts (usb-serial-for-android)
+// USB serial: JVM (jSerialComm). Android uses AndroidSerialPorts or AndroidUsbSerialPorts.
 import org.meshtastic.sdk.transport.serial.JvmSerialPorts
 
-val portName  = JvmSerialPorts.list().first()           // e.g. "/dev/tty.usbserial-1410"
+val portName  = JvmSerialPorts.findMeshtastic().first().name   // ports with a Meshtastic USB vendor ID
 val transport = JvmSerialPorts.open(portName, baudRate = 115200)
 ```
 
 ```kotlin
-// TCP / WiFi — all targets
+// TCP: Android, iOS and JVM
 import org.meshtastic.sdk.transport.tcp.TcpTransport
 
 val transport = TcpTransport(host = "meshtastic.local", port = 4403)
 ```
 
-Full per-platform setup (Android runtime permissions, foreground-service
-requirements on API 34+, USB intent filters, iOS `Info.plist` keys) is
-in the [integration guide](docs/integration-guide.md). For lifecycle,
-DI, and R8 patterns see the [consumer guides index](docs/consumer-guides/README.md).
+```kotlin
+// WebSocket phone API: every target, including JS and Wasm
+import org.meshtastic.sdk.transport.websocket.WebSocketTransport
 
-Full API reference: [`docs/api-reference.md`](docs/api-reference.md).
+val transport = WebSocketTransport("ws://meshtastic.local")
+```
+
+Discovery lives with each transport: `BleScanner.scan()` in `transport-ble`, mDNS through `TcpDiscovery` in `transport-tcp`, and `findMeshtastic()` with `isLikelyMeshtastic()` in `transport-serial`. `TransportTarget.parse` in `core` reads a `ble:`, `tcp:` or `serial:` spec string, the form the [CLI sample](samples/cli/README.md) takes. Each module's `Module.md` has the details.
+
+The [integration guide](docs/integration-guide.md) has per-platform setup: Android runtime permissions, foreground services on API 34+, USB intent filters and iOS `Info.plist` keys. The [error-handling guide](docs/consumer-guides/error-handling.md) covers what to retry and what to surface. The full API is in [`docs/api-reference.md`](docs/api-reference.md).
+
+### If your first send fails
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `connect()` throws `MeshtasticException.Transport` on TCP | Host unreachable, or the node's network API is off | Check the node's IP or hostname and that Wi-Fi or Ethernet is enabled. See [TCP setup](docs/integration-guide.md#tcp). |
+| `connect()` hangs or fails repeatedly over Bluetooth | The node isn't bonded with the OS | Pair the node in the OS Bluetooth settings first. See [Bluetooth](docs/integration-guide.md#bluetooth). |
+| `JvmSerialPorts.open(...)` fails with permission denied | Serial device permission not granted | On Linux, add the user to `dialout`. On Android, request USB permission first. See [Serial](docs/integration-guide.md#serial). |
+| `sendText` throws `MeshtasticException.PayloadTooLarge` | The text is over the 233-byte payload limit (`DATA_PAYLOAD_LEN`) | Split the text. See [Sending messages](docs/integration-guide.md#6-sending-messages). |
+| `connect()` throws `MeshtasticException.HandshakeTimeout` | The `want_config_id` reply never arrived | Power-cycle the node, check its firmware version, then retry. See [Build a `RadioClient`](docs/integration-guide.md#2-build-a-radioclient). |
 
 ## Targets
 
-All published modules target the same Kotlin Multiplatform target set via the shared
-`meshtastic.kmp.library` convention plugin: `jvm`, `androidTarget` (`minSdk = 26`),
-`iosArm64`, `iosX64`, and `iosSimulatorArm64`. `core`, `testing` and `transport-websocket` also
-publish Kotlin/JS and Kotlin/Wasm klibs (`js` and `wasmJs`, via `meshtastic.js.library`) for
-browser and Node.js consumers ([ADR-017](docs/decisions/017-web-targets.md)). They are not in
-0.2.0: until the next release, take them from the snapshot repository under Install. Per-module
-behaviour is summarised below;
-see [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md) for the
-authoritative dependency graph.
+Every published module builds `jvm`, `androidTarget` (`minSdk = 26`), `iosArm64`, `iosX64` and `iosSimulatorArm64` through the `meshtastic.kmp.library` convention plugin. `core`, `testing` and `transport-websocket` also publish `js` and `wasmJs` klibs through `meshtastic.js.library` ([ADR-017](docs/decisions/017-web-targets.md)). [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md) has the dependency graph.
 
-### Platform support matrix
+| Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | JS  | Wasm | Notes |
+|----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|:---:|:----:|-------|
+| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Transport-agnostic engine; re-exports the `org.meshtastic:protobufs` types. |
+| `transport-ble`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Kable; on the JVM through its btleplug backend (CoreBluetooth, BlueZ, WinRT). |
+| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Ktor sockets; mDNS discovery per platform. |
+| `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Ktor client (CIO on JVM and Android, Darwin on iOS, the platform `WebSocket` on JS and Wasm). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
+| `transport-serial`         | ✓   | ✓                     | —         | —             | —       | —   | —    | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, the host adds it). The iOS klibs carry only the common types; iOS has no serial backend. |
+| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | SQLDelight: JDBC driver on the JVM, Android driver on Android, native driver on iOS. |
+| `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | `FakeRadioTransport` and `TestClock` for `commonTest`. |
 
-| Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | JS  | Wasm | Notes                                                                 |
-|----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|:---:|:----:|-----------------------------------------------------------------------|
-| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
-| `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | —   | —    | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
-| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Built on Ktor sockets.                                                |
-| `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Ktor client (CIO on JVM and Android, Darwin on iOS, Ktor's JS engine over the platform `WebSocket` on JS and Wasm, browser or Node). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
-| `transport-serial`         | ✓   | ✓                     | —         | —             | —       | —   | —    | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, host adds it). iOS targets compile (empty actuals) but no USB-serial API on iOS. |
-| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
-| `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |
+✓ means built and tested in CI. — means no artifact for that target, or no platform API for that transport.
 
-✓ = supported and exercised in CI; — = not applicable (no platform API for this transport, or no
-web artifact yet).
-
-The JS and Wasm columns are klibs (`org.meshtastic:sdk-core-js`, `org.meshtastic:sdk-core-wasm-js`)
-that Kotlin/JS and Kotlin/Wasm consumers compile into their own bundle, Compose Multiplatform for
-web among them. `transport-websocket` reaches a radio from either; a host can also supply its own
-`RadioTransport` (Web Bluetooth, Web Serial). Both are tested on Node.js, not in a browser.
+The JS and Wasm klibs (`org.meshtastic:sdk-core-js`, `org.meshtastic:sdk-core-wasm-js`) are compiled into the consumer's own bundle, Compose Multiplatform for web included. `transport-websocket` reaches a node from either, and a host can supply its own `RadioTransport` (Web Bluetooth, Web Serial). CI tests both targets on Node.js, not in a browser.
 
 ## Documentation
 
-- **[`docs/SPEC.md`](docs/SPEC.md)** — master implementation plan (mission, scope, phases, locked defaults).
-- **[`docs/protocol.md`](docs/protocol.md)** — wire-level protocol bible (PhoneAPI, MeshPacket, channel encryption, MQTT proxy, …).
-- **[`docs/api-reference.md`](docs/api-reference.md)** — full public Kotlin signatures with KDoc.
-- **[`docs/error-taxonomy.md`](docs/error-taxonomy.md)** — what throws, what returns `AdminResult`, what surfaces as `MeshEvent`.
-- **[`docs/glossary.md`](docs/glossary.md)** — vocabulary (NodeNum vs NodeId, request_id vs packet_id, channel hash, …).
-- **[`docs/architecture/`](docs/architecture/)** — handshake FSM, engine actor dataflow, storage, module dependency graph (Mermaid diagrams).
-- **[`docs/consumer-guides/`](docs/consumer-guides/)** — host-app integration recipes (reactive lifecycle, Hilt, MVVM, R8/Proguard).
-- **[`docs/decisions/`](docs/decisions/)** — ADRs (charter, API shape, tooling, licensing, multi-module rationale).
-- **[`docs/roadmap.md`](docs/roadmap.md)** — Phase 2 / Phase 3 deferred items (stubs, no-ops, missing observables).
-- **[`docs/versioning.md`](docs/versioning.md)** — SemVer + ABI policy.
-- **[`docs/security.md`](docs/security.md)** — threat model + scope.
-- **[`docs/manual-tests.md`](docs/manual-tests.md)** — device-conformance suite (CI cannot run these).
-- **[`docs/ci-cd.md`](docs/ci-cd.md)** — GitHub Actions workflows.
-- **[`docs/samples.md`](docs/samples.md)** — what each `samples/*` demonstrates.
+- [`docs/protocol.md`](docs/protocol.md): wire protocol (PhoneAPI, MeshPacket, channel encryption, MQTT proxy).
+- [`docs/api-reference.md`](docs/api-reference.md): public Kotlin signatures.
+- [`docs/error-taxonomy.md`](docs/error-taxonomy.md): what throws, what returns `AdminResult`, what surfaces as `MeshEvent`.
+- [`docs/glossary.md`](docs/glossary.md): NodeNum and NodeId, `request_id` and `packet_id`, channel hash.
+- [`docs/architecture/`](docs/architecture/): handshake FSM, engine actor, storage and module graph.
+- [`docs/integration-guide.md`](docs/integration-guide.md): dependencies, per-transport setup, storage and lifecycle in a host app.
+- [`docs/consumer-guides/error-handling.md`](docs/consumer-guides/error-handling.md): what to retry and what to surface.
+- [`docs/decisions/`](docs/decisions/): ADRs.
+- [`docs/roadmap.md`](docs/roadmap.md): deferred items.
+- [`docs/versioning.md`](docs/versioning.md): SemVer and ABI policy.
+- [`docs/security.md`](docs/security.md): threat model and scope.
+- [`docs/manual-tests.md`](docs/manual-tests.md): device conformance suite that CI can't run.
+- [`docs/ci-cd.md`](docs/ci-cd.md): GitHub Actions workflows.
+- [`docs/samples.md`](docs/samples.md): what each sample demonstrates.
 
 ## Building from source
 
-```bash
+```shell
 git clone git@github.com:meshtastic/meshtastic-sdk.git
 cd meshtastic-sdk
-./gradlew check                      # build + test + lint + checkKotlinAbi + detekt + :core:verifyModuleBoundary
+./gradlew check
 ```
 
-Requirements:
+`check` builds and runs the tests, Spotless, detekt, `checkKotlinAbi` and `:core:verifyModuleBoundary`. It needs:
 
-- JDK 21 (`sdk install java 21-tem`).
-- Android SDK with API 36 platform if building Android targets (set `ANDROID_HOME`).
-- Xcode + iOS 14+ SDK if building iOS targets (mac only).
+- JDK 21.
+- The Android SDK platform named by `androidCompileSdk` in `gradle/libs.versions.toml`, with `ANDROID_HOME` set.
+- Node.js on `PATH` for the `js` and `wasmJs` targets; Gradle doesn't download it.
+- Xcode on macOS for the iOS targets.
 
-### Runtime requirements (consumers)
+[`docs/ci-cd.md`](docs/ci-cd.md#local-equivalents) lists the targeted commands.
 
-- **Android API 26+ (Android 8.0 Oreo).** All `sdk-*` Android
-  artifacts pin `minSdk = 26`. Apps with `minSdk < 26` will fail to
-  resolve the dependency at build time, and reflection-based loaders
-  on older OS versions will fail at runtime — there is no graceful
-  fallback. See the
-  [Android setup checklist](docs/integration-guide.md#android-setup-checklist).
-- **iOS 14+** for the BLE/TCP transports.
-- **JDK 17+** runtime for JVM consumers (bytecode is JDK 17, toolchain is JDK 21).
-- **kotlinx-coroutines 1.8.1+** at runtime. The SDK compiles against 1.8.1 so a host whose runtime pins it, such as an ATAK plugin, can load the artifacts; a newer pin in your build wins at resolution.
+### Runtime requirements
 
-Local commands: see [`docs/ci-cd.md`](docs/ci-cd.md#local-equivalents).
+- Android API 26 (Android 8.0) or later. Every Android artifact sets `minSdk = 26`, so an app with a lower `minSdk` fails to resolve the dependency. See [Platform support](docs/integration-guide.md#platform-support).
+- iOS 14 or later for the Bluetooth and TCP transports.
+- A JDK 17 or later runtime on the JVM. The bytecode targets JDK 17; the build toolchain is JDK 21.
+- kotlinx-coroutines 1.11.0 or later. The SDK compiles against the `coroutines` version in `gradle/libs.versions.toml`, and a newer pin in your build wins at resolution.
 
 ## Contributing
 
-We use the Developer Certificate of Origin (DCO). Sign every commit:
+Sign every commit with the Developer Certificate of Origin (DCO):
 
-```bash
+```shell
 git commit -s -m "Your message"
 ```
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the full flow.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the full flow.
 
 ## License
 
@@ -305,7 +243,7 @@ GPL-3.0-or-later. See [`LICENSE`](LICENSE) and [`docs/decisions/004-licensing.md
 
 ## Related Meshtastic projects
 
-- [`meshtastic/firmware`](https://github.com/meshtastic/firmware) — device-side reference (read-only behavior anchor here).
-- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs) — wire schema; consumed as the published `org.meshtastic:protobufs` artifact.
-- [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple) — flagship apps; cross-validation references.
-- [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) — sibling KMP library for direct MQTT broker use.
+- [`meshtastic/firmware`](https://github.com/meshtastic/firmware): the device-side reference for protocol behavior.
+- [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs): the wire schema, consumed as the published `org.meshtastic:protobufs` artifact.
+- [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android) and [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple): the official clients, used for cross-validation.
+- [`meshtastic/MQTTastic-Client-KMP`](https://github.com/meshtastic/MQTTastic-Client-KMP): sibling KMP library for direct MQTT broker use.

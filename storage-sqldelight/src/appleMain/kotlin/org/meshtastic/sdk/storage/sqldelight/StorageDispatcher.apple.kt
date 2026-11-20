@@ -11,7 +11,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.newFixedThreadPoolContext
 
-// newFixedThreadPoolContext rather than limitedParallelism(4): see StorageDispatcher.jvm.kt.
+// A fixed pool sized like the JVM and Android actuals.
 @OptIn(DelicateCoroutinesApi::class)
 internal actual val defaultStorageDispatcher: CoroutineDispatcher =
     newFixedThreadPoolContext(STORAGE_PARALLELISM, "sqldelight-storage")

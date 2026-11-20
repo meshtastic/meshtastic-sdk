@@ -97,7 +97,7 @@ class HandshakeFsmTest {
     @Test
     fun preHandshakeFramesAreDiscarded() = runTest {
         // Pre-load a bogus FromRadio with a my_info from a "stale" prior session.
-        // Per the FSM spec, the engine MUST drop these frames; if it routed them,
+        // Per docs/architecture/handshake-fsm.md, the engine MUST drop these frames; if it routed them,
         // they'd corrupt early state. We assert that connect() still completes
         // through the normal autoHandshake flow (i.e. the bogus frames did not
         // break the FSM).

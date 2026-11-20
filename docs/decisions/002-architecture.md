@@ -4,7 +4,7 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §4, [`../protocol.md`](../protocol.md) §6, ADR-001 (proto types), ADR-005 (API shape), ADR-006 (multi-module split)
+**Related:** [`../architecture/engine-actor.md`](../architecture/engine-actor.md), [`../protocol.md`](../protocol.md) §6, ADR-001 (proto types), ADR-005 (API shape), ADR-006 (multi-module split)
 
 ---
 
@@ -59,7 +59,7 @@ Exceptions outside the engine package are tolerated and small:
 
 ### Buffering and backpressure
 
-Per `SPEC.md` §4.4 (codified via the §3 review pass):
+The policy as decided; the current policy is in [`engine-actor.md`, Backpressure](../architecture/engine-actor.md#backpressure):
 
 | Public flow | Backing | Buffer | Overflow |
 |---|---|---|---|
@@ -72,12 +72,12 @@ The transport reader **never blocks** on a slow consumer of public flows. Either
 
 ### Component breakdown
 
-`SPEC.md` §4.2 lists the components inside the engine. Repeated here for stability:
+The components inside the engine:
 
 | Component | Responsibility |
 |---|---|
 | `WireCodec` | Pure encode/decode; `ToRadio` ↔ framed bytes ↔ `FromRadio`. Resync per protocol.md §2.2. No IO. |
-| `RadioTransport` (interface) | Per `SPEC.md` §3.4. Implementations live in transport modules. |
+| `RadioTransport` (interface) | Defined in `Transport.kt` in `:core`. Implementations live in transport modules. |
 | `HandshakeMachine` | Two-stage FSM (Stage 1 nonce → settle → heartbeat → settle → Stage 2 nonce → seed `session_passkey` via `get_owner_request`). |
 | `MeshState` | Holds `Map<NodeId, NodeInfo>`, `ownNode`, `channels`, `ConfigBundle`, monotonic version counter. Single-writer. |
 | `CommandDispatcher` | Allocates monotonic `request_id`s, parks `CompletableDeferred<AdminResult<*>>` per id, applies per-op timeouts, recognizes `ROUTING_APP` payloads addressed back as ACK/NAK for any in-flight request. |
@@ -85,11 +85,13 @@ The transport reader **never blocks** on a slow consumer of public flows. Either
 | `DeferredDecryptBuffer` | Bounded ring (default 64 packets) for `MeshPacket.encrypted` with unknown channel hash. Re-attempts decrypt when a `Channel`/`Config.security` arrives that adds a key. |
 | `PersistenceCoordinator` | Calls `StorageProvider.activate(identity)` BEFORE `transport.connect()`. After handshake, calls `recordOwnNode(...)`; if storage detects a NodeNum mismatch and clears (invariant 4), emits `MeshEvent.ProtocolWarning("identity rebound to new NodeNum")`. On disconnect, flushes and closes storage. |
 
+> **Note:** `HandshakeMachine`, `MessageQueue` and `PersistenceCoordinator` are implemented inside `MeshEngine`, not as classes. There is no `DeferredDecryptBuffer`: the device decrypts channel traffic, and the engine drops a packet with no decoded payload and emits a `ProtocolWarning` at most once a minute. A NodeNum mismatch surfaces as `MeshEvent.IdentityRebound`, not a `ProtocolWarning`.
+
 Each component is a regular class, not a `Mockable` interface, unless tests demand otherwise. We rejected the earlier "interface-everywhere" approach: it added indirection that obscured the actor model and produced no observable testability win.
 
 ### Anchor invariants
 
-Per `SPEC.md` §4.3, encoded as tests in `core/src/commonTest/.../invariants/`:
+Encoded as tests in `core/src/commonTest/kotlin/org/meshtastic/sdk/`; the current list is in [`engine-actor.md`, Engine invariants](../architecture/engine-actor.md#engine-invariants):
 
 1. FIFO frame order (single-writer pipe to transport).
 2. Transport-up ≠ session-ready (`Connected` only after `config_complete_id` matches Stage 2 nonce).
@@ -115,4 +117,4 @@ Per `SPEC.md` §4.3, encoded as tests in `core/src/commonTest/.../invariants/`:
 - **Single hotspot.** All engine work serializes. We accept this; PhoneAPI throughput does not approach the limit.
 - **Testable without mocks.** Drive the engine with a `Channel<EngineMessage>` directly from tests; assert on emitted public-flow values. No transport mocking needed for state-machine tests.
 - **Cancellation is cheap.** Cancel one supervisor; everything stops; engine `finally` cleans up.
-- **`disconnect()` semantics are tight.** Idempotent, never throws (per `SPEC.md` §3.1). Pending `MessageHandle`s resolve to `Failed(Disconnected)` via the engine's shutdown sequence (ADR-005).
+- **`disconnect()` semantics are tight.** Idempotent, never throws (per its KDoc). Pending `MessageHandle`s resolve to `Failed(Disconnected)` via the engine's shutdown sequence (ADR-005).

@@ -450,7 +450,7 @@ internal class MeshEngine(
      *     by this path — those flow through [trySend]/[MessageHandle]).
      *
      * Returns [AdminResult.Timeout] / [AdminResult.SessionKeyExpired] / etc. as classified by
-     * [CommandDispatcher]. Throws [MeshtasticException.NotConnected] if the engine is closed
+     * [CommandDispatcher]. Returns [AdminResult.Timeout] without waiting if the engine is closed
      * before the request reaches the actor.
      */
     @Suppress("UNCHECKED_CAST")
@@ -2616,12 +2616,9 @@ internal class MeshEngine(
     }
 
     // ---- C-shared-flow emit helpers ----
-    // The hot SharedFlows (`packets`, `nodes`, `events`) all use BufferOverflow.DROP_OLDEST,
-    // which means `tryEmit` is always supposed to return `true`. We still wrap each call site
-    // through these helpers so:
-    //   • a future BufferOverflow change (or a misconfigured custom replay buffer) doesn't
-    //     silently drop data without surfacing a `MeshEvent.PacketsDropped` signal, and
-    //   • all packet-drop accounting flows through one place that subscribers can observe.
+    // `packets` and `nodes` are BufferOverflow.SUSPEND flows, so `tryEmit` returns false when a
+    // subscriber leaves the buffer full. The engine never suspends on its own output: the
+    // rejected item is dropped and reported as `MeshEvent.PacketsDropped`.
 
     private fun emitPacketOrLog(packet: MeshPacket) {
         if (!packets.tryEmit(packet)) {

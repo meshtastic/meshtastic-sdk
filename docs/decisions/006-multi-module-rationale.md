@@ -1,10 +1,10 @@
 # ADR 006 — Multi-module rationale
 
-**Status:** Accepted (the `:proto` module was superseded by [ADR-015](015-consume-published-protobufs-artifact.md); the rest of the layout stands)
+**Status:** Accepted; superseded in part by [ADR-015](015-consume-published-protobufs-artifact.md) (the `:proto` module) and [ADR-017](017-web-targets.md) (web targets)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §2, ADR-000 (charter), ADR-001 (proto types), ADR-002 (architecture), ADR-007 (iOS distribution), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (single-module precedent)
+**Related:** [`../architecture/module-graph.md`](../architecture/module-graph.md), ADR-000 (charter), ADR-001 (proto types), ADR-002 (architecture), ADR-007 (iOS distribution), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (single-module precedent)
 
 ---
 
@@ -56,7 +56,9 @@ meshtastic-sdk/
     └── desktop/                   ── jvm (Compose Multiplatform)
 ```
 
-> **There is NO `:transport-api` module.** The `RadioTransport` interface, `Frame`, and `TransportIdentity` live in `:core` (per SPEC §3.4). Splitting them out would create a tiny artifact every transport must depend on, with no testability or layering benefit — `:core` already exposes the interface as part of its public surface.
+> **Note:** the layout also has `transport-websocket/` (Ktor client; android, jvm, ios, js, wasmJs). The samples are `samples/cli`, `samples/parity-app` (Compose Multiplatform for Android, desktop JVM and iOS, with the SwiftUI shell in `iosApp/`) and `samples/parity-android-app`; [`../architecture/module-graph.md`](../architecture/module-graph.md) is the live graph.
+
+> **There is NO `:transport-api` module.** The `RadioTransport` interface, `Frame`, and `TransportIdentity` live in `:core`. Splitting them out would create a tiny artifact every transport must depend on, with no testability or layering benefit, since `:core` already exposes the interface as part of its public surface.
 
 ### Roadmap modules (post-1.0; not in MVP)
 
@@ -99,6 +101,8 @@ When the roadmap lands, `:core` adds a `wasmJs` source set containing only RPC-c
 
 ### `wasmJs` posture (post-1.0)
 
+> **Superseded by [ADR-017](017-web-targets.md):** `:core`, `:testing` and `:transport-websocket` publish `js` and `wasmJs` and run the engine in-process; `:transport-ble`, `:transport-tcp`, `:transport-serial` and `:storage-sqldelight` stay off the web targets.
+
 `wasmJs` is **not** an MVP target on any module. When the wasm/RPC roadmap lands:
 
 - `:core` and `:proto` gain a `wasmJs` source set.
@@ -113,7 +117,7 @@ All modules ship with the same version (`axion-release` git-tag-driven). A relea
 
 ## Alternatives considered
 
-- **Single module, like `mqtt-client`.** Rejected — drags every transport's platform dependencies into every consumer's classpath, and we can't enforce "engine doesn't depend on transports" via Gradle if everything is in one module. (Discussed at length in SPEC §2.)
+- **Single module, like `mqtt-client`.** Rejected: it drags every transport's platform dependencies into every consumer's classpath, and we can't enforce "engine doesn't depend on transports" via Gradle if everything is in one module.
 - **Separate `:transport-api` module.** Rejected — see callout above. Saves nothing; costs an extra publish coordinate.
 - **Split engine into `:engine` and `:radio` (public).** Rejected — adds indirection without testability win. The engine is `internal` inside `:core`; tests in `:core/src/commonTest` reach it via `internal` visibility.
 - **Per-platform transport modules (`:transport-ble-android`, `:transport-ble-ios`).** Rejected — Kable IS the cross-platform abstraction; splitting would re-introduce per-platform divergence Kable already solves. Same logic for TCP (Ktor).

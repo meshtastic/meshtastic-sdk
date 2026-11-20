@@ -36,7 +36,7 @@ internal data class ScenarioResult(
 }
 
 /**
- * Phase 5 acceptance scenarios per `docs/SPEC.md` §6 + `docs/manual-tests.md`. Each function is
+ * Acceptance scenarios per `docs/manual-tests.md`. Each function is
  * idempotent and self-contained: it returns a [ScenarioResult] and never throws. Failures inside
  * a scenario produce `Status.FAIL` with the exception class + message in [ScenarioResult.message]
  * so the surrounding transcript can render the whole sweep deterministically.

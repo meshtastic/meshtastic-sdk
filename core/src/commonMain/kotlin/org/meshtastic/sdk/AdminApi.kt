@@ -67,8 +67,8 @@ public interface AdminApi {
     /**
      * Request [DeviceMetadata] from the device (firmware version, hardware model, etc.).
      *
-     * For the local node, this is cached during handshake and available via
-     * [RadioClient.deviceConfig]. For remote nodes, use [forNode] to target the desired node:
+     * For the local node, this is cached during handshake and available as `metadata` on
+     * [RadioClient.configBundle]. For remote nodes, use [forNode] to target the desired node:
      *
      * ```kotlin
      * val metadata = client.admin.forNode(remoteNodeId).getDeviceMetadata()
@@ -333,8 +333,8 @@ public interface AdminApi {
     /**
      * Set the device's wall clock to [at] (default: `Clock.System.now()`).
      *
-     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, the engine calls this once after
-     * handshake when the device clock skew exceeds 60 s.
+     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, [RadioClient.connect] calls this
+     * once after every handshake, fire-and-forget, without checking the device's clock skew.
      */
     public suspend fun setTime(at: Instant? = null): AdminResult<Unit>
 
@@ -353,7 +353,8 @@ public interface AdminApi {
      * Exception-based counterpart to [editSettings] that also exposes batched getter helpers.
      *
      * Getter failures throw [AdminResultException] via [getOrThrow]. If [block] throws, the SDK
-     * does not send `commit_edit_settings`; firmware eventually discards the buffered edits.
+     * still sends `commit_edit_settings` while the session is connected, so the writes made before
+     * the throw are applied, and then rethrows.
      */
     public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
 }
