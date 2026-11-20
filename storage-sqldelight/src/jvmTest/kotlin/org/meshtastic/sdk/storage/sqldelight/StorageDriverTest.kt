@@ -12,6 +12,7 @@ import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.sdk.NodeId
+import org.meshtastic.sdk.storage.sqldelight.internal.MeshDatabase
 import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
@@ -74,6 +75,32 @@ class StorageDriverTest {
         driver.execute(null, "INSERT INTO nodes(node_num) VALUES (77)", 0).value
         val storage = SqlDelightStorage(driver)
         assertEquals(setOf(NodeId(77)), storage.loadNodes().keys)
+        storage.saveHeartbeat(NodeId(77), 5L) // needs 3.sqm's last_heartbeat_at column
+        assertEquals(mapOf(NodeId(77) to 5L), storage.loadHeartbeats())
+        assertEquals("3", scalarString(driver, "PRAGMA user_version"))
+        assertEquals("0", scalarString(driver, "SELECT count(*) FROM sqlite_master WHERE name='messages'"))
+        driver.close()
+    }
+
+    @Test
+    fun `unstamped database created by main is stamped with the current version`() = runTest {
+        // main's JVM path ran Schema.create without ever setting user_version.
+        val driver = createDriver(":memory:")
+        MeshDatabase.Schema.create(driver).await()
+        driver.execute(null, "INSERT INTO nodes(node_num) VALUES (77)", 0).value
+        assertEquals("0", scalarString(driver, "PRAGMA user_version"))
+        val storage = SqlDelightStorage(driver)
+        assertEquals(setOf(NodeId(77)), storage.loadNodes().keys)
+        assertEquals("3", scalarString(driver, "PRAGMA user_version"))
+        driver.close()
+    }
+
+    @Test
+    fun `unstamped v1 database is detected by its schema and migrated`() = runTest {
+        val driver = createDriver(":memory:")
+        V1_DDL.forEach { driver.execute(null, it, 0).value }
+        driver.execute(null, "INSERT INTO nodes(node_num) VALUES (77)", 0).value
+        val storage = SqlDelightStorage(driver)
         storage.saveHeartbeat(NodeId(77), 5L) // needs 3.sqm's last_heartbeat_at column
         assertEquals(mapOf(NodeId(77) to 5L), storage.loadHeartbeats())
         assertEquals("3", scalarString(driver, "PRAGMA user_version"))

@@ -79,15 +79,32 @@ internal class SqlDelightStorage(
         // Android/Native drivers create+migrate themselves and stamp user_version. JDBC and the
         // web worker driver take no schema, so stamp and migrate here.
         val schema = MeshDatabase.Schema
-        val version = scalarLong("PRAGMA user_version")
+        val stamped = scalarLong("PRAGMA user_version")
         if (!alreadyInitialised) {
             schema.create(driver).await()
             driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
-        } else if (version in 1 until schema.version) {
-            schema.migrate(driver, version, schema.version).await()
-            driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
+        } else {
+            val version = if (stamped == 0L) unstampedVersion() else stamped
+            if (version < schema.version) {
+                schema.migrate(driver, version, schema.version).await()
+            }
+            if (version < schema.version || stamped == 0L) {
+                driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
+            }
         }
         schemaReady = true
+    }
+
+    /**
+     * The schema version of a database that has tables but no `user_version`, read from its shape.
+     * Earlier JDBC builds ran `Schema.create` without stamping, so their databases sit at 0 in
+     * whatever shape was current then: 3.sqm's `nodes.last_heartbeat_at` marks v3, and the
+     * `messages` table that 2.sqm drops marks v1.
+     */
+    private suspend fun unstampedVersion(): Long = when {
+        scalarLong("SELECT count(*) FROM pragma_table_info('nodes') WHERE name = 'last_heartbeat_at'") > 0 -> 3L
+        scalarLong("SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'messages'") > 0 -> 1L
+        else -> 2L
     }
 
     private suspend fun scalarLong(sql: String): Long = driver
