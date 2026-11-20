@@ -470,14 +470,13 @@ public sealed interface AdminResult<out T> {
 
 ### Config builders
 
-`AdminApi` extensions that wrap one config section in a `Config` or `ModuleConfig` and call `setConfig` or `setModuleConfig`: eight for `Config` (`setDeviceConfig`, `setPositionConfig`, `setPowerConfig`, `setNetworkConfig`, `setDisplayConfig`, `setLoraConfig`, `setBluetoothConfig`, `setSecurityConfig`) and 15 for `ModuleConfig` (`setMqttConfig`, `setSerialConfig`, `setExternalNotificationConfig`, `setStoreForwardConfig`, `setRangeTestConfig`, `setTelemetryConfig`, `setCannedMessageConfig`, `setAudioConfig`, `setRemoteHardwareConfig`, `setNeighborInfoConfig`, `setAmbientLightingConfig`, `setDetectionSensorConfig`, `setPaxcounterConfig`, `setStatusMessageConfig`, `setTrafficManagementConfig`).
+`AdminApi` extensions that read one config section with `getConfig` or `getModuleConfig`, pass it to the block, and write the result with `setConfig` or `setModuleConfig`: eight for `Config` (`setDeviceConfig`, `setPositionConfig`, `setPowerConfig`, `setNetworkConfig`, `setDisplayConfig`, `setLoraConfig`, `setBluetoothConfig`, `setSecurityConfig`) and 15 for `ModuleConfig` (`setMqttConfig`, `setSerialConfig`, `setExternalNotificationConfig`, `setStoreForwardConfig`, `setRangeTestConfig`, `setTelemetryConfig`, `setCannedMessageConfig`, `setAudioConfig`, `setRemoteHardwareConfig`, `setNeighborInfoConfig`, `setAmbientLightingConfig`, `setDetectionSensorConfig`, `setPaxcounterConfig`, `setStatusMessageConfig`, `setTrafficManagementConfig`).
 
-The block's receiver is an empty section with every field at its proto default, not the device's current config. Whatever the block returns replaces the whole section on the device, so start from the current values:
+The block's receiver is the section as the targeted device reports it, so fields the block leaves alone keep their values; the device replaces the whole section on a write. A failed read returns its `AdminResult` and writes nothing, and a read whose response lacks the section returns `Failed(NO_RESPONSE)`. On a `forNode` instance both the read and the write go to that node.
 
 ```kotlin
-val lora = client.configBundle.value?.configs?.firstNotNullOfOrNull { it.lora } ?: return
 client.admin.setLoraConfig {
-    lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+    newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
 }
 ```
 
