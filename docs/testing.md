@@ -274,6 +274,7 @@ a coverage-percentage drop on a refactor is not.
 ./gradlew :core:jvmTest                     # one module
 ./gradlew :transport-ble:jvmTest --tests "*FrameStrip*"  # one class
 ./gradlew iosSimulatorArm64Test             # macOS only — KMP iOS unit tests
+./gradlew jsNodeTest                        # Kotlin/JS unit tests under the Node.js on PATH
 ./gradlew check                             # full gate (test + lint + checkKotlinAbi + arch)
 ```
 

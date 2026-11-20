@@ -47,6 +47,7 @@ command before opening a PR to avoid red-CI churn.
 | JVM unit tests | `test-jvm` (Java 17 + 21 matrix) | `./gradlew jvmTest` | `kotlin.test` |
 | Android unit tests | `test-android` | `./gradlew :core:compileDebugKotlinAndroid :core:testDebugUnitTest` | `kotlin.test` (Robolectric-free) |
 | iOS Sim tests | `test-ios` (`macos-latest`) | `./gradlew :core:iosSimulatorArm64Test` (mac only) | `kotlin.test` → XCTest |
+| JS (Node.js) tests | `test-js` | `./gradlew jsNodeTest` (needs `node` on `PATH`) | `kotlin.test` → Node.js |
 | Public API check | `api-check` | `./gradlew checkKotlinAbi` | Kotlin 2.3 built-in BCV (see ADR-005) |
 | Module boundary | `arch-consistency` | `./gradlew :core:verifyModuleBoundary` | custom Gradle task in [`core/build.gradle.kts`](../core/build.gradle.kts) |
 | SQLDelight migration verify | `test-jvm` (transitive via `:storage-sqldelight:jvmTest`) | `./gradlew :storage-sqldelight:verifySqlDelightMigration` | `verifyMigrations = true` in [`storage-sqldelight/build.gradle.kts`](../storage-sqldelight/build.gradle.kts) |
@@ -59,9 +60,9 @@ in the same PR.
 
 
 
-Seven jobs run in parallel on every PR and on every push to `main`. None
+Eight jobs run in parallel on every PR and on every push to `main`. None
 have `needs:` so contributors see the complete failure picture in one
-turn. On a push to `main` an eighth, `publish-snapshot`, runs after the
+turn. On a push to `main` a ninth, `publish-snapshot`, runs after the
 test, API, architecture and full-check jobs pass:
 
 | Job | Command | Purpose |
@@ -69,6 +70,7 @@ test, API, architecture and full-check jobs pass:
 | `test-jvm` | `./gradlew jvmTest` then `./gradlew spotlessCheck detekt` | JVM unit tests + format + static analysis. Matrix `[17, 21]` to prove min-bytecode compatibility. |
 | `test-android` | `./gradlew :core:compileDebugKotlinAndroid :core:testDebugUnitTest` | Android compile-check + unit tests |
 | `test-ios` | `./gradlew :core:iosSimulatorArm64Test` | iOS Sim build + tests (`macos-latest`); caches `~/.konan` |
+| `test-js` | `./gradlew jsNodeTest` | Kotlin/JS build + `commonTest` under Node.js (`actions/setup-node`, npm from `kotlin-js-store/package-lock.json`) |
 | `api-check` | `./gradlew checkKotlinAbi` | BCV — fails if `api/*.api` drifts from committed dumps |
 | `arch-consistency` | `./gradlew :core:verifyModuleBoundary detekt` | ADR-008 enforcement: `:core` deps + ForbiddenImport rules |
 | `full-check` | `./gradlew check` | Full gate (PR-gated) — runs every applicable task as a safety net |
@@ -89,8 +91,8 @@ artifact, so no submodule checkout is needed. All jobs use
 
 ### Required checks (branch protection on `main`)
 
-The `main` ruleset requires eight checks: `test-jvm (17)`, `test-jvm (21)`,
-`test-android`, `test-ios (iosSimulatorArm64)`, `api-check`,
+The `main` ruleset requires nine checks: `test-jvm (17)`, `test-jvm (21)`,
+`test-android`, `test-ios (iosSimulatorArm64)`, `test-js`, `api-check`,
 `arch-consistency`, `full-check` and `Coverage (Kover -> Codecov)`. The
 release workflow reads the same list and refuses a commit where any of
 them did not pass. DCO is enforced separately by the GitHub DCO App
@@ -99,7 +101,7 @@ them did not pass. DCO is enforced separately by the GitHub DCO App
 ## `tooling-check.yml` — agent-tooling guardrails
 
 Runs `bash .github/tooling/check.sh` whenever anything under
-`.github/` or `.githooks/` changes. Validates:
+`.github/`, `.githooks/` or `changelog.d/`, or `scripts/changelog*.sh`, changes. Validates:
 
 - Every action reference is SHA-pinned (no bare `@v4`); the bash check
   greps every `uses:` line and fails on anything that isn't 40 hex chars.
@@ -140,23 +142,30 @@ Per-module Kotlin Multiplatform targets. The base set comes from the
 which configures **`jvm()`, `iosArm64()`, `iosX64()`, `iosSimulatorArm64()`**
 and calls `applyDefaultHierarchyTemplate()`. The `meshtastic.android.library`
 plugin layers an `androidTarget` (single-variant via
-`com.android.kotlin.multiplatform.library`) on top.
+`com.android.kotlin.multiplatform.library`) on top, and `meshtastic.js.library`
+([`JsLibraryConventionPlugin.kt`](../build-logic/convention/src/main/kotlin/JsLibraryConventionPlugin.kt))
+layers a `js` target (Node.js test environment, klib publication only) on
+the modules that opt in.
 
-| Module | JVM | Android | iOS¹ | Notes |
-|---|:-:|:-:|:-:|---|
-| `:core` | ✅ | ✅ | ✅ | Engine + interfaces; re-exports the `org.meshtastic:protobufs` types via `api`. ADR-008 enforces no in-tree project deps. |
-| `:storage-sqldelight` | ✅ (Sqlite JDBC) | ✅ (Android driver) | ✅ (Native driver, `appleMain`) | Per-target driver factory; PRAGMA `journal_mode=WAL` + `synchronous=NORMAL` set in [`SqlDelightStorageProvider.apple.kt`](../storage-sqldelight/src/appleMain/kotlin/org/meshtastic/kmp/storage/sqldelight/SqlDelightStorageProvider.apple.kt) (matched by JVM/Android driver factories). |
-| `:transport-tcp` | ✅ | ✅ | ✅ | Pure ktor-network. |
-| `:transport-ble` | ✅ (macOS / Windows / Linux via Kable JVM) | ✅ | ✅ | Kable backends per platform. |
-| `:transport-serial` | ✅ | ✅ | ❌ | jSerialComm; iOS targets are **not** declared. Shared via a custom `jvmAndroidMain` source-set group (see [`transport-serial/build.gradle.kts`](../transport-serial/build.gradle.kts)). |
-| `:testing` | ✅ | ✅ | ✅ | Same hierarchy as `:core`. |
-| `:bom` | (Java platform) | — | — | Maven BOM, no Kotlin sources. |
+| Module | JVM | Android | iOS¹ | JS² | Notes |
+|---|:-:|:-:|:-:|:-:|---|
+| `:core` | ✅ | ✅ | ✅ | ✅ | Engine + interfaces; re-exports the `org.meshtastic:protobufs` types via `api`. ADR-008 enforces no in-tree project deps. |
+| `:storage-sqldelight` | ✅ (Sqlite JDBC) | ✅ (Android driver) | ✅ (Native driver, `appleMain`) | ❌ | Per-target driver factory; PRAGMA `journal_mode=WAL` + `synchronous=NORMAL` set in [`SqlDelightStorageProvider.apple.kt`](../storage-sqldelight/src/appleMain/kotlin/org/meshtastic/kmp/storage/sqldelight/SqlDelightStorageProvider.apple.kt) (matched by JVM/Android driver factories). |
+| `:transport-tcp` | ✅ | ✅ | ✅ | ❌ | Pure ktor-network (no JS artifact). |
+| `:transport-ble` | ✅ (macOS / Windows / Linux via Kable JVM) | ✅ | ✅ | ❌ (Kable ships `js`; not yet declared) | Kable backends per platform. |
+| `:transport-serial` | ✅ | ✅ | ❌ | ❌ | jSerialComm; iOS targets are **not** declared. Shared via a custom `jvmAndroidMain` source-set group (see [`transport-serial/build.gradle.kts`](../transport-serial/build.gradle.kts)). |
+| `:testing` | ✅ | ✅ | ✅ | ✅ | Same hierarchy as `:core`. |
+| `:bom` | (Java platform) | — | — | — | Maven BOM, no Kotlin sources. |
 
 ¹ "iOS" means the three KMP iOS targets configured by the convention
 plugin: `iosArm64`, `iosX64`, `iosSimulatorArm64`. We do **not** ship
-`watchosX`, `tvosX`, `macosX`, `linuxX`, `mingwX`, `js`, or
-`wasmJs` targets. Adding one requires updating
-`KmpLibraryConventionPlugin` and is a SemVer minor (new artifact).
+`watchosX`, `tvosX`, `macosX`, `linuxX`, `mingwX`, or `wasmJs` targets.
+Adding one requires updating `KmpLibraryConventionPlugin` and is a SemVer
+minor (new artifact).
+
+² "JS" is the Kotlin/JS (IR) target: a `sdk-<module>-js` klib for Kotlin/JS
+consumers, which compile it into their own bundle. No `@JsExport` surface or
+JavaScript bundle is published; browser transports live with the consumer.
 
 ### Hierarchy template
 
@@ -209,6 +218,13 @@ check did not pass; builds, checks and stages signed artifacts; refuses a
 `-SNAPSHOT` dependency; then pushes the tag, publishes with
 `publishAndReleaseToMavenCentral` and creates the GitHub Release. The full
 sequence and the secrets are in [`RELEASING.md`](../RELEASING.md).
+
+## Changelog fragments
+
+`.github/tooling/check.sh` runs `scripts/changelog.sh check`, which rejects a malformed
+`changelog.d/` fragment, and `scripts/changelog_test.sh`, which tests the script. The release cut
+folds the fragments into `CHANGELOG.md`, so `release.yml` still reads a plain section with
+`scripts/changelog.sh notes`.
 
 ## Renovate
 

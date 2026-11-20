@@ -128,7 +128,7 @@ Use [`docs/architecture/transport-module-authoring.md`](docs/architecture/transp
 ## Documentation & Commit Style
 
 **When behavior changes, update docs:**
-- `CHANGELOG.md`: `[Unreleased] → Changed/Fixed/Added`
+- Changelog: add `changelog.d/<name>.<section>.md` (`breaking`, `added`, `changed`, `deprecated`, `removed`, `fixed`, `security`); never edit `CHANGELOG.md` in a PR
 - `docs/decisions/`: New ADR or "Updates" section if existing decision affected
 - README.md: Only for install/quick-start changes
 - `docs/architecture/`: Sync with module graph, threading, storage changes

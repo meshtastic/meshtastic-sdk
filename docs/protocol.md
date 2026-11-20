@@ -29,7 +29,7 @@
 12. [Outbound queue & send lifecycle](#12-outbound-queue--send-lifecycle)
 13. [Admin protocol & session passkey](#13-admin-protocol--session-passkey)
 14. [MQTT proxy mode](#14-mqtt-proxy-mode)
-15. [Firmware update (XModem)](#15-firmware-update-xmodem)
+15. [File transfer (XModem)](#15-file-transfer-xmodem)
 16. [Heartbeat & queue status](#16-heartbeat--queue-status)
 17. [Channels, roles, regions, presets](#17-channels-roles-regions-presets)
 18. [Constants & magic numbers](#18-constants--magic-numbers)
@@ -243,7 +243,7 @@ message ToRadio {
     MeshPacket packet              = 1;  // App-layer outbound packet (text, position, telemetry, admin, etc.)
     uint32     want_config_id      = 3;  // Triggers the config handshake (see §6)
     bool       disconnect          = 4;  // Phone politely tells device it is dropping the link
-    XModem     xmodem_packet       = 5;  // Firmware update transfer (see §15)
+    XModem     xmodem_packet       = 5;  // File transfer (see §15)
     MqttClientProxyMessage mqtt_client_proxy_message = 6;  // (see §14)
     Heartbeat  heartbeat           = 7;  // Liveness ping (see §16)
   }
@@ -266,7 +266,7 @@ message FromRadio {
     ModuleConfig module_config          = 9;  // ModuleConfig sub-message (config handshake)
     Channel     channel                 = 10; // Channel definition (config handshake)
     QueueStatus queue_status            = 11; // Outbound queue accounting (see §12, §16)
-    XModem      xmodem_packet           = 12; // Firmware update transfer (see §15)
+    XModem      xmodem_packet           = 12; // File transfer (see §15)
     DeviceMetadata metadata             = 13; // Firmware version, hw model, role, hasPKC, etc. (config handshake)
     MqttClientProxyMessage mqtt_client_proxy_message = 14; // (see §14)
     FileInfo    file_info               = 15; // File system manifest entry (config handshake)
@@ -313,7 +313,7 @@ Device → FromRadio.my_info / metadata / channel × N
         / config_complete_id = 69420                  ── Stage 1 end
 
 Phone:  wait 100 ms
-Phone → ToRadio(heartbeat = Heartbeat(nonce = ++n))   ── pre-handshake heartbeat (settle)
+Phone → ToRadio(heartbeat = Heartbeat(nonce = n))   ── pre-handshake heartbeat (settle)
 Phone:  wait 100 ms
 
 Phone → ToRadio(want_config_id = 69421)              ── Stage 2 begin
@@ -343,7 +343,7 @@ sequenceDiagram
     Device-->>Phone: FromRadio(config_complete_id = 69420)
 
     Note over Phone: wait 100 ms
-    Phone->>Device: ToRadio(heartbeat = nonce++)
+    Phone->>Device: ToRadio(heartbeat = Heartbeat(nonce = n))
     Note over Phone: wait 100 ms
 
     Note over Phone,Device: Stage 2 — NodeDB
@@ -436,11 +436,12 @@ message MeshPacket {
   uint32  hop_start      = 14; // Original hop_limit at send time. (hop_start - hop_limit) = hops_away
   bytes   public_key     = 15; // (PKI) Sender's 32-byte X25519 public key, if PKI used
   bool    pki_encrypted  = 16; // True if `encrypted` is PKI-encrypted (X25519+AES-CCM, see §10)
-  fixed32 next_hop       = 17; // Next-hop node ID (uint32) for unicast routing hint
-  fixed32 relay_node     = 18; // The node that relayed this to me (uint32)
-  uint32  tx_after       = 19; // Transmit-after delay (seconds), used by router for backoff
-  Delayed delayed        = 20; // Whether this is a delayed/store-and-forward packet
-  TransportMechanism transport = 21; // How this packet arrived (LoRa, MQTT, API, etc.)
+  uint32  next_hop       = 18; // LAST BYTE of the next-hop node number; 0 = no preference
+  uint32  relay_node     = 19; // LAST BYTE of the node that relayed this to the device; 0 = none
+  uint32  tx_after       = 20; // Never sent over the radio
+  TransportMechanism transport_mechanism = 21; // How this packet arrived (LoRa, MQTT, API, etc.)
+  bool    xeddsa_signed  = 22; // Set by the device after it verified an XEdDSA signature
+  AckProofStatus ack_proof_status = 23; // Device verdict on a Routing ack proof; never on the air
 }
 
 enum Priority {
@@ -461,6 +462,16 @@ enum Priority {
 - **`HOP_LIMIT_MAX` = 7** (3-bit field; max useful hop_limit)
 - **Broadcast address: `0xFFFFFFFF`** (NOT `0` and NOT `0xFF`)
 - **`PublicKey` size: always 32 bytes** (Curve25519)
+
+### Provenance fields
+
+None of these has proto presence except where noted, so the SDK reads them through `PacketProvenance.kt`.
+
+- **`relay_node` / `next_hop`** are one byte: the low byte of a node number, with `0x00` reported as `0xFF` (`NodeDB.h:443`). `0` means none (`MeshTypes.h:44,46`). Several nodes can share a byte, so it is never a node id. `NodeLastByte.candidates(nodes)` lists the known nodes that match. Firmware resolves a relay byte only when exactly one known node matches (`Router.cpp:280-286`).
+- **`transport_mechanism`** is the last hop into the device (`RadioInterface.cpp:1559` sets LoRa, `MQTT.cpp:161` MQTT, `PacketAPI.cpp:74` API). `TRANSPORT_INTERNAL` is the default `0`, so it also reads from firmware that predates the field. Store-and-forward replays carry the stored value (`StoreForwardModule.cpp:272`). `via_mqtt` is separate: the packet crossed an MQTT bridge somewhere.
+- **`xeddsa_signed`** is set only by the device, after `xeddsa_verify` succeeds against an authoritative key or a first-contact NodeInfo; any inbound value is cleared first (`Router.cpp:720-745`, `Router.cpp:692-702`). The 64-byte `decoded.xeddsa_signature` is forwarded to the phone as received. A signature with `xeddsa_signed` false is one the device did not check (no key for the sender, outside Strict mode), not one that failed: a failed or wrong-length signature drops the packet (`Router.cpp:746-776`). The SDK holds no XEdDSA implementation, so `PacketSignature.CheckedByDevice` repeats the device's verdict.
+- **`ack_proof_status`** is set by the device on a received ack or nak (`MeshService.cpp:126-129`, `ReliableRouter.cpp:198-218`). `ACK_PROOF_ABSENT` is also what an unchecked proof reads, so it proves nothing negative. `ACK_PROOF_VALID` means the node the packet was addressed to proved receipt; it says nothing about authorship, which is `xeddsa_signed`.
+- **`NodeInfo.heard_on_current_lora`** is derived on the device from the slot a node was last heard on and the committed LoRa configuration (`TypeConversions.cpp:25`). `NodeInfo.has_xeddsa_signed` is the device's persisted "this node signs" bit.
 
 ### Payload paths
 
@@ -961,32 +972,50 @@ While the device is in `STATE_SEND_*` (anything other than `STATE_SEND_PACKETS`)
 
 ---
 
-## 15. Firmware update (XModem)
+## 15. File transfer (XModem)
 
-The device supports XModem-style firmware transfers initiated by an `AdminMessage(enter_dfu_mode_request = true)` followed by an XModem byte-stream over the same PhoneAPI channel.
+The device reads and writes files on its on-board filesystem through an XModem-style exchange carried on `ToRadio.xmodem_packet` and `FromRadio.xmodem_packet`. The SDK exposes it as `RadioClient.files` ([`FileTransferApi`](./api-reference.md#filetransferapi-since-030)). Source of truth: `firmware/src/xmodem.cpp` and `xmodem.h`; frames are routed in `firmware/src/mesh/PhoneAPI.cpp`. This is file transfer only, not firmware flashing.
 
 ```protobuf
 message XModem {
   Control control = 1;
-  uint32 seq = 2;
-  uint32 crc16 = 3;
-  bytes buffer = 4;
+  uint32 seq = 2;      // 16 bits on the device (xmodem.options)
+  uint32 crc16 = 3;    // 16 bits on the device
+  bytes buffer = 4;    // at most 128 bytes
 }
-enum Control {
-  NUL   = 0;
-  SOH   = 1;    // Start of Header (128-byte block)
-  STX   = 2;    // Start of Text (1024-byte block)
-  EOT   = 4;    // End of Transmission
-  ACK   = 6;
-  NAK   = 21;
-  CAN   = 24;   // Cancel
-  CTRLZ = 26;
-}
+enum Control { NUL = 0; SOH = 1; STX = 2; EOT = 4; ACK = 6; NAK = 21; CAN = 24; CTRLZ = 26; }
 ```
 
-Carried on `ToRadio.xmodem_packet` and `FromRadio.xmodem_packet`. Block sizes 128 (SOH) and 1024 (STX). Standard XModem protocol with CRC-16 instead of checksum. Standard recovery: NAK any block with bad CRC; expect retransmit. EOT terminates.
+| Parameter | Value |
+|---|---|
+| Block size | 128 bytes (`buffer` max_size 128); the last block is shorter than 128 |
+| CRC | CRC-16/XMODEM: polynomial 0x1021, initial value 0, over `buffer` only (`xmodem.cpp` `crc16_ccitt`); check value for `"123456789"` is 0x31C3 |
+| Sequence | Data blocks start at 1 and increase by 1 with no 8-bit wrap; the value is 16 bits and wraps to 0 after 65535. `seq = 0` marks the request frame |
+| Request frame | `seq = 0`, `buffer` = path as UTF-8 plus a NUL; the path is at most 127 bytes; any `..` component or a `X:` drive prefix is refused with `NAK` |
+| Device retry limit | `MAXRETRANS` = 25 consecutive `NAK`s from the host while the device sends; it then sends `CAN` |
 
-The SDK should expose firmware update as an opt-in module (deferred to Phase 6 in the project plan).
+Download (device to host) and upload (host to device):
+
+| Step | Download | Upload |
+|---|---|---|
+| 1 | host `STX`, seq 0, path | host `SOH`, seq 0, path |
+| 2 | device `SOH` seq 1 with the first block, or `NAK` if the file cannot be opened | device `ACK`, or `NAK` if the file cannot be opened |
+| 3 | host `ACK`; device sends the next block | host `SOH` seq n, crc16, block; device `ACK` if seq and CRC match, else `NAK` |
+| 4 | a block shorter than 128 bytes is the last; after the host `ACK` the device sends `EOT` | after the last block the host sends `EOT`; device `ACK`s |
+| 5 | host sends nothing back for `EOT` (an `ACK` to an idle device is answered with `CAN`) | complete on the `ACK` |
+
+- A file whose size is an exact multiple of 128 ends a download with an empty block (size 0) before `EOT`; an empty file is one empty block. An upload sends only the full blocks, and an empty file is the request followed directly by `EOT`.
+- Host `NAK` during a download makes the device resend its current block. A device `NAK` during an upload means seq or CRC did not match; resend the same block. The device does not count upload retries, so the host bounds them.
+- Host `CAN` makes the device acknowledge, close the file and delete the file named by the last request (`xmodem.cpp` `CAN` case), even when that file was being read. An upload cancel wants that. A download abort instead sends a data frame with a nonzero seq while the device is transmitting: it replies `CAN` and closes the file without deleting it.
+- Firmware sets `isEOT` when it prepares a short block and clears it only when it sends `EOT` (`xmodem.cpp:190,254-261,275,307`); an aborted download leaves it set, and the next download would then receive `EOT` after its first block. When the pending block is known to be short, the host `ACK`s it and waits for the `EOT` instead of sending the abort frame, keeping none of its bytes. When it is not known, the abort frame is used and the flag can stay set.
+- A host that sent `CAN`, an abort frame or `EOT` to put the device back to idle waits for the reply (`ACK`, `CAN`, `ACK`) before ending the transfer; otherwise the next transfer would read it as its own reply.
+- `CAN` is sent only after the device has `ACK`ed this upload's request, because its `filename` is then this upload's path. When the request gets no reply the host sends the request again: an idle device `ACK`s it (the first request was lost, so the upload proceeds), a receiving device `NAK`s it (the first `ACK` was lost, and `filename` is this path, so `CAN` is safe). `EOT` is never used as a probe: on nRF52, `File::flush` on a closed file is unguarded, so `EOT` on an idle device is not provably safe.
+- A download is complete once a CRC-valid block shorter than 128 bytes (an empty block counts) has been accepted, because firmware sets `isEOT` exactly for a short read and sends nothing but `EOT` after it (`xmodem.cpp:189,254-262,274`). `EOT` is then a confirmation: a `CAN` in its place, or silence for 1.5 s, still returns the bytes. On silence the host `ACK`s once more, so a device that never saw the first `ACK` sends `EOT` and a device that is already idle answers `CAN`; either reply leaves it clean. A `CAN` before the short block is a cancellation.
+- Two device states cannot be repaired inside a download, so the host abandons the attempt at once and sends a new request, at most twice. A block whose `seq` is ahead of the expected one: firmware answers `NAK` by re-sending only its current block and never goes back (`xmodem.cpp:296-305`). An `EOT` after a full block: a legitimate `EOT` follows a short block (`xmodem.cpp:254-262`), so this one comes from a stale `isEOT`, and sending it cleared the flag. Cleanup is the abort frame (or an `ACK` when the ahead block is short, so firmware sends `EOT`), and nothing for the stale `EOT`. Uploads are not restarted: their only such state is a lost block `ACK`, which firmware answers with `NAK` forever (`xmodem.cpp:203-219`) but which looks the same as persistent corruption.
+- Device frames can be lost, so waits are short. Measured healthy round trips are tens of milliseconds on serial and about 500 ms per frame on BLE. A data block that has not arrived after 3 s (six BLE round trips) is re-requested with `NAK`, which makes firmware re-send its current block (`xmodem.cpp:284-310`), up to 10 times in a row; a late original followed by the re-send is a duplicate, ignored by `seq`, and every accepted block resets the count. After the short block the closing frame is awaited 1.5 s and the bytes are returned anyway; the closing `ACK` stays because only an `ACK` moves a device whose first `ACK` was lost (`xmodem.cpp:251-262`), and an idle device answers it with `CAN` (`xmodem.cpp:279-282`), which the wait consumes. A request with no reply for 3 s is treated as a desync: the host sends the abort frame (a transmitting device answers `CAN`, an idle one ignores it, 1.5 s wait) and restarts, at most twice. An upload re-sends a block after the same 3 s, up to 10 times.
+- BLE firmware drops a ToRadio write byte-identical to the previous one (`NimbleBluetooth.cpp:495`, `NRF52Bluetooth.cpp:284`); serial has no such filter. Firmware reads only `control` on `ACK`, `NAK`, `EOT` and `CAN` (`xmodem.cpp:231-315`), so the host puts a per-transfer counter in their `seq`. A frame whose fields all matter (a retransmitted block, the repeated request, the download abort) that would equal the previous write is preceded by a `ToRadio.heartbeat` whose nonce counts up from 2 (nonce 1 triggers a NodeInfo broadcast, `PhoneAPI.cpp:584`).
+- Firmware does not report a full filesystem during an upload: a short write is logged and the block is still acknowledged.
+- With `MESHTASTIC_PHONEAPI_ACCESS_CONTROL`, frames from an unauthorized client are dropped in both directions, so the client sees silence.
 
 ### OTA and device reboot resync
 
@@ -1009,7 +1038,7 @@ When a device enters DFU mode (XModem firmware update) or reboots (triggered via
 
 - The device's `config_complete_id` counter does NOT persist across reboot; the first reconnect after a reboot is indistinguishable from a cold connect.
 - If the host's `NodeDB` or other state was persisted to storage, the app may compare the incoming `node_info` stream against its prior view to detect changes (e.g., a new node, channel change, role change).
-- Heartbeat nonce is reset; the host must start a fresh counter after reconnect.
+- The firmware's last-write dedup buffer is cleared on connect; the SDK's heartbeat counter keeps counting for the life of the engine.
 
 ---
 
@@ -1030,9 +1059,9 @@ message Heartbeat {
 }
 ```
 
-`ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter is sufficient).
+`ToRadio.heartbeat` is a liveness ping. Clients MUST increment `nonce` on every send (a monotonic counter starting at 2 is sufficient; firmware drops a write byte-identical to the previous one on BLE).
 
-> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK sends all keep-alive heartbeats with `nonce = 0` (a safe constant that avoids the nonce-1 trigger and satisfies the firmware's liveness watchdog).
+> **⚠️ Reserved nonce — `nonce == 1`.** Current firmware (`firmware:src/mesh/PhoneAPI.cpp` `handleToRadio` / `meshtastic_ToRadio_heartbeat_tag` branch) overloads `Heartbeat(nonce = 1)` as a **side-channel trigger to force-broadcast our own `NodeInfo` onto the LoRa mesh**, bypassing the 10-minute NodeInfo cooldown. This is a post-reboot / factory-reset recovery affordance, **not** a liveness ping. Clients SHOULD skip nonce == 1 entirely unless they explicitly want to rebroadcast their NodeInfo. This SDK counts keep-alive nonces up from 2 for the life of the engine, so they are never 0 or 1 and no two consecutive writes are identical.
 
 **Cadence by transport** (cross-validated against `Meshtastic-Apple:Transport.swift` + `AccessoryManager.setupPeriodicHeartbeat` and `Meshtastic-Android:SharedRadioInterfaceService.kt` + `HeartbeatSender.kt`):
 
@@ -1107,41 +1136,61 @@ Each `ChannelSettings` carries:
 
 ### LoRa regions
 
-`LoRaConfig.region` (enum `RegionCode`) — selects frequency band, duty-cycle limits, and legal max TX power. Full list (from docs):
+`LoRaConfig.region` (enum `RegionCode`) selects the frequency band, duty-cycle limit and legal max TX power. The rows below are firmware's `regions[]` table (`src/mesh/RadioInterface.cpp`), the bounds the slot calculation uses; `LoRaRegionInfo` carries the same rows. A regulatory band can be wider than the span firmware plans slots in. `UA_868`, `EU_874` and `EU_917` exist in `RegionCode` with no firmware row and resolve to `UNSET`.
 
-| Code | Coverage | Frequency band | Notes |
-|---|---|---|---|
-| `US` | North America | 902–928 MHz | |
-| `EU_433` | Europe | 433–435 MHz | 10% hourly duty-cycle limit |
-| `EU_868` | Europe | 863–870 MHz | 10% hourly duty-cycle limit |
-| `CN` | China | 470–510 MHz | |
-| `JP` | Japan | 920–923 MHz | |
-| `ANZ` | Australia/NZ | 915–928 MHz | |
-| `ANZ_433` | Australia/NZ | 433–435 MHz | |
-| `KR` | South Korea | 920–923 MHz | |
-| `TW` | Taiwan | 920–928 MHz | |
-| `RU` | Russia | 866–869 MHz | |
-| `IN` | India | 865–867 MHz | |
-| `NZ_865` | New Zealand | 865–867 MHz | |
-| `TH` | Thailand | 920–925 MHz | |
-| `LORA_24` | (worldwide ISM 2.4 GHz) | 2400–2483.5 MHz | Experimental; SX1280 hardware |
-| `UA_433` | Ukraine | 433–435 MHz | |
-| `MY_433` | Malaysia | 433–435 MHz | |
-| `MY_919` | Malaysia | 919–923 MHz | |
-| `SG_923` | Singapore | 923–925 MHz | |
-| `KZ_433` | Kazakhstan | 433–435 MHz | |
-| `KZ_863` | Kazakhstan | 863–865 MHz | |
-| `BR_902` | Brazil | 902–928 MHz | |
-| `NP_865` | Nepal | 865–867 MHz | |
-| `PH_868` | Philippines | 863–870 MHz | |
-| `PH_915` | Philippines | 902–928 MHz | |
-| `ITU1_2M` | ITU Region 1 | 144–146 MHz | Amateur Radio 2m band |
-| `ITU23_2M`| ITU Region 2/3 | 144–148 MHz | Amateur Radio 2m band |
-| `EU_866` | Europe | 866 MHz | Band no. 47b of 2006/771/EC (Non-specific SRD) |
-| `EU_874` | Europe | 874 MHz | Band no. 1 and 4 of 2022/172/EC |
-| `EU_917` | Europe | 917 MHz | Band no. 1 and 4 of 2022/172/EC |
-| `EU_N_868` | Europe | 868 MHz | Narrow presets |
-| `UNSET` | — | — | Device refuses TX until set |
+| Code | Slot-planning band (MHz) | Duty cycle | Max power (dBm) | Default preset | Notes |
+|---|---|---|---|---|---|
+| `US` | 902 to 928 | 100% | 30 | `LONG_FAST` |  |
+| `EU_433` | 433 to 434 | 10% | 10 | `LONG_FAST` |  |
+| `EU_868` | 869.4 to 869.65 | 10% | 27 | `LONG_FAST` |  |
+| `EU_866` | 865.6 to 867.6 | 2.5% | 27 | `LITE_FAST` |  |
+| `EU_N_868` | 869.4 to 869.65 | 10% | 27 | `NARROW_SLOW` | default slot 1 |
+| `CN` | 470 to 510 | 100% | 19 | `LONG_FAST` |  |
+| `JP` | 920.5 to 923.5 | 100% | 13 | `LONG_FAST` |  |
+| `ANZ` | 915 to 928 | 100% | 30 | `LONG_FAST` |  |
+| `ANZ_433` | 433.05 to 434.79 | 100% | 14 | `LONG_FAST` |  |
+| `RU` | 868.7 to 869.2 | 100% | 20 | `LONG_FAST` |  |
+| `KR` | 920 to 923 | 100% | 23 | `LONG_FAST` |  |
+| `TW` | 920 to 925 | 100% | 27 | `LONG_FAST` |  |
+| `IN` | 865 to 867 | 100% | 30 | `LONG_FAST` |  |
+| `NZ_865` | 864 to 868 | 100% | 36 | `LONG_FAST` |  |
+| `TH` | 920 to 925 | 10% | 27 | `LONG_FAST` |  |
+| `UA_433` | 433 to 434.7 | 10% | 10 | `LONG_FAST` |  |
+| `MY_433` | 433 to 435 | 100% | 20 | `LONG_FAST` |  |
+| `MY_919` | 919 to 924 | 100% | 27 | `LONG_FAST` |  |
+| `SG_923` | 917 to 925 | 100% | 20 | `LONG_FAST` |  |
+| `PH_433` | 433 to 434.7 | 100% | 10 | `LONG_FAST` |  |
+| `PH_868` | 868 to 869.4 | 100% | 14 | `LONG_FAST` |  |
+| `PH_915` | 915 to 918 | 100% | 24 | `LONG_FAST` |  |
+| `KZ_433` | 433.075 to 434.775 | 100% | 10 | `LONG_FAST` |  |
+| `KZ_863` | 863 to 868 | 100% | 30 | `LONG_FAST` |  |
+| `NP_865` | 865 to 868 | 100% | 30 | `LONG_FAST` |  |
+| `BR_902` | 902 to 907.5 | 100% | 30 | `LONG_FAST` |  |
+| `ITU1_2M` | 144 to 146 | 100% | 30 | `TINY_FAST` | default slot 26 |
+| `ITU2_2M` | 144 to 148 | 100% | 30 | `TINY_FAST` | default slot 51 |
+| `ITU3_2M` | 144 to 148 | 100% | 30 | `TINY_FAST` | default slot 33 |
+| `ITU2_125CM` | 220 to 225 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `ITU1_70CM` | 430 to 440 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `ITU2_70CM` | 420 to 450 | 100% | 30 | `NARROW_SLOW` | default slot 137 |
+| `ITU3_70CM` | 430 to 450 | 100% | 30 | `NARROW_SLOW` | default slot 37 |
+| `LORA_24` | 2400 to 2483.5 | 100% | 10 | `LONG_FAST` | wide LoRa (SX128x) |
+| `UNSET` | 902 to 928 | 100% | 30 | `LONG_FAST` | placeholder band; 0 slots, device refuses TX until a region is set |
+
+### Frequency slots
+
+Firmware (`RadioInterface::applyModemConfig`, `frequencySlotCount` and `resolveFrequencySlot` in `src/mesh/RadioInterface.cpp`; `modemPresetToParams` and `bwCodeToKHz` in `src/mesh/MeshRadio.h`) derives the radio frequency from the region row and modem bandwidth `bw` in kHz, all in `float`:
+
+```
+slotWidth = spacing + 2 * padding + bw / 1000                     // MHz
+numSlots  = round((freqEnd - freqStart + spacing) / slotWidth)    // half away from zero; 0 for UNSET
+slot      = channel_num            if 1 <= channel_num <= numSlots
+          = region.overrideSlot    else if 1 <= overrideSlot <= numSlots
+          = djb2(name) % numSlots + 1                             // name: UTF-8 bytes, hash = hash * 33 + byte, seed 5381
+freq      = freqStart + bw / 2000 + padding + (slot - 1) * slotWidth + frequency_offset
+freq      = override_frequency + frequency_offset                 // when override_frequency != 0
+```
+
+`name` is the primary channel name; when empty it is the preset display name (`LongFast`, `LongMod`, ...), or `Custom` when `use_preset` is false. `bw` is the preset bandwidth (wide regions use the 812.5 / 1625 / 406.25 kHz variants) or `bwCodeToKHz(bandwidth)` with `use_preset` false, where a custom bandwidth wider than the band falls back to the region default preset's. `spacing` and `padding` come from the region profile. The SDK implements this as `LoRaFrequency`.
 
 ### Modem presets
 

@@ -7,6 +7,8 @@
  */
 package org.meshtastic.sdk
 
+import org.meshtastic.sdk.internal.toDecimalString
+
 /**
  * Parsed result of a traceroute discovery, representing the full forward and backward routes.
  *
@@ -32,14 +34,14 @@ public data class RouteDiscoveryResult(
         appendLine("Route (${route.size} nodes):")
         route.forEachIndexed { i, nodeId ->
             append("  ${resolveNode(nodeId)}")
-            if (i < snrTowards.size) append(" (SNR: ${snrTowards[i]})")
+            if (i < snrTowards.size) append(" (SNR: ${snrTowards[i].toDecimalString()})")
             appendLine()
         }
         if (routeBack.isNotEmpty()) {
             appendLine("Route back (${routeBack.size} nodes):")
             routeBack.forEachIndexed { i, nodeId ->
                 append("  ${resolveNode(nodeId)}")
-                if (i < snrBack.size) append(" (SNR: ${snrBack[i]})")
+                if (i < snrBack.size) append(" (SNR: ${snrBack[i].toDecimalString()})")
                 appendLine()
             }
         }

@@ -28,6 +28,10 @@ public final class org/meshtastic/sdk/transport/ble/BleResilience$Companion {
 	public final fun getNone ()Lorg/meshtastic/sdk/transport/ble/BleResilience;
 }
 
+public final class org/meshtastic/sdk/transport/ble/BleScanMatchKt {
+	public static final fun bleAdvertisementMatches (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z
+}
+
 public final class org/meshtastic/sdk/transport/ble/BleScanner {
 	public static final field INSTANCE Lorg/meshtastic/sdk/transport/ble/BleScanner;
 	public final fun scan ()Lkotlinx/coroutines/flow/Flow;

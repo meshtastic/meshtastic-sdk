@@ -58,7 +58,7 @@ class P2TelemetryRpcTest {
             .last { it.decoded?.portnum == org.meshtastic.proto.PortNum.TELEMETRY_APP }
         val expected = DeviceMetrics.Builder().also { wb ->
             wb.battery_level = 87
-            wb.voltage = 4.05f
+            wb.voltage = 4.0625f
             wb.uptime_seconds = 3600
         }.build()
         transport.injectTelemetryResponse(

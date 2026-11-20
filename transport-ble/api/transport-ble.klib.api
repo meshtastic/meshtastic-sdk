@@ -81,3 +81,4 @@ final object org.meshtastic.sdk.transport.ble/BleScanner { // org.meshtastic.sdk
 }
 
 final fun org.meshtastic.sdk.transport.ble/BleTransport(org.meshtastic.sdk.transport.ble/DiscoveredRadio, kotlin.coroutines/CoroutineContext = ..., org.meshtastic.sdk.transport.ble/BleResilience = ..., kotlin/Function1<com.juul.kable/PeripheralBuilder, kotlin/Unit> = ...): org.meshtastic.sdk.transport.ble/BleTransport // org.meshtastic.sdk.transport.ble/BleTransport|BleTransport(org.meshtastic.sdk.transport.ble.DiscoveredRadio;kotlin.coroutines.CoroutineContext;org.meshtastic.sdk.transport.ble.BleResilience;kotlin.Function1<com.juul.kable.PeripheralBuilder,kotlin.Unit>){}[0]
+final fun org.meshtastic.sdk.transport.ble/bleAdvertisementMatches(kotlin/String, kotlin/String?, kotlin/String?, kotlin/String): kotlin/Boolean // org.meshtastic.sdk.transport.ble/bleAdvertisementMatches|bleAdvertisementMatches(kotlin.String;kotlin.String?;kotlin.String?;kotlin.String){}[0]

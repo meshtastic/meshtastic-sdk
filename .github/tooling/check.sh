@@ -47,6 +47,15 @@ ajv validate --spec=draft2019 -s .github/tooling/agent-report.schema.json -d .gi
 echo "[tooling] Linting shell scripts"
 find .github -type f -name "*.sh" -print0 | xargs -0 shellcheck
 
+echo "[tooling] Linting changelog scripts"
+shellcheck scripts/changelog.sh scripts/changelog_test.sh
+
+echo "[tooling] Testing changelog.sh"
+bash scripts/changelog_test.sh
+
+echo "[tooling] Validating changelog fragments"
+scripts/changelog.sh check
+
 echo "[tooling] Linting markdown for .github"
 markdownlint ".github/**/*.md" --disable MD013 MD022 MD029 MD031 MD032 MD033 MD040 MD041 MD060
 

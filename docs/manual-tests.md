@@ -117,6 +117,16 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
 - **Expected:** no `NODEINFO_APP` broadcast from the DUT's `NodeNum` during or immediately after the connect cycles (beyond the normal ~10 min cadence driven by the device itself).
 - **Regression:** if a NodeInfo broadcast appears within a few seconds of each `connect()` call, the SDK is sending `Heartbeat(nonce = 1)` — re-verify `heartbeatNonce` initialisation in `MeshEngine.kt`.
 
+#### A7 — TCP radio is discovered over mDNS and connects
+- **Transport:** TCP, `TcpDiscovery` (`JvmTcpDiscovery`, `AndroidTcpDiscovery`, `IosTcpDiscovery`)
+- **Setup:** a WiFi or Ethernet radio on the same LAN segment as the host, with the firmware's mDNS responder running (it starts once the radio has an IP address). On Android the app holds `INTERNET`; on iOS the app's Info.plist has `NSLocalNetworkUsageDescription` and `NSBonjourServices` = `_meshtastic._tcp`.
+- **Steps:**
+  1. Collect `discover()` and log each event.
+  2. Power-cycle the radio, then power it off.
+  3. Take the first `Found`, call `toTransport()`, and connect a `RadioClient` with it.
+- **Expected:** `Found` arrives within about 10 s of the radio getting an address, with `port = 4403`, an IPv4 address first in `addresses`, and `shortName`, `nodeId` (`!xxxxxxxx`) and `pioEnv` matching the radio. The client reaches Connected. After power-off a `Lost` with the same `serviceName` arrives (immediately on a clean shutdown, after the record TTL otherwise). Cancelling the collector stops discovery.
+- **Verify:** the iOS target is only compile-checked by CI on Linux; this scenario is the first real run of `IosTcpDiscovery`. Deny the iOS local-network prompt once and confirm the flow fails with `MeshtasticException.Transport`.
+
 ### B. Steady state
 
 #### B1 — `nodes` flow stitches Snapshot + deltas

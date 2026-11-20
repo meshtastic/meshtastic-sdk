@@ -7,8 +7,10 @@
  */
 package org.meshtastic.sdk.internal
 
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
@@ -155,7 +157,7 @@ internal class AdminApiImpl(
                 }.build(),
             )
         }
-        if (result is AdminResult.Success) engine.updateChannelAndPersist(channel)
+        if (result is AdminResult.Success && isLocalTarget()) engine.updateChannelAndPersist(channel)
         return result
     }
 
@@ -459,34 +461,44 @@ internal class AdminApiImpl(
     }
 
     override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> {
+        val generation = engine.connectionGeneration()
         val begin = beginEditSettings()
         if (begin !is AdminResult.Success) return begin.cast()
-        val edit = AdminEditImpl()
+        val edit = AdminEditImpl(generation)
         val payload = try {
             edit.block()
-        } catch (e: AdminEditFailure) {
-            return e.result.cast()
+        } catch (failure: Throwable) {
+            val cleanup = closeEditSettings(generation)
+            if (failure !is AdminEditFailure) {
+                cleanup.exceptionOrNull()?.let(failure::addSuppressed)
+                throw failure
+            }
+            cleanup.exceptionOrNull()?.let(failure::addSuppressed)
+            return failure.result.cast()
         }
-        val commit = commitEditSettings()
+        val commit = closeEditSettings(generation).getOrElse { throw it }
         if (commit !is AdminResult.Success) return commit.cast()
 
-        // Gap G: optimistically update configBundle with written values after successful commit.
-        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        edit.updateLocalConfigAfterCommit()
 
         return AdminResult.Success(payload)
     }
 
     override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T {
+        val generation = engine.connectionGeneration()
         beginEditSettings().getOrThrow()
-        val edit = AdminEditImpl()
+        val edit = AdminEditImpl(generation)
         val payload = try {
             AdminBatchScopeImpl(edit).block()
-        } catch (e: AdminEditFailure) {
-            e.result.getOrThrow()
+        } catch (failure: Throwable) {
+            val cleanup = closeEditSettings(generation)
+            cleanup.exceptionOrNull()?.let(failure::addSuppressed)
+            if (failure is AdminEditFailure) failure.result.getOrThrow()
+            throw failure
         }
-        commitEditSettings().getOrThrow()
+        closeEditSettings(generation).getOrElse { throw it }.getOrThrow()
 
-        engine.applyConfigEdits(edit.writtenConfigs, edit.writtenModuleConfigs)
+        edit.updateLocalConfigAfterCommit()
         return payload
     }
 
@@ -572,6 +584,14 @@ internal class AdminApiImpl(
         )
     }
 
+    private suspend fun closeEditSettings(generation: Long): Result<AdminResult<Unit>> = withContext(NonCancellable) {
+        if (!engine.isConnectedAtGeneration(generation)) {
+            Result.success(AdminResult.NodeUnreachable)
+        } else {
+            runCatching { commitEditSettings() }
+        }
+    }
+
     /**
      * Single-shot retry on `SessionKeyExpired`: re-issue `get_owner_request` to refresh the
      * session passkey, then replay the original [block] once. The retry result is returned as-is
@@ -610,9 +630,13 @@ internal class AdminApiImpl(
         override suspend fun listChannels(): List<Channel> = this@AdminApiImpl.listChannels().getOrThrow()
     }
 
-    private inner class AdminEditImpl : AdminEdit {
-        val writtenConfigs = mutableListOf<Config>()
-        val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+    private inner class AdminEditImpl(private val generation: Long) : AdminEdit {
+        private val writtenConfigs = mutableListOf<Config>()
+        private val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+
+        fun updateLocalConfigAfterCommit() {
+            if (isLocalTarget()) engine.applyConfigEdits(writtenConfigs, writtenModuleConfigs)
+        }
 
         override suspend fun setConfig(config: Config) {
             enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_config = config }.build())
@@ -660,7 +684,7 @@ internal class AdminApiImpl(
          * editSettings unwinds cleanly with the underlying failure.
          */
         private suspend fun enqueueOrThrow(adminMsg: AdminMessage) {
-            if (engine.myNodeNumOrNull() == null) {
+            if (!engine.isConnectedAtGeneration(generation) || engine.myNodeNumOrNull() == null) {
                 throw AdminEditFailure(AdminResult.NodeUnreachable)
             }
             val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()

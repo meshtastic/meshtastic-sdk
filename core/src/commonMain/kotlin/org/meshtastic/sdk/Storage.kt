@@ -85,7 +85,9 @@ public interface StorageProvider {
  * NodeNum and firmware version. If the NodeNum changes between calls for the same identity (e.g.,
  * factory reset, radio swap, or hostname now resolves to a different physical device), the
  * implementation *must* atomically clear all state before recording the new tuple. This prevents
- * stale NodeDB rows from leaking into a new session.
+ * stale NodeDB rows from leaking into a new session. The one exception is the overload that
+ * also takes a hardware device id: when it equals the stored id, the device was renumbered
+ * (firmware 2.8 derives the NodeNum from its key) and the state is kept.
  *
  * **Failure contract:** implementations may throw [MeshtasticException.StorageUnavailable]
  * (or any other `Exception`) to signal transient or persistent I/O failure. The SDK engine
@@ -174,6 +176,52 @@ public interface DeviceStorage : AutoCloseable {
      */
     @Throws(MeshtasticException.StorageUnavailable::class, kotlin.coroutines.cancellation.CancellationException::class)
     public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String)
+
+    /**
+     * Record the local node's NodeNum, firmware version and hardware identifier.
+     *
+     * Firmware 2.8 derives the NodeNum from the public key, so one physical device can report a
+     * new NodeNum after a firmware upgrade or a key regeneration. [deviceId] is the engine's
+     * validated `MyNodeInfo.device_id` (exactly 16 bytes, not all zero), or `null` when the
+     * device reported none or an unusable one. The implementation must:
+     *
+     * 1. Behave as [recordOwnNode] without a device id whenever [deviceId] is `null`, the stored
+     *    id is `null`, or the two differ: a changed NodeNum **atomically** calls [clear] before
+     *    the new tuple is persisted.
+     * 2. When the NodeNum changed and [deviceId] equals the stored id (the same device,
+     *    renumbered): **not** call [clear]; instead, **atomically and before returning**, remove
+     *    the node row stored under the previous own NodeNum and persist the new tuple.
+     * 3. Persist [deviceId] with the tuple when it is non-null. A `null` [deviceId] never erases
+     *    a stored id unless step 1 cleared the storage.
+     *
+     * The default body ignores [deviceId] and delegates to the two-argument overload, so an
+     * implementation that does not override it keeps clearing on every NodeNum change. Override
+     * it together with [loadOwnDeviceId]; the engine only treats a NodeNum change as a renumber
+     * when [loadOwnDeviceId] returned the previous id.
+     *
+     * Never log [deviceId]; it fingerprints the hardware.
+     *
+     * @param nodeNum the device's reported NodeNum
+     * @param firmwareVersion the device's reported firmware version string
+     * @param deviceId the validated hardware identifier, or `null`
+     * @throws MeshtasticException.StorageUnavailable on I/O failure
+     * @since 0.3.0
+     */
+    @Throws(MeshtasticException.StorageUnavailable::class, kotlin.coroutines.cancellation.CancellationException::class)
+    public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: okio.ByteString?) {
+        recordOwnNode(nodeNum, firmwareVersion)
+    }
+
+    /**
+     * Load the hardware identifier persisted by [recordOwnNode] with a `deviceId`, or `null` when
+     * none is stored. The engine calls this at connect time to decide whether a later NodeNum
+     * change is the same device renumbered. The default body returns `null`, which makes every
+     * NodeNum change an identity mismatch.
+     *
+     * @since 0.3.0
+     */
+    @Throws(MeshtasticException.StorageUnavailable::class, kotlin.coroutines.cancellation.CancellationException::class)
+    public suspend fun loadOwnDeviceId(): okio.ByteString? = null
 
     /**
      * Clear all stored data for this storage instance.
