@@ -32,6 +32,8 @@ import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.RoutingApiImpl
 import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
+import org.meshtastic.sdk.internal.summarizeFromRadio
+import org.meshtastic.sdk.internal.summarizeToRadio
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
@@ -903,6 +905,8 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                protocolLogLevel = protocolLogLevel,
+                payloadRedactor = payloadRedactor,
             )
 
             return RadioClient(
@@ -932,14 +936,21 @@ private fun <T> SharedFlow<T>.hide(): Flow<T> = flow { emitAll(this@hide) }
 /**
  * Strategy for redacting sensitive payload data in protocol logs.
  *
- * Applied when [RadioClient.Builder.protocolLogging] is active. The default implementation masks
- * positions, text payloads, and PSKs.
+ * Applied when [RadioClient.Builder.protocolLogging] is active: every envelope is rendered through
+ * [describe] before it reaches the [LogSink]. [Default] logs the envelope variant and routing
+ * metadata only, so payload bytes, text, positions, PSKs and passkeys never appear.
  *
  * @since 0.1.0
  */
 public interface PayloadRedactor {
+    /** Renders an inbound [fromRadio] envelope for the protocol log. */
+    public fun describe(fromRadio: FromRadio): String = summarizeFromRadio(fromRadio)
+
+    /** Renders an outbound [toRadio] envelope for the protocol log. */
+    public fun describe(toRadio: ToRadio): String = summarizeToRadio(toRadio)
+
     public companion object {
-        /** The default redaction strategy — masks position, text, and key fields. */
+        /** The default redaction strategy: envelope variant and routing metadata, never payload content. */
         public val Default: PayloadRedactor = object : PayloadRedactor {}
     }
 }
