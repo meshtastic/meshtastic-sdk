@@ -34,6 +34,7 @@ usbSerialForAndroid         = "3.12.0"           # JitPack only; compileOnly in 
 # --- TUI (samples/cli) ---
 mosaic                      = "0.18.0"
 clikt                       = "5.2.0"
+mcpKotlinSdk                = "0.16.0"           # samples/cli `mcp` subcommand only
 
 # --- Compose Multiplatform (samples/parity-app) ---
 composeMultiplatform        = "1.12.2"
@@ -99,6 +100,7 @@ usbSerialForAndroid         = { module = "com.github.mik3y:usb-serial-for-androi
 mosaicRuntime               = { module = "com.jakewharton.mosaic:mosaic-runtime",                 version.ref = "mosaic" }
 mosaicTerminal              = { module = "com.jakewharton.mosaic:mosaic-terminal",                version.ref = "mosaic" }
 clikt                       = { module = "com.github.ajalt.clikt:clikt",                          version.ref = "clikt" }
+mcpKotlinSdkServer          = { module = "io.modelcontextprotocol:kotlin-sdk-server",             version.ref = "mcpKotlinSdk" }
 
 kermit                      = { module = "co.touchlab:kermit",                                   version.ref = "kermit" }
 

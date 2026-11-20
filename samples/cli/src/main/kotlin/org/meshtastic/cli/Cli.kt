@@ -26,6 +26,7 @@ import org.meshtastic.cli.cmd.ConformanceCmd
 import org.meshtastic.cli.cmd.EventsCmd
 import org.meshtastic.cli.cmd.HealthCmd
 import org.meshtastic.cli.cmd.InfoCmd
+import org.meshtastic.cli.cmd.McpCmd
 import org.meshtastic.cli.cmd.NodesCmd
 import org.meshtastic.cli.cmd.PacketsCmd
 import org.meshtastic.cli.cmd.ProbeCmd
@@ -59,6 +60,7 @@ internal class CliRoot : CliktCommand(name = "cli") {
             ProbeCmd(),
             TuiCmd(),
             ConformanceCmd(),
+            McpCmd(),
         )
     }
 
