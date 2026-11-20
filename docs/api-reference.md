@@ -772,7 +772,7 @@ val plan = LoRaFrequency.plan(lora, primaryChannelName = channel.settings.name)
 ```
 
 - Slots are 1-based, like `LoRaConfig.channel_num`. `slot` is `null` with `override_frequency` set or when the band has no slots; `frequencyMHz` is then the override plus `frequency_offset`, or `null` without one.
-- An `UNSET` region, and any `RegionCode` firmware has no row for, resolves to the `UNSET` row: zero slots, no frequency.
+- An `UNSET` region, and any `RegionCode` firmware has no row for, resolves to the `UNSET` row: zero slots, no slot, and no frequency unless `override_frequency` is set; with an override, `frequencyMHz` is still the override plus `frequency_offset`.
 - `numChannels` is not clamped to one. A bandwidth far wider than the band rounds to 0; `plan` avoids that for `use_preset = false` by substituting the region default preset's bandwidth, as firmware does.
 - A preset the region does not offer is not substituted. The device clamps it when the config is applied, so a stored config is already legal.
 - A caller holding region data from elsewhere can build a `LoRaRegionInfo` and pass it to the `LoRaFrequency` functions directly.

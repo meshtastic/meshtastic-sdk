@@ -1451,6 +1451,7 @@ internal class MeshEngine(
         if (fromNum == 0) return
         val bytes = adminMsg.session_passkey.toByteArray()
         val previous = sessionPasskeys[fromNum]
+        if (previous != null && receivedAt < previous.refreshedAt) return
         val generation = if (previous != null && previous.bytes.contentEquals(bytes)) {
             previous.generation
         } else {
