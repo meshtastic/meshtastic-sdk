@@ -35,6 +35,16 @@ and [ADR-012](../decisions/012-transport-threading.md) for the threading contrac
 
 The SDK modules declare `jvm`, `android`, `iosArm64`, `iosX64` and `iosSimulatorArm64` targets; there are no macOS, Linux or Windows native targets.
 
+## WebSocket
+
+[`:transport-websocket`](../../transport-websocket/Module.md) connects to firmware's WebSocket
+phone API (`ws://host[:port]/api/v1/ws` or `wss://`) on Ktor: CIO on JVM and Android, Darwin on
+iOS. One protobuf rides in each binary message with no stream header, and the node serves one
+client at a time (a newer client closes the old one with code 4001, reported as a non-recoverable
+`TransportState.Error`). The 15 minute idle close is covered by the engine's 30 second heartbeat.
+Node support needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on
+meshtasticd needs #12414's `HTTPPort`.
+
 Per-target Android / FGS detail: [`android-platform-constraints.md`](./android-platform-constraints.md).
 
 ## Choosing a transport
@@ -52,7 +62,7 @@ Per-target Android / FGS detail: [`android-platform-constraints.md`](./android-p
 ## Custom transports
 
 The `RadioTransport` contract is small and stable. To add a new transport (LoRa proxy,
-WebSocket bridge, mock):
+mock):
 
 1. Create a new module (e.g. `:transport-foo`); depend only on `:core` (which re-exports the wire types).
 2. Implement `RadioTransport` honoring [ADR-012](../decisions/012-transport-threading.md):
