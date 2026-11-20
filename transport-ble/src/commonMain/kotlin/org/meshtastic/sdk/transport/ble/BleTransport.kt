@@ -143,6 +143,7 @@ public class BleTransport(
     internal var bondControl: BondControl? = null
     internal var autoConnectSwitch: AutoConnectSwitch? = null
     internal var gattCacheRefresher: GattCacheRefresher? = null
+    internal var ownsPeripheral: Boolean = false
 
     override suspend fun connect() {
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
@@ -418,7 +419,11 @@ public class BleTransport(
             )
         }
 
-    /** Release internal coroutines and frame channel. Idempotent; does not close [Peripheral]. */
+    /**
+     * Releases internal coroutines and the frame channel and closes a peripheral created by
+     * the browser picker. The caller owns a peripheral supplied through the constructor.
+     * Call [disconnect] first for graceful teardown. Idempotent.
+     */
     public fun shutdown() {
         if (!shuttingDown.compareAndSet(expect = false, update = true)) return
         drainJob = null
@@ -429,6 +434,7 @@ public class BleTransport(
         coordinator = null
         scope.cancel()
         frameChannel.close()
+        if (ownsPeripheral) peripheral.close()
     }
 
     /** Cancel tracked jobs. Used by [disconnect]. */

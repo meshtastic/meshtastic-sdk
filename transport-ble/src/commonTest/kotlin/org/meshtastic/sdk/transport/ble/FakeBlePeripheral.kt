@@ -49,6 +49,8 @@ internal class FakeBlePeripheral(
 
     var connectCalls: Int = 0
         private set
+    var closeCalls: Int = 0
+        private set
 
     override val scope: CoroutineScope = CoroutineScope(SupervisorJob())
 
@@ -101,6 +103,7 @@ internal class FakeBlePeripheral(
         }
 
     override fun close() {
+        closeCalls++
         scope.cancel()
     }
 }

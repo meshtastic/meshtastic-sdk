@@ -25,6 +25,8 @@ import org.meshtastic.sdk.MeshtasticException
  * - **Android 11 and older:** `ACCESS_FINE_LOCATION`, with location services on.
  * - **iOS:** `NSBluetoothAlwaysUsageDescription` in `Info.plist`; the system prompts on first use.
  * - **JVM:** a working BlueZ (Linux), CoreBluetooth (macOS) or WinRT (Windows) stack.
+ * - **Web:** continuous scanning requires the browser's experimental Web Bluetooth scan API.
+ *   Use the web target's `requestBleTransport()` for the browser's device chooser.
  *
  * If a requirement is missing, or Bluetooth is off or unavailable, collecting [scan] fails with
  * [MeshtasticException.Transport] whose `cause` is the underlying platform exception.
