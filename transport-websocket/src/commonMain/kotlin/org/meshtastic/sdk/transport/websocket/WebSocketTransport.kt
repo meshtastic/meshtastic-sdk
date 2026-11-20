@@ -11,6 +11,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.websocket.DefaultClientWebSocketSession
 import io.ktor.client.plugins.websocket.webSocket
 import io.ktor.websocket.CloseReason
+import io.ktor.websocket.FrameTooBigException
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
 import kotlinx.coroutines.CancellationException
@@ -42,6 +43,8 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireFraming
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.jvm.JvmOverloads
 import io.ktor.websocket.Frame as WsFrame
 
@@ -99,20 +102,23 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
     private var attempt: Job? = null
 
     internal var pumpProbe: (suspend (String) -> Unit)? = null
+    internal var connectProbe: (suspend (String) -> Unit)? = null
+    internal var attemptContext: CoroutineContext = EmptyCoroutineContext
 
     private class Detached(val session: DefaultClientWebSocketSession?, val jobs: List<Job?>, val client: HttpClient?)
 
     override suspend fun connect() {
-        release()
+        connectProbe?.invoke("entering")
         val upgraded = CompletableDeferred<DefaultClientWebSocketSession>()
-        val (gen, attemptJob) = lock.withLock {
+        val (gen, attemptJob, previous) = lock.withLock {
             val next = ++generation
+            val previous = detachLocked()
             _state.value = TransportState.Connecting
             @Suppress("ControlFlowWithEmptyBody")
             while (inbound.tryReceive().isSuccess) {
             }
             val client = httpClient ?: createDefaultHttpClient().also { ownedClient = it }
-            val job = scope.launch {
+            val job = scope.launch(attemptContext) {
                 try {
                     client.webSocket(endpoint.url) {
                         upgraded.complete(this)
@@ -122,9 +128,13 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                     upgraded.completeExceptionally(t)
                 }
             }
+            job.invokeOnCompletion { cause ->
+                upgraded.completeExceptionally(cause ?: CancellationException("WebSocket attempt ended"))
+            }
             attempt = job
-            next to job
+            Triple(next, job, previous)
         }
+        withContext(NonCancellable) { previous.close() }
         val opened = try {
             upgraded.await()
         } catch (e: CancellationException) {
@@ -138,15 +148,25 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
             }
             throw failure
         }
-        val installed = lock.withLock {
-            if (generation != gen) {
-                false
-            } else {
-                session = opened
-                _state.value = TransportState.Connected
-                pump = scope.launch { readUntilClosed(opened, gen) }
-                true
+        val installed = try {
+            connectProbe?.invoke("upgraded")
+            lock.withLock {
+                if (generation != gen) {
+                    false
+                } else {
+                    session = opened
+                    _state.value = TransportState.Connected
+                    pump = scope.launch { readUntilClosed(opened, gen) }
+                    true
+                }
             }
+        } catch (e: CancellationException) {
+            abandon(gen, TransportState.Disconnected)
+            withContext(NonCancellable) {
+                runCatching { opened.cancel() }
+                attemptJob.cancel()
+            }
+            throw e
         }
         if (!installed) {
             withContext(NonCancellable) {
@@ -215,15 +235,6 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
         client?.let { runCatching { it.close() } }
     }
 
-    private suspend fun release() {
-        withContext(NonCancellable) {
-            lock.withLock {
-                generation++
-                detachLocked()
-            }.close()
-        }
-    }
-
     /** Tears down attempt [gen] and publishes [final], unless a newer lifecycle call already owns the state. */
     private suspend fun abandon(gen: Long, final: TransportState): Boolean = withContext(NonCancellable) {
         val detached = lock.withLock {
@@ -241,11 +252,11 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
 
     private suspend fun readUntilClosed(open: DefaultClientWebSocketSession, gen: Long) {
         var dropped: Throwable? = null
-        var oversize = -1
+        var oversize = -1L
         try {
             for (message in open.incoming) {
                 if (message !is WsFrame.Binary) continue
-                val size = message.data.size
+                val size = message.data.size.toLong()
                 if (size > WireFraming.MAX_PAYLOAD_SIZE) {
                     oversize = size
                     break
@@ -254,6 +265,8 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
             }
         } catch (e: CancellationException) {
             throw e
+        } catch (e: FrameTooBigException) {
+            oversize = e.frameSize
         } catch (e: Exception) {
             dropped = e
         }
