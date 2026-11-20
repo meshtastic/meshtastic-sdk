@@ -393,7 +393,7 @@ The firmware emits these `FromRadio` payloads in this order (`firmware:src/mesh/
 3. **Inter-stage settle.** Between Stage 1 sentinel and Stage 2 trigger the phone MUST send `ToRadio.heartbeat` and SHOULD wait ~100 ms either side of it (Android: `HandshakeStateMachine` lines 187–222 — `delay(100); heartbeatSender.send(); delay(100)`). This lets the device's task queue drain before NodeDB streaming starts.
 4. **Session passkey seeding.** Immediately after Stage 2 completes, the phone SHOULD issue an `AdminMessage(get_owner_request, want_response = true)`. The response carries `session_passkey` which is required for all subsequent state-changing admin requests (§13).
 5. If the device emits `FromRadio.rebooted = true`, treat as a forced disconnect — clear all state and re-issue Stage 1 with a fresh nonce pair (`69420` then `69421`).
-6. On TCP/Serial close, the device resets its `config_nonce` to `0` and clears all session state. On reconnection, both stages are mandatory.
+6. On TCP/Serial close, the device resets its `config_nonce` to `0` and clears all session state. On reconnection, both stages are mandatory. The SDK treats TCP peer EOF as a transport failure so the next handshake can begin promptly.
 7. While the device is mid-handshake, queued outbound packets in the device router are NOT dropped — they will be sent after `config_complete_id`. However, the device WILL drop incoming `MqttClientProxyMessage` from the phone during handshake with a warning log.
 
 ### Node DB after the handshake
