@@ -15,6 +15,9 @@ testing, and the JVM `samples/cli` runner.
 | iOS (arm64, Simulator arm64) | Ktor `aSocket().tcp()` over POSIX sockets | iOS 13+ |
 | Linux x64 (native) | Ktor `aSocket().tcp()` over POSIX sockets | glibc 2.17+ |
 
+Discovery backends: JVM uses JmDNS (`org.jmdns:jmdns`, Apache-2.0, a JVM-only dependency),
+Android uses `NsdManager` (API 26+), iOS uses `NSNetServiceBrowser`.
+
 ## Connection behavior
 
 - **Default port:** `4403` (Meshtastic PhoneAPI; see `docs/protocol.md` §1).
@@ -49,9 +52,35 @@ recoverable errors: `1s, 2s, 4s, 8s, … capped at 60s`, reset to `1s` on any su
 `Connected` transition. Errors with `recoverable = false` (currently unused on this
 transport) should not be retried.
 
+## Discovery
+
+Radios with WiFi or Ethernet advertise `_meshtastic._tcp` on port `4403` over mDNS with the TXT
+records `shortname`, `id` and `pio_env` (firmware `WiFiAPClient.cpp`). `TcpDiscovery.discover()`
+is a cold `Flow<TcpDiscoveryEvent>`: `Found(DiscoveredTcpRadio)` when a service resolves (again
+when its address or TXT changes), `Lost(serviceName)` when it disappears. Collection starts
+browsing and cancelling stops it. Events are deltas rather than a snapshot list so a picker
+handles each radio once.
+
+```kotlin
+val radio = (JvmTcpDiscovery().discover().first() as TcpDiscoveryEvent.Found).radio
+val transport = radio.toTransport() // TcpTransport(host, port)
+```
+
+| Target | Class | Host requirements |
+|---|---|---|
+| JVM | `JvmTcpDiscovery(bindAddress = null)` | multicast-capable LAN interface; pass `bindAddress` on multi-NIC hosts |
+| Android | `AndroidTcpDiscovery(context)` | `INTERNET`; no multicast lock for `NsdManager`; `ACCESS_LOCAL_NETWORK` where enforced |
+| iOS | `IosTcpDiscovery()` | Info.plist `NSLocalNetworkUsageDescription` and `NSBonjourServices` = `_meshtastic._tcp` |
+
+Link-local IPv6 addresses are dropped (they need a scope ID to dial). The JVM backend pulls
+`slf4j-api` through JmDNS; without an SLF4J binding it logs one warning and discards JmDNS logs.
+The iOS backend is compile-checked only; see `docs/manual-tests.md` A7.
+
 ## Key packages
 
-- `org.meshtastic.sdk.transport.tcp` — `TcpTransport(host: String, port: Int = 4403)`. The single
-  public type; observes `state: StateFlow<TransportState>`, exposes
+- `org.meshtastic.sdk.transport.tcp` — `TcpTransport(host: String, port: Int = 4403)`, the
+  transport; observes `state: StateFlow<TransportState>`, exposes
   `frames(): Flow<Frame>` (single-collector, drained by the engine), and accepts outbound
   frames via `suspend fun send(frame: Frame)`.
+  Discovery lives in the same package: `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio`
+  and the per-platform `JvmTcpDiscovery`, `AndroidTcpDiscovery` and `IosTcpDiscovery`.

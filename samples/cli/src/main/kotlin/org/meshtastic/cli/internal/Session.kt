@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.TransportTarget
 import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 
 /** Default timeout for one-shot connects (handshake completion). */
@@ -36,7 +37,7 @@ internal sealed interface SessionResult {
  * Opens [ref], builds a [RadioClient], waits for the handshake, and returns a ready session.
  * On failure, emits the appropriate `error`/`done` envelopes via [out] and returns [SessionResult.Failed].
  */
-internal suspend fun connect(ref: TransportRef, timeoutMs: Long, out: Output): SessionResult {
+internal suspend fun connect(ref: TransportTarget, timeoutMs: Long, out: Output): SessionResult {
     val opened = try {
         openTransport(ref)
     } catch (e: NoDeviceException) {

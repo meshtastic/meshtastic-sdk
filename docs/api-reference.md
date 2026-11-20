@@ -9,7 +9,7 @@
 | Package | Stability | Contents |
 |---|---|---|
 | `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
-| `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport` |
+| `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport`, `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio`, `JvmTcpDiscovery` (JVM), `AndroidTcpDiscovery` (Android), `IosTcpDiscovery` (iOS) |
 | `org.meshtastic.sdk.transport.ble` | Public | `BleTransport` |
 | `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
 | `org.meshtastic.sdk.storage.sqldelight` | Public | `SqlDelightStorageProvider`, `AndroidContextHolder` (Android) |
@@ -198,7 +198,7 @@ The `send { … }` lambda configures a `MeshPacket` builder. Available DSL metho
 
 ### Sub-API namespaces
 
-`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi`, `client.storeForward: StoreForwardApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
+`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi`, `client.storeForward: StoreForwardApi`, `client.files: FileTransferApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
 
 ## `MessageHandle`
 
@@ -279,7 +279,7 @@ public sealed interface MeshEvent {
 public enum class DroppedFlow { Packets, Events }
 ```
 
-`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for the engine clearing storage after a NodeNum change (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads. *(since 0.2.0)* `MqttProxyMessage` carries the device's `mqttClientProxyMessage` traffic for hosts implementing the device-as-MQTT-proxy side channel; `XmodemPacket` carries raw `XModem` file-transfer packets; `FileInfoReceived` carries an `org.meshtastic.proto.FileInfo` advertisement (the variant is named `FileInfoReceived` — not `FileInfo` — to avoid clashing with the proto type). *(since 0.3.0)* `LockdownStatusChanged` carries the device's `LockdownStatus` report from hardened (`MESHTASTIC_LOCKDOWN`) firmware builds — sent right after `config_complete_id` and after each `AdminApi.lockdown` command — and is the source of truth for lockdown availability (no firmware-version capability flag — lockdown is a build-time firmware option).
+`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for a NodeNum change: `reason` is `"identity_mismatch"` when the engine cleared storage and `"node_renumbered"` when the same `MyNodeInfo.device_id` came back under a new NodeNum and storage was kept (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads. *(since 0.2.0)* `MqttProxyMessage` carries the device's `mqttClientProxyMessage` traffic for hosts implementing the device-as-MQTT-proxy side channel; `XmodemPacket` carries raw `XModem` file-transfer packets; `FileInfoReceived` carries an `org.meshtastic.proto.FileInfo` advertisement (the variant is named `FileInfoReceived` — not `FileInfo` — to avoid clashing with the proto type). *(since 0.3.0)* `LockdownStatusChanged` carries the device's `LockdownStatus` report from hardened (`MESHTASTIC_LOCKDOWN`) firmware builds — sent right after `config_complete_id` and after each `AdminApi.lockdown` command — and is the source of truth for lockdown availability (no firmware-version capability flag — lockdown is a build-time firmware option).
 
 ## `NodeChange`
 
@@ -439,6 +439,8 @@ Full mapping from wire-level errors to exceptions vs results lives in [`error-ta
 
 Each method maps onto a single `AdminMessage` round-trip with the device. Setters resolve when the engine sees the wire-level routing ACK; getters resolve when the dispatcher correlates the response payload by `request_id`. `SessionKeyExpired` triggers a single-shot retry: a fresh `get_owner_request` re-seeds the session passkey, then the original call is replayed once.
 
+`RadioClient.channels` and `RadioClient.configBundle` describe the connected radio. Editing another radio through `admin.forNode(dest)` preserves those values in memory and in device storage, including writes made through `editSettings` and `batch`.
+
 ```kotlin
 public interface AdminApi {
     /** Returns a copy of this AdminApi that targets a remote node. All subsequent calls route to [dest]. @since 0.2.0 */
@@ -483,6 +485,28 @@ public sealed interface AdminResult<out T> {
 ```
 
 `SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified. `RateLimited` indicates the device rejected the call due to rate limiting (`Routing.Error.RATE_LIMIT_EXCEEDED`); callers should back off before retrying.
+
+### Ham mode *(since 0.3.0)*
+
+```kotlin
+suspend fun RadioClient.enableHamMode(
+    callSign: String, shortName: String? = null, longName: String? = null,
+    txPower: Int? = null, frequency: Float? = null,
+): AdminResult<Unit>
+```
+
+`AdminApi.setHamMode(HamParameters)` sends exactly what it is given. Firmware copies `tx_power` and `frequency` into the LoRa config unconditionally, so 0 resets TX power to the regional maximum and clears `override_frequency`. `enableHamMode` fills a null `txPower` or `frequency` from the loaded LoRa config and returns `AdminResult.Failed(Routing.Error.BAD_REQUEST)`, sending nothing, when a value is needed and the config has not loaded.
+
+### Device profiles *(since 0.3.0)*
+
+```kotlin
+suspend fun RadioClient.exportDeviceProfile(includePrivateKey: Boolean = false, includeDeviceText: Boolean = true): AdminResult<DeviceProfile>
+suspend fun RadioClient.installDeviceProfile(profile: DeviceProfile, installSecurity: Boolean = false): AdminResult<Unit>
+```
+
+A `DeviceProfile` holds owner names, a channel share URL, `LocalConfig`, `LocalModuleConfig`, a fixed position, ringtone and canned messages. Encode and decode it with `DeviceProfile.ADAPTER`; file I/O is the host's.
+
+Export omits `security.private_key` unless `includePrivateKey` is true. Install writes only fields the profile has, in one `editSettings` transaction: owner, device, position, power, network, display, bluetooth, module configs, channels (eight slots replaced), then LoRa config when it differs. The fixed position is written after the commit. `security` is skipped unless `installSecurity` is true. `is_licensed`, `traffic_management`, ringtone and canned messages are not installed. A malformed channel URL fails with `Failed(BAD_REQUEST)` before any write.
 
 ### `AdminResult` extensions *(since 0.2.0)*
 
@@ -557,6 +581,73 @@ public sealed interface StoreForwardEvent {
     public data class SfppCanonAnnounced(val messageHash: ByteArray, val rxTime: Long) : StoreForwardEvent
 }
 ```
+
+## `FileTransferApi` *(since 0.3.0)*
+
+Reads and writes files on the device's filesystem over the phone API with firmware's XModem-style exchange (see [protocol.md §15](./protocol.md#15-file-transfer-xmodem)). Access via `client.files`. File transfer only: flashing firmware is out of scope.
+
+```kotlin
+public interface FileTransferApi {
+    /** Progress of the transfer in flight, or null while idle. */
+    public val progress: StateFlow<FileTransferProgress?>
+
+    public suspend fun download(path: String): FileTransferResult<ByteString>
+    public suspend fun upload(path: String, data: ByteString): FileTransferResult<Unit>
+
+    public companion object {
+        public const val MAX_FILE_BYTES: Int = 1 shl 20
+        public const val MAX_PATH_BYTES: Int = 127
+    }
+}
+
+public data class FileTransferProgress(
+    val path: String, val direction: FileTransferDirection,
+    val bytesTransferred: Int, val totalBytes: Int?,   // null for downloads
+)
+
+public sealed interface FileTransferResult<out T> {
+    public data class Success<T>(val value: T) : FileTransferResult<T>
+    public data class Failure(val reason: FileTransferFailure) : FileTransferResult<Nothing>
+}
+
+public sealed interface FileTransferFailure {
+    NotConnected, Busy, InvalidPath, TooLarge, Refused, DeviceCancelled, RetriesExhausted, Timeout  // data objects
+}
+```
+
+One transfer runs per client at a time; a second call returns `Busy`. A block that does not arrive within 3 s is re-requested, up to 10 times; a download from a silent device fails within 13.5 s (see the `FileTransferApi` KDoc for the worst cases). Cancelling the calling coroutine aborts the transfer: an upload sends `CAN` once the device has acknowledged the request (firmware deletes the partial file) and, before that, re-sends the request to find out whether the device is receiving, never `CAN`; a download sends a frame that makes firmware close the file without deleting it. The transfer reads device frames from `RadioClient.events`; firmware sends one frame and waits for the reply, so the drop-oldest buffer does not overflow from the transfer alone.
+
+## Packet provenance accessors *(since 0.3.0)*
+
+Pure extensions over a raw `MeshPacket` from `client.packets` and over `NodeInfo`. What each field means and its limits are in [protocol.md](./protocol.md) under "Provenance fields".
+
+```kotlin
+public val MeshPacket.transport: PacketTransport          // Internal, Lora, LoraAlt1..3, Mqtt, MulticastUdp, Api, UnicastUdp, Unrecognized
+public val MeshPacket.relayNode: NodeLastByte?            // null when 0 or not a byte
+public val MeshPacket.nextHop: NodeLastByte?
+public val MeshPacket.signature: PacketSignature          // None, CarriedUnchecked, Malformed, CheckedByDevice
+public val MeshPacket.xeddsaSignature: ByteString?
+public val MeshPacket.ackProof: AckProof?                 // null off ROUTING_APP; Absent, Valid, Invalid, NoKey, Unrecognized
+public val NodeInfo.heardOnCurrentLora: Boolean
+public val NodeInfo.signsPackets: Boolean
+public fun NodeId.lastByte(): NodeLastByte                // 0x00 maps to 0xFF, as firmware does
+public data class NodeLastByte(val value: Int) {          // 1..255
+    public fun candidates(nodes: Collection<NodeId>): List<NodeId>
+}
+```
+
+A `NodeLastByte` is not a node id: more than one node can match it, so resolve it with `candidates` against the nodes you know and treat several matches as ambiguous.
+
+## Store-and-forward replay dedupe *(since 0.3.0)*
+
+A server replays stored text under a fresh packet id, with the stored id in `StoreAndForward.original_id` and the original sender in `MeshPacket.from`. `HistoryReplayComplete.delivered` counts each `(from, original_id)` once. The `packets` flow still carries every replay as received; a consumer drops repeats with:
+
+```kotlin
+public fun MeshPacket.storeForwardOriginalId(): Int?   // null unless a ROUTER_TEXT_* reply with original_id != 0
+public fun Flow<MeshPacket>.dropDuplicateStoreForwardReplays(window: Int = 256): Flow<MeshPacket>
+```
+
+Each collection remembers the last `window` keys (replays and plain `TEXT_MESSAGE_APP` packets) and forgets the oldest first.
 
 ## Payload accessors
 
@@ -638,6 +729,52 @@ client.admin.editSettings {
 }
 ```
 
+## LoRa regions and frequency slots *(since 0.3.0)*
+
+Pure functions in `org.meshtastic.sdk` that answer what a `Config.LoRaConfig` means on the air: how many frequency slots the band has, which slot the primary channel uses, and the center frequency. No engine state and no I/O; float math is single-precision, as on the device.
+
+```kotlin
+public data class LoRaRegionInfo(
+    val region: RegionCode, val freqStartMHz: Float, val freqEndMHz: Float, val dutyCyclePercent: Float,
+    val powerLimitDbm: Int, val freqSwitching: Boolean, val wideLora: Boolean, val spacingMHz: Float,
+    val paddingMHz: Float, val audioPermitted: Boolean, val licensedOnly: Boolean,
+    val defaultPreset: ModemPreset, val overrideSlot: Int,
+) {
+    companion object {
+        val all: List<LoRaRegionInfo>                      // firmware order, UNSET last
+        fun forRegion(code: RegionCode): LoRaRegionInfo    // no row -> the UNSET row, as firmware does
+    }
+}
+
+public data class ModemParams(val bandwidthKHz: Float, val spreadFactor: Int, val codingRate: Int)
+public fun ModemPreset.modemParams(wideLora: Boolean = false): ModemParams
+
+public object LoRaFrequency {
+    fun bandwidthKHzForCode(code: Int): Float
+    fun slotWidthMHz(region: LoRaRegionInfo, bandwidthKHz: Float): Float
+    fun numChannels(region: LoRaRegionInfo, bandwidthKHz: Float): Int
+    fun resolveSlot(region: LoRaRegionInfo, numChannels: Int, channelName: String, channelNum: Int = 0): Int?
+    fun hashedChannelName(channelName: String, usePreset: Boolean, preset: ModemPreset): String
+    fun centerFrequencyMHz(region: LoRaRegionInfo, bandwidthKHz: Float, slot: Int, frequencyOffsetMHz: Float = 0f): Float
+    fun plan(config: Config.LoRaConfig, primaryChannelName: String): LoRaFrequencyPlan
+}
+
+public data class LoRaFrequencyPlan(
+    val region: LoRaRegionInfo, val bandwidthKHz: Float, val numChannels: Int, val slot: Int?, val frequencyMHz: Float?,
+)
+```
+
+```kotlin
+val plan = LoRaFrequency.plan(lora, primaryChannelName = channel.settings.name)
+// US, LongFast, name "LongFast": numChannels = 104, slot = 20, frequencyMHz = 906.875
+```
+
+- Slots are 1-based, like `LoRaConfig.channel_num`. `slot` is `null` with `override_frequency` set or when the band has no slots; `frequencyMHz` is then the override plus `frequency_offset`, or `null` without one.
+- An `UNSET` region, and any `RegionCode` firmware has no row for, resolves to the `UNSET` row: zero slots, no frequency.
+- `numChannels` is not clamped to one. A bandwidth far wider than the band rounds to 0; `plan` avoids that for `use_preset = false` by substituting the region default preset's bandwidth, as firmware does.
+- A preset the region does not offer is not substituted. The device clamps it when the config is applied, so a stored config is already legal.
+- A caller holding region data from elsewhere can build a `LoRaRegionInfo` and pass it to the `LoRaFrequency` functions directly.
+
 ## Storage
 
 ```kotlin
@@ -660,6 +797,16 @@ public interface DeviceStorage : AutoCloseable {
      * `MeshEvent.IdentityRebound(previous, current)`.
      */
     public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String)
+
+    /**
+     * As above, plus the validated `MyNodeInfo.device_id`. On a NodeNum change with an equal stored
+     * id (same device, renumbered) implementations keep their state, remove the previous own-node
+     * row and persist the new tuple. Default body delegates to the two-argument overload. (since 0.3.0)
+     */
+    public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?)
+
+    /** The device id persisted by the overload above, or null. Default body returns null. (since 0.3.0) */
+    public suspend fun loadOwnDeviceId(): ByteString?
 
     /** Save the admin session passkey for session resumption. */
     public suspend fun saveSessionPasskey(passkey: SessionPasskey)

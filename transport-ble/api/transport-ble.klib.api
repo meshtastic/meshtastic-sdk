@@ -37,3 +37,5 @@ final object org.meshtastic.sdk.transport.ble/BleConstants { // org.meshtastic.s
     final val TORADIO_UUID // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO_UUID|{}TORADIO_UUID[0]
         final fun <get-TORADIO_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO_UUID.<get-TORADIO_UUID>|<get-TORADIO_UUID>(){}[0]
 }
+
+final fun org.meshtastic.sdk.transport.ble/bleAdvertisementMatches(kotlin/String, kotlin/String?, kotlin/String?, kotlin/String): kotlin/Boolean // org.meshtastic.sdk.transport.ble/bleAdvertisementMatches|bleAdvertisementMatches(kotlin.String;kotlin.String?;kotlin.String?;kotlin.String){}[0]

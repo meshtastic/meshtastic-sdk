@@ -58,6 +58,14 @@ public class FakeRadioTransport(
     public val nodeNum: Int = DEFAULT_FAKE_NODE_NUM,
 ) : RadioTransport {
 
+    /**
+     * `MyNodeInfo.device_id` to report during the auto-handshake; empty by default, as firmware
+     * reports on platforms without a unique id.
+     *
+     * @since 0.3.0
+     */
+    public var deviceId: ByteString = ByteString.EMPTY
+
     private val _state = MutableStateFlow<TransportState>(TransportState.Disconnected)
     private val outboundFramesList = mutableListOf<Frame>()
     private var inboundChannel = Channel<Frame>(Channel.UNLIMITED)
@@ -285,6 +293,7 @@ public class FakeRadioTransport(
             FromRadio.Builder().also { wb ->
                 wb.my_info = MyNodeInfo.Builder().also { wb ->
                     wb.my_node_num = nodeNum
+                    wb.device_id = deviceId
                 }.build()
             }.build(),
         )

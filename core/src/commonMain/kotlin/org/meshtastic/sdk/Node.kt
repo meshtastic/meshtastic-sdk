@@ -243,9 +243,14 @@ public sealed interface MeshEvent {
      * [NodeChange.Snapshot] lands on [RadioClient.nodes], so subscribers can snapshot any
      * in-memory state they care about between observing the event and the next snapshot.
      *
+     * [reason] is `"identity_mismatch"` when storage is cleared, and `"node_renumbered"` when the
+     * device reported the same validated `MyNodeInfo.device_id` as the previous session under a
+     * new NodeNum (firmware 2.8 derives the NodeNum from the public key). In that case storage
+     * is kept: only the row for [previousNodeNum] is removed.
+     *
      * @param previousNodeNum the previously persisted NodeNum
      * @param newNodeNum the NodeNum the device just reported
-     * @param reason human-readable explanation (defaults to factory-reset wording)
+     * @param reason `"identity_mismatch"`, `"node_renumbered"`, or (for a hand-built event) free text
      */
     public data class IdentityRebound(
         val previousNodeNum: NodeId,

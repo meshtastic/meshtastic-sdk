@@ -13,6 +13,8 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Channel
+import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FromRadio
@@ -92,10 +94,86 @@ class SetConfigRefreshTest {
         }
     }
 
-    private suspend fun TestScope.connectedClient(): Pair<FakeRadioTransport, RadioClient> {
+    @Test
+    fun remoteChannelWriteKeepsLocalChannels() = runTest {
+        val storage = InMemoryStorage()
+        val (transport, client) = connectedClient(storage)
+        try {
+            val localChannels = assertNotNull(client.channels.value)
+            val remoteChannel = localChannels.single().newBuilder().also {
+                it.settings = ChannelSettings.Builder().also { settings -> settings.name = "remote" }.build()
+            }.build()
+            val before = transport.outboundPackets().size
+            val result = async { client.admin.forNode(NodeId(2)).setChannel(remoteChannel) }
+            runCurrent()
+            val packet = adminPacket(transport, before) { it.set_channel == remoteChannel }
+            assertEquals(2, packet.to)
+            transport.injectRoutingAck(packet.id, fromNode = 2)
+            assertIs<AdminResult.Success<Unit>>(result.await())
+            runCurrent()
+
+            assertEquals(localChannels, client.channels.value)
+            assertEquals(localChannels, storage.loadChannels())
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    @Test
+    fun remoteEditSettingsKeepsLocalConfig() = runTest {
+        assertRemoteTransactionKeepsLocalConfig { admin ->
+            val result = admin.editSettings {
+                setConfig(routerConfig)
+                setModuleConfig(mqttOn)
+            }
+            assertIs<AdminResult.Success<Unit>>(result)
+        }
+    }
+
+    @Test
+    fun remoteBatchKeepsLocalConfig() = runTest {
+        assertRemoteTransactionKeepsLocalConfig { admin ->
+            admin.batch {
+                setConfig(routerConfig)
+                setModuleConfig(mqttOn)
+            }
+        }
+    }
+
+    private suspend fun TestScope.assertRemoteTransactionKeepsLocalConfig(transaction: suspend (AdminApi) -> Unit) {
+        val storage = InMemoryStorage()
+        val (transport, client) = connectedClient(storage)
+        try {
+            val localConfig = assertNotNull(client.configBundle.value)
+            val before = transport.outboundPackets().size
+            val operation = async { transaction(client.admin.forNode(NodeId(2))) }
+            runCurrent()
+            val begin = adminPacket(transport, before) { it.begin_edit_settings == true }
+            assertEquals(2, begin.to)
+            transport.injectRoutingAck(begin.id, fromNode = 2)
+            runCurrent()
+            val commit = adminPacket(transport, before) { it.commit_edit_settings == true }
+            assertEquals(2, commit.to)
+            transport.injectRoutingAck(commit.id, fromNode = 2)
+            operation.await()
+            runCurrent()
+
+            assertEquals(localConfig, client.configBundle.value)
+            assertEquals(localConfig, storage.loadConfig())
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    private suspend fun TestScope.connectedClient(
+        storage: InMemoryStorage = InMemoryStorage(),
+    ): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:set-config-refresh"),
             frames = listOf(
+                FromRadio.Builder().also { wb ->
+                    wb.channel = Channel.Builder().also { it.role = Channel.Role.PRIMARY }.build()
+                }.build().toFrame(),
                 FromRadio.Builder().also { wb ->
                     wb.metadata = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "2.7.0" }.build()
                 }.build().toFrame(),
@@ -117,7 +195,9 @@ class SetConfigRefreshTest {
         )
         val client = RadioClient.Builder()
             .transport(transport)
-            .storage(InMemoryStorageProvider())
+            .storage(object : StorageProvider {
+                override suspend fun activate(identity: TransportIdentity): DeviceStorage = storage
+            })
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .build()

@@ -75,6 +75,36 @@ jobs:
       - name: Test Android (host unit tests) and assemble
         run: ./gradlew :core:testAndroidHostTest :core:assembleAndroidMain
 
+  test-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: recursive
+
+      - name: Determine cache mode
+        id: cache_config
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "cache_read_only=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+        with:
+          node-version: 22
+
+      - uses: ./.github/actions/gradle-setup
+        with:
+          cache_read_only: ${{ steps.cache_config.outputs.cache_read_only }}
+          gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
+          develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
+
+      - name: Build and test (Kotlin/JS, Node.js)
+        run: ./gradlew jsNodeTest
+
   test-ios:
     runs-on: macos-latest
     strategy:

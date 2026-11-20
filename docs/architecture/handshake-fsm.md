@@ -42,7 +42,7 @@ stateDiagram-v2
     Stage1Draining --> Stage1Settling: FromRadio.config_complete_id=69420
     Stage1Draining --> Idle: HandshakeTimeout(Stage1Draining) /\ntransport drop
 
-    Stage1Settling --> Stage2Draining: settle window elapsed →\nHeartbeat(nonce=++n) flushed →\nToRadio(want_config_id=69421) flushed
+    Stage1Settling --> Stage2Draining: settle window elapsed →\nHeartbeat(nonce=n) flushed →\nToRadio(want_config_id=69421) flushed
     Stage1Settling --> Stage2Draining: skipNodeDb →\nno want_config_id=69421 sent;\nsynthetic config_complete_id=69421
     Stage1Settling --> Idle: HandshakeTimeout(Stage1Settling) /\ntransport drop
 
@@ -63,7 +63,7 @@ While in `TransportConnecting` and during the gap between `transport.connect()` 
 
 ### Heartbeat in handshake
 
-A heartbeat with `nonce = ++counter` is sent **once** between Stage 1 settle and Stage 2 send. It serves two purposes:
+A heartbeat is sent **once** between Stage 1 settle and Stage 2 send. Its nonce comes from the engine's keep-alive counter (starts at 2, +1 per heartbeat, never 0 or 1; see `protocol.md` §16). It serves two purposes:
 
 1. Defeats the firmware's per-connection memcmp dedup, ensuring the device treats the upcoming Stage 2 want_config as a fresh request even if the bytes happen to match a recent send.
 2. Probes the transport's write path before the larger Stage 2 dump.

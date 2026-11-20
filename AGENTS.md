@@ -20,6 +20,7 @@ Use links above as source of truth; do not restate their contents in PR descript
 - JDK 21.
 - Android SDK at the `androidCompileSdk` level in `gradle/libs.versions.toml` for Android targets (`ANDROID_HOME` set).
 - Xcode 15+ for iOS targets.
+- Node.js on `PATH` for the `js` target (`:core`, `:testing`); the Kotlin plugin is configured not to download one.
 - No submodules to init — protobuf types come from the published `org.meshtastic:protobufs` Maven artifact, pinned in `gradle/libs.versions.toml` (`meshtasticProtobufs`).
 
 If protocol/generated symbols look wrong, verify the `meshtasticProtobufs` pin resolves (`./gradlew :core:dependencies --configuration jvmCompileClasspath | grep protobufs`).
@@ -27,7 +28,7 @@ If protocol/generated symbols look wrong, verify the `meshtasticProtobufs` pin r
 ## Commands Agents Should Run
 
 - Full gate: `./gradlew check`
-- Unit tests: `./gradlew jvmTest` and, when relevant on macOS, `./gradlew iosSimulatorArm64Test`
+- Unit tests: `./gradlew jvmTest`, `./gradlew jsNodeTest` (Node.js on `PATH`) and, when relevant on macOS, `./gradlew iosSimulatorArm64Test`
 - Lint: `./gradlew detekt spotlessCheck`
 - Format: `./gradlew spotlessApply`
 - Architecture rules: enforced by detekt `ForbiddenImport` + the
@@ -60,6 +61,7 @@ Prefer targeted tasks while iterating, then run `./gradlew check` before finishi
 
 - Keep changes minimal and scoped.
 - Add or update tests for behavioral changes.
+- Record a changelog entry as a `changelog.d/<name>.<section>.md` fragment (format in `changelog.d/README.md`); never edit `CHANGELOG.md` in a PR. A breaking change adds a `*.breaking.md` fragment.
 - Update docs under `docs/` when behavior, protocol handling, or contributor workflow changes.
 - Sign commits with DCO (`git commit -s`) when creating commits.
 
