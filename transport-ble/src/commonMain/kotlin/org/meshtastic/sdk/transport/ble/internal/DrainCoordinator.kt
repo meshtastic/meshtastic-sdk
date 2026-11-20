@@ -29,7 +29,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * GATT read (e.g. firmware hang, link-layer stall before Kable observes the
  * disconnect) can't pin the drain loop indefinitely. On timeout the loop breaks
  * out of the current drain pass and waits for the next wake signal — matching
- * how we treat an empty buffer. Cross-ref: audit code-vs-spec §2.7.
+ * how we treat an empty buffer.
  *
  * @param readTimeoutMs per-read deadline in milliseconds for the steady-state
  *   drain. Default is [DEFAULT_READ_TIMEOUT_MS]; tests can shorten it with

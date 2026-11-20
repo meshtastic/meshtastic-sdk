@@ -164,11 +164,11 @@ public class RadioClient internal constructor(
      * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
      * arrive as [NodeChange.Added] once they are heard.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
-     * apply backpressure to the engine actor; deltas are **never silently dropped** on this
-     * flow. If the engine inbox itself fills as a result, drops surface as
-     * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
+     * **Buffering:** the underlying `MutableSharedFlow` has `extraBufferCapacity = 256` and the
+     * engine emits with `tryEmit`, so it never suspends on a collector. When a slow collector
+     * leaves the buffer full, the new change is dropped and [MeshEvent.PacketsDropped] with
+     * `flow = DroppedFlow.Events` is emitted on [events]; a new subscription's
+     * [NodeChange.Snapshot] restores a complete map.
      */
     public val nodes: Flow<NodeChange> = engine.nodes
         .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
@@ -176,18 +176,18 @@ public class RadioClient internal constructor(
     /**
      * Inbound decoded packets.
      *
-     * The engine decrypts channel payloads transparently; `MeshPacket.decoded` is always
-     * non-null on emission. Filter by `decoded.portnum` to match specific app payloads.
+     * The device decrypts mesh traffic, and the engine drops a packet that arrives without a
+     * decoded payload, so `MeshPacket.decoded` is always non-null on emission. Filter by
+     * `decoded.portnum` to match specific app payloads.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 128` with `BufferOverflow.SUSPEND` (per ADR-005 / SPEC §4.4).
-     * Slow collectors apply backpressure to the engine. If the engine inbox itself fills, the
-     * engine drops the **oldest queued frame** and emits
+     * **Buffering:** the underlying `MutableSharedFlow` has `extraBufferCapacity = 128` and the
+     * engine emits with `tryEmit`, so it never suspends on a collector. When a slow collector
+     * leaves the buffer full, the new packet is dropped and
      * [MeshEvent.PacketsDropped][org.meshtastic.sdk.MeshEvent.PacketsDropped] with
-     * `flow = DroppedFlow.Packets` on [events]. Silent loss is forbidden in the public surface
-     * — every drop is observable.
+     * `flow = DroppedFlow.Packets` is emitted on [events].
      *
-     * Populated by the HandshakeMachine after entering [ConnectionState.Connected].
+     * Packets that arrive during the handshake are held and emitted once the session reaches
+     * [ConnectionState.Connected].
      */
     public val packets: Flow<MeshPacket> = engine.packets.hide()
 
@@ -812,7 +812,7 @@ public class RadioClient internal constructor(
          * Disable BLE heartbeats.
          *
          * By default, the engine sends a heartbeat every 30 seconds on all transports including
-         * BLE. Power-sensitive BLE apps can opt out. TCP and serial send heartbeats
+         * BLE. Power-sensitive BLE apps can opt out. TCP, serial and WebSocket send heartbeats
          * unconditionally (see `protocol.md` §16).
          */
         public fun disableBleHeartbeat(): Builder = apply { bleHeartbeatEnabled = false }

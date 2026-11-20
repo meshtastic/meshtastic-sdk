@@ -1,219 +1,201 @@
 # Error taxonomy
 
-> Mapping every observable failure to a Kotlin type. Per [ADR-005](./decisions/005-api-shape.md): three response shapes — throwing-suspend for programmer/transport errors, sealed `AdminResult` for routine RPC outcomes, sealed `MeshEvent` for asynchronous observability.
+Every observable failure, mapped to the Kotlin type that carries it. Per [ADR-005](./decisions/005-api-shape.md) there are three shapes: a thrown `MeshtasticException` for programmer and setup errors, a sealed result (`SendFailure`, `AdminResult`) for routine outcomes, and a `MeshEvent` for asynchronous observability.
 
-## Decision matrix: which shape carries which failure?
+## Which shape carries which failure
 
-| Failure source | Carrier | Rationale |
+| Failure | Carrier | Why |
 |---|---|---|
-| **Programmer error** (call before connect, payload over MTU, missing PSK at send) | `throw MeshtasticException` | Calling code is wrong; retrying without changing inputs is futile. |
-| **Transport-level failure** (BLE GATT error, socket closed, USB unplug) | `throw MeshtasticException.Transport` from `connect()`; `MeshEvent.TransportError(...)` while connected | `connect()` callers expect throw; established sessions emit and (if recoverable) reconnect. |
-| **Handshake failure** (timeout in any stage, malformed envelope, firmware too old) | `throw MeshtasticException` from `connect()` | Connect fails synchronously. |
-| **Async device drop** (heartbeat liveness timeout, transport drop after `Connected`) | `connection: ConnectionState.Reconnecting(cause)` + `MeshEvent.TransportError("liveness timeout")` (engine watchdog, 2 × heartbeat) or `TransportError("TCP read timeout after 65000ms")` (stream-transport backstop) | Already past `connect()`; the right channel is the state flow. The engine watchdog (`MeshEngine.LIVENESS_TIMEOUT_MS`) is the primary detector; TCP adds its own read deadline so the pre-`Ready` window is also covered. |
-| **Mesh send outcome** (NAK, no route, max retransmit, duty cycle, send-time disconnect) | `MessageHandle.state -> Failed(SendFailure.X)` | Routine on a flaky mesh; not exceptional. |
-| **Admin RPC outcome** (NAK, session-key expired, unauthorised, rate-limited, timeout) | `AdminResult.*` sealed variants | Routine; handlers want exhaustive `when`. |
-| **Engine drop of an inbound flow** (subscriber too slow) | `MeshEvent.PacketsDropped(flow, count)` | Observable backpressure; never silent. |
-| **Storage failure mid-session** | `MeshEvent.ProtocolWarning(...)` + retry; second failure escalates to `MeshtasticException.StorageUnavailable` and triggers reconnect | Storage outages shouldn't kill an active session if recoverable. |
+| Programmer error: send before connect, payload over the limit, second `connect()` | `throw MeshtasticException` | Retrying without changing the input is futile. |
+| Transport failure at connect: Bluetooth GATT error, socket refused, USB unavailable, WebSocket refused | `throw MeshtasticException.Transport` from `connect()` | Connect callers expect a throw. |
+| Handshake failure: a stage times out, malformed envelope | `throw MeshtasticException` from `connect()` | Connect fails before the session exists. |
+| Session drop after `Connected`: transport closed, liveness watchdog, TCP read timeout | `MeshEvent.TransportError(error)`, then `ConnectionState.Reconnecting` when auto-reconnect is on, else `Disconnected` | The caller is past `connect()`; the state flow is the channel. |
+| Mesh send outcome: NAK, no route, retransmits exhausted, duty cycle, rate limit, queue rejection, disconnect | `MessageHandle.state` reaches `Failed(SendFailure)` | Routine on a busy mesh. |
+| Admin, telemetry, routing, or store-and-forward call outcome | `AdminResult` | Routine; handlers want an exhaustive `when`. |
+| File transfer outcome | `FileTransferResult.Failure(FileTransferFailure)` | Routine. |
+| Slow collector on `packets` or `nodes` | `MeshEvent.PacketsDropped(flow, count)` | Loss is reported, not silent. |
+| Storage write failure mid-session | `MeshEvent.StorageDegraded(reason)`; writes stop for the session | A storage outage doesn't end a live session. |
+
+The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after 60 s (two heartbeat intervals) without a decoded `FromRadio`, and from `TcpTransport`, which fails a read with `Transport("TCP read timeout after 65000ms")` so the window before the handshake completes is covered too.
 
 ## `MeshtasticException` hierarchy
 
-Source of truth: [`core/src/commonMain/kotlin/org/meshtastic/sdk/MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/MeshtasticException.kt).
+Source: [`MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/MeshtasticException.kt).
 
-```
-MeshtasticException                     ← sealed
+```text
+MeshtasticException                     sealed
 ├── Transport(reason, cause?)
-├── Protocol(reason)                    ← codec/framing fault
-├── StorageUnavailable(cause?)
+├── Protocol(reason, cause?)
+├── HandshakeTimeout(stage)
+├── StorageUnavailable(message?, cause?)
 ├── FirmwareTooOld(required, present)
 ├── NotConnected
 ├── AlreadyConnected
-├── PayloadTooLarge(maxBytes)
-└── HandshakeTimeout(stage)
+└── PayloadTooLarge(maxBytes)
 ```
 
-Conventions:
-
-- All concrete subclasses have a stable, public constructor signature documented in [`api-reference.md`](./api-reference.md). Adding a new subclass is a SemVer-major change post-1.0 (consumers may exhaustively `when`).
-- `cause` chains preserve the underlying `Throwable` (Kable `BluetoothException`, Ktor `IOException`, etc.).
-- `Transport.recoverable: Boolean` is **not** a public field — recoverability is determined at the transport layer (`TransportState.Error.recoverable`); the `MeshtasticException.Transport` handed to consumers is informational only.
+- `cause` keeps the underlying `Throwable`: a Kable exception, a Ktor or socket I/O error, a jSerialComm error.
+- `transportIdentity` and `operation` attribute a failure without parsing the message. The SDK sets them; callers read them.
+- Recoverability isn't on the exception. A transport reports it through `TransportState.Error.recoverable`; for example, `WebSocketTransport` reports close code 4001 (displaced by another client) and 1009 as not recoverable.
+- Adding a subclass is a SemVer-major change after 1.0, since consumers may `when` over the hierarchy exhaustively.
 
 ### When each is thrown
 
-| Subclass | Thrown from | Trigger | Example `message` |
+| Subclass | Thrown from | Trigger | `message` |
 |---|---|---|---|
-| `Transport` | `connect()` | Underlying `RadioTransport.connect()` failed (BLE bond, socket refused, USB unavailable). | `"Transport failed: connection refused (host=meshtastic.local:4403)"` |
-| `Protocol` | engine internal; surfaced via `connect()` if mid-handshake | Wire codec resync exhausted; unknown envelope tag in handshake. | `"Protocol violation: unknown FromRadio variant (tag=99)"` |
-| `StorageUnavailable` | `connect()` (initial activate fails) or as engine cause for `Reconnecting` (mid-session) | `StorageProvider.activate()` threw, or repeated mid-session save failures. | `"Storage unavailable: failed to open Mesh.db at /data/.../databases/Mesh.db"` |
-| `FirmwareTooOld` | **RESERVED** — not currently thrown by the SDK | Reserved for a future opt-in capability check against `DeviceMetadata.firmware_version`. Today the SDK is forward-compatible and gates features on proto-field presence (`hasPKC`, `ClientNotification` arms) rather than a hard minimum version. | `"Firmware too old: required >= X.Y.Z, present A.B.C"` (shape only) |
-| `NotConnected` | `send()`, `nodeSnapshot()`, all `Admin/Telemetry/Routing` calls | Client not in `Connected` state. | `"Not connected: call connect() first"` |
-| `AlreadyConnected` | `connect()` | A second `connect()` while already `Connected` is a programmer error. (Idempotent on `Connected` was rejected — silent no-op hides logic bugs in reconnect-loop code.) | `"Already connected; call disconnect() first"` |
-| `PayloadTooLarge` | `send()` | Encoded `MeshPacket` exceeds the device-advertised `max_packet_size` (or the conservative 237-byte default pre-handshake). | `"Payload too large: 312 bytes exceeds maxBytes=237"` |
-| `HandshakeTimeout` | `connect()` | Per-stage timeout (Stage 1: 20 s; Stage 2: 60 s; SeedingSession: 10 s). | `"Handshake timed out during stage: Stage2 (60s)"` |
-
+| `Transport` | `connect()`; `RadioTransport.send()`; `bondedBleDevices()`; `AndroidUsbSerialPorts.open()` | The transport couldn't connect or write: Bluetooth bond or GATT failure, socket refused, USB device gone or not permitted, WebSocket handshake refused or interrupted by `disconnect()`. | Set by the transport, for example `"WebSocket connect was interrupted by disconnect()"` |
+| `Protocol` | `connect()`; `WireCodec`; `MessageHandle.retry()` | The handshake failed, including `"Device rebooted mid-handshake"`. `WireCodec` couldn't encode a `ToRadio` or decode a `FromRadio`. `retry()` got a handle not produced by `send()`. | Describes the failure |
+| `HandshakeTimeout` | `connect()`; `connectAndAwaitReady()` | Stage 1 got no `config_complete_id` within 20 s (with one `want_config_id` retry at 10 s). Stage 2 received no frame for 30 s, or ran past 60 s in total. Seeding the session passkey took over 10 s. `connectAndAwaitReady` timed out. | `"Handshake timed out during stage: Stage 1"`; `stage` is `Stage 1`, `Stage 2`, `Seeding Session`, or `connectAndAwaitReady` |
+| `StorageUnavailable` | `connect()` | `StorageProvider.activate()` failed. Mid-session failures surface as `StorageDegraded` instead. | Default `"Storage unavailable"` |
+| `FirmwareTooOld` | Not thrown | Reserved. The SDK gates features on proto field presence rather than a minimum firmware version. | `"Firmware requires newer client (need X, have Y)"` |
+| `NotConnected` | `send()`, `sendText()`, `sendReaction()`, `send(portnum, …)`, `sendRaw()`, `requestNodeInfo()`, `nodeSnapshot()` | The client isn't `Connected`. The sub-APIs report failure as a result instead. | `"Client not connected"` |
+| `AlreadyConnected` | `connect()` | `connect()` while connected. A silent no-op would hide reconnect-loop bugs. | `"Client already connected"` |
+| `PayloadTooLarge` | `send()` and the convenience senders | `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). | `"Payload exceeds 233 bytes"` |
 
 ## `SendFailure` (inside `SendState.Failed`)
 
 ```kotlin
 public sealed interface SendFailure {
-    public data object NoRoute : SendFailure                    // Routing.NO_ROUTE
-    public data object MaxRetransmit : SendFailure              // Routing.MAX_RETRANSMIT
-    public data object Timeout : SendFailure                    // engine timeout (no Routing reply)
-    public data object DutyCycleLimit : SendFailure             // Routing.DUTY_CYCLE_LIMIT_REACHED
-    public data object RateLimited : SendFailure                // Routing.RATE_LIMIT_EXCEEDED
-    public data object Disconnected : SendFailure               // transport dropped mid-send
-    public data object Cancelled : SendFailure                  // MessageHandle.cancel() pre-Sent
-    public data object IdCollision : SendFailure                // outbound packet id clashed with in-flight
-    public data object AckTimeout : SendFailure                 // ACK never observed within Builder.sendTimeout
-    public data object HandshakeFailed : SendFailure            // send attempted while handshake unwinding
-    public data class QueueRejected(val res: Int) : SendFailure // QueueStatus.res != 0 (and != 35) — firmware transmit queue rejected the packet before transmission
+    public data object NoRoute : SendFailure
+    public data object MaxRetransmit : SendFailure
+    public data object Timeout : SendFailure
+    public data object DutyCycleLimit : SendFailure
+    public data object RateLimited : SendFailure
+    public data object Disconnected : SendFailure
+    public data object HandshakeFailed : SendFailure
+    public data object Cancelled : SendFailure
+    public data object IdCollision : SendFailure
+    public data object AckTimeout : SendFailure
+    public data class QueueRejected(val res: Int) : SendFailure
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure
 }
 ```
 
-### Wire `Routing.Error` → `SendFailure` mapping
-
-The Wire-generated `Routing.Error` enum (from `meshtastic/protobufs:mesh.proto`) is the source of truth. Mapping is in `MeshEngine.processRoutingAck(...)`:
-
-| `Routing.Error` | `SendFailure` |
+| Variant | Source |
 |---|---|
-| `NONE` | `Acked` (or `Delivered` for broadcast) — not a failure |
-| `NO_ROUTE` | `NoRoute` |
-| `GOT_NAK` | `NoRoute` (explicit neighbor NAK ≈ no route) |
-| `TIMEOUT` | `Timeout` |
-| `NO_INTERFACE` | `Other(NO_INTERFACE)` |
+| `NoRoute`, `MaxRetransmit`, `Timeout`, `DutyCycleLimit`, `RateLimited`, `Other` | A routing NAK; see the following table |
+| `Disconnected` | The transport dropped, or `disconnect()` ran, before the send completed |
+| `HandshakeFailed` | The send was queued before `Connected` and the handshake failed |
+| `Cancelled` | `MessageHandle.cancel()` before `Sent` |
+| `IdCollision` | The packet's `id` matches an in-flight send; the existing handle is kept |
+| `AckTimeout` | A unicast `want_ack` send got no routing ACK within `Builder.sendTimeout` (default 30 s). Broadcasts never produce it. |
+| `QueueRejected(res)` | The device's transmit queue rejected the packet; see [`QueueStatus` rejections](#queuestatus-rejections) |
+| `Unknown` | Reserved for engine anomalies |
+
+### Wire `Routing.Error` to `SendFailure`
+
+The mapping is in `MeshEngine` and is driven by the Wire-generated `Routing.Error` enum.
+
+| `Routing.Error` | Result |
+|---|---|
+| `NONE` | `Acked`, or `Delivered` for a broadcast; not a failure |
+| `NO_ROUTE`, `GOT_NAK` | `NoRoute` |
 | `MAX_RETRANSMIT` | `MaxRetransmit` |
-| `NO_CHANNEL` | `Other(NO_CHANNEL)` |
-| `TOO_LARGE` | `Other(TOO_LARGE)` (should never occur; pre-validated as exception — surfaces as protocol bug if seen) |
-| `NO_RESPONSE` | `Other(NO_RESPONSE)` |
+| `TIMEOUT` | `Timeout` |
 | `DUTY_CYCLE_LIMIT` | `DutyCycleLimit` |
-| `BAD_REQUEST` | `Other(BAD_REQUEST)` |
-| `NOT_AUTHORIZED` | `Other(NOT_AUTHORIZED)` (admin paths intercept this and raise `AdminResult.Unauthorized` instead) |
-| `PKI_FAILED` | `Other(PKI_FAILED)` |
-| `PKI_UNKNOWN_PUBKEY` | `Other(PKI_UNKNOWN_PUBKEY)` |
-| `ADMIN_BAD_SESSION_KEY` | `Other(ADMIN_BAD_SESSION_KEY)` (admin paths intercept; see below) |
-| `ADMIN_PUBLIC_KEY_UNAUTHORIZED` | `Other(ADMIN_PUBLIC_KEY_UNAUTHORIZED)` (admin paths intercept) |
-| `RATE_LIMIT_EXCEEDED` | `RateLimited` (admin paths raise `AdminResult.RateLimited`) |
-| (any new value the proto schema adds) | `Other(value)` — forward-compatible without a code change |
+| `RATE_LIMIT_EXCEEDED` | `RateLimited`. Firmware allows one text message every two seconds. |
+| anything else, including values added to the schema later | `Other(value)` |
 
-`SendFailure.Unknown` is reserved for engine-internal anomalies (encoded `MeshPacket` with no decoded payload, etc.) and should never appear in production.
+### `QueueStatus` rejections
 
-### `QueueStatus` → `SendFailure.QueueRejected` mapping
+A non-zero `QueueStatus.res` means the local device's transmit queue rejected the packet before it was sent. Values from 32 up are in the firmware's ERRNO namespace, not `Routing.Error`: 32 is queue full or unknown, 33 no interface, 34 radio disabled, and 35 (`ERRNO_SHOULD_RELEASE`) means success, so the SDK treats 35 as `Sent`. Values 1 to 31 are genuine `Routing.Error` codes, such as `DUTY_CYCLE_LIMIT` (9).
 
-`QueueStatus`-driven failures are different from `Routing.Error` NAKs: a non-zero `QueueStatus.res` means the **local** device's transmit queue rejected the packet before it was ever transmitted, and the value lives in the firmware's ERRNO namespace, not the `Routing.Error` enum. In that namespace `32` = unknown/queue full, `33` = no interfaces, `34` = radio disabled, and `35` (`ERRNO_SHOULD_RELEASE`) actually means **success** — the SDK treats `res == 35` as `Sent`, not a failure. Values `1..31` overlap with genuine `Routing.Error` codes (e.g. `DUTY_CYCLE_LIMIT` = 9). The SDK surfaces any rejecting `res` (`!= 0` and `!= 35`) as `SendFailure.QueueRejected(res)`. For in-flight **admin RPCs**, ERRNO rejections (`32..34`) map to `AdminResult.NodeUnreachable`, while `1..31` flow through the normal `Routing.Error` → `AdminResult` mapping below.
+Any rejecting `res` fails a tracked send with `SendFailure.QueueRejected(res)`. An in-flight RPC fails with `AdminResult.NodeUnreachable` for 32 and up, and through the `Routing.Error` mapping in the next section for 1 to 31.
 
-## `AdminResult.Error`
+## `AdminResult`
 
 ```kotlin
 public sealed interface AdminResult<out T> {
     public data class Success<T>(val value: T) : AdminResult<T>
-    public data object SessionKeyExpired : AdminResult<Nothing>      // → automatic 1× retry inside engine
-    public data object Unauthorized : AdminResult<Nothing>           // NOT_AUTHORIZED / ADMIN_PUBLIC_KEY_UNAUTHORIZED
+    public data object SessionKeyExpired : AdminResult<Nothing>
+    public data object Unauthorized : AdminResult<Nothing>
     public data object Timeout : AdminResult<Nothing>
-    public data object RateLimited : AdminResult<Nothing>            // RATE_LIMIT_EXCEEDED — back off before retry
-    public data object NodeUnreachable : AdminResult<Nothing>        // remote-node admin: NO_ROUTE / MAX_RETRANSMIT
-    public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>  // anything else
+    public data object RateLimited : AdminResult<Nothing>
+    public data object NodeUnreachable : AdminResult<Nothing>
+    public data class Failed(val routingError: Routing.Error) : AdminResult<Nothing>
 }
 ```
 
-### Wire → `AdminResult` mapping
+### Wire to `AdminResult` mapping
 
-Admin RPC paths intercept `Routing.Error` *before* it would map to a `SendFailure`:
+RPC paths map a `Routing.Error` before it would become a `SendFailure`:
 
 | `Routing.Error` | `AdminResult` |
 |---|---|
-| `NONE` (response carrying expected payload) | `Success(payload)` |
-| `ADMIN_BAD_SESSION_KEY` | `SessionKeyExpired` (engine auto-retries once with refreshed `session_passkey`; if the retry also returns this, the result is forwarded) |
+| `NONE` with the expected payload | `Success(payload)` |
+| `ADMIN_BAD_SESSION_KEY` | `SessionKeyExpired`, after one automatic retry with a refreshed passkey |
 | `NOT_AUTHORIZED`, `ADMIN_PUBLIC_KEY_UNAUTHORIZED` | `Unauthorized` |
-| `TIMEOUT` (or engine per-op timeout firing first) | `Timeout` |
 | `RATE_LIMIT_EXCEEDED` | `RateLimited` |
-| `NO_ROUTE`, `MAX_RETRANSMIT`, `NO_INTERFACE` (for remote-node admin) | `NodeUnreachable` |
-| Anything else | `Failed(routingError)` — caller can switch on the raw enum |
+| `NO_ROUTE`, `GOT_NAK`, `MAX_RETRANSMIT` | `NodeUnreachable` |
+| `TIMEOUT` | `Timeout` |
+| anything else | `Failed(routingError)` |
 
-### `AdminResult.Timeout` defaults
+Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute`, `MaxRetransmit`, `Disconnected`, `HandshakeFailed`, `DutyCycleLimit`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table.
 
-> **Status: Phase-0 placeholders.** These are starter values, not characterised numbers. They will be calibrated in Phase 2 against (a) real-radio behaviour and (b) the per-op timeouts used in the [`Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android) reference (search for `MeshService` + `HandshakeStateMachine` constants) and the [`Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple) reference (`Accessory/...` request handlers). The Phase 5 conformance suite will assert the calibrated numbers.
+`lockdown` on an `AdminApi` from `forNode(…)` returns `Unauthorized`; it works on the local node only. When the local node's `security.is_managed` is set, most admin calls on the local node, `setTime` among them, return `Unauthorized` without sending.
 
-| Operation class | Per-op timeout (placeholder) |
-|---|---|
-| Local config read/write (`getConfig`/`setConfig`/`getChannel`/`setChannel`/`setOwner`/`setFavorite`/`setIgnored`/`setTime`) | 10 s |
-| Local lifecycle (`reboot`/`shutdown`/`factoryReset`/`nodeDbReset`) | 5 s (request only — actual reboot is observed via transport drop) |
-| Telemetry `request*` for local node | 10 s |
-| Telemetry `request*` for remote node | 60 s |
-| `traceRoute` | `2 * hopLimit` seconds (default 14 s) |
-| `requestNeighborInfo` for remote | 60 s |
-| `editSettings { … }` total | 30 s |
+### Timeouts
 
-Timeouts are not configurable in 0.x. If consumers need overrides at 1.x.y, that lands additively as `Builder.adminTimeouts(...)` (separate ADR at the time).
+Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.rpcTimeout` (default 30 s) and then returns `Timeout`. A traceroute across many hops can need longer; raise `rpcTimeout` for that client. Admin setters acknowledged by a routing ACK wait the same `rpcTimeout`.
 
 ## `MeshEvent` reference
 
-| Variant | Trigger | Recommended host action |
+| Variant | Fires when | Host action |
 |---|---|---|
-| `QueueStatusChanged(status)` | `FromRadio.queue_status` arrived | UI free-slot indicator; engine has already updated `MessageHandle`s. |
-| `Notification(notification)` | `ClientNotification` (firmware-pushed user-visible event) | Show to user at host's discretion; localisation per `notification.locale`. The engine **also** re-emits security-relevant arms as typed [`SecurityWarning`](#security-warning) variants — callers SHOULD prefer the typed form. |
-| `TransportError(error)` | The session dropped while connected. `error` is the typed cause: `Transport` for link failures and the liveness watchdog, `HandshakeTimeout` or `StorageUnavailable` when those end a session. Match on type, not on `message`. | Inform user; engine handles reconnect when enabled, see `ConnectionState.Reconnecting`. |
-| `ProtocolWarning(message, details)` | Non-fatal protocol anomaly (skipped malformed envelope, dedup-fault recovery). The optional `details` map carries structured context. | Log; surface to dev tooling only. |
-| `IdentityRebound(previousNodeNum, newNodeNum, reason)` | Device reported a different `NodeNum` than the one previously persisted for this transport identity (factory reset, radio swap, hostname re-pointed at a different physical radio). Emitted **before** the SDK clears storage so consumers can snapshot in-memory state if desired. | Optionally surface "your radio was reset" UX; the engine will rebuild `MeshState` from the fresh handshake payload. |
-| `DeviceRebooted(reason)` | Device sent `FromRadio.rebooted = true` — the radio restarted mid-session (crash, admin-triggered reboot, firmware update, or brownout). The engine immediately tears the session down: pending sends fail with `HandshakeFailed` if mid-handshake (or `Disconnected` if post-Ready), handshake state resets, and `ConnectionState` transitions to `Disconnected`. | Surface "device restarted" UX if desired; start a fresh `connect()` cycle. |
-| `StorageDegraded(cause)` | Storage backend failed and transitioned to read-through-only mode (writes become no-ops). | Surface to dev tooling; engine continues operating with in-memory-only state. |
-| `CongestionWarning(freeSlots, totalSlots)` | Device outbound queue is critically full (`free ≤ 1`). | Back off sending; consider showing a "mesh congested" indicator. |
-| `ExternalConfigChange(config)` | Unsolicited admin message from firmware changed a config value (e.g., another client or device UI changed a setting). | Refresh any config-dependent UI state. |
+| `Notification(notification)` | The device sends a `ClientNotification`. | Show it at your discretion. Security-relevant ones also arrive as `SecurityWarning`. |
+| `SecurityWarning.DuplicatedPublicKey` | Firmware saw another node broadcast a public key already in its node database: a cloned node or an impersonation attempt. | Surface it prominently. |
+| `SecurityWarning.LowEntropyKey` | Firmware reports the private key was generated with too little entropy. | Prompt the user to regenerate keys. |
+| `TransportError(error)` | The session dropped while connected. `error` is the typed cause: `Transport` for link failures and the liveness watchdog, `HandshakeTimeout` or `StorageUnavailable` when those end a session. Match on type, not on `message`. | Inform the user; with auto-reconnect on, watch `ConnectionState.Reconnecting`. |
+| `ProtocolWarning(message, details)` | A non-fatal anomaly: an undecodable envelope, a `FromRadio` variant the SDK doesn't surface. `details` carries structured context. | Log it; show it in developer tooling. |
+| `IdentityRebound(previousNodeNum, newNodeNum, reason)` | The device reports a different NodeNum than the one stored for this transport identity. See [Identity rebind](#identity-rebind). | Snapshot in-memory state if needed; optionally tell the user the radio changed. |
+| `DeviceRebooted(reason)` | The device sent `FromRadio.rebooted`. The engine tears the session down: pending sends fail, and the state goes to `Disconnected`. | Show "device restarted"; connect again, or let auto-reconnect do it. |
+| `StorageDegraded(reason)` | A storage write failed. The engine stops writing for the rest of the session and keeps running from memory. At most once per session. | Warn that the session isn't being saved; the next `connect()` retries storage. |
+| `CongestionWarning(metrics)` | A node's reported channel or airtime utilization crosses into a different `CongestionLevel`. | Delay non-urgent sends while `metrics.canSendNonUrgent` is false. |
+| `ExternalConfigChange(kind)` | Another admin client changed the device's channels, config, or module config; local state is already updated. | Refresh config-dependent UI. |
+| `PacketsDropped(flow, count)` | A collector of `packets` (`DroppedFlow.Packets`) or `nodes` (reported as `DroppedFlow.Events`) fell too far behind and new items were discarded. | Move work off the collector. |
+| `MqttProxyMessage(message)` | The device tunnels MQTT through the client (`mqtt.proxy_to_client_enabled`). | Publish it to the broker; send broker traffic back with `sendRaw`. |
+| `XmodemPacket(packet)` | An XModem frame arrived. `FileTransferApi` consumes these. | Use `client.files` rather than handling it yourself. |
+| `FileInfoReceived(info)` | The device announced a file on its filesystem. | Optional file listing. |
+| `LockdownStatusChanged(status)` | A hardened (`MESHTASTIC_LOCKDOWN`) build reports its lock state, after `config_complete_id` and after each `AdminApi.lockdown`. It's the only signal that lockdown exists, since it's a build option. | Drive provisioning or unlock UI. |
+| `QueueStatusChanged(status)` | A `FromRadio.queue_status` arrives after the handshake: a send result, a heartbeat reply, or a freed slot in a full queue. The engine already applied it to the matching `MessageHandle`. | Optional queue indicator. Under heavy sending these can crowd older events out of the 64-slot buffer for a slow collector. |
+| `MqttConnected` | A local `getDeviceConnectionStatus()` response shows the device's own broker connection up, and the previous one on this connection did not. The device never pushes MQTT state, and client-proxied MQTT reads as down. | Refresh MQTT status UI. |
+| `MqttDisconnected(reason)` | A local `getDeviceConnectionStatus()` response shows the broker connection down after one on this connection showed it up. `reason` is always null. | Refresh MQTT status UI. |
+| `KeyVerification` | Declared but not emitted by the engine. | None. |
 
 ### Identity rebind
 
-`MeshEvent.IdentityRebound(previousNodeNum, newNodeNum, reason)` fires
-when the connected radio reports a different `NodeNum` than the one
-previously persisted for this transport identity. The event is emitted
-**before** the engine clears its storage and before the subsequent
-fresh `NodeChange.Snapshot` lands on `RadioClient.nodes`, so subscribers
-have a single ordered signal they can snapshot in-memory state from.
-`reason` is `"identity_mismatch"` when storage is cleared, and
-`"node_renumbered"` when the radio reported the same trusted
-`MyNodeInfo.device_id` under a new NodeNum (firmware 2.8 derives the
-NodeNum from the public key), in which case storage is kept.
-See [`architecture/storage.md`](./architecture/storage.md#consumer-observable-signal-r-9)
-for the rationale and on-disk behaviour. (Resolved audit finding
-**S-P0-2** / roadmap R-9; previously this rebind was silent.)
-| `KeyVerification(prompt)` | Key-verification flow initiated by `protocol.md` §10 PKI handshake | Show user-facing comparison UI; respond via host-defined affordance (out of MVP). |
-| `PacketsDropped(flow, count)` | Subscriber to `packets`/`events` flow could not keep up; engine shed `count` items | Tell user "you missed N messages"; consider increasing host buffering. |
-| `SecurityWarning.DuplicatedPublicKey` | Firmware observed another node broadcasting the *same* public key as one already in its NodeDB — cloned device, or a near-field identity-theft attempt. | Surface prominently to the user; pair with a "verify your contacts" UX. |
-| `SecurityWarning.LowEntropyKey` | Firmware reports the current private key was generated with insufficient entropy (freshly flashed board before RNG warmed up). | Prompt the user to regenerate keys via admin UI. |
+`IdentityRebound` fires before the engine touches storage and before the next `NodeChange.Snapshot` reaches `nodes`, so subscribers have one ordered point to snapshot state from. `reason` is `"identity_mismatch"` when storage is cleared. It's `"node_renumbered"` when the radio reported the same validated `MyNodeInfo.device_id` under a new NodeNum (firmware 2.8 derives the NodeNum from the public key); storage is kept and only the old own-node row is removed. [storage.md](./architecture/storage.md#identity-rebind-detection-s-p0-2) covers the on-disk behavior.
 
 ### Security warnings
 
-The two `SecurityWarning` sub-variants arrive from the firmware's
-`ClientNotification.payload_variant` oneof (`duplicated_public_key`,
-`low_entropy_key` — see `proto:meshtastic/mesh.proto`). The engine emits
-the raw `MeshEvent.Notification` **and** the typed variant so consumers
-can pattern-match exhaustively on `SecurityWarning`. Upstream audit F-5.2.
+The two `SecurityWarning` variants come from the `ClientNotification.payload_variant` oneof (`duplicated_public_key`, `low_entropy_key` in `mesh.proto`). The engine emits the raw `Notification` and the typed variant.
 
-## Observability summary
-
-A consumer that wants exhaustive diagnostics observes:
+## Putting it together
 
 ```kotlin
-client.connection.collect { state -> /* show connecting/connected/reconnecting */ }
-client.events.collect { event -> /* surface warnings, drops, notifications, key prompts */ }
-// Per-send:
-client.send(p).state.collect { /* Queued -> Sent -> Acked/Delivered/Failed */ }
-// Per-admin call:
+scope.launch { client.connection.collect { state -> /* connecting, connected, reconnecting */ } }
+scope.launch { client.events.collect { event -> /* warnings, drops, notifications */ } }
+
+client.sendText("hello").state.collect { /* Queued, Sent, then Acked, Delivered, or Failed */ }
+
 when (val r = client.admin.setConfig(c)) {
-    is AdminResult.Success -> { … }
-    is AdminResult.SessionKeyExpired -> { … }   // very rare — engine already retried once
-    is AdminResult.Unauthorized,
+    is AdminResult.Success -> { }
+    AdminResult.SessionKeyExpired -> { }   // the engine already retried once
+    AdminResult.Unauthorized,
     AdminResult.Timeout,
     AdminResult.RateLimited,
     AdminResult.NodeUnreachable,
-    is AdminResult.Failed -> { … }
+    is AdminResult.Failed -> { }
 }
 ```
 
-Combined, the three shapes cover every observable failure mode without the consumer ever needing to consult `MeshtasticException`'s subclasses *during* a connected session.
+During a connected session the three shapes cover every failure, so a consumer doesn't need to catch `MeshtasticException` outside `connect()` and the send calls.
 
 ## Related
 
-- [ADR-005](./decisions/005-api-shape.md) — three-shapes rationale
-- [`api-reference.md`](./api-reference.md) — full signatures
-- [`protocol.md`](./protocol.md) §11 — Routing semantics
-- [`protocol.md`](./protocol.md) §13 — admin/session-passkey
+- [ADR-005](./decisions/005-api-shape.md): the three-shapes rationale
+- [api-reference.md](./api-reference.md): signatures
+- [consumer-guides/error-handling.md](./consumer-guides/error-handling.md): what to retry and what to surface
+- [protocol.md §11](./protocol.md#11-routing-ack-retry-semantics): routing semantics
+- [protocol.md §13](./protocol.md#13-admin-protocol--session-passkey): admin and the session passkey

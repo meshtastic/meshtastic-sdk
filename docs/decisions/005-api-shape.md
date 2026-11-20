@@ -1,10 +1,10 @@
 # ADR 005 — Public API shape: response shapes, NodeChange, MessageHandle, ConnectionState, backpressure, multi-radio
 
-**Status:** Accepted
+**Status:** Accepted; superseded in part by [ADR-017](017-web-targets.md) (web hosts)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §3, ADR-001 (proto types are the data model), ADR-002 (engine architecture), [`../protocol.md`](../protocol.md)
+**Related:** [`../api-reference.md`](../api-reference.md), ADR-001 (proto types are the data model), ADR-002 (engine architecture), [`../protocol.md`](../protocol.md)
 
 ---
 
@@ -18,6 +18,8 @@ The audience is mixed:
 - Swift app authors who consume the iOS framework via `try await` and `AsyncSequence` (with KMP-NativeCoroutines or skie-style sugar in the host app).
 - JVM bridge authors writing headless gateways or test rigs.
 - Wasm/JS authors going through a remote-RPC adapter (out of scope for this ADR; see `transport-rpc` charter).
+
+> **Superseded by [ADR-017](017-web-targets.md):** Kotlin/JS and Kotlin/Wasm hosts use this same API in-process over `transport-websocket`; the three response shapes apply to them unchanged.
 
 A naive "everything returns `Result<T>`" or "everything throws" design fails one or more of these audiences. We need a deliberate split.
 
@@ -88,7 +90,7 @@ There is no `DeviceSleep` state. Devices do not announce sleep on the wire — `
 
 ### Backpressure policy
 
-Per `SPEC.md` §4.4:
+The policy as decided; the current policy is in [`engine-actor.md`, Backpressure](../architecture/engine-actor.md#backpressure):
 
 | Flow | Buffer | Overflow |
 |---|---|---|
@@ -113,6 +115,8 @@ Caveat: connecting to `meshtastic.local` and `192.168.1.42` produces two distinc
 - Consumers wanting one logical store across address changes canonicalise themselves before constructing `TransportSpec.Tcp/Http`, OR
 - The engine catches the post-handshake `recordOwnNode` call: if the storage's prior NodeNum differs from the current one for this identity (factory reset, swap, hostname now points at a different radio), `DeviceStorage.recordOwnNode` MUST atomically `clear()` and persist the new tuple. The engine then rebuilds `MeshState` from the fresh handshake. `MeshEvent.ProtocolWarning("identity rebound to new NodeNum")` surfaces the rebind.
 
+> **Note:** the rebind surfaces as `MeshEvent.IdentityRebound(previousNodeNum, newNodeNum, reason)`, emitted before storage changes. A NodeNum change with the same validated `MyNodeInfo.device_id` is a renumber (`reason = "node_renumbered"`): storage is kept and only the old own-node row is removed (`DeviceStorage.recordOwnNode(nodeNum, firmwareVersion, deviceId)`).
+
 ### Multi-radio = one `RadioClient` per radio
 
 A single `RadioClient` owns exactly one `TransportSpec` and one `DeviceStorage` for its lifetime. Hosts talking to N radios concurrently instantiate N clients (each with its own `Builder.storage(...)` and `Builder.transport(...)`); they share nothing. The SDK does not multiplex one client over multiple transports — the engine actor's single-writer invariant (ADR-002) and storage's per-identity activation both presume a 1:1 client↔radio relationship.
@@ -126,10 +130,13 @@ Routers and headless devices without GPS rely on the phone for clock sync (`prot
 - `AdminApi.setTime(at: Instant = Clock.System.now()): AdminResult<Unit>` — push the host clock to the device as `set_time_only`.
 - `Builder.autoSyncTimeOnConnect(enabled: Boolean)` — default `true`. After Stage 2 completes, if the device's reported clock differs from the host's by more than 60 s, the engine calls `setTime()` automatically.
 
+> **Note:** `setTime` is `setTime(at: Instant? = null)`, where `null` means the builder's clock, and `autoSyncTimeOnConnect` calls it after every connect without checking skew ([`../roadmap.md`](../roadmap.md) R-6).
+
 ### `:core` packages contract
 
 - `org.meshtastic.sdk` — the entire public API (`RadioClient`, `MessageHandle`, `SendState`, `NodeChange`, `ConnectionState`, `TransportSpec`, `TransportIdentity`, `MeshtasticException`, value-class IDs).
 - `org.meshtastic.proto.*` — Wire-generated types, re-exported from the `:proto` module so consumers don't add a second dependency.
+  > **Note:** the types come from the published `org.meshtastic:protobufs` artifact, which `:core` re-exports with `api(...)` ([ADR-015](015-consume-published-protobufs-artifact.md)).
 - Anything under `org.meshtastic.sdk.internal.*` is `internal` Kotlin and not part of the API surface.
 
 `:core` does not depend on `:rpc` (Gradle dep graph + `:core:verifyModuleBoundary`).
@@ -147,7 +154,7 @@ Routers and headless devices without GPS rely on the phone for clock sync (`prot
 ## Consequences
 
 - **Swift consumption is first-class.** Throwing-suspend bridges to `try await`; sealed `AdminResult` enums map cleanly to Swift; `Flow` works via KMP-NativeCoroutines / skie at the host app's choice.
-- **Pre-1.0 API churn is bounded by this ADR plus `SPEC.md` §3.** Any change to the response shapes, NodeChange contract, MessageHandle invariants, or backpressure policy is a SemVer-major signal even pre-1.0 and warrants a follow-up ADR.
+- **Pre-1.0 API churn is bounded by this ADR plus the ABI dumps.** Any change to the response shapes, NodeChange contract, MessageHandle invariants, or backpressure policy is a SemVer-major signal even pre-1.0 and warrants a follow-up ADR.
 - **Backpressure is observable.** Hosts can render a "you're falling behind" UI hint by collecting `events` for `PacketsDropped`.
 - **No silent state corruption on factory reset.** The NodeNum-mismatch reset rule, surfaced as `ProtocolWarning`, prevents stale node DBs from leaking into a new device's session.
 - **Two clients for two radios is the recommended pattern.** Documented in the README and the multi-radio sample.

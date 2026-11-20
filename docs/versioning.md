@@ -1,151 +1,143 @@
-# Versioning, ABI, and release policy
+# Versioning, ABI and release policy
 
-> Authoritative tooling per [ADR-003](./decisions/003-tooling.md): `axion-release-plugin` (git-tag-driven SemVer), Kotlin's built-in klib ABI validation (Kotlin 2.2+, formerly the standalone `binary-compatibility-validator`), Vanniktech `maven-publish-plugin` publishing direct to **Sonatype Central Portal** (no OSSRH staging dance).
+How SDK versions are numbered, what each bump allows, and how the ABI dumps enforce it. The tooling ([ADR-003](./decisions/003-tooling.md)) is `axion-release-plugin` for git-tag-driven SemVer, the Kotlin Gradle plugin's built-in ABI validation, and the vanniktech `maven-publish-plugin` publishing straight to the Sonatype Central Portal.
 
 ## SemVer
 
-`MAJOR.MINOR.PATCH`, derived from the most recent annotated git tag (`vX.Y.Z`):
+`MAJOR.MINOR.PATCH`, derived from the latest annotated `vX.Y.Z` tag:
 
 | Bump | When |
 |---|---|
-| **MAJOR** | Source- or binary-incompatible change to `:core` or any storage interface. Adding a new sealed-class subtype (forces consumer `when` exhaustiveness break). Bumping the `org.meshtastic:protobufs` artifact across a MAJOR upstream change (rare). |
-| **MINOR** | New public API; new transport module; bumping the `org.meshtastic:protobufs` artifact across a MINOR upstream change (most common — new `PortNum`, new `Config` field). New optional `Builder` method. |
-| **PATCH** | Bug fix; internal refactor; doc-only change; bumping the `org.meshtastic:protobufs` artifact across a PATCH upstream change (additive proto field with default value). |
+| **MAJOR** | A source- or binary-incompatible change to `:core` or a storage interface. A new subtype of a public sealed type, since it breaks a consumer's exhaustive `when`. Moving the `org.meshtastic:protobufs` artifact across an upstream major change. |
+| **MINOR** | New public API, including a new optional `Builder` method; a new transport module; moving the `org.meshtastic:protobufs` artifact across an upstream minor change (the common case: a new `PortNum` or `Config` field). |
+| **PATCH** | A bug fix, internal refactor or doc-only change; moving the `org.meshtastic:protobufs` artifact across an upstream patch change (an additive field with a default). |
 
-Snapshot builds (`X.Y.Z-SNAPSHOT`, the patch after the latest tag) publish on every push to `main` to the [Central Portal snapshot repository](https://central.sonatype.com/repository/maven-snapshots/); releases publish to Maven Central from `release.yml`, as [`RELEASING.md`](../RELEASING.md) describes.
+Every push to `main` publishes a snapshot (`X.Y.Z-SNAPSHOT`, the patch after the latest tag) to the [Central Portal snapshot repository](https://central.sonatype.com/repository/maven-snapshots/). Releases publish to Maven Central from `release.yml`, as [`RELEASING.md`](../RELEASING.md) describes.
 
 ## Pre-1.0 policy
 
-While version is `0.x.y`:
+While the version is `0.x.y`:
 
-1. **Breaking changes are allowed** between any two MINOR versions (`0.1.x → 0.2.0`).
-2. Every breaking change MUST:
+1. Breaking changes are allowed between minor versions (`0.1.x → 0.2.0`).
+2. Every breaking change must:
     - Bump MINOR.
-    - Regenerate `api/` files via `./gradlew updateKotlinAbi` in the same commit.
+    - Regenerate the `api/` dumps with `./gradlew updateKotlinAbi` in the same change.
     - Add a `*.breaking.md` changelog fragment, so the `## [0.MINOR.0]` section the cut writes has a `### Breaking` subsection.
-    - Be called out in the GitHub release notes as `**BREAKING**`. The release workflow adds that line to the notes of any version whose changelog section has `### Breaking`.
-3. **Deprecation is optional** but encouraged for changes a consumer can adapt to: mark with `@Deprecated(level = WARNING)` for one MINOR, then remove in the next.
-4. Kotlin's built-in klib ABI validation runs in PR CI as **hard-gate from Phase 0** (matches `mqtt-client`'s day-1 enforcement). A PR that changes `api/*.api` MUST commit the regenerated dump.
+    - Appear as `**BREAKING**` in the GitHub release notes. The release workflow adds that line for any version whose changelog section has `### Breaking`.
+3. Deprecation is optional but encouraged where a consumer can adapt: mark the symbol `@Deprecated(level = WARNING)` for one minor version, then remove it.
+4. ABI validation is a hard gate in PR CI. A PR that changes the public surface commits the regenerated dumps.
 
-## 1.0+ policy
+## 1.0 and later
 
 From `1.0.0`:
 
-1. **No breaking change** to public API in any non-MAJOR release. Period.
-2. ABI validation continues as hard-gate; an `api/*.api` change without a MAJOR-bump label fails CI.
-3. Removal cycle: deprecate at version `N.M`, remove at version `(N+1).0` (next MAJOR).
-4. **Sealed-class additions** count as breaking for consumers using exhaustive `when` — they ship in MAJOR releases only. Code review flags any new sealed-class case in a `:core` PR (no automated rule covers this; reviewers consult [ADR-005](decisions/005-api-shape.md)).
-5. **Adding a new throwable subclass** to `MeshtasticException` is breaking for the same reason. New error categories ship as MAJOR.
+1. No breaking change to public API in a non-major release.
+2. ABI validation stays a hard gate.
+3. Removal cycle: deprecate in `N.M`, remove in `(N+1).0`.
+4. A new case in a public sealed type is breaking for consumers with an exhaustive `when`, so it ships only in a major release. Review catches it in `:core` PRs; no automated rule does ([ADR-005](decisions/005-api-shape.md)).
+5. A new `MeshtasticException` subclass is breaking for the same reason, so new error categories ship in a major release.
 
 ## ABI tooling
 
-Kotlin 2.2 brings klib ABI validation into KGP itself, deprecating the standalone `kotlinx-binary-compatibility-validator` plugin. We use the built-in mechanism:
+The Kotlin Gradle plugin's built-in ABI validation replaces the standalone `binary-compatibility-validator` plugin:
 
-- `./gradlew checkKotlinAbi` — fails if `api/*.api` differs from the current public surface.
-- `./gradlew updateKotlinAbi` — regenerate; commit the result.
-- Per-target `klibApiCheck` runs against each Kotlin/Native and Kotlin/Wasm target's effective ABI, in addition to the JVM `checkKotlinAbi`.
-- Configuration lives in `build-logic/convention/src/main/kotlin/PublishingConventionPlugin.kt` (one place, applied to every published module).
+- `./gradlew checkKotlinAbi` fails if the committed dumps differ from the public surface. `check` runs it.
+- `./gradlew updateKotlinAbi` regenerates the dumps; commit the result.
+- Each module has a JVM dump (`api/jvm/<module>.api`) and a klib dump (`api/<module>.klib.api`) covering its iOS targets and, where built, `js` and `wasmJs`.
+- `build-logic/convention/src/main/kotlin/PublishingConventionPlugin.kt` configures it once for every published module.
 
 ### Proto types and ABI validation
 
-Protobuf types are **not** part of this SDK's ABI surface: they come from the external
-`org.meshtastic:protobufs` artifact, not an in-tree module, so BCV never dumps them, and their
-own source/binary compatibility is governed upstream by Wire's generation rules. `:core`
-re-exposes them via `api(libs.meshtasticProtobufs)`; `:core:verifyModuleBoundary` keeps that the
-single declared path, so the proto surface stays defined in one place (the artifact), not
-mirrored in-tree.
+Protobuf types aren't part of the SDK's dumped surface. They come from the external `org.meshtastic:protobufs` artifact, not an in-tree module, so the validator never dumps them, and Wire's generation rules govern their compatibility upstream. `:core` re-exports them with `api(libs.meshtasticProtobufs)`, and `:core:verifyModuleBoundary` keeps that the only declared path, so the proto surface is defined in one place.
 
 ## Proto artifact policy
 
-The `org.meshtastic:protobufs` version pinned in [`../gradle/libs.versions.toml`](../gradle/libs.versions.toml) (`meshtasticProtobufs`) is the integration point for every new firmware feature; bumping it is how the SDK tracks the wire schema.
+The `org.meshtastic:protobufs` version pinned in [`../gradle/libs.versions.toml`](../gradle/libs.versions.toml) (`meshtasticProtobufs`) is how the SDK tracks the wire schema; every new firmware feature arrives through it.
 
-| Upstream proto change | This SDK's bump |
+| Upstream proto change | SDK bump |
 |---|---|
-| New optional field on existing message | PATCH |
-| New `PortNum` value | MINOR (new app payload becomes routable) |
-| New `Config.*` / `ModuleConfig.*` substructure | MINOR |
-| Sealed `oneof` extension | MINOR |
-| Field removal / type change | MAJOR |
+| New optional field on an existing message | PATCH |
+| New `PortNum` value | MINOR (a new payload becomes routable) |
+| New `Config.*` or `ModuleConfig.*` substructure | MINOR |
+| A `oneof` gains a case | MINOR |
+| Field removal or type change | MAJOR |
 | Renumbered enum value | MAJOR |
-| Top-level message added (e.g., new `FromRadio` arm) | MINOR (Wire generates a sealed-class case in `FromRadio.body`; consumers' exhaustive `when`s break — but `FromRadio` is internal/transient enough that we accept this at MINOR pre-1.0; after 1.0 this also escalates to MAJOR) |
+| New top-level message, such as a new `FromRadio` case | MINOR pre-1.0, because `FromRadio` is transient enough to accept the break to exhaustive handling; MAJOR from 1.0 |
 
-The proto bump commit MUST:
-- Update the `meshtasticProtobufs` version in `gradle/libs.versions.toml`.
-- Run `./gradlew updateKotlinAbi` to capture any change to `:core`'s generated-symbol surface (the BCV-relevant surface).
-- Note the upstream version (and commit range, if known) in the bump commit body.
-- If a wire message has a new `oneof` arm, audit `WireCodec` and the engine's `FromRadio` / `MeshPacket` handling for places that exhaustively `when` over it.
+The bump commit must:
 
-Renovate's `gradle` manager opens a PR when a new `org.meshtastic:protobufs` version is published; a maintainer reviews the API diff and merges. See [`../renovate.json`](../renovate.json).
+- Update `meshtasticProtobufs` in `gradle/libs.versions.toml`.
+- Run `./gradlew updateKotlinAbi` to capture any change to `:core`'s surface.
+- Name the upstream version, and the commit range if known, in the commit body.
+- If a message gained a `oneof` case, audit `WireCodec` and the engine's `FromRadio` and `MeshPacket` handling for exhaustive `when`s over it.
+
+Renovate opens a PR for each new `org.meshtastic:protobufs` version and never automerges it; a maintainer reviews the API diff and merges. See [`../renovate.json`](../renovate.json).
 
 ## Release workflow
 
-How a release is cut, the secrets it uses and the gates it runs are in [`RELEASING.md`](../RELEASING.md).
+How a release is cut, which secrets it uses and which gates it runs are in [`RELEASING.md`](../RELEASING.md).
 
-### Artifacts published per release (MVP)
+### Published artifacts
 
 | Coordinates | Source module |
 |---|---|
-| `org.meshtastic:sdk-bom` | `:bom` (Maven BOM aligning the versions below) |
-| `org.meshtastic:sdk-core` | `:core` (re-exports the `org.meshtastic:protobufs` types via `api`) |
+| `org.meshtastic:sdk-bom` | `:bom` (Maven BOM aligning the versions in this table) |
+| `org.meshtastic:sdk-core` | `:core` (re-exports the `org.meshtastic:protobufs` types through `api`) |
 | `org.meshtastic:sdk-transport-ble` | `:transport-ble` |
 | `org.meshtastic:sdk-transport-tcp` | `:transport-tcp` |
-| `org.meshtastic:sdk-transport-serial` | `:transport-serial` (single KMP module covering JVM via jSerialComm and Android via usb-serial-for-android) |
+| `org.meshtastic:sdk-transport-serial` | `:transport-serial` (JVM through jSerialComm; Android through jSerialComm or usb-serial-for-android) |
+| `org.meshtastic:sdk-transport-websocket` | `:transport-websocket` |
 | `org.meshtastic:sdk-storage-sqldelight` | `:storage-sqldelight` |
 | `org.meshtastic:sdk-testing` | `:testing` |
 
-All modules ship at the same version. KMP variants (Android AAR, JVM JAR, iOS klibs) publish under per-target coordinates (`sdk-core-jvm`, `sdk-core-iosarm64`, ...) behind the root Gradle module. The `RadioClient` XCFramework that [ADR-007](./decisions/007-ios-distribution.md) describes is not published.
+All modules ship at the same version. Each KMP target publishes under its own coordinates (`sdk-core-jvm`, `sdk-core-iosarm64`, `sdk-core-js`, `sdk-core-wasm-js`, and so on) behind the root Gradle module. The `RadioClient` XCFramework that [ADR-007](./decisions/007-ios-distribution.md) describes isn't published.
 
-Roadmap artifacts (`sdk-rpc`, `sdk-transport-rpc`, `sdk-host-rpc-server`, `sdk-transport-mqtt-proxy`) ship additively when the wasm/RPC roadmap lands; see [`./future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md).
+The roadmap artifacts (`sdk-rpc`, `sdk-transport-rpc`, `sdk-host-rpc-server`, `sdk-transport-mqtt-proxy`) are additive; see [`./future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md).
 
 ### BOM
 
-`:bom` is a tiny Maven BOM module declaring `<dependencyManagement>` entries for every published artifact above at the current release version. Consumers can:
+`:bom` is a Maven BOM constraining every artifact in the table to the release version:
 
 ```kotlin
-implementation(platform("org.meshtastic:sdk-bom:0.5.0"))
-implementation("org.meshtastic:sdk-core")           // version comes from BOM
-implementation("org.meshtastic:sdk-transport-ble")  // version comes from BOM
+implementation(platform("org.meshtastic:sdk-bom:0.2.0"))
+implementation("org.meshtastic:sdk-core")           // version from the BOM
+implementation("org.meshtastic:sdk-transport-ble")  // version from the BOM
 ```
 
-The BOM is itself versioned and bumped on every release (axion handles this uniformly).
+axion versions the BOM with everything else. [`bom/README.md`](../bom/README.md) has Groovy and Maven usage.
 
 ### Release notes
 
-A release's GitHub notes are its `CHANGELOG.md` section verbatim, under an install snippet. What goes in that section is in [`CONTRIBUTING.md`](../CONTRIBUTING.md#changelog).
+A release's GitHub notes are its `CHANGELOG.md` section verbatim, under an install snippet. [`CONTRIBUTING.md`](../CONTRIBUTING.md#changelog) says what goes in that section.
 
 ## Branching
 
-- `main` — always green; tags are cut from here.
-- `release/X.Y` — long-lived once we ship `1.0`, for back-port patch releases. Pre-1.0 only `main` exists.
-- Feature branches are short-lived; rebase + squash-merge into `main` (no merge commits in `main`'s linear history).
+- `main` is always green, and releases are cut from it.
+- `release/X.Y` branches start at 1.0, for backported patch releases. Before 1.0 only `main` exists.
+- Feature branches are short-lived and squash-merged into `main`, which has no merge commits.
 
-## Compatibility matrix
+## Compatibility
 
-Documented in `docs/compatibility.md` (TBD) and the README:
-
-| SDK version | Proto artifact (`meshtasticProtobufs`) | Min firmware (capability-gated) | Kotlin | Gradle | Min Android SDK | iOS deployment |
+| SDK version | Proto artifact | Minimum firmware | Kotlin | Gradle | Android `minSdk` | iOS deployment |
 |---|---|---|---|---|---|---|
-| `0.x.y` | pinned in `gradle/libs.versions.toml` (see CHANGELOG for the version) | No hard minimum; capabilities gate on proto fields (e.g. `DeviceMetadata.hasPKC` for PKI, `ClientNotification` variants for security warnings). Practical floor tracks the pinned proto artifact — currently ≈ firmware `2.6.x`. | latest stable at release | 9.x | 26 | iOS 14 |
+| `0.x.y` | `meshtasticProtobufs` in `gradle/libs.versions.toml`; the changelog names each bump | No hard minimum; features gate on proto fields, such as `DeviceMetadata.hasPKC` for PKI and `ClientNotification` variants for security warnings. The practical floor follows the pinned proto artifact. | latest stable at release | 9.x | 26 | iOS 14 |
 
-The SDK is forward-compatible for additive proto fields and does **not** hard-fail on
-firmware-version mismatch today. `MeshtasticException.FirmwareTooOld` is reserved for a
-future opt-in check (see `docs/error-taxonomy.md`). `docs/compatibility.md` will be added
-when a real hard minimum is enforced.
+The SDK accepts additive proto fields and doesn't fail on a firmware version mismatch. `MeshtasticException.FirmwareTooOld` is reserved for an opt-in check (see [`error-taxonomy.md`](./error-taxonomy.md)).
 
 ## Yanking a release
 
 If a release ships a critical defect:
 
-1. Open a hotfix PR; bump PATCH.
-2. Release that patch immediately, per [`RELEASING.md`](../RELEASING.md).
-3. The bad version is **not** unpublished from Maven Central (Central does not support unpublish). Instead, the CHANGELOG marks it `## [0.5.0] — YANKED` with a pointer to `0.5.1` and a brief reason.
-4. README installation snippets always show the latest non-yanked version.
+1. Open a hotfix PR that bumps PATCH.
+2. Release that patch right away, per [`RELEASING.md`](../RELEASING.md).
+3. Maven Central has no unpublish, so the bad version stays. The changelog marks it, for example `## [0.5.0] — YANKED`, with a pointer to `0.5.1` and a short reason.
+4. README install snippets always show the latest version that isn't yanked.
 
 ## Related
 
-- [ADR-003](./decisions/003-tooling.md) — release tooling rationale
-- [ADR-007](./decisions/007-ios-distribution.md) — iOS distribution (KMMBridge)
-- [`api-reference.md`](./api-reference.md) — what the ABI gate actually protects
-- [`error-taxonomy.md`](./error-taxonomy.md) — sealed hierarchies whose extension is MAJOR
-- [`ci-cd.md`](./ci-cd.md) — the workflows that enforce this
-- [`future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md) — additive artifacts deferred to post-1.0
+- [ADR-003](./decisions/003-tooling.md): release tooling.
+- [ADR-007](./decisions/007-ios-distribution.md): iOS distribution.
+- [`api-reference.md`](./api-reference.md): the surface the ABI gate protects.
+- [`error-taxonomy.md`](./error-taxonomy.md): sealed hierarchies whose extension is MAJOR.
+- [`ci-cd.md`](./ci-cd.md): the workflows that enforce this policy.
+- [`future/wasm-rpc-roadmap.md`](./future/wasm-rpc-roadmap.md): additive artifacts after 1.0.

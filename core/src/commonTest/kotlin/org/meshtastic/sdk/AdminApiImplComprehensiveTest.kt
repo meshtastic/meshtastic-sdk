@@ -219,12 +219,18 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setDeviceConfigBuilderSendsDeviceSection() = runTest {
+        val current = Config.DeviceConfig.Builder().also { wb ->
+            wb.role = Config.DeviceConfig.Role.ROUTER
+            wb.button_gpio = 7
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.device = Config.DeviceConfig.Builder().also { wb ->
+            wb.device = current.newBuilder().also { wb ->
                 wb.role = Config.DeviceConfig.Role.CLIENT
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.DEVICE_CONFIG,
+            current = Config.Builder().also { wb -> wb.device = current }.build(),
             call = {
                 it.setDeviceConfig {
                     this.newBuilder().also { wb ->
@@ -232,20 +238,25 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setLoraConfigBuilderSendsLoraSection() = runTest {
+        val current = Config.LoRaConfig.Builder().also { wb ->
+            wb.region = Config.LoRaConfig.RegionCode.US
+            wb.tx_enabled = true
+            wb.hop_limit = 3
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.lora = Config.LoRaConfig.Builder().also { wb ->
+            wb.lora = current.newBuilder().also { wb ->
                 wb.use_preset = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.LORA_CONFIG,
+            current = Config.Builder().also { wb -> wb.lora = current }.build(),
             call = {
                 it.setLoraConfig {
                     this.newBuilder().also { wb ->
@@ -253,20 +264,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setBluetoothConfigBuilderSendsBluetoothSection() = runTest {
+        val current = Config.BluetoothConfig.Builder().also { wb ->
+            wb.fixed_pin = 123456
+            wb.mode = Config.BluetoothConfig.PairingMode.FIXED_PIN
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.bluetooth = Config.BluetoothConfig.Builder().also { wb ->
+            wb.bluetooth = current.newBuilder().also { wb ->
                 wb.enabled = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.BLUETOOTH_CONFIG,
+            current = Config.Builder().also { wb -> wb.bluetooth = current }.build(),
             call = {
                 it.setBluetoothConfig {
                     this.newBuilder().also { wb ->
@@ -274,20 +289,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setDisplayConfigBuilderSendsDisplaySection() = runTest {
+        val current = Config.DisplayConfig.Builder().also { wb ->
+            wb.flip_screen = true
+            wb.units = Config.DisplayConfig.DisplayUnits.IMPERIAL
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.display = Config.DisplayConfig.Builder().also { wb ->
+            wb.display = current.newBuilder().also { wb ->
                 wb.screen_on_secs = 45
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.DISPLAY_CONFIG,
+            current = Config.Builder().also { wb -> wb.display = current }.build(),
             call = {
                 it.setDisplayConfig {
                     this.newBuilder().also { wb ->
@@ -295,21 +314,25 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setNetworkConfigBuilderSendsNetworkSection() = runTest {
+        val current = Config.NetworkConfig.Builder().also { wb ->
+            wb.wifi_psk = "sekrit"
+            wb.eth_enabled = true
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.network = Config.NetworkConfig.Builder().also { wb ->
+            wb.network = current.newBuilder().also { wb ->
                 wb.wifi_enabled = true
                 wb.wifi_ssid = "mesh"
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.NETWORK_CONFIG,
+            current = Config.Builder().also { wb -> wb.network = current }.build(),
             call = {
                 it.setNetworkConfig {
                     this.newBuilder().also { wb ->
@@ -318,20 +341,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setPositionConfigBuilderSendsPositionSection() = runTest {
+        val current = Config.PositionConfig.Builder().also { wb ->
+            wb.fixed_position = true
+            wb.gps_mode = Config.PositionConfig.GpsMode.ENABLED
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.position = Config.PositionConfig.Builder().also { wb ->
+            wb.position = current.newBuilder().also { wb ->
                 wb.position_broadcast_secs = 300
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.POSITION_CONFIG,
+            current = Config.Builder().also { wb -> wb.position = current }.build(),
             call = {
                 it.setPositionConfig {
                     this.newBuilder().also { wb ->
@@ -339,20 +366,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setPowerConfigBuilderSendsPowerSection() = runTest {
+        val current = Config.PowerConfig.Builder().also { wb ->
+            wb.on_battery_shutdown_after_secs = 90
+            wb.wait_bluetooth_secs = 15
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.power = Config.PowerConfig.Builder().also { wb ->
+            wb.power = current.newBuilder().also { wb ->
                 wb.is_power_saving = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.POWER_CONFIG,
+            current = Config.Builder().also { wb -> wb.power = current }.build(),
             call = {
                 it.setPowerConfig {
                     this.newBuilder().also { wb ->
@@ -360,20 +391,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setSecurityConfigBuilderSendsSecuritySection() = runTest {
+        val current = Config.SecurityConfig.Builder().also { wb ->
+            wb.serial_enabled = true
+            wb.admin_key = listOf(byteArrayOf(7, 8, 9).toByteString())
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.security = Config.SecurityConfig.Builder().also { wb ->
+            wb.security = current.newBuilder().also { wb ->
                 wb.is_managed = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.SECURITY_CONFIG,
+            current = Config.Builder().also { wb -> wb.security = current }.build(),
             call = {
                 it.setSecurityConfig {
                     this.newBuilder().also { wb ->
@@ -381,10 +416,8 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
@@ -1128,6 +1161,87 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun forNodeLoraBuilderReadsAndWritesTheRemoteNode() = runTest {
+        val remote = NodeId(0x12345678)
+        val current = Config.LoRaConfig.Builder().also { wb ->
+            wb.region = Config.LoRaConfig.RegionCode.EU_868
+            wb.tx_enabled = true
+            wb.hop_limit = 3
+        }.build()
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.LORA_CONFIG,
+            current = Config.Builder().also { wb -> wb.lora = current }.build(),
+            call = { it.setLoraConfig { newBuilder().also { wb -> wb.hop_limit = 5 }.build() } },
+            expected = Config.Builder().also { wb ->
+                wb.lora = current.newBuilder().also { wb -> wb.hop_limit = 5 }.build()
+            }.build(),
+            dest = remote,
+        )
+    }
+
+    @Test
+    fun moduleConfigBuilderReadsBeforeWriting() = runTest {
+        val current = ModuleConfig.MQTTConfig.Builder().also { wb ->
+            wb.address = "mqtt.example.org"
+            wb.username = "mesh"
+        }.build()
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred =
+                async { client.admin.setMqttConfig { newBuilder().also { wb -> wb.enabled = true }.build() } }
+            runCurrent()
+
+            val read = latestAdminPacket(transport, outboundBefore) {
+                it.get_module_config_request == AdminMessage.ModuleConfigType.MQTT_CONFIG
+            }
+            transport.injectAdminResponse(
+                read.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_module_config_response = ModuleConfig.Builder().also { wb -> wb.mqtt = current }.build()
+                }.build(),
+            )
+            runCurrent()
+
+            val write = latestAdminPacket(transport, outboundBefore) { it.set_module_config != null }
+            assertEquals(
+                current.newBuilder().also { wb -> wb.enabled = true }.build(),
+                adminOf(write)!!.set_module_config?.mqtt,
+            )
+            transport.injectRoutingAck(write.id)
+            runCurrent()
+            assertEquals(AdminResult.Success(Unit), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun configBuilderSendsNoSetConfigWhenTheReadTimesOut() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.setLoraConfig { newBuilder().also { wb -> wb.hop_limit = 5 }.build() } }
+            runCurrent()
+            latestAdminPacket(transport, outboundBefore) {
+                it.get_config_request == AdminMessage.ConfigType.LORA_CONFIG
+            }
+
+            advanceTimeBy(70.seconds)
+            runCurrent()
+
+            assertEquals(AdminResult.Timeout, deferred.await())
+            assertTrue(transport.outboundPackets().drop(outboundBefore).none { adminOf(it)?.set_config != null })
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
     fun editSettingsSuccessfulWritesUpdateConfigBundle() = runTest {
         val updatedConfig = Config.Builder().also { wb ->
             wb.device = Config.DeviceConfig.Builder().also { wb ->
@@ -1562,6 +1676,46 @@ class AdminApiImplComprehensiveTest {
             runCurrent()
 
             assertEquals(expected, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    /** Drives a config builder: answers its get_config with [current], then checks and acks its set_config. */
+    private suspend fun TestScope.assertReadModifyWrite(
+        type: AdminMessage.ConfigType,
+        current: Config,
+        call: suspend (AdminApi) -> AdminResult<Unit>,
+        expected: Config,
+        dest: NodeId? = null,
+    ) {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val responder = dest?.raw ?: 1
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { call(dest?.let(client.admin::forNode) ?: client.admin) }
+            runCurrent()
+
+            val read = latestAdminPacket(transport, outboundBefore) { it.get_config_request == type }
+            if (dest != null) assertEquals(dest.raw, read.to)
+            assertTrue(transport.outboundPackets().drop(outboundBefore).none { adminOf(it)?.set_config != null })
+            transport.injectAdminResponse(
+                read.id,
+                AdminMessage.Builder().also { wb -> wb.get_config_response = current }.build(),
+                fromNode = responder,
+            )
+            runCurrent()
+
+            val write = latestAdminPacket(transport, outboundBefore) { it.set_config != null }
+            if (dest != null) assertEquals(dest.raw, write.to)
+            assertTrue(write.want_ack)
+            assertEquals(expected, adminOf(write)!!.set_config)
+            transport.injectRoutingAck(write.id, fromNode = responder)
+            runCurrent()
+
+            assertEquals(AdminResult.Success(Unit), deferred.await())
         } finally {
             runCatching { client.disconnect() }
         }

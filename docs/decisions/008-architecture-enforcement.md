@@ -56,6 +56,13 @@ Concretely:
   `commonMainImplementationDependencies` configuration contains anything
   other than `:proto` and the allowlisted external deps.
 
+> **Note:** there is no `org.meshtastic.sdk.internal.engine` package; the engine is
+> `org.meshtastic.sdk.internal.MeshEngine`. The `ForbiddenImport` list in
+> `config/detekt/detekt.yml` applies repo-wide, outside tests, and bans
+> `kotlinx.coroutines.sync.Mutex`, `kotlinx.coroutines.sync.Semaphore`,
+> `java.util.concurrent.locks.ReentrantLock`, `kotlin.Result` and the `kotlinx.io` byte
+> types. It does not ban `kotlinx.atomicfu`, which `MeshEngine` imports.
+
 ## Rationale
 
 - **Already on detekt.** Detekt is wired across all subprojects and
@@ -109,7 +116,7 @@ Concretely:
       (B4).
 - [x] Remove residual Konsist references from skill files, decision ADRs
       (003/005/006), `security.md`, `versioning.md`,
-      `architecture/module-graph.md`, `README`, and `SPEC.md` (post-audit
+      `architecture/module-graph.md` and `README` (post-audit
       cleanup, 2026-04-19).
 
 ## References

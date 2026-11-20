@@ -6,4 +6,4 @@ Slim by design. Most prompts collapsed into matching skills under
 - **pre-pr-sanity** — final pre-PR quality sweep (scope, module
   boundaries, API compat, lint, tests, docs, DCO).
 
-Routing matrix lives in [`AGENTS.md`](../../AGENTS.md#task--skill--agent-routing-matrix).
+Routing matrix lives in [`AGENTS.md`](../../AGENTS.md#task-routing).

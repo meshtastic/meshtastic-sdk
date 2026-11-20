@@ -46,9 +46,8 @@ internal enum class HandshakeStage {
  * All state mutation happens on the engine coroutine; these messages are the only entry points
  * that mutate state. No other code path writes to shared state.
  *
- * Per SPEC engine-actor.md: lifecycle messages ([Connect], [Disconnect]) and outbound [Send] /
- * admin messages are **never dropped**. [FrameRx] may be dropped under extreme inbox pressure
- * once backpressure triage is implemented.
+ * The inbox is unlimited, so no message is dropped while the engine runs; a post after teardown
+ * fails because the inbox is closed (docs/architecture/engine-actor.md, Backpressure).
  */
 internal sealed interface EngineMessage {
 

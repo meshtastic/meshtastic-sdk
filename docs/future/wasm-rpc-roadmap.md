@@ -1,16 +1,16 @@
 # Remote-RPC roadmap (post-1.0)
 
-> **Status: roadmap, not MVP.** Tracked here so the design isn't lost between now and then.
->
-> The web targets already ship: `:core`, `:testing` and `:transport-websocket` publish `js` and `wasmJs` klibs, and a browser or Node.js host runs the engine in-process over a radio's WebSocket phone API (see [`../architecture/module-graph.md`](../architecture/module-graph.md)). This roadmap covers the remote engine for hosts that cannot reach the radio themselves.
+This page records the design for a remote engine, for hosts that cannot reach the node themselves. It is a roadmap, not shipped work.
+
+The web targets already ship: `:core`, `:testing` and `:transport-websocket` publish `js` and `wasmJs` klibs, and a browser or Node.js host runs the engine in-process over a node's WebSocket phone API ([`../architecture/module-graph.md`](../architecture/module-graph.md)).
 
 ---
 
 ## Why deferred
 
-A web host reaches a radio directly only over the WebSocket phone API. A radio on BLE, USB-serial or plain TCP, or one engine shared by several clients, needs a remote-RPC adapter that owns versioning, snapshot+delta semantics and authentication separately from the local API. Designing both surfaces at once, before the local API has been hardened by Phase 5, risks the local API being shaped by RPC concerns.
+A web host reaches a node directly over the WebSocket phone API, or over Web Bluetooth or Web Serial (Chromium only) with a `RadioTransport` it supplies. A node on plain TCP, a browser without those APIs, or one engine shared by several clients needs a remote-RPC adapter that owns versioning, snapshot-and-delta semantics and authentication apart from the local API. Designing both surfaces at once risks shaping the local API around RPC concerns.
 
-Deferring lets the local engine settle to 1.0 first, then the RPC adapter layers on top *as an additive surface* (no breaking change required to ship it).
+Deferring lets the local engine settle at 1.0 first; the RPC adapter then layers on top as an additive surface, with no breaking change.
 
 ---
 
@@ -65,7 +65,8 @@ Authentication: a static shared-secret token in the WS upgrade headers is the MV
 ## Browser-direct transports not planned as SDK modules
 
 - **Web Bluetooth `:transport-ble`.** Web Bluetooth is Chromium-only, not on Firefox/Safari, and the spec's permission story is in flux. A web host can supply its own `RadioTransport` over it.
-- **TCP/serial from a browser.** Impossible without an extension or native bridge; the WebSocket phone API is the browser's direct path.
+- **Web Serial `:transport-serial`.** Web Serial is Chromium-only, like Web Bluetooth. A web host can supply its own `RadioTransport` over it.
+- **Raw TCP from a browser.** Impossible without an extension or native bridge; the WebSocket phone API is the browser's network path.
 
 ---
 
@@ -73,16 +74,15 @@ Authentication: a static shared-secret token in the WS upgrade headers is the MV
 
 This roadmap stays parked until **all** of:
 
-1. The local `:core` API is at 1.0 (post Phase 7 in `SPEC.md` §6).
-2. There is at least one validated consumer asking for headless-RPC support.
+1. The local `:core` API is at 1.0.
+2. At least one validated consumer asks for headless-RPC support.
 
-Then: open ADR-008 to formally accept this design (it stays a roadmap doc until that ADR lands), do a minor release adding `:rpc` + `:transport-rpc` + `:host-rpc-server`.
+Then an ADR accepts this design (it stays a roadmap page until then), and a minor release adds `:rpc`, `:transport-rpc` and `:host-rpc-server`.
 
 ---
 
 ## Related
 
-- [`../SPEC.md`](../SPEC.md) §0 — "What this SDK is NOT (MVP)" defers RPC.
-- [`../SPEC.md`](../SPEC.md) §6 "Future (post-1.0, non-breaking adds)" — the staging area for this roadmap.
-- [`../decisions/006-multi-module-rationale.md`](../decisions/006-multi-module-rationale.md) — current MVP module list.
-- [`../security.md`](../security.md) — current per-transport posture; gains an RPC row when this roadmap lands.
+- [`../roadmap.md`](../roadmap.md) R-12 tracks the remote-RPC artifacts.
+- [`../decisions/006-multi-module-rationale.md`](../decisions/006-multi-module-rationale.md): the module list.
+- [`../security.md`](../security.md): per-transport posture, which gains an RPC row when this roadmap lands.

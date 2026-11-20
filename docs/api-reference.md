@@ -1,63 +1,39 @@
 # Public API reference
 
-> A flat, browseable view of every public symbol shipped by `:core`. Authoritative source remains [`./SPEC.md`](./SPEC.md) §3; this document tracks it 1:1 with KDoc-shaped commentary suitable for the Dokka pipeline once the code lands.
->
-> All payload-bearing types named without a package prefix (`MeshPacket`, `NodeInfo`, `Config`, `User`, `Channel`, `AdminMessage`, `Routing.Error`, …) are **Wire-generated types from `org.meshtastic.proto.*`**, per [ADR-001](./decisions/001-public-api-uses-generated-protobufs.md). The SDK does not redeclare them.
+A browsable view of the public API of `:core` and the transport, storage, and testing modules. The CI-gated ABI dumps (`<module>/api/jvm/*.api`, `<module>/api/*.klib.api`) are the authoritative list of symbols; KDoc carries the full contracts.
+
+Payload types named without a package (`MeshPacket`, `NodeInfo`, `Config`, `User`, `Channel`, `AdminMessage`, `Routing.Error`, `FromRadio`, `DeviceProfile`, and so on) are Wire-generated types from `org.meshtastic.proto`, per [ADR-001](./decisions/001-public-api-uses-generated-protobufs.md). The SDK doesn't redeclare them. They're generated builders-only: build or change one with `Builder()` or `newBuilder()`, since they have no public constructor and no `copy()`.
 
 ## Package map
 
-| Package | Stability | Contents |
+| Package | Targets | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | Public | `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `SendOutcome`, `MeshEvent`, `DroppedFlow`, `NodeChange`, `NodeField`, `ConnectionState`, `ConfigPhase`, `TransportSpec`, `TransportIdentity`, `RadioTransport`, `TransportState`, `Frame`, `MeshtasticException`, `NodeId`, `ChannelIndex`, `MessageId`, `LogSink`, `LogLevel`, `PayloadRedactor`, `StorageProvider`, `DeviceStorage`, `InMemoryStorage`, `InMemoryStorageProvider`, `ConfigBundle`, `AutoReconnectConfig`, `ReconnectRecoveryStep`, `KeyVerificationPrompt`, `AdminApi`, `AdminResult`, `AdminSessionStatus`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `StoreForwardStats`, `StoreForwardEvent`, `Clock`, `Constants`, `SessionPasskey` |
-| `org.meshtastic.sdk.transport.tcp` | Public | `TcpTransport`, `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio`, `JvmTcpDiscovery` (JVM), `AndroidTcpDiscovery` (Android), `IosTcpDiscovery` (iOS) |
-| `org.meshtastic.sdk.transport.ble` | Public | `BleTransport`, `BleConstants`, `BleScanner` (`scan(): Flow<DiscoveredRadio>`, finds radios by the mesh service UUID; the caller holds the BLE permissions), `DiscoveredRadio`; `BleTransport(radio)` connects to a scan result on every target |
-| `org.meshtastic.sdk.transport.serial` | Public | `AndroidSerialPorts` (Android, jSerialComm), `AndroidUsbSerialPorts` (Android, usb-serial-for-android), `JvmSerialPorts` (JVM), `SerialPortInfo`, `SerialFrameAssembler` |
-| `org.meshtastic.sdk.storage.sqldelight` | Public | `SqlDelightStorageProvider`, `AndroidContextHolder` (Android) |
-| `org.meshtastic.sdk.testing` | Public (test fixtures) | `FakeRadioTransport`, `TestClock`; `InMemoryStorage` and `InMemoryStorageProvider` are deprecated aliases of the `:core` classes |
-| `org.meshtastic.proto.*` | Public (re-export) | All Wire-generated protobuf types |
-| `org.meshtastic.sdk.internal.*` | Internal (Kotlin `internal` modifier) | Engine, FSM, codec — not part of API surface |
+| `org.meshtastic.sdk` | JVM, Android, iOS, JS, Wasm | `RadioClient` and its `Builder`; the sub-APIs (`AdminApi`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `FileTransferApi`); send, event, and result types; ID value classes; the `RadioTransport` and `StorageProvider` contracts; `TransportSpec`, `TransportIdentity`, `TransportTarget`; `InMemoryStorageProvider`; payload and provenance accessors; LoRa region math; `WireCodec` and `WireFraming` |
+| `org.meshtastic.sdk.transport.tcp` | JVM, Android, iOS | `TcpTransport`; mDNS discovery: `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio`, `JvmTcpDiscovery`, `AndroidTcpDiscovery`, `IosTcpDiscovery` |
+| `org.meshtastic.sdk.transport.ble` | JVM, Android, iOS | `BleTransport` (with `deviceLogs()`), `BleScanner`, `DiscoveredRadio`, `BleConstants`, `BleResilience`, `bleAdvertisementMatches`; on Android, `BondedBleDevice` and `bondedBleDevices(context)` |
+| `org.meshtastic.sdk.transport.serial` | JVM, Android | `JvmSerialPorts`, `AndroidSerialPorts` (jSerialComm), `AndroidUsbSerialPorts` (usb-serial-for-android), `SerialPortInfo`, `SerialPortTransport`, `SerialFrameAssembler`, `MESHTASTIC_USB_VENDOR_IDS`, `isLikelyMeshtastic()` |
+| `org.meshtastic.sdk.transport.websocket` | JVM, Android, iOS, JS, Wasm | `WebSocketTransport` |
+| `org.meshtastic.sdk.storage.sqldelight` | JVM, Android, iOS | `SqlDelightStorageProvider`; `AndroidContextHolder` on Android |
+| `org.meshtastic.sdk.testing` | JVM, Android, iOS, JS, Wasm | `FakeRadioTransport`, `TestClock`, `FromRadio.toFrame()`; `InMemoryStorage` and `InMemoryStorageProvider` are deprecated aliases of the `:core` classes |
+| `org.meshtastic.sdk.internal` | | Engine, state machine, codec. Kotlin `internal`, not API |
 
-> All public top-level types in `org.meshtastic.sdk` are considered stable for the 0.1.x series.
+The web targets are covered in [ADR-017](./decisions/017-web-targets.md).
 
 ## API conventions
 
-Deliberate, enforced choices about the shape of the public surface:
-
-- **Proto types are exposed unwrapped** ([ADR-001](./decisions/001-public-api-uses-generated-protobufs.md)).
-  The SDK's ABI therefore tracks the `org.meshtastic:protobufs` artifact; proto bumps are priced
-  into the SemVer table in [`versioning.md`](./versioning.md).
-- **One byte-string vocabulary: `okio.ByteString`.** Wire-generated proto fields use it
-  (Wire's runtime type), so it is unavoidable in the surface — and therefore SDK-native types
-  (`Frame`, `SessionPasskey`, the `send(portnum, payload)` overload) use it too, rather than
-  introducing a second vocabulary. `kotlinx-io` is deliberately **not** a dependency.
-- **No blocking bridges.** Lifecycle is suspend-only (`connect()`/`disconnect()`); there is
-  deliberately no `AutoCloseable`/`close()` on `RadioClient`. Blocking teardown invites ANR on
-  Android main and deadlock on iOS main. For scoped use, the `withConnection(teardownTimeout) { … }`
-  extension (see [Lifecycle](#lifecycle)) is the structured replacement for `use { }`.
-- **Data classes in the public API are a deliberate trade.** Event/result types are `data` so
-  consumers get structural equality in tests and exhaustive `when` matching. The ABI cost
-  (`copy`/`componentN` lock-in) is mitigated by the pre-1.0 window, the CI-gated Kotlin ABI
-  dumps (every signature change is reviewed), and the SemVer pricing of sealed-subtype
-  additions. When the [Poko](https://github.com/drewhamilton/Poko) compiler plugin supports the
-  current Kotlin version, event/result types migrate to `@Poko` classes (tracked in
-  [`roadmap.md`](./roadmap.md)) — consumers should treat `copy()`/destructuring of SDK types as
-  unstable conveniences, not contract.
-- **Kotlin/Swift first.** No `@JvmOverloads`/`@JvmName` Java-ergonomics annotations; Java
-  callers are not a supported audience. Swift interop is first-class via SKIE + `@Throws`.
-
+- **Proto types are exposed unwrapped** ([ADR-001](./decisions/001-public-api-uses-generated-protobufs.md)). The SDK's ABI tracks the `org.meshtastic:protobufs` artifact, and proto bumps are priced into the SemVer table in [`versioning.md`](./versioning.md).
+- **One byte-string type: `okio.ByteString`.** Wire uses it for proto fields, so SDK types (`Frame`, `SessionPasskey`, the `send(portnum, payload)` overload) use it too. `kotlinx-io` isn't a dependency.
+- **No blocking bridges.** Lifecycle is suspend-only (`connect()`, `disconnect()`). `RadioClient` has no `close()`, because blocking teardown risks an ANR on the Android main thread and a deadlock on the iOS main thread. `withConnection { … }` is the scoped replacement for `use { }`.
+- **Data classes are a deliberate trade.** Event and result types are `data` for structural equality in tests and exhaustive `when`. Treat `copy()` and destructuring of SDK types as conveniences, not contract: they migrate to `@Poko` classes once Poko supports the current Kotlin version ([`roadmap.md`](./roadmap.md)).
+- **Kotlin and Swift first.** Java callers aren't a supported audience. Swift interop goes through SKIE and `@Throws`.
 
 ### Coordinates and the BOM
 
-Every artifact above is published under the `org.meshtastic` group as
-`sdk-<module>` (e.g. `org.meshtastic:sdk-core`).
-**Use [`org.meshtastic:sdk-bom`](../bom/README.md) to align
-versions across modules** — see [`bom/README.md`](../bom/README.md) for
-the full pinned-artifact table and Gradle / Maven snippets, and
-[`docs/versioning.md`](./versioning.md#bom) for the versioning policy.
+Every artifact is published under the `org.meshtastic` group as `sdk-<module>`, for example `org.meshtastic:sdk-core`. Use [`org.meshtastic:sdk-bom`](../bom/README.md) to align versions; [`versioning.md`](./versioning.md#bom) has the policy.
 
 ## `RadioClient`
 
-The single public entry point. One `RadioClient` ↔ one radio (ADR-005 multi-radio rule).
+The single entry point. One `RadioClient` talks to one radio ([ADR-005](./decisions/005-api-shape.md)).
 
 ### Construction
 
@@ -66,46 +42,24 @@ RadioClient.Builder()
     .transport(TcpTransport(host = "meshtastic.local", port = 4403))   // required
     .storage(SqlDelightStorageProvider(baseDir = "/var/data"))         // required, no default
     .logger(MyLogSink)                                                 // default: LogSink.Silent
-    .clock(Clock.System)                                               // default
-    .coroutineContext(SupervisorJob() + Dispatchers.Default)           // default: Dispatchers.Default
+    .clock(Clock.System)                                               // default: kotlin.time.Clock.System
+    .coroutineContext(SupervisorJob() + Dispatchers.Default)           // default
     .autoSyncTimeOnConnect(true)                                       // default: true
-    .disableBleHeartbeat(false)                                        // default: false (BLE only)
-    .protocolLogging(LogLevel.NONE, PayloadRedactor.Default)           // default: NONE
-    .sendTimeout(30.seconds)                                           // default: 30 s — applies to MessageHandle.await()
-    .rpcTimeout(10.seconds)                                            // default: 10 s — per-op admin RPC timeout
-    .presenceTimeout(15.minutes)                                       // default: 15 min — node offline threshold
-    .autoReconnect(AutoReconnectConfig())                              // default: disabled; opt-in exponential backoff
-    .skipNodeDb()                                                      // default: off — config-only connect, skips Stage 2
+    .disableBleHeartbeat()                                             // default: BLE heartbeats on
+    .protocolLogging(LogLevel.DEBUG, PayloadRedactor.Default)          // default: LogLevel.NONE
+    .sendTimeout(30.seconds)                                           // default: 30 s, ACK wait per unicast want_ack send
+    .rpcTimeout(30.seconds)                                            // default: 30 s, per admin/telemetry/routing call
+    .presenceTimeout(2.hours)                                          // default: 2 h, node offline threshold
+    .autoReconnect(AutoReconnectConfig())                              // default: AutoReconnectConfig.Disabled
+    .skipNodeDb()                                                      // default: off
     .build()
 ```
 
-#### Config-only connect — `skipNodeDb()` *(since 0.3.0)*
+`build()` throws `IllegalArgumentException` without `transport(...)` and `storage(...)`. The builder takes a constructed `RadioTransport`; there is no `transport(TransportSpec)` overload. To turn a user-typed target into a transport, parse it with `TransportTarget.parse` (see [Transport targets](#transport-targets)) and open the matching transport in host code.
 
-The handshake normally runs in two stages (`docs/protocol.md` §6): Stage 1 (`want_config_id =
-69420`) streams `my_info`, `metadata`, device/module config, channels and the device's own
-`NodeInfo`; Stage 2 (`69421`) streams the whole node database. On a large mesh over BLE, Stage 2
-dominates connect time — hundreds of `NodeInfo` envelopes, each a separate GATT read.
+`autoSyncTimeOnConnect(true)` calls `admin.setTime()` once after each successful `connect()`, in the background. `disableBleHeartbeat()` stops the 30 s heartbeat on BLE only; TCP and serial always send it.
 
-`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session goes straight to
-seeding the admin session passkey and then `Connected`.
-`ConfigPhase.Stage2` is never projected on `connection`.
-
-| Still works | Degraded |
-|---|---|
-| `configBundle`, `channels`, `ownNode` | `nodes` emits a `Snapshot` holding only the local node |
-| `admin`, `telemetry`, `routing`, `storeForward` | `nodeSnapshot()` likewise starts with only the local node |
-| `send` / `sendText`, `packets`, `events` | presence events cover only nodes actually heard this session |
-
-Peers appear as they are heard live: any decoded packet creates the sender and refreshes its
-`last_heard`, `snr`, `hops_away` and `via_mqtt`; `NODEINFO_APP` merges `user` and `POSITION_APP`
-merges `position` (see `docs/protocol.md`, "Node DB after the handshake"). Persisted
-node rows from earlier sessions are left untouched but are not loaded into the session's node map.
-
-Use it for config editors, provisioning tools and CLI one-shots. Leave it off for chat and map UIs.
-
-`Builder.transport(spec: TransportSpec)` is also available for spec-driven setups, but you must additionally provide a concrete `RadioTransport` — see `samples/cli` for a `TransportSpec → RadioTransport` opener pattern.
-
-Kotlin callers can use the `RadioClient { … }` builder-lambda factory instead *(since 0.2.0)*:
+Kotlin callers can use the builder-lambda factory instead:
 
 ```kotlin
 val client = RadioClient {
@@ -115,9 +69,23 @@ val client = RadioClient {
 }
 ```
 
-`Builder` remains available for Swift and other step-wise callers.
+#### Config-only connect with `skipNodeDb()`
 
-#### `AutoReconnectConfig` *(since 0.1.0)*
+The handshake normally runs in two stages ([protocol.md §6](./protocol.md#6-handshake-state-machine)). Stage 1 (`want_config_id = 69420`) streams `my_info`, `metadata`, device and module config, channels, and the local `NodeInfo`. Stage 2 (`69421`) streams the whole node database, which dominates connect time on a large mesh over BLE.
+
+`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session seeds the admin session passkey and goes to `Connected`. `ConfigPhase.Stage2` never appears on `connection`.
+
+| Still works | Degraded |
+|---|---|
+| `configBundle`, `channels`, `ownNode` | `nodes` starts with a `Snapshot` holding only the local node |
+| `admin`, `telemetry`, `routing`, `storeForward`, `files` | `nodeSnapshot()` likewise starts with only the local node |
+| `send` and `sendText`, `packets`, `events`, `fromRadio` | presence events cover only nodes heard this session |
+
+Peers appear as they're heard: any decoded packet creates the sender and refreshes its `last_heard`, `snr`, `hops_away`, and `via_mqtt`; `NODEINFO_APP` merges `user` and `POSITION_APP` merges `position` ([protocol.md, "Node DB after the handshake"](./protocol.md#node-db-after-the-handshake)). Node rows persisted by earlier sessions stay on disk but aren't loaded.
+
+Use it for config editors, provisioning tools, and CLI one-shots. Leave it off for chat and map UIs.
+
+#### `AutoReconnectConfig`
 
 ```kotlin
 public data class AutoReconnectConfig(
@@ -127,51 +95,64 @@ public data class AutoReconnectConfig(
     val maxAttempts: Int? = null,
     val backoffMultiplier: Double = 2.0,
     val jitter: Double = 0.2,
-    val recoveryStep: ReconnectRecoveryStep? = null,   // since 0.3.0
-)
+    val recoveryStep: ReconnectRecoveryStep? = null,
+) {
+    public companion object { public val Disabled: AutoReconnectConfig }
+}
 
 public fun interface ReconnectRecoveryStep {
     public suspend fun recover(attempt: Int, cause: MeshtasticException)
 }
 ```
 
-When enabled, the engine automatically reconnects on transport drops, transitioning through `ConnectionState.Reconnecting(cause, attempt)`. Disable by omitting the `.autoReconnect(...)` builder call.
+Auto-reconnect is off unless the builder receives a config with `enabled = true`; the builder's default is `AutoReconnectConfig.Disabled`. When on, the engine reconnects after a transport drop and reports `ConnectionState.Reconnecting(cause, attempt)`. The 1.0 release turns it on by default; pass `AutoReconnectConfig.Disabled` to keep it off.
 
-`recoveryStep` runs after each backoff delay and before `transport.connect()`: re-request a USB permission, power-cycle a radio, wait for the Bluetooth adapter. Throwing counts as a failed attempt and schedules the next backoff. It prepares the transport the client was built with; it cannot swap in another.
+`recoveryStep` runs after each backoff delay and before `transport.connect()`, for work such as requesting a USB permission again, power-cycling a radio, or waiting for the Bluetooth adapter. Throwing counts as a failed attempt. It prepares the transport the client was built with and can't swap in another.
 
-### Lifecycle
+### Lifecycle and state
 
-| Member | Returns | Throws | Notes |
-|---|---|---|---|
-| `connect()` | `Unit` (suspends until `Connected`) | `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`, `FirmwareTooOld`), `CancellationException` | **Not** idempotent — calling `connect()` while already `Connected` throws `AlreadyConnected` (deliberate; silent no-op hides reconnect-loop bugs). |
-| `connectAndAwaitReady()` | `Unit` (suspends until `Connected` with session passkey seeded) | same as `connect()` | Convenience wrapper: calls `connect()`, then awaits the post-handshake admin session passkey seed. Prefer this unless you need to observe handshake progress. |
-| `disconnect()` | `Unit` | never | Idempotent. Cancels supervisor; resolves all open `MessageHandle`s to `Failed(Disconnected)`. |
-| `withConnection(teardownTimeout: Duration = 10.seconds) { … }` *(extension, since 0.2.0)* | `T` (the block's result) | rethrows from `connect()` / block | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T`. Connects, runs `block`, and **always** disconnects — on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. The structured replacement for the deliberately absent `close()`/`use { }`. |
-| `connection: StateFlow<ConnectionState>` | — | — | Conflated. Ordering: `Disconnected → Connecting → Configuring* → Connected`; on drop: `Connected → Reconnecting → Connecting → …`. |
-| `ownNode: StateFlow<NodeInfo?>` | — | — | `null` until handshake completes. After: always populated; updated on `node_info` for our own `NodeNum`. |
-| `configBundle: StateFlow<ConfigBundle?>` | — | — | `null` until Stage 1 completes. Contains `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated on unsolicited config pushes. |
-| `adminSessions: StateFlow<Map<NodeId, AdminSessionStatus>>` *(since 0.3.0)* | — | — | Per-node admin session: `Active` for 150 s after the response carrying the passkey arrived (expected to be accepted, not guaranteed: delivery delay is unmeasured, and a rejection is handled by the single retry), `Stale` until 300 s (may be accepted), then absent (`NoSession`, certainly rejected). Also dropped on `ADMIN_BAD_SESSION_KEY`, disconnect and identity rebind. Expiry is evaluated on the 30 s heartbeat tick. Never carries passkey bytes. |
-| `adminSessionStatus(node: NodeId): Flow<AdminSessionStatus>` *(since 0.3.0)* | `NodeId` | `AdminSessionStatus` | `adminSessions` for one node; `NoSession` when absent. |
-| `channels: StateFlow<List<Channel>>` | — | — | Empty until Stage 1 completes. Reactive view of all device channels. Updated on `setChannel` responses. |
+| Member | Notes |
+|---|---|
+| `suspend fun connect()` | Suspends until `Connected`. Throws `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`) or `CancellationException`. Not idempotent: calling it while connected throws `AlreadyConnected`, because a silent no-op hides reconnect-loop bugs. |
+| `suspend fun RadioClient.connectAndAwaitReady(timeout: Duration = 30.seconds): ConfigBundle` | Calls `connect()` and returns the committed `ConfigBundle`. Throws `HandshakeTimeout(stage = "connectAndAwaitReady")` when the bundle doesn't arrive within `timeout`. |
+| `suspend fun RadioClient.awaitInitialNodeDb(): Map<NodeId, NodeInfo>` | Waits for the first node map after the handshake commits. |
+| `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. |
+| `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T` | Connects, runs `block`, and always disconnects, on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. |
+| `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Connecting → …`. |
+| `ownNode: StateFlow<NodeInfo?>` | `null` until `Connected`, then the local node. |
+| `configBundle: StateFlow<ConfigBundle?>` | `null` until `Connected`; cleared on disconnect. `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated by unsolicited config pushes and successful local admin writes. |
+| `channels: StateFlow<List<Channel>?>` | `null` until `Connected`. Updated when `setChannel` succeeds; `admin.listChannels()` re-reads all eight slots. |
+| `adminSessions: StateFlow<Map<NodeId, AdminSessionStatus>>` | Admin session state per node, keyed by the node that issued the passkey. See [Admin sessions](#admin-sessions). |
+| `fun adminSessionStatus(node: NodeId): Flow<AdminSessionStatus>` | `adminSessions` for one node, `NoSession` when absent; emits the current value, then changes. |
+
+Editing another node through `admin.forNode(dest)` doesn't touch `channels` or `configBundle`, in memory or in storage, including writes made through `editSettings` and `batch`.
+
+#### Admin sessions
+
+```kotlin
+public sealed interface AdminSessionStatus {
+    public data object NoSession : AdminSessionStatus
+    public data class Active(val refreshedAt: Instant, val staleAt: Instant) : AdminSessionStatus
+    public data class Stale(val refreshedAt: Instant, val expiresAt: Instant) : AdminSessionStatus
+}
+```
+
+A node that sends a session passkey has at least 150 s of validity left on it. A key received at time `T` is `Active` until `T + 150 s` (expected to be accepted, not guaranteed: delivery delay is unmeasured), `Stale` until `T + 300 s` (may be accepted), and absent after that (`NoSession`, certainly rejected). Any admin response carrying a passkey makes the session `Active` again. A node's entry is also removed on `ADMIN_BAD_SESSION_KEY`, disconnect, and identity rebind. Expiry is evaluated on the engine's 30 s heartbeat tick, so a transition can surface up to 30 s late. The passkey bytes are never exposed.
 
 ### Streams
 
-| Member | Backing | Buffer / overflow |
-|---|---|---|
-| `nodes: Flow<NodeChange>` | snapshot+delta over `MutableSharedFlow(replay=0)` | 256 / `SUSPEND` |
-| `nodeMap(): Flow<Map<NodeId, NodeInfo>>` *(since 0.2.0)* | folds `nodes` | same as `nodes` |
-| `packets: Flow<MeshPacket>` | `MutableSharedFlow(replay=0)` | 128 / `SUSPEND` |
+| Member | Contents | Buffer | When a collector falls behind |
+|---|---|---|---|
+| `nodes: Flow<NodeChange>` | Node snapshot, then deltas | 256 | The new delta is discarded and `events` gets `PacketsDropped(DroppedFlow.Events, 1)` |
+| `RadioClient.nodeMap(): Flow<Map<NodeId, NodeInfo>>` | `nodes` folded into a map; first emission is an empty map | follows `nodes` | follows `nodes` |
+| `packets: Flow<MeshPacket>` | Decoded inbound mesh packets | 128 | The new packet is discarded and `events` gets `PacketsDropped(DroppedFlow.Packets, 1)` |
+| `events: Flow<MeshEvent>` | Advisory events | 64 | The oldest event is dropped, unreported |
+| `fromRadio: Flow<FromRadio>` | Every decoded inbound envelope, unredacted: handshake frames, config, channels, `log_record`, and packets | 256 | The oldest envelope is dropped, unreported |
 | `sessionEvents: Flow<RadioSessionEvent>?` | Optional single-consumer queue | Bounded by `Builder.sessionReceive(capacity)` |
-| `events: Flow<MeshEvent>` | `MutableSharedFlow(replay=0)` | 64 / `DROP_OLDEST` |
-| `fromRadio: Flow<FromRadio>` *(since 0.3.0)* | every decoded inbound envelope, unredacted; lossy by design, drops are not reported | 256 / `DROP_OLDEST` |
 
-`nodes` seeds **each** subscription with a `NodeChange.Snapshot` of the engine's current node
-map (via `onSubscription`) before deltas — late subscribers never miss the baseline even though
-the engine's backing `SharedFlow` has `replay = 0`. The handshake additionally emits a live
-`Snapshot` to all subscribers at Stage-2 commit. `nodeMap()` *(since 0.2.0)* folds `nodes` into
-a flow of the full `Map<NodeId, NodeInfo>`; the underlying
-`Flow<NodeChange>.asNodeMap()` extension is also public for transforming an existing
-`nodes` collection.
+The engine never waits for a collector. All five are hot: collectors share one upstream and see only what is emitted while they collect. `nodes` is the exception for the baseline: each subscription first receives a `NodeChange.Snapshot` of the current node map, so a late subscriber never misses it. The handshake also emits a live `Snapshot` when it commits, after every reconnect, which existing subscribers treat as a full replacement. `Flow<NodeChange>.asNodeMap()` is the fold behind `nodeMap()`.
+
+`fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. It's the only place `FromRadio.log_record` (device logs over the phone API) surfaces; see [observability.md](./observability.md#device-logs).
 
 ### Session receive
 
@@ -181,19 +162,24 @@ Add `sessionReceiveEnvelopes()` to receive non-packet envelopes such as firmware
 
 The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet or envelope, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
 
+
 ### Outbound
 
 | Member | Returns | Throws |
 |---|---|---|
-| `send(packet: MeshPacket): MessageHandle` | handle (state already `Queued`) | `NotConnected`, `PayloadTooLarge` |
-| `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0): MessageHandle` | handle | same as `send` |
-| `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
-| `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
+| `send(packet: MeshPacket)` | `MessageHandle` in `Queued` | `PayloadTooLarge`, `NotConnected` |
+| `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0)` | `MessageHandle` | same as `send` |
 | `trySendRaw(frame: ToRadio)` | Whether the outbound queue accepted the encoded frame | — |
-| `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
-| `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
+| `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int)` | `MessageHandle` | same as `send` |
+| `suspend send(portnum: PortNum, payload: ByteArray, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), wantAck: Boolean = false, hopLimit: Int? = null)` | `MessageHandle` | same as `send` |
+| `suspend send(portnum: PortNum, payload: ByteString, …)` | `MessageHandle` | same as `send` |
+| `requestNodeInfo(node: NodeId)` | `MessageHandle`; the reply arrives on `nodes` | `NotConnected` |
+| `sendRaw(frame: ToRadio)` | `Unit`; not tracked or acknowledged | `NotConnected` |
+| `suspend nodeSnapshot()` | `Map<NodeId, NodeInfo>` | `NotConnected` |
 
-### Send DSL *(since 0.2.0)*
+`PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendText` and `sendReaction` set `want_ack`. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`.
+
+### Send DSL
 
 ```kotlin
 val handle = client.send {
@@ -204,66 +190,69 @@ val handle = client.send {
 }
 ```
 
-The `send { … }` lambda configures a `MeshPacket` builder. Available DSL methods: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck(Boolean)`, `hopLimit(Int?)`.
+`send { … }` configures a `SendBuilder`: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck()`, `wantAck(Boolean)`, `hopLimit(Int?)`.
 
-`hopLimit` left unset, like `hopLimit = null` on the typed `send(portnum, …)` overloads, sends the device's `lora.hop_limit` from `configBundle` (the firmware default, 3, before the bundle lands). The SDK resolves it on the host because firmware only substitutes its default for a `0` on the wire when `want_ack` is set. `send(packet: MeshPacket)` and `proto(...)` go out as given.
+A `hopLimit` left unset, like `hopLimit = null` on the typed `send(portnum, …)` overloads, sends the device's `lora.hop_limit` from `configBundle`, or the firmware default of 3 before the bundle lands. The SDK resolves it on the host because firmware substitutes its default for a `0` only when `want_ack` is set. `send(packet: MeshPacket)` and `proto(...)` go out as given.
 
-### Sub-API namespaces
+### Sub-APIs
 
-`client.admin: AdminApi`, `client.telemetry: TelemetryApi`, `client.routing: RoutingApi`, `client.storeForward: StoreForwardApi`, `client.files: FileTransferApi` are fully implemented and available while the client is in the `Connected` state. Each is lazily initialized on first access. See the respective interface definitions below for method inventories.
+`client.admin`, `client.telemetry`, `client.routing`, `client.storeForward`, and `client.files` are created on first access and work while the client is `Connected`. Each RPC waits up to `Builder.rpcTimeout` and reports failure as a result value, not an exception.
 
 ## `MessageHandle`
 
 ```kotlin
-public class MessageHandle internal constructor(
-    public val id: MessageId,
-    public val state: StateFlow<SendState>,
-) {
+public class MessageHandle internal constructor(…) {
+    public val id: MessageId
+    public val state: StateFlow<SendState>
     public suspend fun await(): SendOutcome
     public fun cancel()
 }
+
+public suspend fun MessageHandle.retry(): MessageHandle
+public suspend fun MessageHandle.retryWith(policy: RetryPolicy): SendOutcome   // RetryPolicy.None, Fixed, ExponentialBackoff
 ```
 
-### Invariants (per [ADR-005](./decisions/005-api-shape.md))
+Invariants ([ADR-005](./decisions/005-api-shape.md)):
 
-1. **Disconnect resolves all open handles** to `Failed(Disconnected)` before transport teardown completes. `await()` returns the corresponding outcome — no leaks.
-2. **Caller-cancel is independent of handle.** Cancelling the coroutine inside `await()` rethrows `CancellationException`; the handle's `state` continues to update for other observers. Use `cancel()` to actively withdraw.
-3. **`cancel()` is idempotent and state-dependent.** Pre-`Sent`: removed from outbound queue, `state = Failed(Cancelled)`. Post-`Sent`: no effect on the radio; state unchanged. Always safe.
-4. **`PayloadTooLarge` is never observed via `MessageHandle`.** It's thrown synchronously by `send()`; no handle is returned.
+1. Disconnect fails every open handle with `Disconnected` before transport teardown completes, so `await()` always returns.
+2. Cancelling the coroutine inside `await()` rethrows `CancellationException`; the handle's `state` keeps updating for other observers. `cancel()` withdraws the send.
+3. `cancel()` is idempotent. Before `Sent` it removes the packet from the outbound queue and sets `Failed(Cancelled)`; after `Sent` it has no effect.
+4. `PayloadTooLarge` never reaches a handle. `send()` throws it and returns nothing.
 
 ## `SendState`, `SendFailure`, `SendOutcome`
 
 ```kotlin
 public sealed interface SendState {
     public data object Queued : SendState
-    public data object Sent : SendState           // device QueueStatus saw mesh_packet_id
+    public data object Sent : SendState           // device QueueStatus accepted mesh_packet_id
     public data object Acked : SendState          // unicast routing ACK heard
-    public data object Delivered : SendState      // broadcast: rebroadcast heard
+    public data object Delivered : SendState      // broadcast: a relay was heard
     public data class Failed(val reason: SendFailure) : SendState
 }
 
 public sealed interface SendFailure {
-    public data object NoRoute : SendFailure                    // Routing.NO_ROUTE
-    public data object MaxRetransmit : SendFailure
-    public data object Timeout : SendFailure
-    public data object DutyCycleLimit : SendFailure
-    public data object RateLimited : SendFailure                // Routing.RATE_LIMIT_EXCEEDED
-    public data object Disconnected : SendFailure               // transport dropped mid-send
-    public data object Cancelled : SendFailure                  // MessageHandle.cancel() called pre-Sent
-    public data object IdCollision : SendFailure                // outbound packet id clashed with an in-flight one
-    public data object AckTimeout : SendFailure                 // ACK / DELIVERED never observed within Builder.sendTimeout
-    public data object HandshakeFailed : SendFailure            // send attempted while handshake was unwinding
+    public data object NoRoute : SendFailure                    // Routing.Error NO_ROUTE or GOT_NAK
+    public data object MaxRetransmit : SendFailure              // MAX_RETRANSMIT
+    public data object Timeout : SendFailure                    // Routing.Error TIMEOUT
+    public data object DutyCycleLimit : SendFailure             // DUTY_CYCLE_LIMIT
+    public data object RateLimited : SendFailure                // RATE_LIMIT_EXCEEDED
+    public data object Disconnected : SendFailure               // transport dropped before the send completed
+    public data object HandshakeFailed : SendFailure            // queued before Connected, handshake failed
+    public data object Cancelled : SendFailure                  // MessageHandle.cancel() before Sent
+    public data object IdCollision : SendFailure                // packet id matches an in-flight send
+    public data object AckTimeout : SendFailure                 // no ACK within Builder.sendTimeout
+    public data class QueueRejected(val res: Int) : SendFailure // device transmit queue rejected it (QueueStatus.res)
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure
 }
-// Separate sealed type — NOT a typealias for SendState.
+
 public sealed interface SendOutcome {
     public data object Success : SendOutcome
     public data class Failure(val reason: SendFailure) : SendOutcome
 }
 ```
 
-`MessageHandle.await()` collapses the `SendState` machine to a `SendOutcome`: any of `Acked`/`Delivered` becomes `SendOutcome.Success`; `Failed(reason)` becomes `SendOutcome.Failure(reason)`. `PayloadTooLarge` is intentionally absent — see invariant 4 above; it's thrown synchronously by `send()`.
+`await()` maps `Acked` and `Delivered` to `Success` and `Failed(reason)` to `Failure(reason)`. `SendOutcome` is its own type, not an alias of `SendState`. The wire mapping is in [error-taxonomy.md](./error-taxonomy.md#sendfailure-inside-sendstatefailed). `SendFailure.humanMessage()` and `Routing.Error.actionableMessage()` / `suggestedAction()` give display text.
 
 ## `MeshEvent`
 
@@ -271,27 +260,31 @@ public sealed interface SendOutcome {
 public sealed interface MeshEvent {
     public data class QueueStatusChanged(val status: QueueStatus) : MeshEvent
     public data class Notification(val notification: ClientNotification) : MeshEvent
-    public data class TransportError(val error: MeshtasticException) : MeshEvent   // Transport, HandshakeTimeout, StorageUnavailable, … as themselves
-    public data class ProtocolWarning(val message: String, val details: Map<String, String> = emptyMap()) : MeshEvent
-    public data class KeyVerification(val prompt: KeyVerificationPrompt) : MeshEvent
-    public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
-    public data class IdentityRebound(val previous: NodeId, val current: NodeId) : MeshEvent
-    public data class StorageDegraded(val cause: MeshtasticException.StorageUnavailable) : MeshEvent
-    public data class DeviceRebooted(val rebootCount: Int) : MeshEvent
-    public data class CongestionWarning(val freeSlots: Int, val totalSlots: Int) : MeshEvent
-    public data class ExternalConfigChange(val config: Config) : MeshEvent
+    public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
+    public data object MqttConnected : MeshEvent
+    public data class MqttDisconnected(val reason: String? = null) : MeshEvent
     public data class MqttProxyMessage(val message: MqttClientProxyMessage) : MeshEvent
     public data class XmodemPacket(val packet: XModem) : MeshEvent
-    public data class FileInfoReceived(val info: org.meshtastic.proto.FileInfo) : MeshEvent
+    public data class FileInfoReceived(val info: FileInfo) : MeshEvent
+    public data class LockdownStatusChanged(val status: LockdownStatus) : MeshEvent
+    public data class TransportError(val error: MeshtasticException) : MeshEvent
+    public data class ProtocolWarning(val message: String, val details: Map<String, Any?> = emptyMap()) : MeshEvent
+    public data class IdentityRebound(val previousNodeNum: NodeId, val newNodeNum: NodeId, val reason: String = …) : MeshEvent
+    public data class StorageDegraded(val reason: String) : MeshEvent
+    public data class KeyVerification(val prompt: KeyVerificationPrompt) : MeshEvent
     public sealed interface SecurityWarning : MeshEvent {
-        public data class DuplicatedPublicKey(val nodeId: NodeId) : SecurityWarning
-        public data class LowEntropyKey(val nodeId: NodeId) : SecurityWarning
+        public data object DuplicatedPublicKey : SecurityWarning
+        public data object LowEntropyKey : SecurityWarning
     }
+    public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
+    public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
+    public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
 }
 public enum class DroppedFlow { Packets, Events }
+public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 ```
 
-`ProtocolWarning` is non-fatal advisory ("skipped malformed envelope", etc.); the optional `details` map carries structured context (e.g., `"packet_id" to "0x1234"`). `IdentityRebound` is the dedicated signal for a NodeNum change: `reason` is `"identity_mismatch"` when the engine cleared storage and `"node_renumbered"` when the same `MyNodeInfo.device_id` came back under a new NodeNum and storage was kept (see [storage.md §"Consumer-observable signal (R-9)"](./architecture/storage.md#consumer-observable-signal-r-9)). `PacketsDropped` is the only observability hook for backpressure-induced loss; emitted at most once per drop burst. `StorageDegraded` fires when the storage backend transitions to read-through-only mode. `CongestionWarning` fires when the device's outbound queue is critically full. `ExternalConfigChange` fires when an unsolicited admin message from firmware updates the local config state. `SecurityWarning.*` flag suspect key material observed in inbound `node_info` payloads. *(since 0.2.0)* `MqttProxyMessage` carries the device's `mqttClientProxyMessage` traffic for hosts implementing the device-as-MQTT-proxy side channel; `XmodemPacket` carries raw `XModem` file-transfer packets; `FileInfoReceived` carries an `org.meshtastic.proto.FileInfo` advertisement (the variant is named `FileInfoReceived` — not `FileInfo` — to avoid clashing with the proto type). *(since 0.3.0)* `LockdownStatusChanged` carries the device's `LockdownStatus` report from hardened (`MESHTASTIC_LOCKDOWN`) firmware builds — sent right after `config_complete_id` and after each `AdminApi.lockdown` command — and is the source of truth for lockdown availability (no firmware-version capability flag — lockdown is a build-time firmware option).
+When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference). `KeyVerification` is declared but the engine doesn't emit it.
 
 ## `NodeChange`
 
@@ -305,19 +298,13 @@ public sealed interface NodeChange {
     public data class CameOnline(val nodeId: NodeId) : NodeChange
 }
 
-public enum class NodeField {
-    Name, Position, SignalQuality, Battery, Telemetry, DeviceInfo, LastSeen, User, Other,
-}
+public enum class NodeField { Name, Position, SignalQuality, Battery, Telemetry, DeviceInfo, LastSeen, User, Other }
 ```
 
-Contract:
-- Every new subscriber receives exactly one `Snapshot` first, then deltas.
-- Deltas MUST NOT drop (`SUSPEND` overflow on the backing flow).
-- `Updated.changed` is the *minimal* set of fields whose value differs from the prior `NodeInfo`. Useful for diffing UI state without re-rendering everything.
-
-### Presence tracking *(since 0.2.0)*
-
-`WentOffline` and `CameOnline` are emitted by the engine when presence tracking is enabled via `Builder.presenceTimeout()`. `WentOffline.lastHeard` is the node's most recent `last_heard` epoch, allowing the UI to display "last seen" timestamps. A node transitions back to online when it sends any new packet.
+- Every subscriber receives one `Snapshot` first, then deltas in causal order.
+- A collector more than 256 changes behind loses the newest ones, reported as `PacketsDropped` on `events` (see [Streams](#streams)). Re-subscribe or use `nodeSnapshot()` to resynchronize.
+- `Updated.changed` lists the fields that differ from the previous `NodeInfo`.
+- `WentOffline` fires when a node's `last_heard` is older than `Builder.presenceTimeout`; `lastHeard` is that epoch, for "last seen" UI. `CameOnline` fires when the node is heard again.
 
 ## `ConnectionState`
 
@@ -330,48 +317,16 @@ public sealed interface ConnectionState {
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
 }
 
-public enum class ConfigPhase {
-    /**
-     * First handshake stage: metadata, device config, and channels.
-     *
-     * Device sends: `my_info`, `device_metadata`, config payloads for all `ConfigType`s,
-     * and channel definitions. Typical duration: 1-5 seconds depending on channel count.
-     */
-    Stage1,
+public enum class ConfigPhase { Stage1, Settling, Stage2 }
 
-    /**
-     * Settling period between Stage 1 and Stage 2.
-     *
-     * Brief pause to allow device to prepare node database. Typical duration: 0.5-1 second.
-     */
-    Settling,
-
-    /**
-     * Second handshake stage: node database.
-     *
-     * Device sends cached `node_info` payloads for all known nodes. Duration scales with mesh size
-     * (large meshes may take 5-10+ seconds). Completes when device emits `config_complete_id`.
-     */
-    Stage2,
-}
+public val ConnectionState.isUsable: Boolean        // Connected
+public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting
+public val ConnectionState.statusMessage: String    // display text
 ```
 
-`progress: 0f..1f` is monotonically non-decreasing within an attempt. `Connected` is reached **only** after Stage 2's `config_complete_id` matches and the `session_passkey` is seeded ([handshake-fsm](./architecture/handshake-fsm.md)).
+`progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached only after the final stage's `config_complete_id` matches and the session passkey is seeded ([handshake-fsm.md](./architecture/handshake-fsm.md)).
 
-### Extension properties *(since 0.2.0)*
-
-```kotlin
-/** True for Connected — the client can send/receive. */
-public val ConnectionState.isUsable: Boolean
-
-/** True for Connecting, Configuring, Reconnecting — a transition is in progress. */
-public val ConnectionState.isInProgress: Boolean
-
-/** Human-readable status suitable for UI display (e.g., "Configuring (Stage 1 — 45%)"). */
-public val ConnectionState.statusMessage: String
-```
-
-## `TransportSpec` and `TransportIdentity`
+## Transport specs, identities, and targets
 
 ```kotlin
 public sealed interface TransportSpec {
@@ -384,105 +339,127 @@ public sealed interface TransportSpec {
 }
 
 @JvmInline public value class TransportIdentity(public val raw: String) {
+    public companion object { public fun of(spec: TransportSpec): TransportIdentity }
+}
+```
+
+`TransportSpec` only derives a `TransportIdentity`, the key storage uses. `of` uppercases a BLE address, lowercases a TCP host and an HTTP base URL, and keeps serial names as given, producing `ble:…`, `tcp:host:port`, `http:…`, `serial-android:…`, and `serial-jvm:…`. There is no DNS canonicalization ([ADR-005](./decisions/005-api-shape.md)). `WebSocketTransport` builds its own `ws:` identity; see its [Module.md](../transport-websocket/Module.md).
+
+### Transport targets
+
+```kotlin
+public sealed interface TransportTarget {
+    public val label: String
+    public data class Ble(val needle: String, val scanSeconds: Int = DEFAULT_BLE_SCAN_SECONDS) : TransportTarget
+    public data class Tcp(val host: String, val port: Int = DEFAULT_TCP_PORT) : TransportTarget
+    public data class Serial(val port: String, val baud: Int = DEFAULT_SERIAL_BAUD) : TransportTarget
     public companion object {
-        public fun of(spec: TransportSpec): TransportIdentity = when (spec) {
-            is TransportSpec.Ble -> TransportIdentity("ble:${spec.address.uppercase()}")
-            is TransportSpec.Tcp -> TransportIdentity("tcp:${spec.host.lowercase()}:${spec.port}")
-            is TransportSpec.Http -> TransportIdentity("http:${spec.baseUrl.lowercase()}")
-            is TransportSpec.SerialAndroid -> TransportIdentity("serial-android:${spec.deviceName}")
-            is TransportSpec.SerialJvm -> TransportIdentity("serial-jvm:${spec.portName}")
-        }
+        public const val DEFAULT_TCP_PORT: Int = 4403
+        public const val DEFAULT_SERIAL_BAUD: Int = 115_200
+        public const val DEFAULT_BLE_SCAN_SECONDS: Int = 8
+        public fun parse(spec: String): TransportTarget?
     }
 }
 ```
 
-Identity normalisation: BLE address uppercased (canonical MAC form); TCP host + HTTP base URL lowercased; serial device names echo input. **No DNS canonicalisation.** See ADR-005's fragmentation caveat.
+`parse` reads `ble:NEEDLE`, `tcp:HOST[:PORT]`, and `serial:PORT[:BAUD]`, and returns `null` for an unknown scheme, a missing host or port, or a malformed number. Opening a transport from a target stays in host code. The discovery helpers that go with it:
+
+| Helper | Module | Does |
+|---|---|---|
+| `BleScanner.scan(): Flow<DiscoveredRadio>` | `transport-ble` | Scans for the Meshtastic service UUID. The host holds the Bluetooth permissions. |
+| `bleAdvertisementMatches(needle, name, peripheralName, identifier)` | `transport-ble` | Case-insensitive substring match; a MAC needle also matches a BlueZ object path such as `/org/bluez/hci0/dev_34_B7_DA_62_18_C5`. An empty needle matches everything. |
+| `bondedBleDevices(context): List<BondedBleDevice>` | `transport-ble`, Android | The host's bonded devices, without scanning; every bonded device, not only radios. Needs `BLUETOOTH_CONNECT` on API 31+. |
+| `JvmSerialPorts.findMeshtastic(): List<SerialPortInfo>` | `transport-serial`, JVM | Ports whose USB vendor ID is in `MESHTASTIC_USB_VENDOR_IDS`. |
+| `JvmSerialPorts.byIdPath(portName): String?` | `transport-serial`, JVM | The stable `/dev/serial/by-id/…` path on Linux, else `null`. |
+| `TcpDiscovery.discover(): Flow<TcpDiscoveryEvent>` | `transport-tcp` | mDNS browse for `_meshtastic._tcp`; `Found(radio)` and `Lost(serviceName)`. `DiscoveredTcpRadio.toTransport()` opens one. |
 
 ## `MeshtasticException`
 
 ```kotlin
-public sealed class MeshtasticException(message: String, cause: Throwable? = null)
-    : Exception(message, cause) {
+public sealed class MeshtasticException(message: String, cause: Throwable?) : Exception(message, cause) {
+    public var transportIdentity: TransportIdentity?    // set by the SDK; read-only to callers
+    public var operation: String?                       // set by the SDK; read-only to callers
+    public fun <T : MeshtasticException> T.withContext(transportIdentity: TransportIdentity? = null, operation: String? = null): T
 
-    /** The transport identity active when the exception was created (null if pre-connect). */
-    public open val transportIdentity: TransportIdentity? = null
-
-    /** The high-level operation that was in progress (e.g., "connect", "sendText", "admin.setConfig"). */
-    public open val operation: String? = null
-
-    public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
-    public class Protocol(reason: String) : MeshtasticException(reason)
-    public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null) : MeshtasticException(message, cause)
-    public class FirmwareTooOld(public val required: Int, public val present: Int)
-        : MeshtasticException("Firmware requires newer client (need $required, have $present)")
-    public class NotConnected : MeshtasticException("Client not connected")
-    public class AlreadyConnected : MeshtasticException("Client already connected")
-    public class PayloadTooLarge(public val maxBytes: Int) : MeshtasticException("Payload exceeds $maxBytes bytes")
-    public class HandshakeTimeout(public val stage: String)
-        : MeshtasticException("Handshake timed out in $stage")
+    public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException
+    public class Protocol(reason: String, cause: Throwable? = null) : MeshtasticException
+    public class HandshakeTimeout(public val stage: String) : MeshtasticException
+    public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null) : MeshtasticException
+    public class FirmwareTooOld(public val required: Int, public val present: Int) : MeshtasticException
+    public class NotConnected : MeshtasticException
+    public class AlreadyConnected : MeshtasticException
+    public class PayloadTooLarge(public val maxBytes: Int) : MeshtasticException
 
     public companion object {
-        /** Create a tagged exception for structured logging: `MeshtasticException.tag("engine.handshake")`. */
-        public fun tag(operation: String): String = operation
+        public fun <T : MeshtasticException> tag(error: T, transportIdentity: TransportIdentity? = null, operation: String? = null): T
     }
 }
 ```
 
-Full mapping from wire-level errors to exceptions vs results lives in [`error-taxonomy.md`](./error-taxonomy.md).
+Which call throws which subclass is in [error-taxonomy.md](./error-taxonomy.md#meshtasticexception-hierarchy).
 
 ## ID value classes
 
 ```kotlin
 @JvmInline public value class NodeId(public val raw: Int) {
     public companion object {
-        public val LOCAL: NodeId = NodeId(0)
-        public val BROADCAST: NodeId = NodeId(0xFFFFFFFF.toInt())
+        public val LOCAL: NodeId          // 0
+        public val BROADCAST: NodeId      // 0xFFFFFFFF
     }
-    public val shortForm: String get() = "!" + raw.toUInt().toString(radix = 16).padStart(8, '0')
 }
-@JvmInline public value class ChannelIndex(public val raw: Int) {
-    init { require(raw in 0..MAX_CHANNEL_INDEX) }
-    public companion object { public const val MAX_CHANNEL_INDEX: Int = 7 }
-}
+@JvmInline public value class ChannelIndex(public val raw: Int)   // 0..MAX_CHANNEL_INDEX (7), else IllegalArgumentException
 @JvmInline public value class MessageId(public val raw: Int)
+
+public fun NodeId.toHex(): String                                   // "a1b2c3d4"
+public fun NodeId.toDefaultId(): String                             // "!a1b2c3d4"
+public fun NodeId.Companion.fromHex(text: String): NodeId?
+public fun NodeId.Companion.fromDefaultId(id: String): NodeId?
+public fun NodeId.isLocal(own: NodeId? = null): Boolean
 ```
 
-## `AdminApi` *(Phase 2)*
+`isBroadcast()` and `isUnicast()` complete the set.
 
-Each method maps onto a single `AdminMessage` round-trip with the device. Setters resolve when the engine sees the wire-level routing ACK; getters resolve when the dispatcher correlates the response payload by `request_id`. `SessionKeyExpired` triggers a single-shot retry: a fresh `get_owner_request` re-seeds the session passkey, then the original call is replayed once.
+## `AdminApi`
 
-`RadioClient.channels` and `RadioClient.configBundle` describe the connected radio. Editing another radio through `admin.forNode(dest)` preserves those values in memory and in device storage, including writes made through `editSettings` and `batch`.
+Getters resolve when the response payload correlates by `request_id`; setters resolve on the routing ACK. A few calls are fire-and-forget and return `Success` once queued, among them `setTime` and `setTimeOnly`. Every call waits up to `Builder.rpcTimeout`.
 
 ```kotlin
 public interface AdminApi {
-    /** Returns a copy of this AdminApi that targets a remote node. All subsequent calls route to [dest]. @since 0.2.0 */
     public fun forNode(dest: NodeId): AdminApi
 
+    public suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata>
     public suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config>
     public suspend fun setConfig(config: Config): AdminResult<Unit>
     public suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig>
     public suspend fun setModuleConfig(config: ModuleConfig): AdminResult<Unit>
-
     public suspend fun getOwner(): AdminResult<User>
     public suspend fun setOwner(user: User): AdminResult<Unit>
-
     public suspend fun getChannel(index: ChannelIndex): AdminResult<Channel>
     public suspend fun setChannel(channel: Channel): AdminResult<Unit>
     public suspend fun listChannels(): AdminResult<List<Channel>>
 
     public suspend fun setFavorite(node: NodeId, favorite: Boolean): AdminResult<Unit>
     public suspend fun setIgnored(node: NodeId, ignored: Boolean): AdminResult<Unit>
+    public suspend fun toggleMuted(node: NodeId): AdminResult<Unit>
+    public suspend fun removeNode(node: NodeId): AdminResult<Unit>
+    public suspend fun setFixedPosition(position: Position): AdminResult<Unit>
+    public suspend fun removeFixedPosition(): AdminResult<Unit>
+    public suspend fun setHamMode(params: HamParameters): AdminResult<Unit>
+    public suspend fun addContact(contact: SharedContact): AdminResult<Unit>
+    public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
+    public suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit>          // local node only
 
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
     public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun setTime(at: Instant? = null): AdminResult<Unit>          // null: the builder's clock
+    public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>
 
-    /** See pitfall §19.17. `autoSyncTimeOnConnect=true` calls this once post-handshake on >60s skew. */
-    public suspend fun setTime(at: Instant = Clock.System.now()): AdminResult<Unit>
-
-    /** Batches multiple writes inside `begin_edit_settings` / `commit_edit_settings`. */
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
+    public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
+    // also: UI config, canned messages, ringtone, connection status, remote hardware pins,
+    // preference backups, DFU and OTA, input events, sensor config, scale, simulator exit
 }
 
 public sealed interface AdminResult<out T> {
@@ -496,9 +473,27 @@ public sealed interface AdminResult<out T> {
 }
 ```
 
-`SessionKeyExpired` triggers an automatic single retry inside the engine: the engine re-issues `get_owner_request` to refresh `session_passkey`, then replays the original admin call once. If the retry also returns `SessionKeyExpired`, the result surfaces unmodified. `RateLimited` indicates the device rejected the call due to rate limiting (`Routing.Error.RATE_LIMIT_EXCEEDED`); callers should back off before retrying.
+`ADMIN_BAD_SESSION_KEY` triggers one automatic retry: the engine re-issues `get_owner_request` to refresh the passkey and replays the call once. A second rejection returns `SessionKeyExpired`. `RateLimited` means the device refused the call for arriving too soon; back off before retrying. The full wire mapping is in [error-taxonomy.md](./error-taxonomy.md#wire-to-adminresult-mapping).
 
-### Ham mode *(since 0.3.0)*
+`editSettings` wraps `block` in `begin_edit_settings` and `commit_edit_settings`, so the device applies the writes together. Setters inside `block` (`AdminEdit`: `setConfig`, `setModuleConfig`, `setOwner`, `setChannel`, `setFavorite`, `setIgnored`) return once queued; the begin and commit are awaited. `batch` is the throwing counterpart and adds the getters `getConfig`, `getModuleConfig`, and `listChannels` (`AdminBatchScope`), which throw `AdminResultException` on failure. When `block` throws or is cancelled, the SDK still sends `commit_edit_settings` on the same connection, so writes queued before the failure are applied, then rethrows. On a replaced connection it sends nothing.
+
+`AdminResult` helpers follow `kotlin.Result` naming (there's no `kotlin.Result` in the public API): `getOrNull()`, `getOrThrow()` (throws `AdminResultException`), `getOrElse(…)`, `isSuccess()`, `map {}`, `fold(onSuccess, onFailure)`, `onSuccess {}`, `onFailure {}`.
+
+### Config builders
+
+`AdminApi` extensions that read one config section with `getConfig` or `getModuleConfig`, pass it to the block, and write the result with `setConfig` or `setModuleConfig`: eight for `Config` (`setDeviceConfig`, `setPositionConfig`, `setPowerConfig`, `setNetworkConfig`, `setDisplayConfig`, `setLoraConfig`, `setBluetoothConfig`, `setSecurityConfig`) and 15 for `ModuleConfig` (`setMqttConfig`, `setSerialConfig`, `setExternalNotificationConfig`, `setStoreForwardConfig`, `setRangeTestConfig`, `setTelemetryConfig`, `setCannedMessageConfig`, `setAudioConfig`, `setRemoteHardwareConfig`, `setNeighborInfoConfig`, `setAmbientLightingConfig`, `setDetectionSensorConfig`, `setPaxcounterConfig`, `setStatusMessageConfig`, `setTrafficManagementConfig`).
+
+The block's receiver is the section as the targeted device reports it, so fields the block leaves alone keep their values; the device replaces the whole section on a write. A failed read returns its `AdminResult` and writes nothing, and a read whose response lacks the section returns `Failed(NO_RESPONSE)`. On a `forNode` instance both the read and the write go to that node.
+
+```kotlin
+client.admin.setLoraConfig {
+    newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+}
+```
+
+The builders extend `AdminApi`, not `AdminEdit`, so they aren't available inside `editSettings { … }`; use `setConfig` there.
+
+### Ham mode
 
 ```kotlin
 suspend fun RadioClient.enableHamMode(
@@ -507,35 +502,22 @@ suspend fun RadioClient.enableHamMode(
 ): AdminResult<Unit>
 ```
 
-`AdminApi.setHamMode(HamParameters)` sends exactly what it is given. Firmware copies `tx_power` and `frequency` into the LoRa config unconditionally, so 0 resets TX power to the regional maximum and clears `override_frequency`. `enableHamMode` fills a null `txPower` or `frequency` from the loaded LoRa config and returns `AdminResult.Failed(Routing.Error.BAD_REQUEST)`, sending nothing, when a value is needed and the config has not loaded.
+`AdminApi.setHamMode(HamParameters)` sends exactly what it's given. Firmware copies `tx_power` and `frequency` into the LoRa config unconditionally, so 0 resets TX power to the regional maximum and clears `override_frequency`. `enableHamMode` fills a null `txPower` or `frequency` from the loaded LoRa config, and returns `AdminResult.Failed(Routing.Error.BAD_REQUEST)` without sending when a value is needed and the config hasn't loaded.
 
-### Device profiles *(since 0.3.0)*
+### Device profiles
 
 ```kotlin
 suspend fun RadioClient.exportDeviceProfile(includePrivateKey: Boolean = false, includeDeviceText: Boolean = true): AdminResult<DeviceProfile>
 suspend fun RadioClient.installDeviceProfile(profile: DeviceProfile, installSecurity: Boolean = false): AdminResult<Unit>
 ```
 
-A `DeviceProfile` holds owner names, a channel share URL, `LocalConfig`, `LocalModuleConfig`, a fixed position, ringtone and canned messages. Encode and decode it with `DeviceProfile.ADAPTER`; file I/O is the host's.
+A `DeviceProfile` holds owner names, a channel share URL, `LocalConfig`, `LocalModuleConfig`, a fixed position, a ringtone, and canned messages. Encode and decode it with `DeviceProfile.ADAPTER`; file I/O is the host's.
 
-Export omits `security.private_key` unless `includePrivateKey` is true. Install writes only fields the profile has, in one `editSettings` transaction: owner, device, position, power, network, display, bluetooth, module configs, channels (eight slots replaced), then LoRa config when it differs. The fixed position is written after the commit. `security` is skipped unless `installSecurity` is true. `is_licensed`, `traffic_management`, ringtone and canned messages are not installed. A malformed channel URL fails with `Failed(BAD_REQUEST)` before any write.
+Export omits `security.private_key` unless `includePrivateKey` is true. Install writes only the fields the profile has, in one `editSettings` transaction: owner, device, position, power, network, display, Bluetooth, module configs, channels (all eight slots replaced), then the LoRa config when it differs. The fixed position is written after the commit. `security` is skipped unless `installSecurity` is true. `is_licensed`, `traffic_management`, the ringtone, and canned messages aren't installed. A malformed channel URL fails with `Failed(BAD_REQUEST)` before any write.
 
-### `AdminResult` extensions *(since 0.2.0)*
+## `TelemetryApi`
 
-```kotlin
-public fun <T> AdminResult<T>.getOrNull(): T?
-public fun <T> AdminResult<T>.getOrThrow(): T
-public fun <T, R> AdminResult<T>.map(transform: (T) -> R): AdminResult<R>
-public fun <T, R> AdminResult<T>.fold(onSuccess: (T) -> R, onFailure: (AdminResult<Nothing>) -> R): R
-public fun <T> AdminResult<T>.onSuccess(action: (T) -> Unit): AdminResult<T>
-public fun <T> AdminResult<T>.onFailure(action: (AdminResult<Nothing>) -> Unit): AdminResult<T>
-```
-
-These follow the same naming conventions as `kotlin.Result` extensions but operate on the `AdminResult` sealed type (per ADR-005: no `kotlin.Result<T>` in the public API).
-
-## `TelemetryApi` *(Phase 2)*
-
-Each `requestX` sends an empty `Telemetry` packet on `TELEMETRY_APP` with `want_response = true` and waits for the matching reply. `observe(node)` is a cold flow over the engine's inbound `packets` filtered by portnum + origin.
+Each `requestX` sends an empty `Telemetry` on `TELEMETRY_APP` with `want_response = true` and waits for the reply. `observe(node)` is a cold flow over inbound `packets` filtered by port and sender.
 
 ```kotlin
 public interface TelemetryApi {
@@ -543,38 +525,34 @@ public interface TelemetryApi {
     public suspend fun requestEnvironment(node: NodeId = NodeId.LOCAL): AdminResult<EnvironmentMetrics>
     public suspend fun requestPower(node: NodeId = NodeId.LOCAL): AdminResult<PowerMetrics>
     public suspend fun requestAirQuality(node: NodeId = NodeId.LOCAL): AdminResult<AirQualityMetrics>
+    public suspend fun requestHealth(node: NodeId = NodeId.LOCAL): AdminResult<HealthMetrics>
+    public suspend fun requestHost(node: NodeId = NodeId.LOCAL): AdminResult<HostMetrics>
+    public suspend fun requestTrafficManagement(node: NodeId = NodeId.LOCAL): AdminResult<TrafficManagementStats>
     public suspend fun requestLocalStats(): AdminResult<LocalStats>
-
-    /** Cold flow of telemetry packets observed for [node]. Single-shot — completes when the flow is cancelled. */
     public fun observe(node: NodeId): Flow<Telemetry>
 }
 ```
 
-## `RoutingApi` *(Phase 2)*
+## `RoutingApi`
 
 ```kotlin
 public interface RoutingApi {
-    public suspend fun traceRoute(dest: NodeId, hopLimit: Int = 7): AdminResult<RouteDiscovery>
+    public suspend fun traceRoute(dest: NodeId, hopLimit: Int = DEFAULT_HOP_LIMIT): AdminResult<RouteDiscovery>   // DEFAULT_HOP_LIMIT = 7
     public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<NeighborInfo>
 }
 ```
 
-## `StoreForwardApi` *(since 0.2.0)*
+A traceroute across many hops can take longer than the default 30 s `rpcTimeout`.
 
-API for interacting with Store-and-Forward (S&F) nodes on the mesh. S&F nodes temporarily store messages for offline nodes and deliver them when the target comes back online. Access via `client.storeForward`.
+## `StoreForwardApi`
+
+Talks to store-and-forward (S&F) servers, which hold messages for nodes that were offline. Access it through `client.storeForward`.
 
 ```kotlin
 public interface StoreForwardApi {
-    /** Known S&F server nodes on the mesh. Updated reactively when nodes advertise capability. */
     public val servers: StateFlow<List<NodeId>>
-
-    /** Request delivery of stored messages since [since] (epoch seconds). */
-    public suspend fun requestHistory(since: Int? = null, server: NodeId? = null): AdminResult<Int>
-
-    /** Query statistics from a S&F server. */
+    public suspend fun requestHistory(since: Int? = null, server: NodeId? = null): AdminResult<Int>   // since: epoch seconds
     public suspend fun requestStats(server: NodeId? = null): AdminResult<StoreForwardStats>
-
-    /** Flow of S&F-specific events (heartbeats, replays, SFPP link/canon). */
     public val events: Flow<StoreForwardEvent>
 }
 
@@ -594,18 +572,26 @@ public sealed interface StoreForwardEvent {
 }
 ```
 
-## `FileTransferApi` *(since 0.3.0)*
+### Replay dedupe
 
-Reads and writes files on the device's filesystem over the phone API with firmware's XModem-style exchange (see [protocol.md §15](./protocol.md#15-file-transfer-xmodem)). Access via `client.files`. File transfer only: flashing firmware is out of scope.
+A server replays stored text under a fresh packet id, with the stored id in `StoreAndForward.original_id` and the original sender in `MeshPacket.from`. `HistoryReplayComplete.delivered` counts each `(from, original_id)` once. `packets` still carries every replay as received; drop repeats with:
+
+```kotlin
+public fun MeshPacket.storeForwardOriginalId(): Int?   // null unless a ROUTER_TEXT_* reply with original_id != 0
+public fun Flow<MeshPacket>.dropDuplicateStoreForwardReplays(window: Int = 256): Flow<MeshPacket>
+```
+
+Each collection remembers the last `window` keys (replays and plain `TEXT_MESSAGE_APP` packets) and forgets the oldest first.
+
+## `FileTransferApi`
+
+Reads and writes files on the device's filesystem over the phone API with firmware's XModem exchange ([protocol.md §15](./protocol.md#15-file-transfer-xmodem)). Access it through `client.files`. It transfers files only; flashing firmware is out of scope.
 
 ```kotlin
 public interface FileTransferApi {
-    /** Progress of the transfer in flight, or null while idle. */
-    public val progress: StateFlow<FileTransferProgress?>
-
+    public val progress: StateFlow<FileTransferProgress?>   // null while idle
     public suspend fun download(path: String): FileTransferResult<ByteString>
     public suspend fun upload(path: String, data: ByteString): FileTransferResult<Unit>
-
     public companion object {
         public const val MAX_FILE_BYTES: Int = 1 shl 20
         public const val MAX_PATH_BYTES: Int = 127
@@ -622,16 +608,15 @@ public sealed interface FileTransferResult<out T> {
     public data class Failure(val reason: FileTransferFailure) : FileTransferResult<Nothing>
 }
 
-public sealed interface FileTransferFailure {
-    NotConnected, Busy, InvalidPath, TooLarge, Refused, DeviceCancelled, RetriesExhausted, Timeout  // data objects
-}
+// FileTransferFailure data objects: NotConnected, Busy, InvalidPath, TooLarge, Refused,
+// DeviceCancelled, RetriesExhausted, Timeout
 ```
 
-One transfer runs per client at a time; a second call returns `Busy`. A block that does not arrive within 3 s is re-requested, up to 10 times; a download from a silent device fails within 13.5 s (see the `FileTransferApi` KDoc for the worst cases). Cancelling the calling coroutine aborts the transfer: an upload sends `CAN` once the device has acknowledged the request (firmware deletes the partial file) and, before that, re-sends the request to find out whether the device is receiving, never `CAN`; a download sends a frame that makes firmware close the file without deleting it. The transfer reads device frames from `RadioClient.events`; firmware sends one frame and waits for the reply, so the drop-oldest buffer does not overflow from the transfer alone.
+One transfer runs per client at a time; a second call returns `Busy`. A block that doesn't arrive within 3 s is re-requested, up to 10 times, and a download from a silent device fails within 13.5 s; the `FileTransferApi` KDoc has the worst cases. Cancelling the calling coroutine aborts the transfer. An upload sends `CAN` once the device has acknowledged the request, and firmware deletes the partial file; before that, it re-sends the request to learn whether the device is receiving, and never sends `CAN`. A download sends a frame that makes firmware close the file without deleting it. The transfer reads device frames from `events`; firmware sends one frame and waits for the reply, so the transfer alone doesn't overflow the drop-oldest buffer.
 
-## Packet provenance accessors *(since 0.3.0)*
+## Packet provenance accessors
 
-Pure extensions over a raw `MeshPacket` from `client.packets` and over `NodeInfo`. What each field means and its limits are in [protocol.md](./protocol.md) under "Provenance fields".
+Pure extensions over a `MeshPacket` from `packets` and over `NodeInfo`. What each field means and its limits are in [protocol.md, "Provenance fields"](./protocol.md#provenance-fields).
 
 ```kotlin
 public val MeshPacket.transport: PacketTransport          // Internal, Lora, LoraAlt1..3, Mqtt, MulticastUdp, Api, UnicastUdp, Unrecognized
@@ -648,33 +633,18 @@ public data class NodeLastByte(val value: Int) {          // 1..255
 }
 ```
 
-A `NodeLastByte` is not a node id: more than one node can match it, so resolve it with `candidates` against the nodes you know and treat several matches as ambiguous.
-
-## Store-and-forward replay dedupe *(since 0.3.0)*
-
-A server replays stored text under a fresh packet id, with the stored id in `StoreAndForward.original_id` and the original sender in `MeshPacket.from`. `HistoryReplayComplete.delivered` counts each `(from, original_id)` once. The `packets` flow still carries every replay as received; a consumer drops repeats with:
-
-```kotlin
-public fun MeshPacket.storeForwardOriginalId(): Int?   // null unless a ROUTER_TEXT_* reply with original_id != 0
-public fun Flow<MeshPacket>.dropDuplicateStoreForwardReplays(window: Int = 256): Flow<MeshPacket>
-```
-
-Each collection remembers the last `window` keys (replays and plain `TEXT_MESSAGE_APP` packets) and forgets the oldest first.
+A `NodeLastByte` isn't a node ID: several nodes can share it, so resolve it with `candidates` against the nodes you know and treat several matches as ambiguous.
 
 ## Payload accessors
 
-Extension functions on `MeshPacket` that check `decoded.portnum` and decode the payload. Each
-returns `null` for another portnum, a packet with no `decoded`, or (for protobuf payloads) bytes
-that fail to decode. Text accessors also return `null` for an empty payload. Raw-bytes ports
-(`PRIVATE_APP`, `ATAK_FORWARDER`) and `ATAK_PLUGIN_V2`, whose `TAKPacketV2` is zstd-compressed,
-have no accessor; use `decoded.payload` or `decodeAs(adapter)`.
+Extensions on `MeshPacket` that check `decoded.portnum` and decode the payload. Each returns `null` for another port, a packet with no `decoded`, or protobuf bytes that fail to decode; text accessors also return `null` for an empty payload. Raw-bytes ports (`PRIVATE_APP`, `ATAK_FORWARDER`) and `ATAK_PLUGIN_V2`, whose `TAKPacketV2` is zstd-compressed, have no accessor; use `decoded.payload` or `decodeAs(adapter)`.
 
-| Accessor | Portnum | Returns |
+| Accessor | Port | Returns |
 |---|---|---|
 | `asText()` | `TEXT_MESSAGE_APP` | `String` |
-| `asAlertText()` *(since 0.3.0)* | `ALERT_APP` | `String` |
-| `asRangeTestText()` *(since 0.3.0)* | `RANGE_TEST_APP` | `String` |
-| `asDetectionSensorText()` *(since 0.3.0)* | `DETECTION_SENSOR_APP` | `String` |
+| `asAlertText()` | `ALERT_APP` | `String` |
+| `asRangeTestText()` | `RANGE_TEST_APP` | `String` |
+| `asDetectionSensorText()` | `DETECTION_SENSOR_APP` | `String` |
 | `asPosition()` | `POSITION_APP` | `Position` |
 | `asNodeInfoUser()`, `asNodeInfo()` | `NODEINFO_APP` | `User`, `NodeInfo` |
 | `asTelemetry()` | `TELEMETRY_APP` | `Telemetry` |
@@ -683,65 +653,19 @@ have no accessor; use `decoded.payload` or `decodeAs(adapter)`.
 | `asWaypoint()` | `WAYPOINT_APP` | `Waypoint` |
 | `asTraceroute()` | `TRACEROUTE_APP` | `RouteDiscovery` |
 | `asNeighborInfo()` | `NEIGHBORINFO_APP` | `NeighborInfo` (proto) |
-| `asPaxcount()` *(since 0.3.0)* | `PAXCOUNTER_APP` | `Paxcount` |
-| `asRemoteHardware()` *(since 0.3.0)* | `REMOTE_HARDWARE_APP` | `HardwareMessage` |
-| `asNodeStatus()` *(since 0.3.0)* | `NODE_STATUS_APP` | `StatusMessage` |
-| `asMapReport()` *(since 0.3.0)* | `MAP_REPORT_APP` | `MapReport` |
-| `asMeshBeacon()` *(since 0.3.0)* | `MESH_BEACON_APP` | `MeshBeacon` |
-| `asRemoteShell()` *(since 0.3.0)* | `REMOTE_SHELL_APP` | `RemoteShell` |
-| `asPowerStress()` *(since 0.3.0)* | `POWERSTRESS_APP` | `PowerStressMessage` |
-| `asKeyVerification()` *(since 0.3.0)* | `KEY_VERIFICATION_APP` | `KeyVerification` |
-| `asAtakPacket()` *(since 0.3.0)* | `ATAK_PLUGIN` | `TAKPacket` |
+| `asPaxcount()` | `PAXCOUNTER_APP` | `Paxcount` |
+| `asRemoteHardware()` | `REMOTE_HARDWARE_APP` | `HardwareMessage` |
+| `asNodeStatus()` | `NODE_STATUS_APP` | `StatusMessage` |
+| `asMapReport()` | `MAP_REPORT_APP` | `MapReport` |
+| `asMeshBeacon()` | `MESH_BEACON_APP` | `MeshBeacon` |
+| `asRemoteShell()` | `REMOTE_SHELL_APP` | `RemoteShell` |
+| `asPowerStress()` | `POWERSTRESS_APP` | `PowerStressMessage` |
+| `asKeyVerification()` | `KEY_VERIFICATION_APP` | `KeyVerification` |
+| `asAtakPacket()` | `ATAK_PLUGIN` | `TAKPacket` |
 
-Store-and-forward traffic (`STORE_FORWARD_APP`, `STORE_FORWARD_PLUSPLUS_APP`) surfaces as
-`StoreForwardApi.events` instead.
+Store-and-forward traffic (`STORE_FORWARD_APP`, `STORE_FORWARD_PLUSPLUS_APP`) surfaces on `StoreForwardApi.events` instead.
 
-## Config Builder Extensions *(since 0.2.0)*
-
-Extension functions on `AdminApi` that build and send config protos in a single call, using Kotlin `copy {}` semantics:
-
-```kotlin
-// Config types (8 extensions)
-suspend fun AdminApi.setDeviceConfig(block: Config.DeviceConfig.() -> Config.DeviceConfig): AdminResult<Unit>
-suspend fun AdminApi.setPositionConfig(block: Config.PositionConfig.() -> Config.PositionConfig): AdminResult<Unit>
-suspend fun AdminApi.setPowerConfig(block: Config.PowerConfig.() -> Config.PowerConfig): AdminResult<Unit>
-suspend fun AdminApi.setNetworkConfig(block: Config.NetworkConfig.() -> Config.NetworkConfig): AdminResult<Unit>
-suspend fun AdminApi.setDisplayConfig(block: Config.DisplayConfig.() -> Config.DisplayConfig): AdminResult<Unit>
-suspend fun AdminApi.setLoraConfig(block: Config.LoRaConfig.() -> Config.LoRaConfig): AdminResult<Unit>
-suspend fun AdminApi.setBluetoothConfig(block: Config.BluetoothConfig.() -> Config.BluetoothConfig): AdminResult<Unit>
-suspend fun AdminApi.setSecurityConfig(block: Config.SecurityConfig.() -> Config.SecurityConfig): AdminResult<Unit>
-
-// Module config types (15 extensions)
-suspend fun AdminApi.setMqttConfig(block: ModuleConfig.MQTTConfig.() -> ModuleConfig.MQTTConfig): AdminResult<Unit>
-suspend fun AdminApi.setSerialConfig(block: ModuleConfig.SerialConfig.() -> ModuleConfig.SerialConfig): AdminResult<Unit>
-suspend fun AdminApi.setExternalNotificationConfig(block: ModuleConfig.ExternalNotificationConfig.() -> ModuleConfig.ExternalNotificationConfig): AdminResult<Unit>
-suspend fun AdminApi.setStoreForwardConfig(block: ModuleConfig.StoreForwardConfig.() -> ModuleConfig.StoreForwardConfig): AdminResult<Unit>
-suspend fun AdminApi.setRangeTestConfig(block: ModuleConfig.RangeTestConfig.() -> ModuleConfig.RangeTestConfig): AdminResult<Unit>
-suspend fun AdminApi.setTelemetryConfig(block: ModuleConfig.TelemetryConfig.() -> ModuleConfig.TelemetryConfig): AdminResult<Unit>
-suspend fun AdminApi.setCannedMessageConfig(block: ModuleConfig.CannedMessageConfig.() -> ModuleConfig.CannedMessageConfig): AdminResult<Unit>
-suspend fun AdminApi.setAudioConfig(block: ModuleConfig.AudioConfig.() -> ModuleConfig.AudioConfig): AdminResult<Unit>
-suspend fun AdminApi.setRemoteHardwareConfig(block: ModuleConfig.RemoteHardwareConfig.() -> ModuleConfig.RemoteHardwareConfig): AdminResult<Unit>
-suspend fun AdminApi.setNeighborInfoConfig(block: ModuleConfig.NeighborInfoConfig.() -> ModuleConfig.NeighborInfoConfig): AdminResult<Unit>
-suspend fun AdminApi.setAmbientLightingConfig(block: ModuleConfig.AmbientLightingConfig.() -> ModuleConfig.AmbientLightingConfig): AdminResult<Unit>
-suspend fun AdminApi.setDetectionSensorConfig(block: ModuleConfig.DetectionSensorConfig.() -> ModuleConfig.DetectionSensorConfig): AdminResult<Unit>
-suspend fun AdminApi.setPaxcounterConfig(block: ModuleConfig.PaxcounterConfig.() -> ModuleConfig.PaxcounterConfig): AdminResult<Unit>
-suspend fun AdminApi.setStatusMessageConfig(block: ModuleConfig.StatusMessageConfig.() -> ModuleConfig.StatusMessageConfig): AdminResult<Unit>
-suspend fun AdminApi.setTrafficManagementConfig(block: ModuleConfig.TrafficManagementConfig.() -> ModuleConfig.TrafficManagementConfig): AdminResult<Unit>
-```
-
-Usage:
-```kotlin
-client.admin.setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-client.admin.setMqttConfig { copy(enabled = true, address = "mqtt.example.com") }
-
-// Combined with editSettings for atomic batching:
-client.admin.editSettings {
-    setLoraConfig { copy(region = Config.LoRaConfig.RegionCode.US) }
-    setMqttConfig { copy(enabled = true) }
-}
-```
-
-## LoRa regions and frequency slots *(since 0.3.0)*
+## LoRa regions and frequency slots
 
 Pure functions in `org.meshtastic.sdk` that answer what a `Config.LoRaConfig` means on the air: how many frequency slots the band has, which slot the primary channel uses, and the center frequency. No engine state and no I/O; float math is single-precision, as on the device.
 
@@ -754,7 +678,7 @@ public data class LoRaRegionInfo(
 ) {
     companion object {
         val all: List<LoRaRegionInfo>                      // firmware order, UNSET last
-        fun forRegion(code: RegionCode): LoRaRegionInfo    // no row -> the UNSET row, as firmware does
+        fun forRegion(code: RegionCode): LoRaRegionInfo    // no row: the UNSET row, as firmware does
     }
 }
 
@@ -778,13 +702,13 @@ public data class LoRaFrequencyPlan(
 
 ```kotlin
 val plan = LoRaFrequency.plan(lora, primaryChannelName = channel.settings.name)
-// US, LongFast, name "LongFast": numChannels = 104, slot = 20, frequencyMHz = 906.875
+// US, LONG_FAST, name "LongFast": numChannels = 104, slot = 20, frequencyMHz = 906.875
 ```
 
 - Slots are 1-based, like `LoRaConfig.channel_num`. `slot` is `null` with `override_frequency` set or when the band has no slots; `frequencyMHz` is then the override plus `frequency_offset`, or `null` without one.
-- An `UNSET` region, and any `RegionCode` firmware has no row for, resolves to the `UNSET` row: zero slots, no slot, and no frequency unless `override_frequency` is set; with an override, `frequencyMHz` is still the override plus `frequency_offset`.
-- `numChannels` is not clamped to one. A bandwidth far wider than the band rounds to 0; `plan` avoids that for `use_preset = false` by substituting the region default preset's bandwidth, as firmware does.
-- A preset the region does not offer is not substituted. The device clamps it when the config is applied, so a stored config is already legal.
+- An `UNSET` region, and any `RegionCode` firmware has no row for, resolves to the `UNSET` row: zero slots, no slot, and no frequency unless `override_frequency` is set.
+- `numChannels` isn't clamped to one. A bandwidth far wider than the band rounds to 0; `plan` avoids that for `use_preset = false` by substituting the region default preset's bandwidth, as firmware does.
+- A preset the region doesn't offer isn't substituted. The device clamps it when the config is applied, so a stored config is already legal.
 - A caller holding region data from elsewhere can build a `LoRaRegionInfo` and pass it to the `LoRaFrequency` functions directly.
 
 ## Storage
@@ -802,53 +726,31 @@ public interface DeviceStorage : AutoCloseable {
     public suspend fun saveConfig(config: ConfigBundle)
     public suspend fun loadChannels(): List<Channel>
     public suspend fun saveChannels(channels: List<Channel>)
-
-    /**
-     * Audit + factory-reset detector. On NodeNum mismatch with prior tuple for this identity,
-     * implementations MUST atomically `clear()` then persist new tuple. Engine emits
-     * `MeshEvent.IdentityRebound(previous, current)`.
-     */
     public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String)
-
-    /**
-     * As above, plus the validated `MyNodeInfo.device_id`. On a NodeNum change with an equal stored
-     * id (same device, renumbered) implementations keep their state, remove the previous own-node
-     * row and persist the new tuple. Default body delegates to the two-argument overload. (since 0.3.0)
-     */
-    public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?)
-
-    /** The device id persisted by the overload above, or null. Default body returns null. (since 0.3.0) */
-    public suspend fun loadOwnDeviceId(): ByteString?
-
-    /** Save the admin session passkey for session resumption. */
-    public suspend fun saveSessionPasskey(passkey: SessionPasskey)
-
-    /** Load a previously saved session passkey (null if none persisted). */
-    public suspend fun loadSessionPasskey(): SessionPasskey?
-
-    /** Record a heartbeat timestamp for a node (presence tracking). */
-    public suspend fun recordHeartbeat(nodeId: NodeId, epochSeconds: Int)
-
-    /** Load the last heartbeat timestamp for a node (null if never seen). */
-    public suspend fun loadLastHeartbeat(nodeId: NodeId): Int?
-
+    public suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?)   // default delegates to the overload above
+    public suspend fun loadOwnDeviceId(): ByteString?                                                  // default returns null
     public suspend fun clear()
+    public suspend fun saveSessionPasskey(passkey: SessionPasskey)
+    public suspend fun loadSessionPasskey(): SessionPasskey?
+    public suspend fun saveHeartbeat(nodeId: NodeId, epochMillis: Long)
+    public suspend fun loadHeartbeats(): Map<NodeId, Long>
 }
 
 public data class ConfigBundle(
-    public val myInfo: MyNodeInfo,
-    public val metadata: DeviceMetadata,
-    public val configs: List<Config>,
-    public val moduleConfigs: List<ModuleConfig>,
-    public val deviceUIConfig: DeviceUIConfig? = null,
+    val myInfo: MyNodeInfo,
+    val metadata: DeviceMetadata,
+    val configs: List<Config>,
+    val moduleConfigs: List<ModuleConfig>,
+    val deviceUIConfig: DeviceUIConfig? = null,
 )
 
-/** RAM only; nothing survives the process. No driver, files or Context. (since 0.3.0) */
-public class InMemoryStorage : DeviceStorage
+public class InMemoryStorage : DeviceStorage               // RAM only
 public class InMemoryStorageProvider : StorageProvider
 ```
 
-`:core` ships `InMemoryStorageProvider` for one-shot tools, gateways that rebuild state from the handshake, and hosts that have not chosen a persistent backend. `:storage-sqldelight` is the persistent default.
+`recordOwnNode` is the factory-reset detector. On a NodeNum that differs from the one stored for this identity, an implementation clears its state and records the new tuple. With the three-argument overload and an equal stored `device_id`, the device renumbered: the implementation keeps its state, removes the old own-node row, and records the new tuple. The engine reports both as `MeshEvent.IdentityRebound` ([storage.md](./architecture/storage.md#identity-rebind-detection-s-p0-2)).
+
+`InMemoryStorageProvider` suits one-shot tools, gateways that rebuild state from the handshake, and web targets. `:storage-sqldelight` is the persistent backend on JVM, Android, and iOS.
 
 ## Transport
 
@@ -858,36 +760,55 @@ public interface RadioTransport {
     public suspend fun connect()
     public suspend fun disconnect()
     public suspend fun send(frame: Frame)
-    public fun frames(): Flow<Frame>          // cold; one collector
+    public fun frames(): Flow<Frame>
     public val state: StateFlow<TransportState>
 }
 
 public sealed interface TransportState {
     public data object Disconnected : TransportState
     public data object Connecting : TransportState
-    public data object Bonding : TransportState           // BLE pairing/bonding in progress
+    public data object Bonding : TransportState           // BLE pairing in progress
     public data object Connected : TransportState
     public data class Error(val cause: Throwable, val recoverable: Boolean) : TransportState
 }
 
-public data class Frame(public val bytes: okio.ByteString)
+public data class Frame(public val bytes: ByteString)
 ```
+
+Frames carry the 4-byte stream header on every transport; `WebSocketTransport` strips and restores it at the socket.
+
+| Transport | Construct with |
+|---|---|
+| TCP | `TcpTransport(host, port)` |
+| BLE | `BleTransport(radio)` from `BleScanner.scan()`, on every target; on Android also `BleTransport(address, resilience, builderAction)` and `BleTransport(device: BondedBleDevice, …)` |
+| Serial, JVM | `JvmSerialPorts.open(portName, baudRate)` |
+| Serial, Android | `AndroidSerialPorts.open(portName, baudRate)` after `AndroidSerialPorts.init(context)`, or `AndroidUsbSerialPorts.open(context, deviceName)` |
+| WebSocket | `WebSocketTransport(url, httpClient = null)` for `ws://` or `wss://`; the path defaults to `/api/v1/ws` |
+| Tests | `FakeRadioTransport(identity, frames, autoHandshake, nodeNum)` |
+
+Each serial `open` has an overload taking `onTextLine: (String) -> Unit`, which receives the text the device prints between frames. `BleResilience` (Android) turns on bond-first, an `autoConnect` fallback, and a stale GATT cache refresh. `WebSocketTransport`'s close codes, contested-slot handling, and browser constraints are in its [Module.md](../transport-websocket/Module.md).
 
 ## Logging
 
 ```kotlin
 public fun interface LogSink {
     public fun log(level: LogLevel, tag: String, message: String, cause: Throwable?)
-    public companion object { public val Silent: LogSink = LogSink { _, _, _, _ -> } }
+    public companion object { public val Silent: LogSink }
 }
 public enum class LogLevel { NONE, VERBOSE, DEBUG, INFO, WARN, ERROR }
+
+public interface PayloadRedactor {
+    public fun describe(fromRadio: FromRadio): String
+    public fun describe(toRadio: ToRadio): String
+    public companion object { public val Default: PayloadRedactor }
+}
 ```
 
-`LogLevel.NONE` is reserved for the off-state of `Builder.protocolLogging(...)`. The SDK never depends on Kermit / Timber / SLF4J. Hosts wire whatever they want. See [`observability.md`](./observability.md).
+`LogLevel.NONE` is the off state of `Builder.protocolLogging(...)`. The SDK doesn't depend on Kermit, Timber, or SLF4J. See [observability.md](./observability.md).
 
 ## Related
 
-- [ADR-005](./decisions/005-api-shape.md) — design rationale
-- [`error-taxonomy.md`](./error-taxonomy.md) — wire→Kotlin error mapping
-- [`versioning.md`](./versioning.md) — pre/post-1.0 ABI policy
-- [`glossary.md`](./glossary.md) — vocabulary
+- [ADR-005](./decisions/005-api-shape.md): design rationale
+- [error-taxonomy.md](./error-taxonomy.md): wire-to-Kotlin error mapping
+- [versioning.md](./versioning.md): ABI policy
+- [glossary.md](./glossary.md): vocabulary

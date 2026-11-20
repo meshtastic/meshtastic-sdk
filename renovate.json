@@ -16,6 +16,11 @@
       ]
     },
     {
+      "description": "kotlinx-coroutines is a compile floor, not a latest pin: hosts whose runtime pins 1.8.x (ATAK plugins) must load bytecode built against it. Patches within 1.8 only; raising the floor is a deliberate human change to the catalog.",
+      "matchPackageNames": ["/^org\\.jetbrains\\.kotlinx:kotlinx-coroutines-(core|android)$/"],
+      "allowedVersions": "/^1\\.8\\./"
+    },
+    {
       "groupName": "sqldelight",
       "matchPackageNames": [
         "/^app\\.cash\\.sqldelight/"

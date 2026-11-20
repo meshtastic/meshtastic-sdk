@@ -1,10 +1,10 @@
 # Handshake FSM
 
-> Visual companion to [`../protocol.md`](../protocol.md) §6 and [`../decisions/002-architecture.md`](../decisions/002-architecture.md). Owned by [`MeshEngine`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/MeshEngine.kt); the stage enum (`HandshakeStage`) lives in [`EngineMessage.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/EngineMessage.kt).
+This page shows the engine's handshake state machine, the implementation of [`../protocol.md`](../protocol.md) §6 under [ADR-002](../decisions/002-architecture.md). [`MeshEngine`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/MeshEngine.kt) runs it; the `HandshakeStage` enum lives in [`EngineMessage.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/EngineMessage.kt).
 
 ## States
 
-The internal `HandshakeStage` enum has six values; the public `ConnectionState.Configuring` projection uses three `ConfigPhase` values (`Stage1`, `Settling`, `Stage2`).
+The internal `HandshakeStage` enum has six values. The public `ConnectionState.Configuring` projection uses three `ConfigPhase` values (`Stage1`, `Settling`, `Stage2`).
 
 | `HandshakeStage` | Meaning | Public projection |
 |---|---|---|
@@ -15,20 +15,13 @@ The internal `HandshakeStage` enum has six values; the public `ConnectionState.C
 | `SeedingSession` | Issuing `get_owner_request` to seed `session_passkey` for subsequent admin ops | `Configuring(ConfigPhase.Stage2, 0.95f)` |
 | `Ready` | All flows live; heartbeat scheduler started | `Connected` |
 
-Failure causes (`MeshtasticException.HandshakeTimeout`, transport drop, etc.) reset `HandshakeStage` to `Idle`; the engine then projects either `Reconnecting(cause, attempt)` or `Disconnected`. `progress` is monotonically non-decreasing within a single connect attempt, derived from `(received_count / expected_count)` per `protocol.md` §6 envelope counts.
+A failure (`MeshtasticException.HandshakeTimeout`, a transport drop) resets `HandshakeStage` to `Idle`; the engine then projects `Reconnecting(cause, attempt)` or `Disconnected`. `progress` never decreases within one connect attempt and comes from received over expected envelope counts.
 
-> Note: prior revisions of this doc listed standalone `TransportConnecting`, `Stage1Sending`, `Stage1Settled`, `InterStageHeartbeat`, `Stage2Sending`, and `Failed` states. Those are conceptual milestones inside `MeshEngine` (you can grep `MeshEngine.kt` for `connectionState.value = ConnectionState.Configuring(...)`) — they are not separate `HandshakeStage` enum values.
+Timers: Stage 1 re-sends `want_config_id = 69420` after 10 s without a sentinel (`STAGE1_RETRY_MS`) and times out at 20 s (`STAGE1_TIMEOUT_MS`). The settle waits are 100 ms each (`INTER_STAGE_SETTLE_MS`). Stage 2 times out when no frame arrives between two 30 s checks, or at 60 s in total (`STAGE2_PROGRESS_TICK_MS`, `STAGE2_HARD_CAP_MS`). Seeding times out after 10 s (`SEED_TIMEOUT_MS`).
 
 ### Config-only sessions (`RadioClient.Builder.skipNodeDb`)
 
-When the consumer opts into a config-only connect, the engine still runs Stage 1 and the settle
-heartbeat, then **finishes the handshake by driving the Stage-2 completion with a synthetic
-`config_complete_id = 69421` sentinel** instead of requesting the NodeDB — no `want_config_id =
-69421` is sent, and `ConfigPhase.Stage2` is never projected. This is protocol-legal: the firmware moves to
-`STATE_SEND_PACKETS` as soon as it emits `config_complete_id = 69420`, so normal traffic flows
-without Stage 2 (`protocol.md` §6). The session's node map then holds only the device's own
-`NodeInfo` (streamed in Stage 1 as `STATE_SEND_OWN_NODEINFO`); peers appear only as they are heard
-live. Everything else — config bundle, channels, session passkey, send/receive — is unchanged.
+In a config-only connect the engine still runs Stage 1 and the settle heartbeat, then completes Stage 2 with a synthetic `config_complete_id = 69421` instead of requesting the NodeDB. No `want_config_id = 69421` is sent and `ConfigPhase.Stage2` is never projected. This is protocol-legal: firmware moves to `STATE_SEND_PACKETS` as soon as it emits `config_complete_id = 69420` (`protocol.md` §6). The node map then holds only the node's own `NodeInfo` (sent in Stage 1 as `STATE_SEND_OWN_NODEINFO`), and peers appear as they are heard. The config bundle, channels, session passkey, sending and receiving are unchanged.
 
 ## Transitions
 
@@ -57,35 +50,24 @@ stateDiagram-v2
     Ready --> [*]
 ```
 
-### Pre-handshake byte discipline (per protocol.md §6)
+### Stale frames (per protocol.md §6)
 
-While in `TransportConnecting` and during the gap between `transport.connect()` returning Connected and `Stage1Sending` posting the first byte, **the engine drops every inbound frame**. Stale `FromRadio` from a prior PhoneAPI session can otherwise corrupt the early state. Once Stage 1's nonce is on the wire, every inbound frame is dispatched.
+While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during the settle window are buffered (up to 64) and replayed after it, and mesh packets that arrive during the handshake are held (up to 64) until `Ready`.
 
 ### Heartbeat in handshake
 
-A heartbeat is sent **once** between Stage 1 settle and Stage 2 send. Its nonce comes from the engine's keep-alive counter (starts at 2, +1 per heartbeat, never 0 or 1; see `protocol.md` §16). It serves two purposes:
-
-1. Defeats the firmware's per-connection memcmp dedup, ensuring the device treats the upcoming Stage 2 want_config as a fresh request even if the bytes happen to match a recent send.
-2. Probes the transport's write path before the larger Stage 2 dump.
-
-The 30 s scheduled heartbeat (`protocol.md` §16) starts only on entry to `Ready`.
+One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`.
 
 ## Failure transitions and reconnect
 
-`Failed(cause)` always returns to `Idle`. The engine then runs a fixed reconnect policy: **exponential backoff (initial 500 ms, factor 2, capped at 60 s, with ±20 % jitter), infinite attempts** while the consumer holds the `RadioClient`. Each retry begins a new attempt with `Connecting(attempt + 1)`. The policy is intentionally not configurable in 0.x — Phase 5 may revisit and add `Builder.reconnect(...)` if real-world adopters report concrete needs (recorded as a separate ADR if/when it lands).
+A failure always returns to `Idle`. Reconnecting is off by default: the engine projects `Disconnected` and the host decides what to do. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that reconnects after a recoverable `TransportState.Error`, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each attempt is projected as `Reconnecting(cause, attempt)`.
 
-Causes that DO NOT auto-reconnect:
-- `MeshtasticException.FirmwareTooOld` (firmware build below `MIN_SUPPORTED_FIRMWARE`, surfaced once `metadata` envelope arrives).
-
-Causes that DO auto-reconnect:
-- `MeshtasticException.Transport(...)`
-- `MeshtasticException.HandshakeTimeout(stage)`
-- `MeshtasticException.StorageUnavailable(...)` (single retry; second consecutive failure surfaces and stops)
+A non-recoverable transport error, `MeshtasticException.FirmwareTooOld` and an explicit `disconnect()` never trigger a reconnect.
 
 ## Related
 
-- `protocol.md` §6 — wire-level envelope sequence, including the firmware nonce specials (69420/69421).
-- ADR-002 — actor model owning this FSM.
-- ADR-005 — `ConnectionState` (no `DeviceSleep`); `Reconnecting` carries `cause`.
-- `references/meshtastic-android-protocol-notes.md` — 100 ms inter-stage delay precedent.
-- `references/meshtastic-apple-protocol-notes.md` — `requiresPeriodicHeartbeat` per-transport.
+- `protocol.md` §6: the wire-level envelope sequence and the firmware's special nonces (69420, 69421).
+- ADR-002: the actor model that owns this state machine.
+- ADR-005: `ConnectionState` (no `DeviceSleep`); `Reconnecting` carries `cause`.
+- [`protocol.md` §6 host-side rules](../protocol.md#host-side-rules): the 100 ms settle on each side of the inter-stage heartbeat, cited to Android's `HandshakeStateMachine`.
+- [`protocol.md` §16](../protocol.md#16-heartbeat--queue-status): the heartbeat requirement per transport.

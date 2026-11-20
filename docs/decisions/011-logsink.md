@@ -6,7 +6,7 @@
 | **Date** | 2026-04-19 |
 | **Deciders** | Maintainers |
 | **Supersedes** | — |
-| **Related** | [ADR-005](005-api-shape.md), [`docs/SPEC.md`](../SPEC.md) §3 |
+| **Related** | [ADR-005](005-api-shape.md), [`docs/api-reference.md`](../api-reference.md) |
 
 ## Context
 
@@ -33,6 +33,11 @@ no-op; samples bind Kermit to `LogSink` as a tiny adapter.
 Frame-level / wire-byte logging is a **separate**, opt-in, level-gated
 hook (`enableFrameLogging`) — never folded into the general `LogSink` —
 so credentials cannot leak via a casual `Debug` setting.
+
+> **Note:** the hook is `RadioClient.Builder.protocolLogging(level, redactor)`, off by default
+> (`LogLevel.NONE`). It writes every `FromRadio` and `ToRadio` to the configured `LogSink` under
+> the tag `Protocol`, through a `PayloadRedactor`; `PayloadRedactor.Default` never prints payload
+> content. The `LogSink.log` parameter is named `cause`.
 
 ## Rationale
 

@@ -5,7 +5,7 @@
 | **Status** | Accepted |
 | **Date** | 2026-11-06 |
 | **Deciders** | Maintainers |
-| **Supersedes** | — |
+| **Supersedes** | In part, [ADR-010](010-jserialcomm-jvm-serial.md)'s "no separate usb-serial-for-android dependency" |
 | **Related** | [ADR-010](010-jserialcomm-jvm-serial.md), [ADR-012](012-transport-threading.md), [`docs/architecture/module-graph.md`](../architecture/module-graph.md) |
 
 ## Context
