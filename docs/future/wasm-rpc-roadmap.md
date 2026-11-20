@@ -8,7 +8,7 @@
 
 ## Why deferred
 
-A web host reaches a radio directly only over the WebSocket phone API. A radio on BLE, USB-serial or plain TCP, or one engine shared by several clients, needs a remote-RPC adapter that owns versioning, snapshot+delta semantics and authentication separately from the local API. Designing both surfaces at once, before the local API has been hardened by Phase 5, risks the local API being shaped by RPC concerns.
+A web host reaches a radio directly over the WebSocket phone API, or over Web Bluetooth or Web Serial (Chromium only) with a `RadioTransport` it supplies. A radio on plain TCP, a browser without those APIs, or one engine shared by several clients needs a remote-RPC adapter that owns versioning, snapshot+delta semantics and authentication separately from the local API. Designing both surfaces at once, before the local API has been hardened by Phase 5, risks the local API being shaped by RPC concerns.
 
 Deferring lets the local engine settle to 1.0 first, then the RPC adapter layers on top *as an additive surface* (no breaking change required to ship it).
 
@@ -65,7 +65,8 @@ Authentication: a static shared-secret token in the WS upgrade headers is the MV
 ## Browser-direct transports not planned as SDK modules
 
 - **Web Bluetooth `:transport-ble`.** Web Bluetooth is Chromium-only, not on Firefox/Safari, and the spec's permission story is in flux. A web host can supply its own `RadioTransport` over it.
-- **TCP/serial from a browser.** Impossible without an extension or native bridge; the WebSocket phone API is the browser's direct path.
+- **Web Serial `:transport-serial`.** Web Serial is Chromium-only, like Web Bluetooth. A web host can supply its own `RadioTransport` over it.
+- **Raw TCP from a browser.** Impossible without an extension or native bridge; the WebSocket phone API is the browser's network path.
 
 ---
 
@@ -76,7 +77,7 @@ This roadmap stays parked until **all** of:
 1. The local `:core` API is at 1.0 (post Phase 7 in `SPEC.md` §6).
 2. There is at least one validated consumer asking for headless-RPC support.
 
-Then: open ADR-008 to formally accept this design (it stays a roadmap doc until that ADR lands), do a minor release adding `:rpc` + `:transport-rpc` + `:host-rpc-server`.
+Then: open a new ADR to formally accept this design (it stays a roadmap doc until that ADR lands), do a minor release adding `:rpc` + `:transport-rpc` + `:host-rpc-server`.
 
 ---
 

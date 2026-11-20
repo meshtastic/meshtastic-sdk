@@ -146,4 +146,3 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 - **Two ByteString types in the codebase** (kotlinx-io public, Okio internal). Reviewers must keep public surface kotlinx-io. KGP `checkKotlinAbi` plus detekt's `ForbiddenImport` covers the `:core` public symbols.
   > **Superseded (0.2.0):** There is now **one** ByteString type — `okio.ByteString` everywhere, public and internal; `kotlinx-io` was removed entirely. The detekt `ForbiddenImport` rules now ban `kotlinx.io.*` imports instead (rule added in 0.2.0).
 - **`wasmJs` is post-1.0.** ADR-006 details the MVP per-target matrix and the future wasm posture.
-  > **Superseded:** `:core`, `:testing` and `:transport-websocket` publish `js` and `wasmJs` klibs; see [`../architecture/module-graph.md`](../architecture/module-graph.md).

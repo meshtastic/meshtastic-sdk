@@ -218,7 +218,9 @@ All published modules target the same Kotlin Multiplatform target set via the sh
 `meshtastic.kmp.library` convention plugin: `jvm`, `androidTarget` (`minSdk = 26`),
 `iosArm64`, `iosX64`, and `iosSimulatorArm64`. `core`, `testing` and `transport-websocket` also
 publish Kotlin/JS and Kotlin/Wasm klibs (`js` and `wasmJs`, via `meshtastic.js.library`) for
-browser and Node.js consumers. Per-module behaviour is summarised below;
+browser and Node.js consumers ([ADR-017](docs/decisions/017-web-targets.md)). They are not in
+0.2.0: until the next release, take them from the snapshot repository under Install. Per-module
+behaviour is summarised below;
 see [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md) for the
 authoritative dependency graph.
 

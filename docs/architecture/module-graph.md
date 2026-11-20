@@ -124,6 +124,7 @@ These do not exist in the MVP graph; they are a destination, not a current state
 - ADR-015 — proto sourcing (the external `org.meshtastic:protobufs` artifact replaces the former in-tree `:proto` module).
 - ADR-002 — engine architecture (justifies the `:core` ↔ transport boundary).
 - ADR-003 — tooling (justifies which library each transport module wraps).
+- [ADR-017](../decisions/017-web-targets.md) — `js` and `wasmJs` targets running the engine in-process.
 - `transport-isolation.md` — deep dive on why transports are separate modules, error handling differences, and how to add a new transport.
 - `transport-comparison.md` — feature × transport matrix (TCP / BLE / serial), OS support, and selection guidance.
 - [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) — post-1.0 remote-RPC architecture.
