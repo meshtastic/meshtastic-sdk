@@ -62,7 +62,7 @@ ktlint                      = "1.8.0"
 spotless                    = "8.11.0"
 detekt                      = "2.0.0-alpha.6"
 detektComposeRules          = "0.6.8"
-axionRelease                = "1.21.4"
+axionRelease                = "1.21.5"
 kover                       = "0.9.11"
 
 [libraries]
