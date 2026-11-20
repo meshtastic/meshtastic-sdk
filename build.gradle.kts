@@ -67,6 +67,7 @@ spotless {
         // second copy of the tree (and its own .direnv).
         ".direnv/**",
         ".claude/**",
+        "kotlin-js-store/**",
     )
 
     // Excludes go into the tree so the walk prunes them; targetExclude only subtracts after a full walk.

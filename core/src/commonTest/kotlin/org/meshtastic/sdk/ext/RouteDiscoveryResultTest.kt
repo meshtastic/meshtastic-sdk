@@ -52,8 +52,8 @@ class RouteDiscoveryResultTest {
         val result = RouteDiscoveryResult(
             route = listOf(NodeId(1), NodeId(2), NodeId(3)),
             routeBack = listOf(NodeId(3), NodeId(1)),
-            snrTowards = listOf(10.5f, 8.25f),
-            snrBack = listOf(7.75f),
+            snrTowards = listOf(10.5f, 8f),
+            snrBack = listOf(-7f),
         )
 
         val formatted = result.formatRoute { node -> "Node-${node.raw}" }
@@ -62,10 +62,10 @@ class RouteDiscoveryResultTest {
             """
             Route (3 nodes):
               Node-1 (SNR: 10.5)
-              Node-2 (SNR: 8.25)
+              Node-2 (SNR: 8.0)
               Node-3
             Route back (2 nodes):
-              Node-3 (SNR: 7.75)
+              Node-3 (SNR: -7.0)
               Node-1
             """.trimIndent(),
             formatted.trimEnd(),

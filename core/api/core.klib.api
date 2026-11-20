@@ -1,5 +1,5 @@
 // Klib ABI Dump
-// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Targets: [iosArm64, iosSimulatorArm64, iosX64, js]
 // Rendering settings:
 // - Signature version: 2
 // - Show manifest properties: true
@@ -83,6 +83,17 @@ final enum class org.meshtastic.sdk/ExternalChangeKind : kotlin/Enum<org.meshtas
 
     final fun valueOf(kotlin/String): org.meshtastic.sdk/ExternalChangeKind // org.meshtastic.sdk/ExternalChangeKind.valueOf|valueOf#static(kotlin.String){}[0]
     final fun values(): kotlin/Array<org.meshtastic.sdk/ExternalChangeKind> // org.meshtastic.sdk/ExternalChangeKind.values|values#static(){}[0]
+}
+
+final enum class org.meshtastic.sdk/FileTransferDirection : kotlin/Enum<org.meshtastic.sdk/FileTransferDirection> { // org.meshtastic.sdk/FileTransferDirection|null[0]
+    enum entry Download // org.meshtastic.sdk/FileTransferDirection.Download|null[0]
+    enum entry Upload // org.meshtastic.sdk/FileTransferDirection.Upload|null[0]
+
+    final val entries // org.meshtastic.sdk/FileTransferDirection.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<org.meshtastic.sdk/FileTransferDirection> // org.meshtastic.sdk/FileTransferDirection.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): org.meshtastic.sdk/FileTransferDirection // org.meshtastic.sdk/FileTransferDirection.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<org.meshtastic.sdk/FileTransferDirection> // org.meshtastic.sdk/FileTransferDirection.values|values#static(){}[0]
 }
 
 final enum class org.meshtastic.sdk/LogLevel : kotlin/Enum<org.meshtastic.sdk/LogLevel> { // org.meshtastic.sdk/LogLevel|null[0]
@@ -261,6 +272,21 @@ abstract interface org.meshtastic.sdk/DeviceStorage : kotlin/AutoCloseable { // 
     open suspend fun recordOwnNode(org.meshtastic.sdk/NodeId, kotlin/String, okio/ByteString?) // org.meshtastic.sdk/DeviceStorage.recordOwnNode|recordOwnNode(org.meshtastic.sdk.NodeId;kotlin.String;okio.ByteString?){}[0]
 }
 
+abstract interface org.meshtastic.sdk/FileTransferApi { // org.meshtastic.sdk/FileTransferApi|null[0]
+    abstract val progress // org.meshtastic.sdk/FileTransferApi.progress|{}progress[0]
+        abstract fun <get-progress>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/FileTransferProgress?> // org.meshtastic.sdk/FileTransferApi.progress.<get-progress>|<get-progress>(){}[0]
+
+    abstract suspend fun download(kotlin/String): org.meshtastic.sdk/FileTransferResult<okio/ByteString> // org.meshtastic.sdk/FileTransferApi.download|download(kotlin.String){}[0]
+    abstract suspend fun upload(kotlin/String, okio/ByteString): org.meshtastic.sdk/FileTransferResult<kotlin/Unit> // org.meshtastic.sdk/FileTransferApi.upload|upload(kotlin.String;okio.ByteString){}[0]
+
+    final object Companion { // org.meshtastic.sdk/FileTransferApi.Companion|null[0]
+        final const val MAX_FILE_BYTES // org.meshtastic.sdk/FileTransferApi.Companion.MAX_FILE_BYTES|{}MAX_FILE_BYTES[0]
+            final fun <get-MAX_FILE_BYTES>(): kotlin/Int // org.meshtastic.sdk/FileTransferApi.Companion.MAX_FILE_BYTES.<get-MAX_FILE_BYTES>|<get-MAX_FILE_BYTES>(){}[0]
+        final const val MAX_PATH_BYTES // org.meshtastic.sdk/FileTransferApi.Companion.MAX_PATH_BYTES|{}MAX_PATH_BYTES[0]
+            final fun <get-MAX_PATH_BYTES>(): kotlin/Int // org.meshtastic.sdk/FileTransferApi.Companion.MAX_PATH_BYTES.<get-MAX_PATH_BYTES>|<get-MAX_PATH_BYTES>(){}[0]
+    }
+}
+
 abstract interface org.meshtastic.sdk/KeyVerificationPrompt // org.meshtastic.sdk/KeyVerificationPrompt|null[0]
 
 abstract interface org.meshtastic.sdk/PayloadRedactor { // org.meshtastic.sdk/PayloadRedactor|null[0]
@@ -376,6 +402,34 @@ sealed interface <#A: out kotlin/Any?> org.meshtastic.sdk/AdminResult { // org.m
     }
 }
 
+sealed interface <#A: out kotlin/Any?> org.meshtastic.sdk/FileTransferResult { // org.meshtastic.sdk/FileTransferResult|null[0]
+    final class <#A1: kotlin/Any?> Success : org.meshtastic.sdk/FileTransferResult<#A1> { // org.meshtastic.sdk/FileTransferResult.Success|null[0]
+        constructor <init>(#A1) // org.meshtastic.sdk/FileTransferResult.Success.<init>|<init>(1:0){}[0]
+
+        final val value // org.meshtastic.sdk/FileTransferResult.Success.value|{}value[0]
+            final fun <get-value>(): #A1 // org.meshtastic.sdk/FileTransferResult.Success.value.<get-value>|<get-value>(){}[0]
+
+        final fun component1(): #A1 // org.meshtastic.sdk/FileTransferResult.Success.component1|component1(){}[0]
+        final fun copy(#A1 = ...): org.meshtastic.sdk/FileTransferResult.Success<#A1> // org.meshtastic.sdk/FileTransferResult.Success.copy|copy(1:0){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferResult.Success.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferResult.Success.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferResult.Success.toString|toString(){}[0]
+    }
+
+    final class Failure : org.meshtastic.sdk/FileTransferResult<kotlin/Nothing> { // org.meshtastic.sdk/FileTransferResult.Failure|null[0]
+        constructor <init>(org.meshtastic.sdk/FileTransferFailure) // org.meshtastic.sdk/FileTransferResult.Failure.<init>|<init>(org.meshtastic.sdk.FileTransferFailure){}[0]
+
+        final val reason // org.meshtastic.sdk/FileTransferResult.Failure.reason|{}reason[0]
+            final fun <get-reason>(): org.meshtastic.sdk/FileTransferFailure // org.meshtastic.sdk/FileTransferResult.Failure.reason.<get-reason>|<get-reason>(){}[0]
+
+        final fun component1(): org.meshtastic.sdk/FileTransferFailure // org.meshtastic.sdk/FileTransferResult.Failure.component1|component1(){}[0]
+        final fun copy(org.meshtastic.sdk/FileTransferFailure = ...): org.meshtastic.sdk/FileTransferResult.Failure // org.meshtastic.sdk/FileTransferResult.Failure.copy|copy(org.meshtastic.sdk.FileTransferFailure){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferResult.Failure.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferResult.Failure.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferResult.Failure.toString|toString(){}[0]
+    }
+}
+
 sealed interface org.meshtastic.sdk/AdminSessionStatus { // org.meshtastic.sdk/AdminSessionStatus|null[0]
     final class Active : org.meshtastic.sdk/AdminSessionStatus { // org.meshtastic.sdk/AdminSessionStatus.Active|null[0]
         constructor <init>(kotlin.time/Instant, kotlin.time/Instant) // org.meshtastic.sdk/AdminSessionStatus.Active.<init>|<init>(kotlin.time.Instant;kotlin.time.Instant){}[0]
@@ -472,6 +526,56 @@ sealed interface org.meshtastic.sdk/ConnectionState { // org.meshtastic.sdk/Conn
         final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/ConnectionState.Disconnected.equals|equals(kotlin.Any?){}[0]
         final fun hashCode(): kotlin/Int // org.meshtastic.sdk/ConnectionState.Disconnected.hashCode|hashCode(){}[0]
         final fun toString(): kotlin/String // org.meshtastic.sdk/ConnectionState.Disconnected.toString|toString(){}[0]
+    }
+}
+
+sealed interface org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure|null[0]
+    final object Busy : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.Busy|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.Busy.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.Busy.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.Busy.toString|toString(){}[0]
+    }
+
+    final object DeviceCancelled : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.DeviceCancelled|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.DeviceCancelled.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.DeviceCancelled.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.DeviceCancelled.toString|toString(){}[0]
+    }
+
+    final object InvalidPath : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.InvalidPath|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.InvalidPath.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.InvalidPath.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.InvalidPath.toString|toString(){}[0]
+    }
+
+    final object NotConnected : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.NotConnected|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.NotConnected.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.NotConnected.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.NotConnected.toString|toString(){}[0]
+    }
+
+    final object Refused : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.Refused|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.Refused.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.Refused.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.Refused.toString|toString(){}[0]
+    }
+
+    final object RetriesExhausted : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.RetriesExhausted|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.RetriesExhausted.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.RetriesExhausted.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.RetriesExhausted.toString|toString(){}[0]
+    }
+
+    final object Timeout : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.Timeout|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.Timeout.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.Timeout.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.Timeout.toString|toString(){}[0]
+    }
+
+    final object TooLarge : org.meshtastic.sdk/FileTransferFailure { // org.meshtastic.sdk/FileTransferFailure.TooLarge|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferFailure.TooLarge.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferFailure.TooLarge.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferFailure.TooLarge.toString|toString(){}[0]
     }
 }
 
@@ -1430,6 +1534,28 @@ final class org.meshtastic.sdk/DeviceVersion : kotlin/Comparable<org.meshtastic.
     }
 }
 
+final class org.meshtastic.sdk/FileTransferProgress { // org.meshtastic.sdk/FileTransferProgress|null[0]
+    constructor <init>(kotlin/String, org.meshtastic.sdk/FileTransferDirection, kotlin/Int, kotlin/Int?) // org.meshtastic.sdk/FileTransferProgress.<init>|<init>(kotlin.String;org.meshtastic.sdk.FileTransferDirection;kotlin.Int;kotlin.Int?){}[0]
+
+    final val bytesTransferred // org.meshtastic.sdk/FileTransferProgress.bytesTransferred|{}bytesTransferred[0]
+        final fun <get-bytesTransferred>(): kotlin/Int // org.meshtastic.sdk/FileTransferProgress.bytesTransferred.<get-bytesTransferred>|<get-bytesTransferred>(){}[0]
+    final val direction // org.meshtastic.sdk/FileTransferProgress.direction|{}direction[0]
+        final fun <get-direction>(): org.meshtastic.sdk/FileTransferDirection // org.meshtastic.sdk/FileTransferProgress.direction.<get-direction>|<get-direction>(){}[0]
+    final val path // org.meshtastic.sdk/FileTransferProgress.path|{}path[0]
+        final fun <get-path>(): kotlin/String // org.meshtastic.sdk/FileTransferProgress.path.<get-path>|<get-path>(){}[0]
+    final val totalBytes // org.meshtastic.sdk/FileTransferProgress.totalBytes|{}totalBytes[0]
+        final fun <get-totalBytes>(): kotlin/Int? // org.meshtastic.sdk/FileTransferProgress.totalBytes.<get-totalBytes>|<get-totalBytes>(){}[0]
+
+    final fun component1(): kotlin/String // org.meshtastic.sdk/FileTransferProgress.component1|component1(){}[0]
+    final fun component2(): org.meshtastic.sdk/FileTransferDirection // org.meshtastic.sdk/FileTransferProgress.component2|component2(){}[0]
+    final fun component3(): kotlin/Int // org.meshtastic.sdk/FileTransferProgress.component3|component3(){}[0]
+    final fun component4(): kotlin/Int? // org.meshtastic.sdk/FileTransferProgress.component4|component4(){}[0]
+    final fun copy(kotlin/String = ..., org.meshtastic.sdk/FileTransferDirection = ..., kotlin/Int = ..., kotlin/Int? = ...): org.meshtastic.sdk/FileTransferProgress // org.meshtastic.sdk/FileTransferProgress.copy|copy(kotlin.String;org.meshtastic.sdk.FileTransferDirection;kotlin.Int;kotlin.Int?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/FileTransferProgress.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/FileTransferProgress.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/FileTransferProgress.toString|toString(){}[0]
+}
+
 final class org.meshtastic.sdk/Frame { // org.meshtastic.sdk/Frame|null[0]
     constructor <init>(okio/ByteString) // org.meshtastic.sdk/Frame.<init>|<init>(okio.ByteString){}[0]
 
@@ -1771,6 +1897,8 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun <get-connection>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/ConnectionState> // org.meshtastic.sdk/RadioClient.connection.<get-connection>|<get-connection>(){}[0]
     final val events // org.meshtastic.sdk/RadioClient.events|{}events[0]
         final fun <get-events>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/MeshEvent> // org.meshtastic.sdk/RadioClient.events.<get-events>|<get-events>(){}[0]
+    final val files // org.meshtastic.sdk/RadioClient.files|{}files[0]
+        final fun <get-files>(): org.meshtastic.sdk/FileTransferApi // org.meshtastic.sdk/RadioClient.files.<get-files>|<get-files>(){}[0]
     final val fromRadio // org.meshtastic.sdk/RadioClient.fromRadio|{}fromRadio[0]
         final fun <get-fromRadio>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/FromRadio> // org.meshtastic.sdk/RadioClient.fromRadio.<get-fromRadio>|<get-fromRadio>(){}[0]
     final val nodes // org.meshtastic.sdk/RadioClient.nodes|{}nodes[0]
