@@ -11,7 +11,7 @@ Slim by design. Most "agents" in this repo are now skills under
   this one (`spec-guard.agent.md`) for GitHub Copilot, and
   `.claude/agents/spec-guard.md` for Claude Code. Keep their bodies identical.
 
-Routing matrix lives in [`AGENTS.md`](../../AGENTS.md#task--skill--agent-routing-matrix).
+Routing matrix lives in [`AGENTS.md`](../../AGENTS.md#task-routing).
 
 Structured reporting:
 
