@@ -9,8 +9,10 @@ package org.meshtastic.sdk.transport.websocket
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.cio.endpoint
 import io.ktor.client.plugins.websocket.WebSockets
 
 internal actual fun createDefaultHttpClient(): HttpClient = HttpClient(CIO) {
     install(WebSockets) { maxFrameSize = MAX_INBOUND_FRAME_BYTES }
+    engine { endpoint { connectTimeout = WebSocketTransport.CONNECT_TIMEOUT_MS } }
 }

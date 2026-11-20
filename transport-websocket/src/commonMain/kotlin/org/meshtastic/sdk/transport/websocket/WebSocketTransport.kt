@@ -24,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +47,7 @@ import org.meshtastic.sdk.WireFraming
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.jvm.JvmOverloads
+import kotlin.time.TimeSource
 import io.ktor.websocket.Frame as WsFrame
 
 /**
@@ -63,7 +65,13 @@ import io.ktor.websocket.Frame as WsFrame
  * and a drop without a close frame are.
  *
  * This transport does not reconnect: it reports [state] and errors and lets the engine's
- * `AutoReconnectConfig` decide.
+ * `AutoReconnectConfig` decide. Two firmware behaviors are tracked across [connect] calls on one
+ * instance. ESP32 aborts a displaced client without a close frame when it cannot write, so a 4001
+ * may never arrive: after five sessions in a row that open and then end without a close frame
+ * within 30 seconds, the end is reported with `recoverable = false` instead of fighting the other
+ * client. After a 1013 the next [connect] waits until 30 seconds have passed since that session
+ * ended. [disconnect] resets the drop count. On JVM, Android and iOS the SDK-created client times
+ * out a connect after 30 seconds.
  *
  * **Identity:** `ws:<scheme>://<host lowercased>:<port><path>` with the default port made explicit
  * and a blank or `/` path normalised to `/api/v1/ws`, so `ws://Node.local` and
@@ -100,15 +108,25 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
     private var ownedClient: HttpClient? = null
     private var pump: Job? = null
     private var attempt: Job? = null
+    private var floorWait: Job? = null
+    private var quickDrops = 0
+    private var retryNotBeforeMs: Long? = null
 
+    private val origin = TimeSource.Monotonic.markNow()
+
+    internal var clockMs: () -> Long = { origin.elapsedNow().inWholeMilliseconds }
+    internal var floorDelay: suspend (Long) -> Unit = { delay(it) }
     internal var pumpProbe: (suspend (String) -> Unit)? = null
     internal var connectProbe: (suspend (String) -> Unit)? = null
     internal var attemptContext: CoroutineContext = EmptyCoroutineContext
 
     private class Detached(val session: DefaultClientWebSocketSession?, val jobs: List<Job?>, val client: HttpClient?)
 
+    private class FloorWait(val gen: Long, val job: Job, val previous: Detached)
+
     override suspend fun connect() {
         connectProbe?.invoke("entering")
+        awaitRetryFloor()
         val upgraded = CompletableDeferred<DefaultClientWebSocketSession>()
         val (gen, attemptJob, previous) = lock.withLock {
             val next = ++generation
@@ -156,7 +174,8 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                 } else {
                     session = opened
                     _state.value = TransportState.Connected
-                    pump = scope.launch { readUntilClosed(opened, gen) }
+                    val openedAt = clockMs()
+                    pump = scope.launch { readUntilClosed(opened, gen, openedAt) }
                     true
                 }
             }
@@ -181,11 +200,38 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
         withContext(NonCancellable) {
             val detached = lock.withLock {
                 generation++
+                quickDrops = 0
                 _state.value = TransportState.Disconnected
                 detachLocked()
             }
             detached.close()
         }
+    }
+
+    /** Holds a connect until 30 seconds after a session that ended with 1013; [disconnect] and cancellation end the wait. */
+    private suspend fun awaitRetryFloor() {
+        val wait = lock.withLock {
+            val remaining = (retryNotBeforeMs ?: return) - clockMs()
+            if (remaining <= 0) return
+            val gen = ++generation
+            val previous = detachLocked()
+            _state.value = TransportState.Connecting
+            val job = scope.launch { floorDelay(remaining) }
+            floorWait = job
+            FloorWait(gen, job, previous)
+        }
+        withContext(NonCancellable) { wait.previous.close() }
+        try {
+            wait.job.join()
+        } catch (e: CancellationException) {
+            abandon(wait.gen, TransportState.Disconnected)
+            currentCoroutineContext().ensureActive()
+        }
+        val current = lock.withLock {
+            if (floorWait === wait.job) floorWait = null
+            generation == wait.gen
+        }
+        if (!current) throw MeshtasticException.Transport("WebSocket connect was interrupted by disconnect()")
     }
 
     override suspend fun send(frame: Frame) {
@@ -214,16 +260,18 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
     override fun frames(): Flow<Frame> = inbound.receiveAsFlow()
 
     private fun detachLocked(): Detached {
-        val d = Detached(session, listOf(pump, attempt), ownedClient)
+        val d = Detached(session, listOf(pump, attempt, floorWait), ownedClient)
         session = null
         pump = null
         attempt = null
+        floorWait = null
         ownedClient = null
         return d
     }
 
     private suspend fun Detached.close() {
         jobs[0]?.cancel()
+        jobs[2]?.cancel()
         val open = session
         if (open != null) {
             withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
@@ -250,7 +298,7 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
         detached != null
     }
 
-    private suspend fun readUntilClosed(open: DefaultClientWebSocketSession, gen: Long) {
+    private suspend fun readUntilClosed(open: DefaultClientWebSocketSession, gen: Long, openedAt: Long) {
         var dropped: Throwable? = null
         var oversize = -1L
         pumpProbe?.invoke("started")
@@ -273,7 +321,8 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
         } catch (e: Exception) {
             dropped = e
         }
-        val ended: TransportState.Error
+        var ended: TransportState.Error
+        var code: Int? = null
         if (oversize >= 0) {
             withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
                 runCatching { open.close(CloseReason(CloseReason.Codes.TOO_BIG, "")) }
@@ -289,7 +338,8 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                 currentCoroutineContext().ensureActive()
                 null
             }
-            val (message, recoverable) = describeSessionEnd(reason?.code?.toInt(), reason?.message, dropped)
+            code = reason?.code?.toInt()
+            val (message, recoverable) = describeSessionEnd(code, reason?.message, dropped)
             val cause = dropped?.takeUnless { it is CancellationException }
             ended = TransportState.Error(MeshtasticException.Transport(message, cause), recoverable)
         }
@@ -298,6 +348,21 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
             lock.withLock {
                 if (generation == gen && session === open) {
                     session = null
+                    val endedAt = clockMs()
+                    val quick = oversize < 0 && (code == null || code == CLOSED_ABNORMALLY) &&
+                        endedAt - openedAt < SHORT_SESSION_MS
+                    quickDrops = if (quick) quickDrops + 1 else 0
+                    retryNotBeforeMs = if (code == CLOSE_TRY_AGAIN_LATER) endedAt + TRY_AGAIN_FLOOR_MS else null
+                    if (quickDrops >= MAX_QUICK_DROPS) {
+                        quickDrops = 0
+                        ended = TransportState.Error(
+                            MeshtasticException.Transport(
+                                "WebSocket dropped $MAX_QUICK_DROPS times in a row right after opening: " +
+                                    "another client keeps taking the node's only WebSocket slot",
+                            ),
+                            recoverable = false,
+                        )
+                    }
                     _state.value = ended
                 }
             }
@@ -309,6 +374,12 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
     internal companion object {
         private const val INBOUND_CAPACITY = 256
         private const val CLOSE_TIMEOUT_MS = 2_000L
+        private const val SHORT_SESSION_MS = 30_000L
+        private const val TRY_AGAIN_FLOOR_MS = 30_000L
+        private const val MAX_QUICK_DROPS = 5
+
+        const val CONNECT_TIMEOUT_MS: Long = 30_000
+        const val CLOSED_ABNORMALLY: Int = 1006
 
         const val CLOSE_NORMAL: Int = 1000
         const val CLOSE_TOO_BIG: Int = 1009
