@@ -398,7 +398,9 @@ The firmware emits these `FromRadio` payloads in this order (`firmware:src/mesh/
 
 The SDK’s optional [session receive stream](./api-reference.md#session-receive) emits its
 handshake snapshot before delivering retained mesh packets. Overflow in the SDK handshake
-buffers ends that application stream while the protocol engine continues the handshake.
+buffers ends that application stream while the protocol engine continues the handshake. Once
+the session is ready, an optional envelope mode interleaves non-packet frames such as
+`QueueStatus` with packets in the same bounded queue.
 
 ### Node DB after the handshake
 

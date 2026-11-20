@@ -27,11 +27,13 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceMetadata
+import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
@@ -1265,9 +1267,36 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun sessionReceiveOrdersQueueStatusWithPackets() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:session-envelopes"), nowMs = { currentTime })
+        val client = buildClient(transport, sessionReceiveCapacity = 8, includeEnvelopes = true)
+        val status = QueueStatus.Builder().also { it.mesh_packet_id = 201 }.build()
+
+        assertNotNull(client.sessionEvents).test {
+            client.connect()
+            val snapshot = assertIs<RadioSessionEvent.Ready>(awaitItem())
+            transport.injectAlivePacket(201)
+            transport.injectFromRadio(FromRadio.Builder().also { it.queueStatus = status }.build())
+            transport.injectAlivePacket(202)
+
+            val first = assertIs<RadioSessionEvent.Packet>(awaitItem())
+            val reply = assertIs<RadioSessionEvent.Envelope>(awaitItem())
+            val second = assertIs<RadioSessionEvent.Packet>(awaitItem())
+            assertEquals(listOf(1L, 2L, 3L), listOf(first.sequence, reply.sequence, second.sequence))
+            assertEquals(snapshot.sessionId, reply.sessionId)
+            assertEquals(status, reply.envelope.queueStatus)
+            assertEquals(listOf(201, 202), listOf(first.packet.id, second.packet.id))
+
+            client.disconnect()
+            assertEquals(RadioSessionEvent.Ended(snapshot.sessionId), awaitItem())
+            awaitComplete()
+        }
+    }
+
+    @Test
     fun sessionReceiveOverflowDrainsPrefixWhileAckAndRpcContinue() = runTest {
         val transport = ScriptedTransport(TransportIdentity("fake:session-overflow"), nowMs = { currentTime })
-        val client = buildClient(transport, sessionReceiveCapacity = 1)
+        val client = buildClient(transport, sessionReceiveCapacity = 1, includeEnvelopes = true)
         val releaseCollector = CompletableDeferred<Unit>()
         val events = mutableListOf<RadioSessionEvent>()
         val collection = backgroundScope.async {
@@ -1288,7 +1317,8 @@ class HandshakeAndReconnectTest {
             val request = transport.outboundPackets().last { adminOf(it)?.get_device_metadata_request == true }
 
             transport.injectAlivePacket(201)
-            transport.injectAlivePacket(202)
+            val status = QueueStatus.Builder().also { it.mesh_packet_id = ack.id.raw }.build()
+            transport.injectFromRadio(FromRadio.Builder().also { it.queueStatus = status }.build())
             runCurrent()
 
             transport.injectRoutingError(ack.id.raw, Routing.Error.NONE, fromNode = 42)
@@ -1354,6 +1384,7 @@ class HandshakeAndReconnectTest {
         transport: RadioTransport,
         autoReconnect: AutoReconnectConfig = AutoReconnectConfig.Disabled,
         sessionReceiveCapacity: Int? = null,
+        includeEnvelopes: Boolean = false,
     ): RadioClient = RadioClient.Builder()
         .transport(transport)
         .storage(InMemoryStorageProvider())
@@ -1362,7 +1393,10 @@ class HandshakeAndReconnectTest {
         .autoSyncTimeOnConnect(false)
         .rpcTimeout(60.seconds)
         .autoReconnect(autoReconnect)
-        .apply { sessionReceiveCapacity?.let { sessionReceive(it) } }
+        .apply {
+            sessionReceiveCapacity?.let { sessionReceive(it) }
+            if (includeEnvelopes) sessionReceiveEnvelopes()
+        }
         .build()
 
     private fun assertReconnectState(state: ConnectionState, attempt: Int) {

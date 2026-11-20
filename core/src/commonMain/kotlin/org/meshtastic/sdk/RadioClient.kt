@@ -645,6 +645,15 @@ public class RadioClient internal constructor(
     }
 
     /**
+     * Attempts to enqueue a raw [ToRadio] frame while connected.
+     *
+     * @return true once the transport send queue accepts the encoded frame. Firmware acceptance and delivery
+     *     must be observed separately, just as with [sendRaw].
+     */
+    public fun trySendRaw(frame: ToRadio): Boolean =
+        connection.value is ConnectionState.Connected && engine.trySendToRadio(frame)
+
+    /**
      * The hop limit a convenience send uses when the caller passes `null`: the device's
      * `lora.hop_limit` once the handshake has delivered it, else the firmware default.
      */
@@ -701,6 +710,7 @@ public class RadioClient internal constructor(
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
         private var skipNodeDb: Boolean = false
         private var sessionReceiveCapacity: Int? = null
+        private var sessionReceiveEnvelopes: Boolean = false
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -914,6 +924,14 @@ public class RadioClient internal constructor(
         }
 
         /**
+         * Include non-packet [FromRadio] envelopes received after the handshake in the ordered session stream.
+         *
+         * Enable [sessionReceive] as well. [RadioSessionEvent.Envelope] shares the same sequence and bounded queue
+         * as packets. Use this for protocol events such as queue status that a host must reconcile with its own state.
+         */
+        public fun sessionReceiveEnvelopes(): Builder = apply { sessionReceiveEnvelopes = true }
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -937,6 +955,7 @@ public class RadioClient internal constructor(
                 protocolLogLevel = protocolLogLevel,
                 payloadRedactor = payloadRedactor,
                 sessionReceiveCapacity = sessionReceiveCapacity,
+                sessionReceiveEnvelopes = sessionReceiveEnvelopes,
             )
 
             return RadioClient(

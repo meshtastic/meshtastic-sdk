@@ -64,7 +64,6 @@ import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.PayloadRedactor
-
 import org.meshtastic.sdk.RadioSessionEvent
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendFailure
@@ -109,6 +108,7 @@ internal class MeshEngine(
     private val protocolLogLevel: LogLevel = LogLevel.NONE,
     private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
     sessionReceiveCapacity: Int? = null,
+    sessionReceiveEnvelopes: Boolean = false,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -141,7 +141,7 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
-    private val sessionReceive = sessionReceiveCapacity?.let(::SessionReceive)
+    private val sessionReceive = sessionReceiveCapacity?.let { SessionReceive(it, sessionReceiveEnvelopes) }
     val sessionEvents = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
@@ -1124,7 +1124,10 @@ internal class MeshEngine(
 
             HandshakeStage.SeedingSession -> processSeedingEnvelope(fromRadio)
 
-            HandshakeStage.Ready -> routeNormalEnvelope(fromRadio)
+            HandshakeStage.Ready -> {
+                routeNormalEnvelope(fromRadio)
+                if (fromRadio.packet == null) sessionReceive?.envelope(fromRadio)
+            }
         }
     }
 
@@ -2646,12 +2649,15 @@ internal class MeshEngine(
     internal fun nodeMapSnapshot(): Map<NodeId, NodeInfo> = meshState.nodes
 
     internal fun sendToRadio(msg: ToRadio) {
-        try {
-            val encoded = WireCodec.encodeToRadio(msg)
-            outbound.trySend(Frame(encoded.toByteString()))
-        } catch (e: Exception) {
-            logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
-        }
+        trySendToRadio(msg)
+    }
+
+    internal fun trySendToRadio(msg: ToRadio): Boolean = try {
+        val encoded = WireCodec.encodeToRadio(msg)
+        outbound.trySend(Frame(encoded.toByteString())).isSuccess
+    } catch (e: Exception) {
+        logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
+        false
     }
 
     /**

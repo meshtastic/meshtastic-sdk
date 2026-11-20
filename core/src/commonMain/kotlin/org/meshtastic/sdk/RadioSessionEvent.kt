@@ -8,6 +8,7 @@
 package org.meshtastic.sdk
 
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -39,6 +40,15 @@ public sealed interface RadioSessionEvent {
         public val packet: MeshPacket,
     ) : RadioSessionEvent
 
+    /** A non-packet envelope received after the SDK handshake, offered when explicitly enabled. */
+    public data class Envelope(
+        override val sessionId: Long,
+        /** Delivery sequence shared with [Packet] within the session, starting at one. */
+        public val sequence: Long,
+        /** The decoded envelope as received, including firmware queue status and ancillary protocol messages. */
+        public val envelope: FromRadio,
+    ) : RadioSessionEvent
+
     /** End of a session that previously emitted [Ready]. */
     public data class Ended(override val sessionId: Long) : RadioSessionEvent
 }
@@ -51,5 +61,5 @@ public class RadioSessionOverflowException internal constructor(
     public val firstMissedSequence: Long?,
 ) : Exception(
     "Receive stream overflowed in session $sessionId" +
-        (firstMissedSequence?.let { " at packet sequence $it" } ?: ""),
+        (firstMissedSequence?.let { " at delivery sequence $it" } ?: ""),
 )

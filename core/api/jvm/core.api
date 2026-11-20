@@ -1686,6 +1686,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendText-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun sendText-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun trySendRaw (Lorg/meshtastic/proto/ToRadio;)Z
 }
 
 public final class org/meshtastic/sdk/RadioClient$Builder {
@@ -1710,6 +1711,7 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public final fun sendTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sessionReceive (I)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public static synthetic fun sessionReceive$default (Lorg/meshtastic/sdk/RadioClient$Builder;IILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun sessionReceiveEnvelopes ()Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun skipNodeDb (Z)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public static synthetic fun skipNodeDb$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun storage (Lorg/meshtastic/sdk/StorageProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
@@ -1757,6 +1759,21 @@ public final class org/meshtastic/sdk/RadioSessionEvent$Ended : org/meshtastic/s
 	public final fun copy (J)Lorg/meshtastic/sdk/RadioSessionEvent$Ended;
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ended;JILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ended;
 	public fun equals (Ljava/lang/Object;)Z
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Envelope : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JJLorg/meshtastic/proto/FromRadio;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()Lorg/meshtastic/proto/FromRadio;
+	public final fun copy (JJLorg/meshtastic/proto/FromRadio;)Lorg/meshtastic/sdk/RadioSessionEvent$Envelope;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Envelope;JJLorg/meshtastic/proto/FromRadio;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Envelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnvelope ()Lorg/meshtastic/proto/FromRadio;
+	public final fun getSequence ()J
 	public fun getSessionId ()J
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;

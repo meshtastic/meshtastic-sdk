@@ -9,12 +9,13 @@ package org.meshtastic.sdk.internal
 
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
+import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.sdk.RadioSessionEvent
 import org.meshtastic.sdk.RadioSessionOverflowException
 
 /** Only the engine actor publishes. The channel decouples the consumer's pace from the actor. */
-internal class SessionReceive(capacity: Int) {
+internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boolean) {
     private val channel = Channel<RadioSessionEvent>(capacity)
     val events = channel.consumeAsFlow()
 
@@ -36,6 +37,14 @@ internal class SessionReceive(capacity: Int) {
         if (delivering) delivering = offer(RadioSessionEvent.Packet(sessionId, ++sequence, packet))
     }
 
+    fun envelope(envelope: FromRadio) {
+        if (delivering &&
+            includeEnvelopes
+        ) {
+            delivering = offer(RadioSessionEvent.Envelope(sessionId, ++sequence, envelope))
+        }
+    }
+
     fun end() {
         if (!delivering) return
         delivering = false
@@ -54,7 +63,12 @@ internal class SessionReceive(capacity: Int) {
     private fun offer(event: RadioSessionEvent): Boolean {
         val result = channel.trySend(event)
         if (result.isFailure && !result.isClosed) {
-            channel.close(RadioSessionOverflowException(sessionId, (event as? RadioSessionEvent.Packet)?.sequence))
+            val missed = when (event) {
+                is RadioSessionEvent.Packet -> event.sequence
+                is RadioSessionEvent.Envelope -> event.sequence
+                is RadioSessionEvent.Ready, is RadioSessionEvent.Ended -> null
+            }
+            channel.close(RadioSessionOverflowException(sessionId, missed))
         }
         return result.isSuccess
     }

@@ -177,7 +177,9 @@ a flow of the full `Map<NodeId, NodeInfo>`; the underlying
 
 Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, reported channels and nodes. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. `Ended` marks the end of that session. An automatic reconnect creates a new ID on the same stream.
 
-The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
+Add `sessionReceiveEnvelopes()` to receive non-packet envelopes such as firmware queue status after `Ready`. They are offered in the same queue and share the packet sequence. The handshake snapshot and retained packets are delivered first.
+
+The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet or envelope, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
 
 ### Outbound
 
@@ -187,6 +189,7 @@ The engine never waits on this queue. When it fills, the collector receives the 
 | `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0): MessageHandle` | handle | same as `send` |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int): MessageHandle` | handle | same as `send` |
 | `sendRaw(frame: ToRadio)` | `Unit` | `NotConnected` |
+| `trySendRaw(frame: ToRadio)` | Whether the outbound queue accepted the encoded frame | — |
 | `requestNodeInfo(node: NodeId): AdminResult<NodeInfo>` | result | `NotConnected` |
 | `nodeSnapshot(): Map<NodeId, NodeInfo>` | snapshot | `NotConnected` |
 
