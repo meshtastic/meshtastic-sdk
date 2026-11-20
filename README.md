@@ -225,7 +225,7 @@ cd meshtastic-sdk
 - Android API 26 (Android 8.0) or later. Every Android artifact sets `minSdk = 26`, so an app with a lower `minSdk` fails to resolve the dependency. See [Platform support](docs/integration-guide.md#platform-support).
 - iOS 14 or later for the Bluetooth and TCP transports.
 - A JDK 17 or later runtime on the JVM. The bytecode targets JDK 17; the build toolchain is JDK 21.
-- kotlinx-coroutines 1.11.0 or later. The SDK compiles against the `coroutines` version in `gradle/libs.versions.toml`, and a newer pin in your build wins at resolution.
+- kotlinx-coroutines 1.8.1 or later for `core`, `storage-sqldelight` and `transport-serial`, which compile against that floor; `transport-tcp`, `transport-websocket` and `transport-ble` need 1.11.0 through Ktor and Kable. A newer pin in your build wins at resolution.
 
 ## Contributing
 

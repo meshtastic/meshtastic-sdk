@@ -11,7 +11,8 @@ androidCompileSdk           = "37"
 androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
-coroutines                  = "1.11.0"
+coroutines                  = "1.8.1"            # compile floor so 1.8.x runtimes (ATAK plugins) load :core, :storage-sqldelight, :transport-serial; Ktor and Kable lift tcp/websocket/ble to 1.11; Renovate holds it
+coroutinesTest              = "1.11.0"           # test-only, so not under the floor; 1.8's wasm runTest needs an interop opt-in on Kotlin 2.4
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
 atomicfu                    = "0.33.0"
 okio                        = "3.18.2"
@@ -67,7 +68,7 @@ kover                       = "0.9.11"
 [libraries]
 coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",        version.ref = "coroutines" }
 coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android",     version.ref = "coroutines" }
-coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutines" }
+coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutinesTest" }
 kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
