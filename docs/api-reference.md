@@ -273,7 +273,7 @@ public enum class DroppedFlow { Packets, Events }
 public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 ```
 
-When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference). `QueueStatusChanged`, `KeyVerification`, `MqttConnected`, and `MqttDisconnected` are declared but the engine doesn't emit them; queue status drives `SendState` directly.
+When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference). `KeyVerification` is declared but the engine doesn't emit it.
 
 ## `NodeChange`
 

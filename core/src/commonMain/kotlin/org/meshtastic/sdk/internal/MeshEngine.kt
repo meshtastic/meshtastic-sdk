@@ -29,6 +29,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.MeshPacket
@@ -232,6 +233,9 @@ internal class MeshEngine(
     private val dirtyHeartbeats = mutableSetOf<NodeId>()
     private val offlineNodes = mutableSetOf<NodeId>()
     private val lastCongestionLevel = mutableMapOf<NodeId, CongestionLevel>()
+
+    /** MQTT state from the last local `DeviceConnectionStatus`; null until one reports it. */
+    private var lastMqttConnected: Boolean? = null
 
     /**
      * once a storage write fails we flip this flag, emit a single
@@ -630,6 +634,7 @@ internal class MeshEngine(
         dirtyHeartbeats.clear()
         offlineNodes.clear()
         lastCongestionLevel.clear()
+        lastMqttConnected = null
         // clear any leftover settle-buffer entries so a reconnect starts clean.
         settleBuffer.clear()
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
@@ -1608,6 +1613,7 @@ internal class MeshEngine(
             nodeInfo != null -> processInboundNodeInfo(nodeInfo)
 
             queueStatus != null -> {
+                events.tryEmit(MeshEvent.QueueStatusChanged(queueStatus))
                 // firmware emits QueueStatus with mesh_packet_id == 0 as a
                 // "queue is empty / no tracked packet" heartbeat-ish signal. Looking that up in
                 // [pendingSends] is harmless but meaningless, and incorrectly treating it as a
@@ -1812,6 +1818,10 @@ internal class MeshEngine(
             // our next RPC to that node with a passkey it never issued.
             latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg, receivedAt)
         }
+        val connectionStatus = adminMsg?.get_device_connection_status_response
+        if (connectionStatus != null && (packet.from == 0 || packet.from == myNodeNum)) {
+            trackLocalMqttState(connectionStatus)
+        }
         // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
         // request matching this packet's request_id. Must run before processRoutingAck
         // so a route_reply doesn't get mistakenly classified as a generic Acked send.
@@ -1906,6 +1916,26 @@ internal class MeshEngine(
         }
 
         else -> false
+    }
+
+    /**
+     * Emit [MeshEvent.MqttConnected] / [MeshEvent.MqttDisconnected] when a local
+     * `DeviceConnectionStatus` shows the broker link changed since the last one this connection
+     * saw. A first observation of disconnected only records the state.
+     */
+    private fun trackLocalMqttState(status: DeviceConnectionStatus) {
+        // Firmware reports MQTT only inside a WiFi or Ethernet status (AdminModule
+        // handleGetDeviceConnectionStatus); a device with neither reports nothing about it.
+        val networks = listOfNotNull(status.wifi?.status, status.ethernet?.status)
+        if (networks.isEmpty()) return
+        val connected = networks.any { it.is_mqtt_connected }
+        val previous = lastMqttConnected
+        lastMqttConnected = connected
+        if (connected && previous != true) {
+            events.tryEmit(MeshEvent.MqttConnected)
+        } else if (!connected && previous == true) {
+            events.tryEmit(MeshEvent.MqttDisconnected())
+        }
     }
 
     private fun warnUnhandledVariant(variant: String, stage: HandshakeStage) {
@@ -2259,6 +2289,7 @@ internal class MeshEngine(
         // engineScope, storage, supervisorJobRef and channels live across the cycle.
         handshakeStage = HandshakeStage.Idle
         configBundleState.value = null
+        lastMqttConnected = null
         pendingNodes.clear()
         pendingConfigs = emptyList()
         pendingModuleConfigs = emptyList()

@@ -118,7 +118,13 @@ public sealed interface NodeChange {
  */
 public sealed interface MeshEvent {
     /**
-     * Device's transmit queue status changed.
+     * The device reported its transmit queue status.
+     *
+     * Fires for every `FromRadio.queueStatus` received after the handshake completes: the
+     * per-send result for each packet the host writes, the reply to each heartbeat, and the
+     * update the device sends when a full queue frees a slot. Send handles are correlated from
+     * the same status independently of this event. A queue status received during the handshake
+     * surfaces as a [ProtocolWarning] instead.
      *
      * @param status the wire [QueueStatus] from the device
      */
@@ -138,14 +144,28 @@ public sealed interface MeshEvent {
     public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
 
     /**
-     * Emitted when the device's MQTT connection state changes to connected.
+     * A `DeviceConnectionStatus` from the local device shows its own MQTT broker connection up,
+     * where the previous one this connection saw did not.
+     *
+     * The device never pushes MQTT state: this event fires only from the responses to
+     * [AdminApi.getDeviceConnectionStatus] on the local device, so it is as current as the last
+     * call. The first response that reports connected emits it; a repeated connected response
+     * emits nothing. Responses from remote nodes ([AdminApi.forNode]) and responses from a device
+     * with no WiFi or Ethernet status are ignored. MQTT traffic proxied through the client
+     * (`proxy_to_client_enabled`) is not a broker connection of the device and reads as
+     * disconnected. Tracking restarts on every connection.
      */
     public data object MqttConnected : MeshEvent
 
     /**
-     * Emitted when the device's MQTT connection drops.
+     * A `DeviceConnectionStatus` from the local device shows its own MQTT broker connection down,
+     * after an earlier one on this connection showed it up.
      *
-     * @property reason human-readable disconnect reason, if available
+     * Fires under the same rules as [MqttConnected], from [AdminApi.getDeviceConnectionStatus]
+     * responses only. A first response that reports disconnected emits nothing, since there is
+     * no earlier connected state on this connection for it to end.
+     *
+     * @property reason always null: `DeviceConnectionStatus` carries no disconnect reason
      */
     public data class MqttDisconnected(val reason: String? = null) : MeshEvent
 
