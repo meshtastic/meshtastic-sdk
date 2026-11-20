@@ -116,7 +116,7 @@ Concretely:
       (B4).
 - [x] Remove residual Konsist references from skill files, decision ADRs
       (003/005/006), `security.md`, `versioning.md`,
-      `architecture/module-graph.md`, `README`, and `SPEC.md` (post-audit
+      `architecture/module-graph.md` and `README` (post-audit
       cleanup, 2026-04-19).
 
 ## References

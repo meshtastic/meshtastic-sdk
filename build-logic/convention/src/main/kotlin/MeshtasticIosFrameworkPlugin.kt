@@ -11,33 +11,23 @@ import org.gradle.kotlin.dsl.configure
 import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
 
 /**
- * iOS framework + SKIE convention plugin (Sprint 6 / ADR-007).
+ * iOS framework + SKIE convention plugin (ADR-007).
  *
  * Applies on top of [`meshtastic.kmp.library`][KmpLibraryConventionPlugin]. Configures the three
  * iOS targets to emit a static framework named `MeshtasticSDK` and applies SKIE so Kotlin sealed
  * types, suspends, and `Flow`s bridge to natural Swift `enum` / `async throws` / `AsyncSequence`
  * constructs.
  *
- * **Framework baseName note.** ADR-007 names the *aggregated XCFramework* `RadioClient` for SPM
- * consumers; the per-module framework name is a different artifact (the `.framework` produced by
- * each `linkReleaseFramework<target>` task). We deliberately use `MeshtasticSDK` here to avoid a
- * Swift naming collision: `RadioClient.RadioClient` would conflict with the framework name and
- * SKIE would rename the public class to `RadioClient_`. The aggregated XCFramework that ships
- * to SPM consumers is built by a separate aggregator module (deferred follow-up); when that
- * lands it can keep the `RadioClient` name on the umbrella artifact.
+ * **Framework baseName.** Each module that applies this plugin emits its own `MeshtasticSDK`
+ * framework. The name is not `RadioClient` because `RadioClient.RadioClient` would collide with
+ * the framework name and SKIE would rename the public class to `RadioClient_`.
  *
- * **Why static?** Per ADR-007, `RadioClient.xcframework` is consumed via SPM by Meshtastic-Apple.
- * Static frameworks are the SPM/CocoaPods default — they fold the Kotlin runtime + SDK code into
- * the consumer app at link time. Dynamic frameworks add a load-time cost and complicate code
- * signing on App Store builds. The cost is binary size, which we accept for a single-radio SDK.
+ * **Why static?** Static frameworks are the SPM/CocoaPods default: they fold the Kotlin runtime
+ * and SDK code into the consumer app at link time. Dynamic frameworks add a load-time cost and
+ * complicate code signing on App Store builds. The cost is binary size.
  *
- * **Per-module frameworks today, single aggregator deferred.** Each library module that applies
- * this plugin produces its own `RadioClient` framework. The single-aggregator path that ADR-007
- * envisions ("one `RadioClient.xcframework` from :core + :transport-ble + :transport-tcp +
- * :storage-sqldelight") requires either an extra aggregator module or a relaxation of ADR-008
- * for the iOS source-set; both are deferred to a follow-up sprint that also wires KMMBridge for
- * the SPM publish step. For now, samples consume the per-module frameworks via Gradle project
- * dependencies — the SwiftUI shell only sees the Compose-app framework anyway.
+ * No aggregated XCFramework or SPM package is built (docs/roadmap.md R-21). Samples consume the
+ * per-module frameworks through Gradle project dependencies.
  */
 class MeshtasticIosFrameworkPlugin : Plugin<Project> {
     override fun apply(target: Project) = with(target) {

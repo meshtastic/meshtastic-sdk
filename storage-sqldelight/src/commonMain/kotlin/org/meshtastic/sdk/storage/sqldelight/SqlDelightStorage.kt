@@ -316,9 +316,7 @@ internal class SqlDelightStorage(
 /**
  * Dispatcher for blocking SQLite work: a fixed pool of [STORAGE_PARALLELISM] threads, sized to
  * the small per-driver connection pool, so storage cannot starve transports or file writes.
- * A pool rather than `Dispatchers.IO.limitedParallelism(n)`: the SDK compiles against
- * coroutines 1.8.1, where that overload does not exist. Declared `expect` because the pool
- * constructors are per platform.
+ * Declared `expect` because the pool constructors are per platform.
  */
 internal expect val defaultStorageDispatcher: CoroutineDispatcher
 

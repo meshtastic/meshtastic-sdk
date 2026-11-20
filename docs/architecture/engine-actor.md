@@ -146,6 +146,19 @@ Unbounded with no suspension is deliberate. A bounded inbox that suspends would 
 | Handshake | `HandshakeStage1SettleComplete`, `HandshakeHeartbeatSettleComplete`, `Stage1RetryWantConfig`, `HandshakeTimeout` |
 | Timers | `HeartbeatTick`, `LivenessTick`, `PresenceCheckTick`, `SendAckTimeout`, `PendingResponseTimeout`, `AdminTimeout` |
 
+## Engine invariants
+
+Every engine change keeps these. The handshake gates (session-ready only on the matching `config_complete_id`, pre-handshake frames dropped) are in [`handshake-fsm.md`](./handshake-fsm.md).
+
+- Inbound dedup drops a `MeshPacket` whose `(from, to, channel, id)` matches one of the last 256 keys; a packet with `id == 0` or `from == 0` skips the check.
+- A `MeshPacket` with no decoded payload never reaches `packets`, and the engine emits a `MeshEvent.ProtocolWarning` for it at most once a minute.
+- An unsolicited admin message from the local device (`request_id == 0`) updates `channels` or `configBundle` in memory and in storage, and emits `MeshEvent.ExternalConfigChange`.
+- Teardown clears the dedup set, admin sessions, pending sends (failed with `Disconnected`), pending admin requests (`NodeUnreachable`), `configBundle` and `channels`. An auto-reconnect cycle clears the dedup set, pending sends and `configBundle`, and keeps storage, `channels` and admin sessions.
+- One outbound writer drains an unlimited `Channel<Frame>` in FIFO order, so concurrent sends never reorder on the wire.
+- Mesh delivery retries belong to the device. The engine never re-sends a packet after `Sent`; `MessageHandle.retry()` and `retryWith` are new sends the caller starts.
+- Admin requests are correlated by `request_id` and bounded by one `rpcTimeout`, 30 s by default.
+- Storage is activated before `transport.connect()`.
+
 ## Anti-patterns (rejected in code review)
 
 - A mutex on `MeshState`. The actor is the lock.

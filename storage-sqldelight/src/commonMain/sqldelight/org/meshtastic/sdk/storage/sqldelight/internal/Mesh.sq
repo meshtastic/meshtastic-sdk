@@ -4,16 +4,14 @@
 -- Licensed under the GPL-3.0-or-later license (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.html)
 -- SPDX-License-Identifier: GPL-3.0-or-later
 --
--- src/commonMain/sqldelight/org/meshtastic/kmp/storage/sqldelight/Mesh.sq
---
--- SQLDelight schema for the Meshtastic-KMP MVP storage backend.
+-- SQLDelight schema for the storage-sqldelight backend.
 -- Exposed via DeviceStorage; one logical database per TransportIdentity
--- (see ADR-005). For the PSK column we store ciphertext only — the consumer's
--- chosen `KeyVault` (Builder.keyVault(...)) wraps the raw bytes before insert.
+-- (see ADR-005). The PSK column holds channel keys as received, unencrypted
+-- (docs/security.md, storage at rest).
 --
 -- Schema version: 3
--- Migration policy: every breaking change increments version, ships a
--- migration_<N>__<N+1>.sqm under databases/MeshDatabase/, and is verified by
+-- Migration policy: every breaking change increments version, ships
+-- databases/<N>.sqm (migrating version N to N+1), and is verified by
 -- `verifyMigrations = true` in the SQLDelight DSL.
 
 -- ============================================================================
@@ -87,7 +85,7 @@ CREATE TABLE channels (
     idx          INTEGER PRIMARY KEY NOT NULL,              -- 0..7
     role         INTEGER NOT NULL,                          -- Channel.Role
     name         TEXT,
-    psk          BLOB,                                       -- ciphertext via KeyVault; may be NULL for unencrypted
+    psk          BLOB,                                       -- channel key as received; may be NULL
     psk_index    INTEGER,                                    -- shorthand index, see glossary
     uplink       INTEGER NOT NULL DEFAULT 0,
     downlink     INTEGER NOT NULL DEFAULT 0,
@@ -127,7 +125,7 @@ DELETE FROM configs;
 -- ============================================================================
 -- messages: removed in schema v2 (was orphaned, never wired in SqlDelightStorage)
 -- See ADR for storage rationale; message history is reserved for Phase 2+.
--- The migration_1__2.sqm file drops this table from existing databases.
+-- databases/1.sqm drops this table from existing databases.
 -- ============================================================================
 
 -- ============================================================================

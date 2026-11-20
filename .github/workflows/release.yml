@@ -92,8 +92,8 @@ jobs:
         run: |
           NOTES=$(scripts/changelog.sh notes "$V")
           {
-            echo "Kotlin Multiplatform SDK for Meshtastic radios over BLE, TCP and USB-serial,"
-            echo "on Android, JVM and iOS."
+            echo "Kotlin Multiplatform SDK for Meshtastic radios over BLE, TCP, USB-serial and WebSocket,"
+            echo "on Android, JVM and iOS, with JS and Wasm targets for the core, testing and WebSocket modules."
             echo
             echo '```kotlin'
             echo "implementation(platform(\"org.meshtastic:sdk-bom:$V\"))"

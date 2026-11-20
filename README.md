@@ -61,7 +61,7 @@ dependencies {
 
 Snapshots are rebuilt on every commit to `main`. Depend on a released version for reproducible builds.
 
-The full module matrix is in [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md). Post-1.0 roadmap modules (`transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server`) are in [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
+The full module matrix is in [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md). Deferred modules are tracked in [`docs/roadmap.md`](docs/roadmap.md): `transport-mqtt-proxy` is R-11, and the remote-RPC modules (`transport-rpc`, `host-rpc-server`) are R-12, designed in [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 
 ## Quick start
 
@@ -156,7 +156,7 @@ val transport = WebSocketTransport("ws://meshtastic.local")
 
 Discovery lives with each transport: `BleScanner.scan()` in `transport-ble`, mDNS through `TcpDiscovery` in `transport-tcp`, and `findMeshtastic()` with `isLikelyMeshtastic()` in `transport-serial`. `TransportTarget.parse` in `core` reads a `ble:`, `tcp:` or `serial:` spec string, the form the [CLI sample](samples/cli/README.md) takes. Each module's `Module.md` has the details.
 
-The [integration guide](docs/integration-guide.md) has per-platform setup: Android runtime permissions, foreground services on API 34+, USB intent filters and iOS `Info.plist` keys. The [consumer guides](docs/consumer-guides/README.md) cover lifecycle, DI and R8. The full API is in [`docs/api-reference.md`](docs/api-reference.md).
+The [integration guide](docs/integration-guide.md) has per-platform setup: Android runtime permissions, foreground services on API 34+, USB intent filters and iOS `Info.plist` keys. The [error-handling guide](docs/consumer-guides/error-handling.md) covers what to retry and what to surface. The full API is in [`docs/api-reference.md`](docs/api-reference.md).
 
 ### If your first send fails
 
@@ -188,13 +188,13 @@ The JS and Wasm klibs (`org.meshtastic:sdk-core-js`, `org.meshtastic:sdk-core-wa
 
 ## Documentation
 
-- [`docs/SPEC.md`](docs/SPEC.md): implementation plan (mission, scope, locked defaults).
 - [`docs/protocol.md`](docs/protocol.md): wire protocol (PhoneAPI, MeshPacket, channel encryption, MQTT proxy).
 - [`docs/api-reference.md`](docs/api-reference.md): public Kotlin signatures.
 - [`docs/error-taxonomy.md`](docs/error-taxonomy.md): what throws, what returns `AdminResult`, what surfaces as `MeshEvent`.
 - [`docs/glossary.md`](docs/glossary.md): NodeNum and NodeId, `request_id` and `packet_id`, channel hash.
 - [`docs/architecture/`](docs/architecture/): handshake FSM, engine actor, storage and module graph.
-- [`docs/consumer-guides/`](docs/consumer-guides/): host-app recipes (lifecycle, Hilt, MVVM, R8).
+- [`docs/integration-guide.md`](docs/integration-guide.md): dependencies, per-transport setup, storage and lifecycle in a host app.
+- [`docs/consumer-guides/error-handling.md`](docs/consumer-guides/error-handling.md): what to retry and what to surface.
 - [`docs/decisions/`](docs/decisions/): ADRs.
 - [`docs/roadmap.md`](docs/roadmap.md): deferred items.
 - [`docs/versioning.md`](docs/versioning.md): SemVer and ABI policy.

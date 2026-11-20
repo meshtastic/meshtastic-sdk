@@ -191,7 +191,8 @@ Then construct it as on other platforms, for example `SqlDelightStorageProvider(
 - `nodes`, `packets`, `events`, and `fromRadio` are hot flows that any number of collectors can share. `nodes` starts every subscription with a snapshot; the others deliver only what arrives while you collect. A slow collector loses items rather than slowing the engine ([api-reference.md, Streams](./api-reference.md#streams)).
 - `disconnect()` is idempotent and never throws. A pending `MessageHandle.await()` returns `SendOutcome.Failure(SendFailure.Disconnected)`.
 - `withConnection { … }` connects, runs a block, and always disconnects.
-- One `RadioClient` talks to one radio. Build one client per radio to run several.
+
+Build one `RadioClient` per radio and hold it at app scope, for example as a DI singleton, so a screen or configuration change doesn't tear the session down. [`samples/parity-android-app`](../samples/parity-android-app) is the compiled Android reference for building and connecting a client; it scopes its client to the activity to stay short.
 
 ## 6. Sending messages
 

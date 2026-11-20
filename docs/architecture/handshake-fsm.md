@@ -69,5 +69,5 @@ A non-recoverable transport error, `MeshtasticException.FirmwareTooOld` and an e
 - `protocol.md` §6: the wire-level envelope sequence and the firmware's special nonces (69420, 69421).
 - ADR-002: the actor model that owns this state machine.
 - ADR-005: `ConnectionState` (no `DeviceSleep`); `Reconnecting` carries `cause`.
-- `references/meshtastic-android-protocol-notes.md`: the 100 ms inter-stage delay precedent.
-- `references/meshtastic-apple-protocol-notes.md`: `requiresPeriodicHeartbeat` per transport.
+- [`protocol.md` §6 host-side rules](../protocol.md#host-side-rules): the 100 ms settle on each side of the inter-stage heartbeat, cited to Android's `HandshakeStateMachine`.
+- [`protocol.md` §16](../protocol.md#16-heartbeat--queue-status): the heartbeat requirement per transport.

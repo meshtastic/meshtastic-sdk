@@ -6,7 +6,7 @@
 | **Date** | 2026-04-19 |
 | **Deciders** | Maintainers |
 | **Supersedes** | — |
-| **Related** | [ADR-005](005-api-shape.md), [`docs/SPEC.md`](../SPEC.md) §3 |
+| **Related** | [ADR-005](005-api-shape.md), [`docs/api-reference.md`](../api-reference.md) |
 
 ## Context
 

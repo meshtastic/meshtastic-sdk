@@ -1,6 +1,6 @@
 # Transport comparison
 
-This page compares the four first-party transport modules so you can pick one per platform and use case. Each implements the [`RadioTransport`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) interface from `:core`, and the engine treats them all the same. [`transport-isolation.md`](./transport-isolation.md) explains why they are separate modules, and [ADR-012](../decisions/012-transport-threading.md) sets the threading contract.
+This page compares the four first-party transport modules so you can pick one per platform and use case. Each implements the [`RadioTransport`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Transport.kt) interface from `:core`, and the engine treats them all the same. [ADR-006](../decisions/006-multi-module-rationale.md) explains why they are separate modules, and [ADR-012](../decisions/012-transport-threading.md) sets the threading contract.
 
 ## Feature matrix
 
@@ -46,7 +46,7 @@ Per-target Android and foreground-service detail: [`android-platform-constraints
 - For a phone or tablet app, use BLE. Plan for `TransportState.Bonding` in the UI and add the Android 14+ foreground service.
 - For desktop tooling, a bench setup or an Android USB-OTG accessory, use serial at 115 200 baud; let the user pick from `JvmSerialPorts.list()`.
 - For a browser host, use WebSocket, the only transport with JS and Wasm targets.
-- HTTP and MQTT are not first-party transports. HTTP is reserved as a `TransportSpec.Http` shape in `Transport.kt`, and MQTT is not a `RadioTransport` by design (`docs/SPEC.md` §2).
+- HTTP and MQTT are not first-party transports. HTTP is reserved as a `TransportSpec.Http` shape in `Transport.kt`, and MQTT is not a `RadioTransport` by design ([`protocol.md` §14](../protocol.md#14-mqtt-proxy-mode)).
 
 ## Custom transports
 
@@ -59,7 +59,7 @@ The `RadioTransport` contract is small and stable. To add a transport:
 
 ## See also
 
-- [`transport-isolation.md`](./transport-isolation.md): module-boundary rationale and per-transport error semantics.
+- [ADR-006](../decisions/006-multi-module-rationale.md): why each transport is its own module.
 - [`module-graph.md`](./module-graph.md): the full dependency graph.
 - [ADR-002](../decisions/002-architecture.md): the engine actor invariant.
 - [ADR-012](../decisions/012-transport-threading.md): the transport threading contract.

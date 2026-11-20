@@ -337,7 +337,7 @@ public sealed interface MeshEvent {
 
     /**
      * An external source (another admin client) pushed a configuration change to the connected
-     * device. The engine has already applied the update to local state ([RadioClient.config],
+     * device. The engine has already applied the update to local state ([RadioClient.configBundle],
      * [RadioClient.channels]). Subscribers should refresh any cached configuration.
      *
      * @param kind indicates which aspect of the device configuration changed

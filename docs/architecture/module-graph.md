@@ -116,6 +116,5 @@ flowchart TB
 - ADR-002: engine architecture, which justifies the `:core` to transport boundary.
 - ADR-003: tooling, which justifies the library each transport module wraps.
 - [ADR-017](../decisions/017-web-targets.md): the `js` and `wasmJs` targets running the engine in-process.
-- `transport-isolation.md`: why transports are separate modules, their error handling, and how to add one.
 - `transport-comparison.md`: feature × transport matrix (TCP, BLE, serial, WebSocket), OS support, and selection guidance.
 - [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md): the post-1.0 remote-RPC architecture.

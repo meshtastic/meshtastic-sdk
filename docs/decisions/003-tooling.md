@@ -4,7 +4,7 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §5, ADR-000 (charter), ADR-001 (proto choice), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../versioning.md`](../versioning.md) (SemVer, ABI, release policy — authoritative source), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (sibling KMP library)
+**Related:** [`../ci-cd.md`](../ci-cd.md), ADR-000 (charter), ADR-001 (proto choice), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../versioning.md`](../versioning.md) (SemVer, ABI, release policy; the authoritative source), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (sibling KMP library)
 
 ---
 

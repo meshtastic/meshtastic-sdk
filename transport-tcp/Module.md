@@ -18,7 +18,7 @@ TCP transport for the Meshtastic KMP SDK. It implements `RadioTransport` from `:
 
 ## Idle timeout
 
-Firmware closes a TCP connection that has been idle in both directions for 15 minutes (`900_000 ms`), a device-side setting described in [`docs/protocol.md` §1A](../docs/protocol.md#-1a-tcp-idle-timeout-behavior). Once connected, the engine sends a `ToRadio` heartbeat every 30 seconds, so a live session never reaches it. If the node closes the socket anyway, Ktor reports EOF and the transport publishes `TransportState.Error(recoverable = true)`.
+Firmware closes a TCP connection after 15 minutes (`900_000 ms`) with no `ToRadio` from the client; traffic from the node does not reset the timer, and the timeout is fixed in firmware ([`docs/protocol.md` §1A](../docs/protocol.md#-1a-tcp-idle-timeout-behavior)). Once connected, the engine sends a `ToRadio` heartbeat every 30 seconds, so a live session never reaches it. If the node closes the socket anyway, Ktor reports EOF and the transport publishes `TransportState.Error(recoverable = true)`.
 
 ## Reconnection
 

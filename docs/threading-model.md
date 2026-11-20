@@ -23,8 +23,9 @@ The ADRs give the reasons; this page gives the rules.
 │   ▸ All state mutations go through one Channel.                 │
 │   ▸ No Mutex / Semaphore / ReentrantLock anywhere on the path.  │
 │   ▸ One coroutine processes messages, one at a time.            │
-│   ▸ Three atomicfu sites (supervisorJobRef, nextWireId,         │
-│     connectionGeneration) are boundary handles, not state.      │
+│   ▸ Four atomicfu sites (supervisorJobRef, nextWireId,          │
+│     connectionGeneration, activeConnectDeferred) are boundary   │
+│     handles, not state.                                         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -46,10 +47,9 @@ The ADRs give the reasons; this page gives the rules.
 │   ▸ Every suspend method wraps its body in                      │
 │     withContext(dispatcher) so blocking JDBC / Android SQLite / │
 │     native sqlite3 calls run off the engine actor.              │
-│   ▸ Default dispatcher is Dispatchers.IO.limitedParallelism(4)  │
-│     on JVM/Android; Dispatchers.Default.limitedParallelism(4)   │
-│     on iOS (Dispatchers.IO on K/N is shadowed by an internal    │
-│     member, unreachable from outside kotlinx.coroutines).       │
+│   ▸ Default dispatcher is a fixed pool of 4 threads             │
+│     (StorageDispatcher.*.kt): daemon threads on JVM/Android,    │
+│     newFixedThreadPoolContext on iOS.                           │
 │   ▸ See docs/architecture/storage.md, thread-safety section.    │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -101,13 +101,13 @@ The rules in the previous sections bind contributors. This section covers what t
 | `events` | `Flow<MeshEvent>` | none | 64 | the oldest event is dropped |
 | `fromRadio` | `Flow<FromRadio>` | none | 256 | the oldest envelope is dropped |
 
-A late subscriber to `packets`, `events` or `fromRadio` sees only what is emitted after it starts collecting. A subscriber to `nodes` first receives a `Snapshot` of the current node map, then deltas; `nodeSnapshot()` returns the map once.
+The shared flows behind `nodes`, `packets`, `events` and `fromRadio` have `replay = 0`. A late subscriber to `packets`, `events` or `fromRadio` sees only what is emitted after it starts collecting. A subscriber to `nodes` first receives a `Snapshot` of the current node map, then deltas; `nodeSnapshot()` returns the map once.
 
 ### Dispatcher choice (consumer side)
 
 You can collect on any dispatcher. Common patterns:
 
-- Android UI: collect in `viewModelScope` with `repeatOnLifecycle` (see [`reactive-lifecycle-management.md`](consumer-guides/reactive-lifecycle-management.md)). The SDK never pins to `Dispatchers.Main`.
+- Android UI: collect in `viewModelScope` with `repeatOnLifecycle`. The SDK never pins to `Dispatchers.Main`.
 - iOS and SwiftUI: collect on `Dispatchers.Main` (the main queue). Don't block in the collector; long work belongs on `Dispatchers.Default`.
 - JVM headless, CLI or server: any dispatcher. One `CoroutineScope` per `RadioClient`, cancelled together, works well.
 
@@ -185,6 +185,4 @@ fun mySendTimesOut() = runTest {
 ### See also
 
 - [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md): how to read `SendFailure` and the `MeshEvent` failure variants
-- [`consumer-guides/reactive-lifecycle-management.md`](consumer-guides/reactive-lifecycle-management.md): Android lifecycle integration patterns
-- [`consumer-guides/mvvm-integration.md`](consumer-guides/mvvm-integration.md): ViewModel and StateFlow mapping
 - [`error-taxonomy.md`](error-taxonomy.md): the error catalog

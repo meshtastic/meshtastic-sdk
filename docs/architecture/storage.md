@@ -79,12 +79,12 @@ The engine calls implementations only from its actor's single-writer context ([A
 
 `SqlDelightStorage` wraps every suspend method in `withContext(dispatcher)`, so blocking driver calls (`JdbcSqliteDriver`'s thread-local pool on JVM, `AndroidSqliteDatabase` syscalls, `sqlite3_step` on Apple) never run on the caller's dispatcher, which is usually the engine actor on `Dispatchers.Default`.
 
-The default `dispatcher` is a platform view with `limitedParallelism(4, "sqldelight-storage")`:
+The default `dispatcher` is a fixed pool of four threads named `sqldelight-storage`:
 
 | Platform | Default |
 |---|---|
-| JVM, Android | `Dispatchers.IO.limitedParallelism(4, …)` |
-| iOS | `Dispatchers.Default.limitedParallelism(4, …)`. `Dispatchers.IO` on Native is shadowed by an internal member and unreachable from shared code; `NativeSqliteDriver` serializes through one connection anyway, so the choice barely affects throughput. |
+| JVM, Android | `Executors.newFixedThreadPool(4)` with daemon threads, as a coroutine dispatcher |
+| iOS | `newFixedThreadPoolContext(4, "sqldelight-storage")`. `NativeSqliteDriver` serializes through one connection anyway, so the pool size barely affects throughput. |
 
 A custom `DeviceStorage` should follow the same rule: blocking I/O must not run on the caller's dispatcher.
 

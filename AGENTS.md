@@ -5,15 +5,16 @@ Guidance for AI coding agents working in this repository.
 ## First read
 
 1. `README.md`
-2. `docs/SPEC.md`
+2. `.specify/memory/constitution.md`
 3. `docs/protocol.md`
 4. `docs/architecture/module-graph.md`
-5. `docs/decisions/002-architecture.md`
-6. `docs/decisions/005-api-shape.md`
-7. `docs/error-taxonomy.md`
-8. `CONTRIBUTING.md`
+5. `docs/architecture/engine-actor.md`
+6. `docs/decisions/002-architecture.md`
+7. `docs/decisions/005-api-shape.md`
+8. `docs/error-taxonomy.md`
+9. `CONTRIBUTING.md`
 
-These are the source of truth. Link to them from PR descriptions and generated docs rather than restating them.
+These are the source of truth, and the constitution outranks the rest. Link to them from PR descriptions and generated docs rather than restating them.
 
 ## Environment
 
@@ -81,10 +82,11 @@ Use targeted tasks while iterating, then run `./gradlew check` before finishing.
 
 - `AGENTS.md` (this file): guardrails and the routing table that follows.
 - `CLAUDE.md`: a pointer to this file for runners that read the Claude filename.
-- `GEMINI.md`: the Gemini runners' own instruction file.
+- `GEMINI.md` and `.github/copilot-instructions.md`: pointers to this file for Gemini and Copilot.
+- `.specify/memory/constitution.md`: the project's non-negotiable principles and their amendment rules.
 - Skills (`.github/skills/`): workflow recipes, one `SKILL.md` per pack; `.github/skills/README.md` is the index.
-- Agents (`.github/agents/`): `spec-guard.agent.md` is the spec-compliance review; the `speckit.*` agents belong to Spec Kit (`.specify/`). `.claude/agents/spec-guard.md` is the Claude Code copy of spec-guard, since Claude Code loads only `.claude/agents/`. The two bodies are identical, so change both together.
-- Prompts (`.github/prompts/`): `pre-pr-sanity.prompt.md` is the final pre-PR sweep; the `speckit.*` prompts belong to Spec Kit.
+- Agents (`.github/agents/`): `spec-guard.agent.md` is the spec-compliance review. `.claude/agents/spec-guard.md` is the Claude Code copy of spec-guard, since Claude Code loads only `.claude/agents/`. The two bodies are identical, so change both together.
+- Prompts (`.github/prompts/`): `pre-pr-sanity.prompt.md` is the final pre-PR sweep.
 - Eval harness (`.github/evals/`): a scoring smoke check for prompts.
 - Tooling guardrails (`.github/tooling/`): `check.sh` validates JSON and frontmatter, lints shell scripts, workflows and markdown, requires SHA-pinned actions, and checks changelog fragments. `agent-report.schema.json` and `agent-report.template.json` define the structured agent report.
 

@@ -31,9 +31,8 @@ import kotlin.io.path.writeText
 /**
  * `cli conformance --transport=… [--peer-node=…] [--output transcript.md] [--scenario cs1,cs3]`
  *
- * One-shot, real-radio acceptance sweep matching the Phase 5 checklist in `docs/SPEC.md` §6 +
- * `docs/manual-tests.md`. Connects, runs each scenario in turn, prints a transcript, and exits
- * non-zero on any FAIL.
+ * One-shot, real-radio acceptance sweep matching the checklist in `docs/manual-tests.md`.
+ * Connects, runs each scenario in turn, prints a transcript, and exits non-zero on any FAIL.
  *
  * SKIP is **not** a failure: scenarios skipped because of missing prerequisites (no
  * `--peer-node`) leave the exit code unaffected. A reviewer can still spot the gap in the

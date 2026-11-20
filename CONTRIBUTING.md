@@ -154,7 +154,7 @@ If a rule is in your way, open an issue to discuss the design; don't disable the
 2. For non-trivial work, open an issue or comment on an existing one before investing days in it.
 3. Make the change:
    - Add tests where there is behavior to verify. `FakeRadioTransport` in `:testing` and `InMemoryStorageProvider` in `:core` support engine-level tests.
-   - Update `docs/` if the change touches the spec, API or workflow.
+   - Update `docs/` if the change touches the protocol, engine behavior, API or workflow.
    - Run `./gradlew check` and fix anything red.
    - If the public API changed, run `./gradlew updateKotlinAbi` and commit the regenerated dumps.
 4. Sign off every commit (`git commit -s`).

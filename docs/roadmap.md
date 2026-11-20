@@ -38,7 +38,9 @@ Tooling deferral: public event and result `data class`es move to [Poko](https://
 | R-17 | `MeshEvent.KeyVerification` | public | No-op: declared, never emitted by the engine. | 2 | [`Node.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt) |
 | R-18 | `MeshtasticException.FirmwareTooOld` | public | No-op: declared, never thrown; the reconnect policy only checks for it. | 2 | [`MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/MeshtasticException.kt) |
 | R-19 | `Storage.saveSessionPasskey` / `loadSessionPasskey` | public | Unused by the engine: the storage backends implement both, but the engine keeps passkeys in memory and never calls them. | n/a (host-facing) | [`Storage.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Storage.kt) |
-| R-20 | Firmware update (`FirmwareApi`) | none | Missing: omitted from the MVP. XModem file transfer ships as `RadioClient.files` ([`FileTransferApi`](./api-reference.md#filetransferapi-since-030)); firmware does not flash over it. | 6 | [`SPEC.md`](./SPEC.md) (line 637 and the checklist at line 1011) |
+| R-20 | Firmware update (`FirmwareApi`) | none | Missing: omitted from the MVP. XModem file transfer ships as `RadioClient.files` ([`FileTransferApi`](./api-reference.md#filetransferapi)); firmware does not flash over it. | 6 | [`api-reference.md`](./api-reference.md#filetransferapi) |
+| R-21 | iOS XCFramework and SPM publish | none | Missing: KMMBridge is pinned in `gradle/libs.versions.toml` but not applied by any build script, so no XCFramework or SPM package is published. | unscheduled | [ADR-007](./decisions/007-ios-distribution.md) |
+| R-22 | Dokka documentation coverage gate | none | Missing: `explicitApi()` forces visibility, but no build step fails on an undocumented public symbol. | unscheduled | [ADR-003](./decisions/003-tooling.md) |
 
 ## How to add to this list
 
@@ -50,6 +52,5 @@ This list is not mirrored to GitHub Issues; the rows are the source of truth. A 
 
 ## Related
 
-- [`SPEC.md`](./SPEC.md) §6: phase plan with milestones
 - [`future/`](./future/): long-form design for future work (remote RPC)
 - [`versioning.md`](./versioning.md): how additive surface changes interact with SemVer

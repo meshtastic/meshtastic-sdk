@@ -8,7 +8,7 @@
 | **Date** | YYYY-MM-DD |
 | **Deciders** | (PR reviewers / quorum) |
 | **Supersedes** | (link to prior ADR if this replaces it) |
-| **Related** | (links to `SPEC.md` sections, other ADRs, issues) |
+| **Related** | (links to docs sections, other ADRs, issues) |
 
 ## Context
 
@@ -42,7 +42,7 @@ Why we picked this option. Reference each force in the Context.
 - (what gets harder)
 
 ### Follow-ups
-- [ ] Track in `SPEC.md` §X
+- [ ] Add a `docs/roadmap.md` row for any deferred surface
 - [ ] Update `CONTRIBUTING.md` if this changes contributor workflow
 - [ ] Add a detekt `ForbiddenImport` entry if this introduces a forbidden pattern
 

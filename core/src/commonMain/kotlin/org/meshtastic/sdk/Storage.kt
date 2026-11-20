@@ -247,8 +247,8 @@ public interface DeviceStorage : AutoCloseable {
      *
      * **The engine no longer calls this** (since 0.2.0): session passkeys are per-node and
      * in-memory only — the local node's passkey is never required (firmware rewrites phone
-     * packets to `from = 0`, which is passkey-exempt), and remote-node passkeys expire after
-     * ~4 minutes, making persistence useless across process restarts. Retained as a
+     * packets to `from = 0`, which is passkey-exempt), and firmware accepts a remote-node passkey
+     * for only 300 s, making persistence useless across process restarts. Retained as a
      * host-facing capability. Implementations must overwrite any previous passkey atomically.
      */
     @Throws(MeshtasticException.StorageUnavailable::class, kotlin.coroutines.cancellation.CancellationException::class)

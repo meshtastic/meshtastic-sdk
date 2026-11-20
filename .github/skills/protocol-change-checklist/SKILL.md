@@ -15,7 +15,7 @@ Use this skill for any change affecting wire framing, handshake, transport seman
 ## Required Context
 Read before editing:
 - AGENTS.md
-- docs/SPEC.md
+- docs/architecture/engine-actor.md
 - docs/protocol.md
 - docs/architecture/handshake-fsm.md
 - docs/decisions/002-architecture.md

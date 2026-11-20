@@ -11,7 +11,7 @@ This page sets out what `meshtastic-sdk` protects and what it leaves to the host
 
 ## What's out of scope
 
-- Mesh-side wire crypto. Channel encryption (AES-CTR) and PKI direct-message encryption run in firmware. The SDK holds no PKI private key and decrypts no mesh traffic: the node hands it cleartext over the PhoneAPI ([`references/meshtastic-firmware-behavior.md`](./references/meshtastic-firmware-behavior.md)).
+- Mesh-side wire crypto. Channel encryption (AES-CTR) and PKI direct-message encryption run in firmware. The SDK holds no PKI private key and decrypts no mesh traffic: the node hands it cleartext over the PhoneAPI ([`protocol.md` §10](./protocol.md#key-material-storage), citing firmware `CryptoEngine.cpp`).
 - The security of the host process. A compromised host process exposes everything.
 - Attacks on the radio link, such as RF jamming or over-the-air replay. The SDK is downstream of them.
 - The MQTT broker and the firmware's MQTT connection. A consumer's own MQTT client owns broker authentication and TLS. In PhoneAPI MQTT proxy mode ([`protocol.md` §14](./protocol.md#14-mqtt-proxy-mode)) the consumer relays bytes and the broker settings live on the node.
@@ -116,6 +116,6 @@ Use the org's coordinated-disclosure process; [`SECURITY.md`](../SECURITY.md) at
 ## Related
 
 - [`protocol.md`](./protocol.md) §9 (channel encryption), §10 (PKI direct messages), §13 (admin and session passkey)
-- [`references/meshtastic-firmware-behavior.md`](./references/meshtastic-firmware-behavior.md): confirms the node, not the SDK, decrypts PKI traffic
+- [`protocol.md` §7 payload paths](./protocol.md#payload-paths): the node, not the SDK, decrypts channel and PKI traffic
 - [ADR-005](./decisions/005-api-shape.md): the `recordOwnNode` rebind contract
 - [`error-taxonomy.md`](./error-taxonomy.md): `SessionKeyExpired` retry behavior

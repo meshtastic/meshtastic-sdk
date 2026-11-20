@@ -11,9 +11,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.asCoroutineDispatcher
 import java.util.concurrent.Executors
 
-// A fixed pool rather than Dispatchers.IO.limitedParallelism(4): the SDK compiles against
-// coroutines 1.8.1, which has no such overload. Daemon threads keep a forgotten storage
-// from pinning the JVM.
+// Daemon threads keep a forgotten storage from pinning the JVM.
 internal actual val defaultStorageDispatcher: CoroutineDispatcher =
     Executors.newFixedThreadPool(STORAGE_PARALLELISM) { runnable ->
         Thread(runnable, "sqldelight-storage").apply { isDaemon = true }

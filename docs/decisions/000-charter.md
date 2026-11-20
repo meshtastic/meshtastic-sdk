@@ -4,7 +4,7 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads (Meshtastic org)
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md), [`../protocol.md`](../protocol.md), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client), [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple)
+**Related:** [constitution](../../.specify/memory/constitution.md), [`../protocol.md`](../protocol.md), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client), [`meshtastic/Meshtastic-Android`](https://github.com/meshtastic/Meshtastic-Android), [`meshtastic/Meshtastic-Apple`](https://github.com/meshtastic/Meshtastic-Apple)
 
 ---
 
@@ -64,7 +64,7 @@ MVP: `androidTarget()`, `jvm()`, `iosArm64()`, `iosX64()`, `iosSimulatorArm64()`
 
 ## Consequences
 
-- **Immediate scope is large but bounded.** §3 of `SPEC.md` enumerates the complete public API; §6 of `SPEC.md` partitions it into phases.
+- **Immediate scope is large but bounded.** The ABI dumps in each module's `api/` directory enumerate the public API; [`roadmap.md`](../roadmap.md) tracks the deferred surface.
 - **Two parallel apps remain authoritative until they migrate.** Until and unless `Meshtastic-Android` / `Meshtastic-Apple` adopt this SDK, we treat them as references, not consumers.
 - **The org accepts a third Meshtastic-protocol implementation.** This is the explicit cost. The trade is: a single canonical KMP implementation that future apps (and the existing flagships, eventually) can converge onto.
 - **The proto submodule is the only gated dependency on upstream.** Bumping it is the integration point for every new firmware feature.

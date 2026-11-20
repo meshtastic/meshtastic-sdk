@@ -71,7 +71,7 @@ Each artifact is constrained to the BOM's own version, which axion-release deriv
 | `org.meshtastic:sdk-storage-sqldelight` | `:storage-sqldelight` | Persistent `StorageProvider` backed by SQLDelight. |
 | `org.meshtastic:sdk-testing` | `:testing` | `FakeRadioTransport` and `TestClock`. |
 
-The protobuf types come from `org.meshtastic:protobufs` through `sdk-core`; the BOM doesn't pin that artifact. The per-target matrix is in [`docs/architecture/module-graph.md`](../docs/architecture/module-graph.md#mvp-per-target-compile-matrix).
+The protobuf types come from `org.meshtastic:protobufs` through `sdk-core`; the BOM doesn't pin that artifact. The per-target matrix is in [`docs/architecture/module-graph.md`](../docs/architecture/module-graph.md#per-target-compile-matrix).
 
 ## Upgrading
 

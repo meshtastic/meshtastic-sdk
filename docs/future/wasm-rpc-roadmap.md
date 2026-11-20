@@ -83,7 +83,6 @@ Then an ADR accepts this design (it stays a roadmap page until then), and a mino
 
 ## Related
 
-- [`../SPEC.md`](../SPEC.md) §0, "What this SDK is NOT (MVP)", defers RPC.
-- [`../SPEC.md`](../SPEC.md) §6, "Future (post-1.0, non-breaking adds)", is the staging area for this roadmap.
+- [`../roadmap.md`](../roadmap.md) R-12 tracks the remote-RPC artifacts.
 - [`../decisions/006-multi-module-rationale.md`](../decisions/006-multi-module-rationale.md): the module list.
 - [`../security.md`](../security.md): per-transport posture, which gains an RPC row when this roadmap lands.

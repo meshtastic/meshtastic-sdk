@@ -2,7 +2,7 @@
 
 This page describes the PhoneAPI, the protocol between a Meshtastic node and a client, as the SDK implements it. It is written for anyone building a clean-room client.
 
-Sources, with research notes in [`references/`](references/):
+Sources:
 
 1. [`meshtastic/protobufs`](https://github.com/meshtastic/protobufs): message structure.
 2. [`meshtastic/firmware`](https://github.com/meshtastic/firmware): node behavior. GPL-3.0; never copy code.
@@ -57,7 +57,7 @@ Firmware closes a TCP connection after 15 minutes (`TCP_IDLE_TIMEOUT_MS` in `fir
 
 When it fires, firmware closes the socket, the transport reads end-of-stream and reports `TransportState.Error(recoverable = true)`, and the session ends.
 
-The SDK sends a `ToRadio.heartbeat` every 30 s once the session is `Connected` (§16), so an SDK session over TCP never reaches the timeout. Reconnecting after any drop is off by default: `RadioClient.Builder.autoReconnect(...)` turns on the engine's backoff supervisor, and [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md#reconnect-supervisor-consumer-side) shows a consumer-side alternative.
+The SDK sends a `ToRadio.heartbeat` every 30 s once the session is `Connected` (§16), so an SDK session over TCP never reaches the timeout. Reconnecting after any drop is off by default: `RadioClient.Builder.autoReconnect(...)` turns on the engine's backoff supervisor, and [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md#reconnecting) covers reconnecting with and without it.
 
 ---
 
@@ -638,7 +638,7 @@ ciphertext := AES-CTR(key, nonce).process(plaintext)
 
 The plaintext is the **serialized `Data` protobuf** (i.e. the inner message that lives in `MeshPacket.decoded`). The ciphertext goes into `MeshPacket.encrypted`.
 
-> **Pitfall**: firmware (`initNonce` in `src/mesh/CryptoEngine.cpp`) reads the first 8 nonce bytes as a uint64 `packet_id`. For a uint32 id, write it little-endian into bytes 0 to 3 and zeros into bytes 4 to 7. An Android research note describing a zero-padded uint32 gives the same bytes but misstates the field width.
+> **Pitfall**: firmware (`initNonce` in `src/mesh/CryptoEngine.cpp`) reads the first 8 nonce bytes as a uint64 `packet_id`. For a uint32 id, write it little-endian into bytes 0 to 3 and zeros into bytes 4 to 7. Describing it as a zero-padded uint32 gives the same bytes but misstates the field width.
 
 AES-CTR has no authentication, so anyone holding the PSK can forge channel traffic undetectably. That is by design: channel members are trusted. Direct messages that need authentication use PKI (§10).
 
@@ -679,7 +679,7 @@ The recipient's `MeshPacket.public_key` field MAY carry the sender's public key 
 
 > Source: `firmware:src/mesh/CryptoEngine.cpp:106-178` (`encryptCurve25519` / `decryptCurve25519`).
 
-The cipher is AES-CCM, not AES-GCM as the Apple research notes state. The SDK never runs it, because the node encrypts and decrypts PKI traffic. A client that does would need a CCM implementation, which CryptoKit does not provide; on JVM and Android, BouncyCastle's `AES/CCM/NoPadding` does.
+The cipher is AES-CCM, not AES-GCM. The SDK never runs it, because the node encrypts and decrypts PKI traffic. A client that does would need a CCM implementation, which CryptoKit does not provide; on JVM and Android, BouncyCastle's `AES/CCM/NoPadding` does.
 
 ### Key material storage
 
@@ -933,7 +933,7 @@ While the node is in any `STATE_SEND_*` state other than `STATE_SEND_PACKETS`, i
 
 ## 15. File transfer (XModem)
 
-The node reads and writes files on its filesystem through an XModem-style exchange carried on `ToRadio.xmodem_packet` and `FromRadio.xmodem_packet`. The SDK exposes it as `RadioClient.files` ([`FileTransferApi`](./api-reference.md#filetransferapi-since-030), whose KDoc gives the full timeout bounds). Firmware behavior comes from `XModemAdapter::handlePacket` in `firmware/src/xmodem.cpp`; frames are routed in `firmware/src/mesh/PhoneAPI.cpp`. This is file transfer only, not firmware flashing.
+The node reads and writes files on its filesystem through an XModem-style exchange carried on `ToRadio.xmodem_packet` and `FromRadio.xmodem_packet`. The SDK exposes it as `RadioClient.files` ([`FileTransferApi`](./api-reference.md#filetransferapi), whose KDoc gives the full timeout bounds). Firmware behavior comes from `XModemAdapter::handlePacket` in `firmware/src/xmodem.cpp`; frames are routed in `firmware/src/mesh/PhoneAPI.cpp`. This is file transfer only, not firmware flashing.
 
 ```protobuf
 message XModem {
@@ -1254,4 +1254,4 @@ In rough order of "how often we expect implementers to be bitten":
 
 ## Document maintenance
 
-This page is derived from the upstream repositories, with research notes in [`references/`](references/). Re-check it against upstream when firmware moves to a new minor version, when `FromRadio` or `ToRadio` gains a variant, or when firmware adds a transport. Correct an upstream-derived constant only after checking it upstream.
+This page is the canonical wire reference, cited to upstream source. Re-check it against upstream when firmware moves to a new minor version, when `FromRadio` or `ToRadio` gains a variant, or when firmware adds a transport. Correct an upstream-derived constant only after checking it upstream.

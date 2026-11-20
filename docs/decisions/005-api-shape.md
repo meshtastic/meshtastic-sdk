@@ -4,7 +4,7 @@
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §3, ADR-001 (proto types are the data model), ADR-002 (engine architecture), [`../protocol.md`](../protocol.md)
+**Related:** [`../api-reference.md`](../api-reference.md), ADR-001 (proto types are the data model), ADR-002 (engine architecture), [`../protocol.md`](../protocol.md)
 
 ---
 
@@ -90,7 +90,7 @@ There is no `DeviceSleep` state. Devices do not announce sleep on the wire — `
 
 ### Backpressure policy
 
-Per `SPEC.md` §4.4:
+The policy as decided; the current policy is in [`engine-actor.md`, Backpressure](../architecture/engine-actor.md#backpressure):
 
 | Flow | Buffer | Overflow |
 |---|---|---|
@@ -149,7 +149,7 @@ Routers and headless devices without GPS rely on the phone for clock sync (`prot
 ## Consequences
 
 - **Swift consumption is first-class.** Throwing-suspend bridges to `try await`; sealed `AdminResult` enums map cleanly to Swift; `Flow` works via KMP-NativeCoroutines / skie at the host app's choice.
-- **Pre-1.0 API churn is bounded by this ADR plus `SPEC.md` §3.** Any change to the response shapes, NodeChange contract, MessageHandle invariants, or backpressure policy is a SemVer-major signal even pre-1.0 and warrants a follow-up ADR.
+- **Pre-1.0 API churn is bounded by this ADR plus the ABI dumps.** Any change to the response shapes, NodeChange contract, MessageHandle invariants, or backpressure policy is a SemVer-major signal even pre-1.0 and warrants a follow-up ADR.
 - **Backpressure is observable.** Hosts can render a "you're falling behind" UI hint by collecting `events` for `PacketsDropped`.
 - **No silent state corruption on factory reset.** The NodeNum-mismatch reset rule, surfaced as `ProtocolWarning`, prevents stale node DBs from leaking into a new device's session.
 - **Two clients for two radios is the recommended pattern.** Documented in the README and the multi-radio sample.
