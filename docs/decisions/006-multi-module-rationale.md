@@ -1,6 +1,6 @@
 # ADR 006 — Multi-module rationale
 
-**Status:** Accepted (the `:proto` module was superseded by [ADR-015](015-consume-published-protobufs-artifact.md); the rest of the layout stands)
+**Status:** Accepted; superseded in part by [ADR-015](015-consume-published-protobufs-artifact.md) (the `:proto` module) and [ADR-017](017-web-targets.md) (web targets)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
@@ -56,6 +56,8 @@ meshtastic-sdk/
     └── desktop/                   ── jvm (Compose Multiplatform)
 ```
 
+> **Note:** the layout also has `transport-websocket/` (Ktor client; android, jvm, ios, js, wasmJs). The samples are `samples/cli`, `samples/parity-app` (Compose Multiplatform for Android, desktop JVM and iOS, with the SwiftUI shell in `iosApp/`) and `samples/parity-android-app`; [`../architecture/module-graph.md`](../architecture/module-graph.md) is the live graph.
+
 > **There is NO `:transport-api` module.** The `RadioTransport` interface, `Frame`, and `TransportIdentity` live in `:core` (per SPEC §3.4). Splitting them out would create a tiny artifact every transport must depend on, with no testability or layering benefit — `:core` already exposes the interface as part of its public surface.
 
 ### Roadmap modules (post-1.0; not in MVP)
@@ -98,6 +100,8 @@ When the roadmap lands, `:core` adds a `wasmJs` source set containing only RPC-c
 | `:bom` | n/a (Maven BOM) |
 
 ### `wasmJs` posture (post-1.0)
+
+> **Superseded by [ADR-017](017-web-targets.md):** `:core`, `:testing` and `:transport-websocket` publish `js` and `wasmJs` and run the engine in-process; `:transport-ble`, `:transport-tcp`, `:transport-serial` and `:storage-sqldelight` stay off the web targets.
 
 `wasmJs` is **not** an MVP target on any module. When the wasm/RPC roadmap lands:
 

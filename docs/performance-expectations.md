@@ -1,106 +1,53 @@
-# Performance Expectations
+# Performance expectations
 
-What `meshtastic-sdk` aims for, where the bottlenecks actually live,
-and how to measure regressions. This document is intentionally
-*expectation*-shaped, not benchmark-shaped: real numbers depend on
-device firmware, transport, host, and link conditions, none of which the
-SDK controls.
+This page says what `meshtastic-sdk` aims for, where the time actually goes, and how to measure a regression. It states expectations, not benchmarks: real numbers depend on firmware, transport, host and link conditions, none of which the SDK controls. [`performance.md`](./performance.md) has the operational details: buffer sizes, memory and known pitfalls.
 
 ## Where the time goes
 
-A typical end-to-end "open SDK → first usable state" sequence:
+A typical sequence from opening the SDK to a usable session:
 
 | Phase | Typical wall time | Dominated by |
 |---|---|---|
-| Transport connect | TCP: < 50 ms LAN; BLE: 0.5–2 s (incl. discovery + bonding); serial: < 100 ms after port open | OS/transport stack — not the SDK |
-| Handshake (`config_id` → `config_complete_id`) | 200–800 ms over BLE; 50–200 ms over TCP/serial | Device firmware producing config envelopes |
-| Initial node-DB fill | 50–500 ms after handshake | Number of nodes in `NodeInfo` envelopes |
-| First `client.connection == Connected` | Sum of the above | — |
+| Transport connect | TCP: under 50 ms on a LAN; BLE: 0.5 to 2 s with discovery and bonding; serial: under 100 ms after the port opens | the OS and transport stack, not the SDK |
+| Stage 1 (`want_config_id` → `config_complete_id`) | 200 to 800 ms over BLE; 50 to 200 ms over TCP or serial | firmware producing config envelopes |
+| Stage 2 (NodeDB) | 50 to 500 ms | the number of nodes the firmware streams |
+| `client.connection == Connected` | the sum of the above, plus the session-key seed | — |
 
-The SDK's own CPU time is negligible against any of these phases. We
-budget *engine processing time per envelope* at well under 1 ms on a
-2020-era laptop; the actor-model design keeps that constant under load.
-
-## Memory
-
-The engine holds:
-
-- One actor coroutine + a small mailbox `Channel`.
-- A `MutableSharedFlow` per public flow surface (events, packets, etc.).
-- A node-DB cache keyed by `nodeNum` (typically 10–100 entries on a
-  real mesh; bounded by firmware limits).
-- A pending-request map for outstanding admin/routing requests
-  (typically empty; bounded by configurable timeout window).
-
-Total resident overhead: kilobytes, not megabytes.
+The SDK's own CPU time is negligible against every phase. Engine processing per envelope is budgeted at well under 1 ms on a 2020-era laptop, and the actor design keeps it constant under load.
 
 ## Throughput
 
-The Meshtastic radio link tops out at low single-digit kilobytes per
-second. The SDK's framing/codec path can comfortably sustain orders of
-magnitude more — the wire is the bottleneck, not the SDK. A
-performance regression in the SDK would have to be obviously
-catastrophic to be visible at all.
+The radio link tops out at low single-digit kilobytes per second. The SDK's framing and codec path sustains orders of magnitude more, so the wire is the bottleneck. An SDK regression would have to be severe to be visible.
 
 ## Latency-sensitive paths
 
-The two paths that matter for perceived responsiveness:
+Two paths shape perceived responsiveness:
 
-1. **Send → ACK round-trip.** The SDK adds < 5 ms of bookkeeping
-   between accepting `client.send(...)` and emitting the framed bytes
-   on the transport. The rest is firmware + radio time.
-2. **Frame arrival → `events` emission.** Each inbound frame goes
-   bytes → codec → engine actor → `MutableSharedFlow`. We budget < 1
-   ms total on the engine dispatcher; subscribers run on their own
-   dispatcher and don't back-pressure the engine.
+1. Send to first byte. The SDK adds under 5 ms of bookkeeping between accepting `client.send(...)` and writing the framed bytes to the transport. The rest is firmware and radio time.
+2. Frame arrival to `events` emission. Each inbound frame goes bytes → codec → engine actor → `MutableSharedFlow`, budgeted at under 1 ms on the engine dispatcher. Collectors run on their own dispatchers and never backpressure the engine.
 
-Neither path holds locks; neither blocks on I/O.
+Neither path holds a lock or blocks on I/O.
 
 ## Measuring
 
-The CLI's `probe` sub-command is the primary regression tool:
+The CLI's `probe` subcommand is the main regression tool:
 
-```bash
-cli probe 50 tcp 192.168.1.42:4403 --format=json | jq '.payload.duration_ms'
+```shell
+cli --json probe tcp <NODE_HOST> --runs 50
 ```
 
-50 connect/handshake/disconnect cycles against a real device; per-run
-timings come back as NDJSON and can be diffed across SDK versions or
-firmware builds.
+It runs 50 connect, handshake and disconnect cycles against a real node and prints one `probe-run` NDJSON envelope per cycle, with `elapsedMs` in `data`, then a `probe-summary`. Diff the timings across SDK versions or firmware builds.
 
-For micro-level engine work, the test suite includes timing-sensitive
-fixtures under `:testing` — but those are correctness tests, not
-benchmarks. We have not yet wired a benchmark harness; one is on the
-post-1.0 roadmap.
+The test suite's timing-sensitive fixtures under `:testing` are correctness tests, not benchmarks. A benchmark harness is on the post-1.0 roadmap.
 
 ## Anti-goals
 
-- The SDK does **not** chase throughput numbers. The radio link is the
-  ceiling.
-- The SDK does **not** add adaptive batching, retry storms, or
-  speculative reads. Predictable behavior beats clever behavior in a
-  protocol where every byte costs airtime.
-- The SDK does **not** spin up thread pools. Coroutines on
-  `Dispatchers.Default` plus the engine's single-thread dispatcher are
-  the entire compute model.
-
-## Known performance footguns
-
-- **Frame logging at `Debug`** turns every envelope into a string
-  allocation + `LogSink` callback. Off by default for both correctness
-  ([ADR-011](decisions/011-logsink.md)) and performance reasons.
-- **Many subscribers on hot flows** — `events` and `packets` are
-  `MutableSharedFlow` with unlimited replay; subscribers that block in
-  their `collect { }` lambda will pile up replay buffers. Treat
-  subscribers as if they were on a UI thread: no I/O, no allocations
-  per event you can avoid.
-- **BLE rate-limit at high write frequency** — Kable / CoreBluetooth
-  enforce per-packet pacing; bursting writes will block the *transport*
-  coroutine, never the engine.
+- The SDK does not chase throughput numbers; the radio link is the ceiling.
+- The SDK does not add adaptive batching, retry storms or speculative reads. Predictable behavior beats clever behavior when every byte costs airtime.
+- The SDK starts no thread pools of its own. Coroutines on `Dispatchers.Default`, or the context passed to `Builder.coroutineContext(...)`, are the whole compute model.
 
 ## References
 
-- [ADR-002](decisions/002-architecture.md) — single-writer actor; why
-  there are no locks to contend.
-- [`docs/threading-model.md`](threading-model.md) — what runs where.
-- [`docs/observability.md`](observability.md) — measuring in production.
+- [ADR-002](decisions/002-architecture.md): the single-writer actor, and why there are no locks to contend.
+- [`threading-model.md`](threading-model.md): what runs where.
+- [`observability.md`](observability.md): measuring in production.

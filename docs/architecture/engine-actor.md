@@ -1,6 +1,6 @@
-# Engine actor — dataflow
+# Engine actor dataflow
 
-> **Visual companion to [`../decisions/002-architecture.md`](../decisions/002-architecture.md) (Architecture Decision).** This document provides diagrams and dataflow details for the single-writer actor model. For rationale and alternatives, see ADR-002. This is NOT a duplicate — ADR-002 is the decision; this document is the visual reference.
+This page diagrams the single-writer actor model that [ADR-002](../decisions/002-architecture.md) decides. ADR-002 holds the rationale and alternatives; this page is the visual reference.
 
 ## Component dataflow
 
@@ -10,28 +10,27 @@ flowchart LR
         public["Public API calls<br/>(connect/disconnect/send/<br/>admin ops)"]
         framerx["Frame reader<br/>transport.frames()"]
         tstate["Transport state<br/>transport.state"]
-        timers["Timers<br/>heartbeat / handshake"]
+        timers["Timers<br/>heartbeat / liveness /<br/>handshake / ACK"]
     end
 
     inbox[["Channel&lt;EngineMessage&gt;<br/>(UNLIMITED)"]]
 
-    subgraph EngineCoroutine["Engine actor coroutine (single writer) — logical responsibilities inside MeshEngine; not separate classes"]
+    subgraph EngineCoroutine["Engine actor coroutine (single writer)"]
         codec[WireCodec]
-        fsm[HandshakeMachine]
+        fsm[Handshake stages]
         state[(MeshState)]
-        queue[(MessageQueue)]
         cmd[CommandDispatcher]
-        defer[(DeferredDecryptBuffer)]
-        persist[PersistenceCoordinator]
+        sends[(Pending sends)]
     end
 
     subgraph Outputs["Outputs (engine-emitted)"]
         outbound[["Channel&lt;Frame&gt;<br/>outbound"]]
         connFlow["MutableStateFlow&lt;ConnectionState&gt;"]
         ownFlow["MutableStateFlow&lt;NodeInfo?&gt;"]
-        nodesFlow["MutableSharedFlow&lt;NodeChange&gt;<br/>buffer=256, SUSPEND"]
-        pktFlow["MutableSharedFlow&lt;MeshPacket&gt;<br/>buffer=128, SUSPEND"]
+        nodesFlow["MutableSharedFlow&lt;NodeChange&gt;<br/>buffer=256"]
+        pktFlow["MutableSharedFlow&lt;MeshPacket&gt;<br/>buffer=128"]
         evtFlow["MutableSharedFlow&lt;MeshEvent&gt;<br/>buffer=64, DROP_OLDEST"]
+        rawFlow["MutableSharedFlow&lt;FromRadio&gt;<br/>buffer=256, DROP_OLDEST"]
         storage[(DeviceStorage)]
     end
 
@@ -51,6 +50,7 @@ flowchart LR
     EngineCoroutine --> nodesFlow
     EngineCoroutine --> pktFlow
     EngineCoroutine --> evtFlow
+    EngineCoroutine --> rawFlow
     EngineCoroutine --> storage
 
     outbound --> writer --> transport
@@ -59,13 +59,13 @@ flowchart LR
     transport -.state.-> tstate
 ```
 
-**Reading the diagram:**
+How to read it:
 
-- The boxes inside the engine subgraph (`WireCodec`, `HandshakeMachine`, `MeshState`, `MessageQueue`, `CommandDispatcher`, `DeferredDecryptBuffer`, `PersistenceCoordinator`) are *logical responsibilities* the single `MeshEngine` class implements; only `WireCodec` ships as a standalone type today (see [`MeshEngine.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/MeshEngine.kt)).
-- All four input sources funnel into one inbox. The engine drains it in order.
-- The engine never writes to a public flow from anywhere except its own loop. There is no `state.update { … }` from a transport coroutine.
-- The outbound writer is a separate coroutine so a slow socket cannot back-pressure the engine itself. The `outbound` channel is `Channel.UNLIMITED` — the engine produces outbound frames synchronously inside its own coroutine and must never suspend on its own output. The transport's `send` is what actually waits.
-- `DeviceStorage` writes happen inline on the engine coroutine — they're suspending but serialised. Storage implementations are responsible for not blocking the engine for long; SQLDelight + a background `Dispatchers.IO` write coalescer is the recommended pattern (`storage-sqldelight` provides this).
+- The boxes inside the engine are responsibilities of [`MeshEngine`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/MeshEngine.kt). `WireCodec`, `CommandDispatcher` and `MeshState` are their own types; the handshake stages and pending-send tracking live in `MeshEngine` itself.
+- Every input funnels into one inbox, which the engine drains in order.
+- Only the engine's own loop writes to a public flow. No transport coroutine calls `state.update { … }`.
+- The outbound writer is a separate coroutine, so a slow socket never backpressures the engine. The `outbound` channel is `Channel.UNLIMITED` because the engine produces frames inside its own coroutine and must never suspend on its own output; the transport's `send` is what waits.
+- Most storage writes run in coroutines the engine launches, so a slow `DeviceStorage` does not stall the inbox. `SqlDelightStorage` moves blocking driver calls off the caller's dispatcher ([`storage.md`](./storage.md)).
 
 ## Coroutine lifecycle
 
@@ -78,7 +78,7 @@ sequenceDiagram
     participant Engine as Engine actor
     participant Reader as Frame reader
     participant Writer as Outbound writer
-    participant HB as Heartbeat scheduler
+    participant HB as Heartbeat and liveness timers
     participant Trans as RadioTransport
 
     App->>Client: connect()
@@ -86,14 +86,13 @@ sequenceDiagram
     Sup->>Engine: launch
     Sup->>Reader: launch (collects transport.frames())
     Sup->>Writer: launch (drains outbound channel)
-    Sup->>HB: launch (idle until Connected)
 
     Reader->>Trans: collect()
     Engine->>Trans: connect()
     Trans-->>Engine: TransportState.Connected
-    Engine->>Engine: HandshakeMachine drives Stage1/Stage2/Seed
+    Engine->>Engine: Stage 1, settle, Stage 2, seed
     Engine-->>Client: connectionState = Connected
-    Engine->>HB: start 30s ticks (per-transport policy)
+    Engine->>HB: launch 30 s heartbeat and liveness ticks
 
     loop steady state
         Trans-->>Reader: Frame
@@ -101,7 +100,7 @@ sequenceDiagram
         Engine->>Engine: decode, mutate state, emit flows
         Engine->>Writer: outbound.send(Frame)
         Writer->>Trans: send(Frame)
-        HB->>Engine: EngineMessage.HeartbeatTick
+        HB->>Engine: EngineMessage.HeartbeatTick / LivenessTick
         Engine->>Writer: outbound.send(HeartbeatFrame)
     end
 
@@ -112,72 +111,50 @@ sequenceDiagram
     Engine-->>Client: connectionState = Disconnected
 ```
 
-**Notes on the sequence:**
+Notes on the sequence:
 
-- Steps 4-7 (launch under supervisor) happen synchronously in `connect()`; `connect()` then suspends until step 13 (`Connected` emitted) or throws on terminal handshake failure.
-- The reader is the only coroutine that observes `transport.frames()`. Multiple readers would race on framing-resync state.
-- Heartbeat policy per `protocol.md` §16: TCP+Serial mandatory, BLE opportunistic (default-on, opt-out via `Builder.disableBleHeartbeat()` — see `SPEC.md` §3.1).
-- Cancellation via `Sup.cancel()` is the *only* shutdown path. `disconnect()` calls it; supervisor cancel from the host (e.g., closing scope) calls it; transport-side fatal errors post `EngineMessage.Disconnect(cause)` and the engine itself calls `Sup.cancel()` after emitting `Reconnecting(cause)`.
+- Steps 2 to 5 happen synchronously in `connect()`, which then suspends until the session is `Connected` or throws on a terminal handshake failure.
+- The reader is the only coroutine that collects `transport.frames()`; a second reader would race on framing state.
+- The heartbeat runs on every transport; BLE can opt out with `Builder.disableBleHeartbeat()` (`protocol.md` §16).
+- Cancelling the supervisor is the only shutdown path. `disconnect()` cancels it, so does cancelling the host scope, and a fatal transport error posts `EngineMessage.Disconnect(cause)` so the engine cancels it after updating `connectionState`.
 
 ## Backpressure
 
-The engine is a single-writer actor sitting between an unbounded inbox and a fan-out of bounded shared flows. The contract is:
+The engine is a single-writer actor between an unbounded inbox and a fan-out of bounded shared flows. It emits with `tryEmit` and never suspends on a subscriber.
 
-| Surface | Capacity | Overflow | Rationale |
+| Surface | Capacity | When full | Rationale |
 |---|---|---|---|
-| `Channel<EngineMessage>` (engine inbox) | UNLIMITED | n/a | Producers (frame reader, public API calls, timers) must never block on the engine. The engine drains promptly; under load the *consumers* of public flows feel the pressure first. |
-| `Channel<Frame>` (outbound writer) | UNLIMITED | n/a | The engine produces outbound frames synchronously inside its own coroutine; backpressuring it would deadlock. The transport's `send` is what actually waits. |
-| `nodes: SharedFlow<NodeChange>` | replay snapshot once + extra=256 | SUSPEND | Deltas MUST NOT drop; the snapshot is the consistency anchor. Slow consumers backpressure the engine. If pressure outlasts inbox drain time the engine emits `MeshEvent.PacketsDropped(Packets, n)` and drops the *oldest engine-side queued frame* (see below) rather than blocking the transport reader. |
-| `packets: SharedFlow<MeshPacket>` | extra=128 | SUSPEND | Same policy as `nodes`. Chat/text loss is unacceptable. |
-| `events: SharedFlow<MeshEvent>` | extra=64 | DROP_OLDEST | Events are advisory; we never block the engine on observability. Drops are themselves observable on the next event after pressure clears (`PacketsDropped(Events, n)`). |
-| `connection`, `ownNode` | StateFlow | conflate (newest wins) | Lifecycle and identity are inherently single-value; intermediate states are noise. |
+| `Channel<EngineMessage>` (inbox) | UNLIMITED | n/a | Producers (the frame reader, public API calls, timers) never block on the engine. |
+| `Channel<Frame>` (outbound) | UNLIMITED | n/a | The engine produces frames inside its own coroutine; bounding the channel could deadlock it. |
+| `nodes: SharedFlow<NodeChange>` | 256 | the change is dropped and `MeshEvent.PacketsDropped` is emitted | Each subscription starts from a fresh `Snapshot`, the consistency anchor. |
+| `packets: SharedFlow<MeshPacket>` | 128 | the packet is dropped and `MeshEvent.PacketsDropped(Packets, 1)` is emitted | A loss is never silent. |
+| `events: SharedFlow<MeshEvent>` | 64 | the oldest event is dropped | Events are advisory; observability never blocks the engine. |
+| `fromRadio: Flow<FromRadio>` | 256 | the oldest envelope is dropped | A recorder or analyzer tap must never stall the engine. |
+| `connection`, `ownNode` | StateFlow | newest wins | Lifecycle and identity are single values; intermediate states are noise. |
 
-**Engine-side drop rule.** When the inbox grows past a soft threshold (default 1024 messages backed up; configurable internally only) AND the public flows are still full, the engine drops the *oldest* `EngineMessage.FrameRx` and surfaces `MeshEvent.PacketsDropped(Packets, count)`. This converts what would otherwise be silent transport-reader stall into an observable event. Lifecycle messages (`Connect`/`Disconnect`/`TransportStateChanged`/`HandshakeTimeout`) and outbound `Send`/`Admin` messages are never dropped.
-
-**Why `UNLIMITED` for the inbox?** Bounded with SUSPEND would let a slow `events` collector deadlock the entire engine (including admin replies and timers). Bounded with DROP_OLDEST would silently lose `Connect`/`Disconnect`. UNLIMITED + the engine-side drop rule above gives us per-class triage without coupling lifecycle to observability.
+Unbounded with no suspension is deliberate. A bounded inbox that suspends would let a slow `events` collector stall the whole engine, admin replies and timers included; one that drops would lose `Connect` or `Disconnect`.
 
 ## EngineMessage variants
 
-```kotlin
-internal sealed interface EngineMessage {
-    // Lifecycle
-    data class Connect(val deferred: CompletableDeferred<Unit>) : EngineMessage
-    data class Disconnect(val cause: MeshtasticException? = null) : EngineMessage
+[`EngineMessage.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/internal/EngineMessage.kt) defines the sealed interface the engine `when`-matches over; there is no other entry point that mutates state.
 
-    // Inbound
-    data class FrameRx(val frame: Frame) : EngineMessage
-    data class TransportStateChanged(val state: TransportState) : EngineMessage
+| Group | Variants |
+|---|---|
+| Lifecycle | `Connect`, `Disconnect`, `ReconnectTick`, `ReconnectAttemptResult` |
+| Inbound | `FrameRx`, `TransportStateChanged` |
+| Outbound | `Send`, `CancelHandle`, `AdminFireAndForget`, `PostRpc` |
+| Handshake | `HandshakeStage1SettleComplete`, `HandshakeHeartbeatSettleComplete`, `Stage1RetryWantConfig`, `HandshakeTimeout` |
+| Timers | `HeartbeatTick`, `LivenessTick`, `PresenceCheckTick`, `SendAckTimeout`, `PendingResponseTimeout`, `AdminTimeout` |
 
-    // Outbound
-    data class Send(val packet: MeshPacket, val handleSink: CompletableDeferred<MessageHandle>) : EngineMessage
-    data class CancelHandle(val id: MessageId) : EngineMessage
+## Anti-patterns (rejected in code review)
 
-    // Admin
-    data class Admin<T>(
-        val request: AdminMessage,
-        val mapper: (AdminMessage) -> T,
-        val timeoutMs: Long,
-        val deferred: CompletableDeferred<AdminResult<T>>,
-    ) : EngineMessage
-
-    // Timers
-    object HeartbeatTick : EngineMessage
-    data class HandshakeTimeout(val stage: HandshakeStage) : EngineMessage
-    data class AdminTimeout(val requestId: Int) : EngineMessage
-}
-```
-
-The engine `when`-matches over these. There is no other entry point that mutates state.
-
-## Anti-patterns (rejected by code review)
-
-- **Mutex on `MeshState`.** Banned in the engine package. The actor IS the lock.
-- **`launch { … }` inside the engine that mutates state.** Banned. Use `EngineMessage` for any deferred work.
-- **`transport.send` directly from a public method.** Banned. Always go through `outbound.send(...)` from the engine.
-- **`StateFlow.update { … }` from outside the engine coroutine.** Banned. Public flows are write-only by the engine.
+- A mutex on `MeshState`. The actor is the lock.
+- A `launch { … }` inside the engine that mutates state. Deferred work posts an `EngineMessage`.
+- Calling `transport.send` from a public method. Frames go through `outbound` from the engine.
+- `StateFlow.update { … }` from outside the engine coroutine. Public flows are written only by the engine.
 
 ## Related
 
-- ADR-002 — full architecture rationale.
-- ADR-005 — public flow contracts (`NodeChange`, backpressure policy).
-- `handshake-fsm.md` — what `HandshakeMachine` runs inside this actor.
+- ADR-002: full architecture rationale.
+- ADR-005: public flow contracts (`NodeChange`, backpressure policy).
+- [`handshake-fsm.md`](./handshake-fsm.md): the handshake stages this actor runs.

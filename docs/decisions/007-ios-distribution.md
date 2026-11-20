@@ -1,10 +1,10 @@
 # ADR 007 — iOS distribution: KMMBridge
 
-**Status:** Accepted
+**Status:** Accepted; the KMMBridge and SPM publish is not implemented (see the note under Decision)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §5, §6 Phase 3 + Phase 5; [`./003-tooling.md`](./003-tooling.md); [`../samples.md`](../samples.md) `samples/ios-app`
+**Related:** [`../SPEC.md`](../SPEC.md) §5, §6 Phase 3 + Phase 5; [`./003-tooling.md`](./003-tooling.md); [`../samples.md`](../samples.md) `samples/parity-app/iosApp`
 
 ---
 
@@ -31,6 +31,8 @@ Sibling library [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-cl
 - Consumers add the SPM dependency to their Xcode project: `https://github.com/meshtastic/meshtastic-sdk-spm`, pinned to a tag matching this repo's git tag.
 - Apply [SKIE](https://skie.touchlab.co/) (also Touchlab) on top of the iOS targets to improve Swift bridging for sealed classes, suspend functions returning sealed types, `Flow`, default args, and exhaustive `switch`. Pinned in `gradle/libs.versions.toml`; configuration documented in `SPEC.md` §5.
 
+> **Not implemented:** SKIE ships; the rest does not. `MeshtasticIosFrameworkPlugin` gives `:core`, `:transport-ble`, `:transport-tcp`, `:transport-websocket` and `:storage-sqldelight` each a static framework named `MeshtasticSDK` (not `RadioClient`, which would collide with the class under SKIE). There is no aggregator module, KMMBridge is pinned but not applied, no `meshtastic-sdk-spm` package exists, and [`versioning.md`](../versioning.md) records that the XCFramework is not published. iOS consumers take the per-target klibs from Maven Central.
+
 ### What KMMBridge automates
 
 1. `assembleXCFramework` (release flavor) on every published tag.
@@ -43,6 +45,8 @@ Listed in `SPEC.md` §6 Phase 5:
 
 - `samples/ios-app` consumes the SPM package and compiles via `xcodebuild` on a CI runner.
 - SKIE-export validation: `RadioClient`, `MessageHandle`, `SendState`, `SendFailure`, `MeshEvent`, `NodeChange`, `ConnectionState`, `TransportSpec`, `MeshtasticException`, `AdminResult` each appear in the generated SKIE Swift surface as natural Swift types (sealed types as enums; suspends as `async throws`; `Flow` as `AsyncSequence`). Verified by a Swift integration test against the framework, run as part of the `samples/ios-app` build.
+
+> **Note:** the iOS sample is the SwiftUI shell at `samples/parity-app/iosApp`. CI's SKIE export gate runs `xcodebuild` on it against the Compose app's framework, not an SPM package.
 
 ## Alternatives considered
 

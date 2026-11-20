@@ -34,6 +34,11 @@ Frame-level / wire-byte logging is a **separate**, opt-in, level-gated
 hook (`enableFrameLogging`) — never folded into the general `LogSink` —
 so credentials cannot leak via a casual `Debug` setting.
 
+> **Note:** the hook is `RadioClient.Builder.protocolLogging(level, redactor)`, off by default
+> (`LogLevel.NONE`). It writes every `FromRadio` and `ToRadio` to the configured `LogSink` under
+> the tag `Protocol`, through a `PayloadRedactor`; `PayloadRedactor.Default` never prints payload
+> content. The `LogSink.log` parameter is named `cause`.
+
 ## Rationale
 
 - A single SAM interface in pure Kotlin: zero dependencies cross the

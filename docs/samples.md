@@ -1,103 +1,73 @@
 # Sample apps
 
-> Reference consumers of `meshtastic-sdk`. **Not published.** Live under `samples/` and serve as the proving ground for the SDK from a host's perspective.
-
-Per [ADR-006](./decisions/006-multi-module-rationale.md) the samples depend on whatever the SDK exposes; the SDK does not depend on them.
+The apps under `samples/` consume `meshtastic-sdk` the way a host app does. They aren't published. Per [ADR-006](./decisions/006-multi-module-rationale.md) the samples depend on the SDK and the SDK never depends on them.
 
 ## Inventory
 
-| Sample | Target | Demonstrates | Phase |
-|---|---|---|---|
-| [`samples/cli`](#cli) | JVM (TUI + headless) | All three transports (BLE / TCP / serial); full handshake; Mosaic-rendered live dashboard; headless reconnect probes for regression testing | 2–3 |
-| [`samples/parity-app`](#parity-app) | Android + iOS + JVM Desktop | One shared Compose Multiplatform UI consuming the SDK over TCP — proves the public surface compiles + renders identically across all three host targets. SKIE bridges the iOS framework. | 5 |
-| [`samples/parity-android-app`](#parity-android-app) | Android | Standalone Android application shell that depends on `parity-app` as a library. Splits the Android APK concern from the KMP shared-UI module. | 6 |
+| Sample | Target | Demonstrates |
+|---|---|---|
+| [`samples/cli`](#cli) | JVM (TUI and headless) | Bluetooth LE, TCP and serial; the full handshake; a Mosaic dashboard; headless reconnect probes for regression testing; the pre-release conformance sweep |
+| [`samples/parity-app`](#parity-app) | Android, iOS, JVM desktop | One shared Compose Multiplatform UI consuming the SDK over TCP, proving the public surface compiles and renders on all three hosts. SKIE bridges the iOS framework. |
+| [`samples/parity-android-app`](#parity-android-app) | Android | The Android application shell around `parity-app`, which keeps the APK separate from the KMP shared-UI module |
 
 ## `cli`
 
-A single Kotlin/JVM binary with a Clikt-powered subcommand tree. Build once with `./gradlew :samples:cli:installDist`, then invoke subcommands through `samples/cli/build/install/cli/bin/cli`. See [`samples/cli/README.md`](../samples/cli/README.md) for the full catalogue; the headline subcommands are:
+One Kotlin/JVM binary with a Clikt subcommand tree. Build it with `./gradlew :samples:cli:installDist` and run `samples/cli/build/install/cli/bin/cli`. [`samples/cli/README.md`](../samples/cli/README.md) is the full catalog; the main subcommands are:
 
 | Subcommand | Purpose |
 |---|---|
-| `scan ble \| serial \| tcp` | Discover candidate devices on one transport family. |
-| `info \| nodes \| packets \| events \| health` | Connect via `--transport=…` and inspect or stream. |
-| `send text` | Transmit a text message and await the terminal ack state. |
+| `scan ble \| serial \| tcp` | Find Bluetooth advertisements, list serial ports, or check that a TCP host is reachable. |
+| `info \| nodes \| packets \| events \| health` | Connect with `--transport=…` and inspect or stream. |
+| `send text` | Send a text message and wait for the terminal ack state. |
 | `probe ble \| tcp \| serial \| all` | Reconnect loops with per-phase timing; `probe all` aggregates across transports. |
 | `tui` | Interactive Mosaic dashboard (connection state, nodes, activity, probe timings). |
+| `conformance` | The pre-release scenarios from [`manual-tests.md`](./manual-tests.md), written as a markdown transcript. |
 
-Every session-opening subcommand takes the same `--transport=ble:NEEDLE \| tcp:HOST[:PORT] \| serial:PORT[:BAUD]` spec. Pass `--json` at root level to switch every subcommand to line-delimited NDJSON envelopes (contract in the sample README).
+Every session-opening subcommand takes the same `--transport=ble:NEEDLE \| tcp:HOST[:PORT] \| serial:PORT[:BAUD]` spec, parsed by `TransportTarget.parse` from `:core`. A root-level `--json` switches every subcommand to NDJSON envelopes ([ADR-013](./decisions/013-proto-json-envelope.md)).
 
-### Storage
+The CLI uses `SqlDelightStorageProvider(baseDir = "")`, an in-memory database, so each run starts with empty storage. `conformance` stores to a fresh temporary directory on each run.
 
-`:storage-sqldelight` writing to a path supplied by the caller via `SqlDelightStorageProvider(baseDir = …)`. The CLI today passes an empty `baseDir` (process working directory); a future change will resolve to `~/.config/radio-client/<identity>/db.sqlite` per XDG conventions.
+Expected results:
 
-### Acceptance
+- `cli tui --transport=tcp:…` renders against a real node.
+- `cli probe ble <needle> --runs 5` completes without a `Stage1Draining` timeout once the node is bonded.
+- Every subcommand exits non-zero on a `MeshtasticException` and, under `--json`, emits a matching `error` and `done` envelope.
 
-- `cli tui --transport=tcp:…` renders against a real radio.
-- `cli probe ble <needle> --runs 5` completes without a `Stage1Draining` timeout (post-bond).
-- Every subcommand exits non-zero on any `MeshtasticException` and emits a matching `error` / `done` envelope under `--json`.
-
-### Notes
-
-- BLE first-connect on macOS triggers an OS pairing dialog. The SDK now emits `TransportState.Bonding` and does an inline encrypted warmup-read inside `transport.connect()` so the dialog appears before the engine handshake clock starts. `cli probe ble` exercises this path.
+Bluetooth first-connect on macOS raises an OS pairing dialog. The transport publishes `TransportState.Bonding` and does an encrypted warmup read inside `connect()`, so the dialog appears before the engine's handshake clock starts; `cli probe ble` exercises that path.
 
 ## `parity-app`
 
-Compose Multiplatform sample with one shared UI on Android, iOS, and JVM
-desktop. Drives the SDK over TCP (PhoneAPI port 4403). Sprint 6 deliverable
-proving the SDK is consumable from all three platforms with the same code.
+A Compose Multiplatform sample with one shared UI on Android, iOS and JVM desktop, driving the SDK over TCP (PhoneAPI port 4403).
 
-| Target | Build / run command |
+| Target | Build or run |
 |---|---|
-| Android | `./gradlew :samples:parity-android-app:assembleDebug` (APK) |
-| iOS Simulator | `./gradlew :samples:parity-app:linkReleaseFrameworkIosSimulatorArm64` then open `samples/parity-app/iosApp/iosApp.xcodeproj` in Xcode |
-| JVM Desktop | `./gradlew :samples:parity-app:run` |
+| Android | `./gradlew :samples:parity-android-app:assembleDebug` |
+| iOS Simulator | `./gradlew :samples:parity-app:linkReleaseFrameworkIosSimulatorArm64`, then open `samples/parity-app/iosApp/iosApp.xcodeproj` in Xcode |
+| JVM desktop | `./gradlew :samples:parity-app:run` |
 
-**Why TCP only?** The parity sample is a smoke test for the SDK's
-cross-platform surface, not a full transport showcase. TCP avoids Android BLE
-permissions, iOS Bluetooth entitlements, and the OS pairing dialog — making
-the sample trivial to demo from a laptop on the same WiFi as a device. BLE is
-covered by the `cli probe ble` headless path.
+The sample is a smoke test for the cross-platform surface, not a transport showcase. TCP avoids Android Bluetooth permissions, iOS Bluetooth entitlements and the pairing dialog, so it runs from a laptop on the same Wi-Fi as a node. The CLI's `probe ble` covers Bluetooth.
 
-**iOS framework wiring.** `samples/parity-app` produces a `ComposeApp.framework`
-consumed by `samples/parity-app/iosApp/iosApp.xcodeproj` via the standard
-`embedAndSignAppleFrameworkForXcode` Run Script phase. SKIE is applied across
-the SDK's KMP library modules (`:core`, `:transport-tcp`, `:transport-ble`,
-`:storage-sqldelight`) via the `meshtastic.ios.framework` convention plugin
-so Kotlin sealed types, `Flow`s, and suspend functions bridge to Swift `enum`,
-`AsyncSequence`, and `async throws`.
+`samples/parity-app` builds a `ComposeApp.framework` for `iosArm64` and `iosSimulatorArm64` (Compose Multiplatform publishes no `iosX64`). `iosApp.xcodeproj` consumes it through the standard `embedAndSignAppleFrameworkForXcode` run-script phase. The `meshtastic.ios.framework` convention plugin applies SKIE to `:core`, `:transport-tcp`, `:transport-ble`, `:transport-websocket` and `:storage-sqldelight`, so sealed types, `Flow`s and suspend functions bridge to Swift `enum`, `AsyncSequence` and `async throws`. The SDK publishes no `RadioClient` XCFramework for SwiftPM ([ADR-007](./decisions/007-ios-distribution.md)); the sample shows the KMP-to-Swift surface works end to end.
 
-The dedicated `RadioClient.xcframework` for SPM consumers (per ADR-007) lands
-in a follow-up sprint together with KMMBridge automation; today's sample
-proves the underlying KMP-to-Swift surface works end-to-end.
+CI checks that:
 
-### Acceptance
+- The Android APK assembles with `:samples:parity-android-app:assembleDebug`.
+- The iOS framework links with `:samples:parity-app:linkReleaseFrameworkIosSimulatorArm64`.
+- `xcodebuild build` on `iosApp.xcodeproj` succeeds. The SwiftUI shell calls `MainViewControllerKt.MainViewController()`, which proves SKIE generated the bridged surface ([`SwiftIntegrationTests/README.md`](../samples/parity-app/iosApp/SwiftIntegrationTests/README.md)).
 
-- Android APK assembles via `:samples:parity-android-app:assembleDebug`.
-- iOS framework assembles via `:samples:parity-app:linkReleaseFrameworkIosSimulatorArm64`.
-- `xcodebuild build` on `iosApp.xcodeproj` succeeds — the SwiftUI shell calls
-  `MainViewControllerKt.MainViewController()`, which proves SKIE generates the
-  bridged Swift surface correctly.
-- JVM Desktop launches an interactive window via `:samples:parity-app:run`.
+`:samples:parity-app:run` opens the desktop window.
 
 ## `parity-android-app`
 
-Standalone Android application module. Exists because AGP 9 rejects
-`com.android.application` applied alongside the KMP plugin in the same module.
-This module applies only `com.android.application` + `composeCompiler` and
-depends on `:samples:parity-app` (the KMP library with shared Compose UI) plus
-`:storage-sqldelight` (for `AndroidContextHolder`).
+The Android application module. It exists because AGP 9 rejects `com.android.application` alongside the KMP plugin in one module. It applies only `com.android.application` and `composeCompiler`, and depends on `:samples:parity-app` (the KMP library with the shared UI) and `:storage-sqldelight` (for `AndroidContextHolder`). Build it with `./gradlew :samples:parity-android-app:assembleDebug`.
 
-| Build command |
-|---|
-| `./gradlew :samples:parity-android-app:assembleDebug` |
+## Shared rules
 
-## Cross-cutting expectations
-
-- Sample-specific dependencies (Mosaic, Kable JVM) are scoped to the sample and never leak to the library modules.
-- Samples track the SDK's currently-tagged version via `gradle/libs.versions.toml`; they are not published.
+- Sample-only dependencies (Mosaic, Clikt, Compose) stay in the samples and never reach the library modules.
+- Samples depend on the SDK modules as Gradle project dependencies, so they always build against the current source.
 
 ## Related
 
-- [ADR-006](./decisions/006-multi-module-rationale.md) — module split puts samples in their own slot
-- [`api-reference.md`](./api-reference.md) — the surface every sample consumes
-- [`manual-tests.md`](./manual-tests.md) — manual conformance scenarios
+- [ADR-006](./decisions/006-multi-module-rationale.md): the module split that gives samples their own slot.
+- [`api-reference.md`](./api-reference.md): the surface the samples consume.
+- [`manual-tests.md`](./manual-tests.md): manual conformance scenarios.

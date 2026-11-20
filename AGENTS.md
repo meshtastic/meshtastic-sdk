@@ -2,7 +2,7 @@
 
 Guidance for AI coding agents working in this repository.
 
-## First Read
+## First read
 
 1. `README.md`
 2. `docs/SPEC.md`
@@ -13,117 +13,99 @@ Guidance for AI coding agents working in this repository.
 7. `docs/error-taxonomy.md`
 8. `CONTRIBUTING.md`
 
-Use links above as source of truth; do not restate their contents in PR descriptions or generated docs unless needed.
+These are the source of truth. Link to them from PR descriptions and generated docs rather than restating them.
 
 ## Environment
 
 - JDK 21.
-- Android SDK at the `androidCompileSdk` level in `gradle/libs.versions.toml` for Android targets (`ANDROID_HOME` set).
-- Xcode 15+ for iOS targets.
+- Android SDK at the `androidCompileSdk` level in `gradle/libs.versions.toml`, with `ANDROID_HOME` set.
+- Xcode on macOS for the iOS targets.
 - Node.js on `PATH` for the `js` and `wasmJs` targets (`:core`, `:testing`, `:transport-websocket`); the Kotlin plugin is configured not to download one.
-- No submodules to init — protobuf types come from the published `org.meshtastic:protobufs` Maven artifact, pinned in `gradle/libs.versions.toml` (`meshtasticProtobufs`).
+- No submodules. Protobuf types come from the published `org.meshtastic:protobufs` artifact, pinned as `meshtasticProtobufs` in `gradle/libs.versions.toml`.
 
-If protocol/generated symbols look wrong, verify the `meshtasticProtobufs` pin resolves (`./gradlew :core:dependencies --configuration jvmCompileClasspath | grep protobufs`).
+If generated protocol symbols look wrong, check that the pin resolves: `./gradlew :core:dependencies --configuration jvmCompileClasspath | grep protobufs`.
 
-## Commands Agents Should Run
+## Commands
 
 - Full gate: `./gradlew check`
-- Unit tests: `./gradlew jvmTest`, `./gradlew jsNodeTest` (Node.js on `PATH`) and, when relevant on macOS, `./gradlew iosSimulatorArm64Test`
+- Unit tests: `./gradlew jvmTest`; `./gradlew jsNodeTest wasmJsNodeTest` (Node.js on `PATH`); on macOS when relevant, `./gradlew iosSimulatorArm64Test`
 - Lint: `./gradlew detekt spotlessCheck`
 - Format: `./gradlew spotlessApply`
-- Architecture rules: enforced by detekt `ForbiddenImport` + the
-  `:core:verifyModuleBoundary` Gradle task (both wired into `check`).
-  See [ADR-008](docs/decisions/008-architecture-enforcement.md) and the
-  matrix in [`docs/architecture/enforcement.md`](docs/architecture/enforcement.md).
+- Architecture rules: detekt `ForbiddenImport` and the `:core:verifyModuleBoundary` task, both wired into `check`. See [ADR-008](docs/decisions/008-architecture-enforcement.md) and [`docs/architecture/enforcement.md`](docs/architecture/enforcement.md).
 - API compatibility: `./gradlew checkKotlinAbi`
-- API baseline refresh (only when public API intentionally changes): `./gradlew updateKotlinAbi`
-- Agent/tooling guardrails: `bash .github/tooling/check.sh`
+- API dump refresh, only when public API changes on purpose: `./gradlew updateKotlinAbi`
+- Agent tooling and changelog fragment checks: `bash .github/tooling/check.sh`
 
-Prefer targeted tasks while iterating, then run `./gradlew check` before finishing.
+Use targeted tasks while iterating, then run `./gradlew check` before finishing.
 
-## Hard Architectural Rules
+## Architecture rules
 
-- Respect module boundaries from `docs/architecture/module-graph.md`.
-- `:core` must declare no in-tree project dependencies; its only proto dependency is the published `org.meshtastic:protobufs` artifact (re-exported via `api`).
-- Do not add transport/storage implementation dependencies into `:core`.
-- Engine concurrency model is single-writer actor; do not introduce mutex/atomic/synchronized patterns in engine paths (see ADR-002).
-- No `java.*` or `android.*` imports in `commonMain`; use `okio.ByteString` for byte payloads (Wire's runtime type; kotlinx-io is deliberately not a dependency) and `kotlinx-datetime` for time.
-- Transport-side locks/atomics (lifecycle/handle ownership only) are allowed but MUST carry an inline `// ADR-012: native-handle ownership` or `// ADR-012: lifecycle idempotency` comment; see `docs/decisions/012-transport-threading.md`.
+- Respect the module boundaries in `docs/architecture/module-graph.md`.
+- `:core` declares no in-tree project dependency; its only proto dependency is the published `org.meshtastic:protobufs` artifact, re-exported through `api`.
+- Don't add transport or storage implementation dependencies to `:core`.
+- The engine is a single-writer actor; don't add mutex, atomic or synchronized patterns on engine paths (ADR-002).
+- No `java.*` or `android.*` imports in `commonMain`. Use `okio.ByteString` for byte payloads (Wire's runtime type; kotlinx-io is deliberately not a dependency) and `kotlinx-datetime` for time.
+- Transport-side locks and atomics (lifecycle and handle ownership only) are allowed but must carry an inline `// ADR-012: native-handle ownership` or `// ADR-012: lifecycle idempotency` comment; see `docs/decisions/012-transport-threading.md`.
 
-## Public API Rules
+## Public API rules
 
-- Follow API shape rules in ADR-005.
-- Do not introduce `kotlin.Result<T>` in public API.
-- If public API changes are intentional, include regenerated `api/*.api` files from `updateKotlinAbi`.
-- Every public symbol MUST have a KDoc comment; Dokka coverage is a CI gate (`./gradlew dokkaGenerate`; Dokka V2 has no `dokkaHtml` task).
+- Follow the API shape rules in ADR-005. No `kotlin.Result<T>` in public API.
+- An intentional public API change commits the regenerated `api/` dumps from `updateKotlinAbi`.
+- Every public symbol needs KDoc. Review enforces it; no build task does. `./gradlew dokkaGenerate` builds the docs (Dokka V2 has no `dokkaHtml` task).
 
-## Workflow Expectations
+## Workflow
 
 - Keep changes minimal and scoped.
-- Add or update tests for behavioral changes.
+- Add or update tests for behavior changes.
 - Record a changelog entry as a `changelog.d/<name>.<section>.md` fragment (format in `changelog.d/README.md`); never edit `CHANGELOG.md` in a PR. A breaking change adds a `*.breaking.md` fragment.
-- Update docs under `docs/` when behavior, protocol handling, or contributor workflow changes.
-- Sign commits with DCO (`git commit -s`) when creating commits.
+- Update `docs/` when behavior, protocol handling or contributor workflow changes.
+- Sign commits with DCO (`git commit -s`).
 
-## Where To Look By Task
+## Where to look by task
 
 - Wire protocol behavior: `docs/protocol.md`
 - Error mapping and failure semantics: `docs/error-taxonomy.md`
-- CI expectations and local equivalents: `docs/ci-cd.md`
-- Versioning and SemVer/API policy: `docs/versioning.md`
+- CI jobs and local equivalents: `docs/ci-cd.md`
+- Versioning, SemVer and API policy: `docs/versioning.md`
 - Cutting a release (changelog cut, `release.yml` gates, Maven Central): `RELEASING.md`
-- Manual device verification scenarios: `docs/manual-tests.md`
-- Test pyramid + conventions: `docs/testing.md`
-- Logging integration (`LogSink` SAM, `enableFrameLogging` opt-in): `docs/decisions/011-logsink.md`
-- Transport-side threading contract (blocking I/O, Flow bridging, lock carve-outs): `docs/decisions/012-transport-threading.md`
-- CLI JSON output format (NDJSON envelope for agent/eval scripting): `docs/decisions/013-proto-json-envelope.md`
+- Manual device scenarios: `docs/manual-tests.md`
+- Test tiers and conventions: `docs/testing.md`
+- Logging (`LogSink`, `Builder.protocolLogging` opt-in): `docs/decisions/011-logsink.md`
+- Transport threading contract (blocking I/O, Flow bridging, lock carve-outs): `docs/decisions/012-transport-threading.md`
+- CLI JSON output (NDJSON envelope for scripting): `docs/decisions/013-proto-json-envelope.md`
 - Storage PRAGMA strategy per driver: `docs/decisions/014-storage-pragmas.md`
-- Test fakes and doubles: `testing/` module (`InMemoryStorage`, `FakeRadioTransport`)
+- Web targets (`js`, `wasmJs`): `docs/decisions/017-web-targets.md`
+- Test doubles: `FakeRadioTransport` and `TestClock` in `:testing`; `InMemoryStorage` in `:core`
 
-## Agent Tooling In Repo
+## Agent tooling in the repo
 
-The inventory:
+- `AGENTS.md` (this file): guardrails and the routing table that follows.
+- `CLAUDE.md`: a pointer to this file for runners that read the Claude filename.
+- `GEMINI.md`: the Gemini runners' own instruction file.
+- Skills (`.github/skills/`): workflow recipes, one `SKILL.md` per pack; `.github/skills/README.md` is the index.
+- Agents (`.github/agents/`): `spec-guard.agent.md` is the spec-compliance review; the `speckit.*` agents belong to Spec Kit (`.specify/`). `.claude/agents/spec-guard.md` is the Claude Code copy of spec-guard, since Claude Code loads only `.claude/agents/`. The two bodies are identical, so change both together.
+- Prompts (`.github/prompts/`): `pre-pr-sanity.prompt.md` is the final pre-PR sweep; the `speckit.*` prompts belong to Spec Kit.
+- Eval harness (`.github/evals/`): a scoring smoke check for prompts.
+- Tooling guardrails (`.github/tooling/`): `check.sh` validates JSON and frontmatter, lints shell scripts, workflows and markdown, requires SHA-pinned actions, and checks changelog fragments. `agent-report.schema.json` and `agent-report.template.json` define the structured agent report.
 
-- **This file (`AGENTS.md`)** — guardrails + routing matrix below.
-- **`CLAUDE.md`** — pointer to this file for runners that key off the
-  Claude filename.
-- **`GEMINI.md`** — Gemini runners' own instruction file, separate from
-  this one.
-- **Skills** (`.github/skills/`) — invokable workflow recipes; one
-  `SKILL.md` per pack. See `.github/skills/README.md` for the index.
-- **Agents** (`.github/agents/`) — `spec-guard.agent.md` is the full
-  spec-compliance review; the `speckit.*` agents belong to Spec Kit (`.specify/`).
-  spec-guard ships once per loader: `.claude/agents/spec-guard.md` is the
-  Claude Code copy (which loads only `.claude/agents/`). Same body in both;
-  a change to one is a change to the other.
-- **Prompts** (`.github/prompts/`) — `pre-pr-sanity.prompt.md` is the final
-  pre-PR sweep; the `speckit.*` prompts belong to Spec Kit.
-- **Eval harness** (`.github/evals/`) — scoring smoke check for prompts.
-- **Tooling guardrails** (`.github/tooling/`) — `check.sh` enforces
-  schema validity, frontmatter, SHA-pinned actions, and so on.
-- **Structured agent report schema**:
-  `.github/tooling/agent-report.schema.json` (+ matching
-  `agent-report.template.json`).
-
-### Task → skill / agent routing matrix
+### Task routing
 
 | Task | Use |
 |---|---|
 | Public API change (new types, signature edits, ADR-005 shape work) | skill `api-compat-guardian` |
 | Wire framing, handshake, transport semantics, protocol mapping | skill `protocol-change-checklist` |
-| New transport module (BLE/serial/TCP/MQTT) | skill `transport-module-authoring` |
-| Behavior/protocol/architecture/API changed → docs need to track | skill `docs-sync-guard` |
-| Local or CI gate failed — classify and fix minimally | skill `ci-failure-triage` |
-| Pre-release readiness sweep (gates, SemVer, ADRs, `RELEASING.md`) | skill `release-readiness` |
-| Cross-cutting "is this change spec-compliant?" review | agent `spec-guard` |
+| New transport module or a non-trivial transport change | skill `transport-module-authoring` |
+| Behavior, protocol, architecture or API changed and docs must follow | skill `docs-sync-guard` |
+| Local or CI gate failed; classify and fix minimally | skill `ci-failure-triage` |
+| Pre-release readiness (gates, SemVer, ADRs, `RELEASING.md`) | skill `release-readiness` |
+| Cross-cutting spec-compliance review | agent `spec-guard` |
 | Final pre-PR quality sweep | prompt `pre-pr-sanity` |
 
-## Common Pitfalls
+## Common pitfalls
 
-- The `org.meshtastic:protobufs` pin in `gradle/libs.versions.toml` is the proto contract; a stale pin (or a moving `-SNAPSHOT`) is the usual cause of missing or renamed generated symbols.
-- Running `checkKotlinAbi` without `updateKotlinAbi` after intentional public API edits causes CI failure.
-- Cross-platform changes should consider target matrix constraints documented in `docs/architecture/module-graph.md`.
-- `Dispatchers.IO` from `commonMain` fails on Native/iOS ("it is internal"); use `expect/actual` per-platform dispatchers instead (see `storage-sqldelight/src/{jvm,android,apple}Main/.../StorageDispatcher.*.kt`).
-- Wire-generated proto fields are `snake_case` (e.g., `user.long_name`), not `camelCase` — do not rename them.
-- Omitting `@KDoc` on public symbols will fail the Dokka CI gate.
-- Transport-side `Mutex`/atomic without an `// ADR-012:` annotation will surface in code review as an apparent ADR-002 violation.
+- The `org.meshtastic:protobufs` pin in `gradle/libs.versions.toml` is the proto contract; a stale pin or a moving `-SNAPSHOT` is the usual cause of missing or renamed generated symbols.
+- An intentional public API edit without `updateKotlinAbi` fails `checkKotlinAbi` in CI.
+- Cross-platform changes must respect the target matrix in `docs/architecture/module-graph.md`.
+- `Dispatchers.IO` from `commonMain` fails on Native ("it is internal"); use per-platform `expect`/`actual` dispatchers (see `storage-sqldelight/src/{jvm,android,apple}Main/.../StorageDispatcher.*.kt`).
+- Wire-generated proto fields are `snake_case` (`user.long_name`); don't rename them.
+- A transport-side `Mutex` or atomic without an `// ADR-012:` comment reads in review as an ADR-002 violation.

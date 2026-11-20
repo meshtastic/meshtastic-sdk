@@ -1,8 +1,6 @@
 # Consumer integration guides
 
-> Recipes for common host-app integration patterns. These are
-> orthogonal to the SDK itself — pick the ones relevant to your
-> platform / DI framework / UI stack.
+Recipes for integration patterns in host apps. Pick the ones that match your platform, DI framework, and UI stack.
 
 | Guide | When to read |
 |---|---|
@@ -10,19 +8,12 @@
 | [`hilt-integration.md`](./hilt-integration.md) | Android app using Hilt. Where to bind `RadioClient`, scoping, multi-radio session handling. |
 | [`mvvm-integration.md`](./mvvm-integration.md) | Android app using MVVM + Compose + StateFlow. Wiring SDK flows into `ViewModel` state. |
 | [`r8-proguard-setup.md`](./r8-proguard-setup.md) | Android release builds with R8 / Proguard. Required `-keep` rules for proto reflection, Wire, SqlDelight drivers. |
-| [`error-handling.md`](./error-handling.md) | You're deciding what to retry, what to surface, and how to write exhaustive `when` over `SendFailure` / `MeshEvent` / `MeshtasticException`. Companion to [`../error-taxonomy.md`](../error-taxonomy.md). |
+| [`error-handling.md`](./error-handling.md) | Deciding what to retry and what to surface, with exhaustive `when` over `SendFailure`, `AdminResult`, `MeshEvent`, and `MeshtasticException`. Companion to [error-taxonomy.md](../error-taxonomy.md). |
 
-## Scope
-
-These guides cover *consumer-side* concerns. SDK-internal concerns
-(threading model, engine actor, transport isolation) live in
-[`../architecture/`](../architecture/).
-
-If you wish to add a guide, follow the existing format: short Problem /
-Solution / Example / Pitfalls structure. PRs welcome.
+These guides cover the host side. The SDK's internals (threading model, engine actor, transport isolation) are in [architecture/](../architecture/).
 
 ## Related
 
-- [`../api-reference.md`](../api-reference.md) — full Kotlin signatures
-- [`../integration-guide.md`](../integration-guide.md) — platform setup (BLE permissions, USB host, `Context` wiring)
-- [`../samples.md`](../samples.md) — runnable samples in `samples/`
+- [api-reference.md](../api-reference.md): signatures
+- [integration-guide.md](../integration-guide.md): platform setup, such as Bluetooth permissions, USB host, and the Android `Context`
+- [samples.md](../samples.md): runnable samples in `samples/`

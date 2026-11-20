@@ -31,6 +31,8 @@ We need to pick:
  */
 ```
 
+> **Note:** the header Spotless applies and checks is `config/spotless/license-header.txt` (a `Meshtastic — open source mesh radio` banner, `Copyright © $YEAR Meshtastic LLC`, the license line and the SPDX identifier); `spotlessCheck` is the header lint. There is no `:checkLicenseHeaders` task, no `dco-bot` workflow (DCO is enforced by a GitHub app) and no `LICENSES.md`.
+
 Generated code (`proto/build/generated/...`) is exempt from headers; the generator itself is GPL-clean (Wire is Apache-2.0, compatible with GPL-3.0 distribution).
 
 ### Contribution mechanism

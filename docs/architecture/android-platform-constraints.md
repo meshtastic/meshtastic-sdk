@@ -1,25 +1,24 @@
 # Android platform constraints
 
-A guide to Android-specific platform restrictions that affect Meshtastic SDK integration, particularly in the context of background connectivity and foreground services.
+This page covers the Android platform restrictions that affect an SDK integration, chiefly background connectivity and foreground services.
 
-## Foreground Service requirement (Android 14+)
+## Foreground service requirement (Android 14+)
 
-**Status:** Required on API 34+
-**Impact:** BLE and USB-serial connections die in the background without a foreground service.
+Required on API 34 and later. Without a foreground service, BLE and USB-serial connections end when the app goes to the background.
 
-### Background connectivity issue
+### Background connectivity
 
-The Meshtastic SDK does **not** start a foreground service for you. On Android 14+ (API 34+), the OS enforces strict background execution limits that prevent:
+The SDK does not start a foreground service for you. On Android 14 and later (API 34+), background execution limits stop:
 
-- BLE (Bluetooth Low Energy) scans and connections
+- Bluetooth scans and connections
 - USB Host API access
-- Persistent socket reads/writes
+- long-lived socket reads and writes
 
-**If you do not declare and start a foreground service, the connection will terminate when your app enters the background.**
+Without a declared and started foreground service, the connection ends when your app enters the background.
 
 ### Solution
 
-Wrap your `connect()` / `disconnect()` calls in an `Activity` or `Service` that declares the appropriate foreground service permissions and type.
+Run `connect()` and `disconnect()` from a `Service` that declares the foreground service permissions and type.
 
 #### AndroidManifest.xml setup
 
@@ -38,7 +37,7 @@ Wrap your `connect()` / `disconnect()` calls in an `Activity` or `Service` that 
 
 #### Service implementation
 
-Your `Service` must call `startForeground(...)` **before** calling `client.connect()` and stop it in `onDestroy()` or when explicitly disconnecting:
+The service must call `startForeground(...)` before `client.connect()`, and stop it in `onDestroy()` or on an explicit disconnect. Cancel the scope only after `disconnect()` returns, or the disconnect is cancelled with it:
 
 ```kotlin
 class RadioConnectionService : Service() {
@@ -61,10 +60,13 @@ class RadioConnectionService : Service() {
 
     override fun onDestroy() {
         scope.launch {
-            client.disconnect()
+            try {
+                client.disconnect()
+            } finally {
+                scope.cancel()
+            }
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
-        scope.cancel()
         super.onDestroy()
     }
 
@@ -75,13 +77,11 @@ class RadioConnectionService : Service() {
 ### References
 
 - [Android Foreground Services (system documentation)](https://developer.android.com/develop/background-work/services/foreground-services)
-- [Integration guide — BLE platform setup](../integration-guide.md#ble)
+- [Integration guide: Bluetooth setup](../integration-guide.md#bluetooth)
 
 ## BLE link recovery (opt-in)
 
-**Status:** Optional, off by default
-
-`BleResilience` carries three Android-only mechanisms for radios that fail to reconnect on a bare `BluetoothGatt` connect. The SDK still never prompts or manages lifecycle; the host decides to enable them.
+Optional and off by default. `BleResilience` carries three Android-only mechanisms for nodes that fail to reconnect on a bare `BluetoothGatt` connect. The SDK still never prompts or manages lifecycle; the host decides whether to enable them.
 
 - `bondFirst` calls `BluetoothDevice.createBond()` when the device is not bonded and polls the bond state for up to 30 s. Needs `BLUETOOTH_CONNECT` on API 31+; the OS shows its own pairing dialog.
 - `autoConnectFallback` retries a direct connect that has not completed in 15 s with `autoConnect = true`, which Android resolves against a bonded device by address instead of waiting for a fresh advertisement.
@@ -89,14 +89,7 @@ class RadioConnectionService : Service() {
 
 ## Scoped storage (Android 11+)
 
-**Status:** Optional concern for `SqlDelightStorageProvider`
-
-If your app targets `targetSdk >= 30`, scoped storage rules apply:
-
-- Direct file I/O to `Environment.getExternalStorageDirectory()` is blocked.
-- Prefer `context.filesDir` (app-private) or `context.cacheDir` for `SqlDelightStorageProvider.baseDir`.
-
-Example:
+This affects `SqlDelightStorageProvider`. With `targetSdk >= 30`, scoped storage blocks direct file I/O to `Environment.getExternalStorageDirectory()`, so point `baseDir` at `context.filesDir` (app-private) or `context.cacheDir`:
 
 ```kotlin
 val storage = SqlDelightStorageProvider(baseDir = context.filesDir.absolutePath)
@@ -106,10 +99,10 @@ See [Android Scoped Storage documentation](https://developer.android.com/about/v
 
 ## USB permissions and device detection
 
-**Status:** Required for USB-serial integration
+Android's USB Host API needs the user's permission before an app opens a USB device. [Integration guide: Serial](../integration-guide.md#serial) covers the `UsbManager.requestPermission(...)` flow and the `AndroidSerialPorts` and `AndroidUsbSerialPorts` APIs.
 
-Android's USB Host API requires explicit user permission before accessing USB devices. See [integration guide — Serial (USB) setup](../integration-guide.md#serial-usb) for the full `UsbManager.requestPermission(...)` flow and `AndroidSerialPorts` API.
+## Related
 
----
-
-**Related:** [ADR-002 (threading)](../decisions/002-architecture.md), [ADR-012 (transport threading)](../decisions/012-transport-threading.md), [integration guide](../integration-guide.md)
+- [ADR-002](../decisions/002-architecture.md): the engine architecture
+- [ADR-012](../decisions/012-transport-threading.md): transport threading
+- [Integration guide](../integration-guide.md)

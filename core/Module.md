@@ -1,14 +1,17 @@
 # Module core
 
-Core Meshtastic KMP client SDK. Provides the primary `RadioClient` API for connecting to
-and communicating with Meshtastic mesh radio nodes over any supported transport.
+The transport-agnostic Meshtastic client engine. `RadioClient` connects to a node through any `RadioTransport`, runs the handshake, keeps the NodeDB, and exposes state as `StateFlow` and inbound traffic as `Flow`.
 
-`:core` is transport-agnostic — it depends only on the published `org.meshtastic:protobufs`
-artifact (Wire-generated message types) and the Kotlin standard library. Transport
-implementations (BLE, TCP, Serial) are separate modules that plug in at application-wiring time.
+`:core` declares no in-tree project dependency (ADR-008). It depends on the published `org.meshtastic:protobufs` artifact, kotlinx-coroutines and Okio, all re-exported through `api`, plus kotlinx-datetime, atomicfu and Kermit. Transports (Bluetooth LE, TCP, serial, WebSocket) and persistent storage are separate modules wired in at build time.
 
-All observable state is exposed as `StateFlow`; all inbound packet streams as `Flow<MeshPacket>`.
+What `RadioClient` covers:
+
+- Sending: `send`, `sendText`, `sendReaction` and the `send { }` DSL, each returning a `MessageHandle`; `sendRaw` for a raw `ToRadio`.
+- Receiving: `packets`, `events`, `nodes` and `fromRadio` (every decoded `FromRadio`, before the engine handles it); typed payload accessors (`asNodeStatus()`, `asPaxcount()` and the rest) for each port number.
+- Sub-APIs: `admin` (config edits, with `admin.batch { }` for settings transactions), `telemetry`, `routing`, `files` (XModem download and upload) and `storeForward`. `adminSessions` reports the admin session state per node.
+- Extensions on `RadioClient`: `exportDeviceProfile`, `installDeviceProfile` and `enableHamMode`.
+- Helpers: the LoRa region table (`LoRaRegionInfo.forRegion`, `modemParams`), channel and contact URLs, `TransportTarget.parse` for `ble:`, `tcp:` and `serial:` spec strings, and `InMemoryStorageProvider` for hosts that persist nothing.
 
 Key packages:
-- `org.meshtastic.sdk` — Public `RadioClient`, builders, state types, transport SPI, storage SPI, logging hook
-- `org.meshtastic.sdk.internal.*` — Engine actor (single-writer, see ADR-002) and codec; not part of the API surface
+- `org.meshtastic.sdk`: the public API, including the transport and storage SPIs and the `LogSink` hook.
+- `org.meshtastic.sdk.internal`: the engine actor (single writer, see ADR-002) and codec; not public API.

@@ -1,6 +1,6 @@
 # ADR 000 — Charter: scope, non-goals, and relationship to sibling Meshtastic libraries
 
-**Status:** Accepted
+**Status:** Accepted; superseded in part by [ADR-017](017-web-targets.md) (web targets)
 **Date:** 2026-04-17
 **Deciders:** SDK leads (Meshtastic org)
 **Supersedes:** none
@@ -28,6 +28,8 @@ There is **no** library shared between the Android and Apple apps. Every new cli
 ### Targets
 
 MVP: `androidTarget()`, `jvm()`, `iosArm64()`, `iosX64()`, `iosSimulatorArm64()` — per-module subset (see ADR-006). `wasmJs()` is roadmap, not MVP.
+
+> **Superseded by [ADR-017](017-web-targets.md):** `:core`, `:testing` and `:transport-websocket` also publish `js` and `wasmJs`, and a web host runs the engine in-process over `transport-websocket`, not as an RPC client. The shipped transports are BLE, TCP, serial and WebSocket; no HTTP transport ships.
 
 ### What this SDK IS
 

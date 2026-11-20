@@ -85,11 +85,13 @@ The transport reader **never blocks** on a slow consumer of public flows. Either
 | `DeferredDecryptBuffer` | Bounded ring (default 64 packets) for `MeshPacket.encrypted` with unknown channel hash. Re-attempts decrypt when a `Channel`/`Config.security` arrives that adds a key. |
 | `PersistenceCoordinator` | Calls `StorageProvider.activate(identity)` BEFORE `transport.connect()`. After handshake, calls `recordOwnNode(...)`; if storage detects a NodeNum mismatch and clears (invariant 4), emits `MeshEvent.ProtocolWarning("identity rebound to new NodeNum")`. On disconnect, flushes and closes storage. |
 
+> **Note:** `HandshakeMachine`, `MessageQueue` and `PersistenceCoordinator` are implemented inside `MeshEngine`, not as classes. There is no `DeferredDecryptBuffer`: the device decrypts channel traffic, and the engine drops a packet with no decoded payload and emits a `ProtocolWarning` at most once a minute. A NodeNum mismatch surfaces as `MeshEvent.IdentityRebound`, not a `ProtocolWarning`.
+
 Each component is a regular class, not a `Mockable` interface, unless tests demand otherwise. We rejected the earlier "interface-everywhere" approach: it added indirection that obscured the actor model and produced no observable testability win.
 
 ### Anchor invariants
 
-Per `SPEC.md` §4.3, encoded as tests in `core/src/commonTest/.../invariants/`:
+Per `SPEC.md` §4.3, encoded as tests in `core/src/commonTest/kotlin/org/meshtastic/sdk/`:
 
 1. FIFO frame order (single-writer pipe to transport).
 2. Transport-up ≠ session-ready (`Connected` only after `config_complete_id` matches Stage 2 nonce).
