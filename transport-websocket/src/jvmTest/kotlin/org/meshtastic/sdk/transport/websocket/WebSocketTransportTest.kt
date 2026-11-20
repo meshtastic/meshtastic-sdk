@@ -20,11 +20,14 @@ import io.ktor.websocket.CloseReason
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -43,6 +46,7 @@ import org.meshtastic.sdk.WireFraming
 import java.net.ServerSocket
 import java.security.MessageDigest
 import java.util.Base64
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -472,8 +476,97 @@ class WebSocketTransportTest {
         }
         val t = transportFor(s.port)
         t.connect()
-        t.awaitError()
+        val e = t.awaitError()
+        assertFalse(e.recoverable)
+        assertTrue(e.cause.message!!.contains("512"))
         assertTrue(t.frames().let { withTimeoutOrNull(300) { it.first() } } == null)
         t.disconnect()
+    }
+
+    @Test
+    fun overBoundMessageAlwaysEndsTheSessionWithTheOversizeError() = run {
+        val s = server {
+            send(WsFrame.Binary(true, ByteArray(MAX_INBOUND_FRAME_BYTES.toInt() * 2)))
+            incoming.receiveCatching()
+        }
+        repeat(300) {
+            val t = transportFor(s.port)
+            t.connect()
+            val e = t.awaitError()
+            assertFalse(e.recoverable)
+            assertTrue(e.cause.message!!.contains("512"))
+            t.disconnect()
+        }
+    }
+
+    private class ManualDispatcher : CoroutineDispatcher() {
+        val queue = java.util.concurrent.ConcurrentLinkedQueue<Runnable>()
+        val dispatched = CompletableDeferred<Unit>()
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            queue.add(block)
+            dispatched.complete(Unit)
+        }
+    }
+
+    @Test
+    fun connectCancelledBeforeItsAttemptStartsFailsInsteadOfHanging() = run {
+        val dispatcher = ManualDispatcher()
+        val t = transportFor(1)
+        t.attemptContext = dispatcher
+        val connecting = async(Dispatchers.Default) { runCatching { t.connect() } }
+        withTimeout(5_000) { dispatcher.dispatched.await() }
+        t.disconnect()
+        while (true) (dispatcher.queue.poll() ?: break).run()
+        val outcome = withTimeout(10_000) { connecting.await() }
+        assertIs<MeshtasticException.Transport>(outcome.exceptionOrNull())
+        assertEquals(TransportState.Disconnected, t.state.value)
+    }
+
+    @Test
+    fun concurrentConnectCancelsTheEarlierAttempt() = run {
+        val gated = GatedServer()
+        servers += gated::stop
+        val client = HttpClient(CIO) { install(WebSockets) }.also { clients += it }
+        val t = WebSocketTransport("ws://127.0.0.1:${gated.port}", client)
+        val first = CompletableDeferred<Unit>()
+        val resumeFirst = CompletableDeferred<Unit>()
+        val calls = java.util.concurrent.atomic.AtomicInteger()
+        t.connectProbe = { phase ->
+            if (phase == "entering" && calls.incrementAndGet() == 1) {
+                first.complete(Unit)
+                resumeFirst.await()
+            }
+        }
+        val a = async(Dispatchers.Default) { runCatching { t.connect() } }
+        withTimeout(5_000) { first.await() }
+        val b = async(Dispatchers.Default) { runCatching { t.connect() } }
+        withTimeout(5_000) { gated.requestSeen.await() }
+        resumeFirst.complete(Unit)
+        val outcome = withTimeout(10_000) { b.await() }
+        assertIs<MeshtasticException.Transport>(outcome.exceptionOrNull())
+        t.disconnect()
+        withTimeout(10_000) { a.await() }
+    }
+
+    @Test
+    fun cancellationAfterUpgradeClosesTheSessionAndLeavesDisconnected() = run {
+        val closed = CompletableDeferred<Unit>()
+        val s = server {
+            incoming.consumeEach { }
+            closed.complete(Unit)
+        }
+        val t = transportFor(s.port)
+        val entered = CompletableDeferred<Unit>()
+        t.connectProbe = { phase ->
+            if (phase == "upgraded") {
+                entered.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val job = launch(Dispatchers.Default) { t.connect() }
+        withTimeout(5_000) { entered.await() }
+        job.cancelAndJoin()
+        assertEquals(TransportState.Disconnected, t.state.value)
+        withTimeout(5_000) { closed.await() }
     }
 }
