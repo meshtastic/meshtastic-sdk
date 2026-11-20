@@ -373,6 +373,13 @@ public enum class DroppedFlow {
 
     /** The [RadioClient.events] flow dropped messages. */
     Events,
+
+    /**
+     * The [RadioClient.nodes] flow dropped a node change.
+     *
+     * @since 0.3.0
+     */
+    Nodes,
 }
 
 /**

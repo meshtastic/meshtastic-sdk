@@ -153,7 +153,7 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 | `StorageDegraded(reason)` | A storage write failed. The engine stops writing for the rest of the session and keeps running from memory. At most once per session. | Warn that the session isn't being saved; the next `connect()` retries storage. |
 | `CongestionWarning(metrics)` | A node's reported channel or airtime utilization crosses into a different `CongestionLevel`. | Delay non-urgent sends while `metrics.canSendNonUrgent` is false. |
 | `ExternalConfigChange(kind)` | Another admin client changed the device's channels, config, or module config; local state is already updated. | Refresh config-dependent UI. |
-| `PacketsDropped(flow, count)` | A collector of `packets` (`DroppedFlow.Packets`) or `nodes` (reported as `DroppedFlow.Events`) fell too far behind and new items were discarded. | Move work off the collector. |
+| `PacketsDropped(flow, count)` | A collector of `packets` (`DroppedFlow.Packets`) or `nodes` (`DroppedFlow.Nodes`) fell too far behind and new items were discarded. | Move work off the collector. |
 | `MqttProxyMessage(message)` | The device tunnels MQTT through the client (`mqtt.proxy_to_client_enabled`). | Publish it to the broker; send broker traffic back with `sendRaw`. |
 | `XmodemPacket(packet)` | An XModem frame arrived. `FileTransferApi` consumes these. | Use `client.files` rather than handling it yourself. |
 | `FileInfoReceived(info)` | The device announced a file on its filesystem. | Optional file listing. |

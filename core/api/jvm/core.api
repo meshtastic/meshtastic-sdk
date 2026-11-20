@@ -571,6 +571,7 @@ public final class org/meshtastic/sdk/DeviceVersion$Companion {
 
 public final class org/meshtastic/sdk/DroppedFlow : java/lang/Enum {
 	public static final field Events Lorg/meshtastic/sdk/DroppedFlow;
+	public static final field Nodes Lorg/meshtastic/sdk/DroppedFlow;
 	public static final field Packets Lorg/meshtastic/sdk/DroppedFlow;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/DroppedFlow;
