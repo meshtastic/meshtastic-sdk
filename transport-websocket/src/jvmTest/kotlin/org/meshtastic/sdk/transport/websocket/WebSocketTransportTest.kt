@@ -19,6 +19,7 @@ import io.ktor.server.websocket.webSocket
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.close
 import io.ktor.websocket.readBytes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -568,5 +569,205 @@ class WebSocketTransportTest {
         job.cancelAndJoin()
         assertEquals(TransportState.Disconnected, t.state.value)
         withTimeout(5_000) { closed.await() }
+    }
+
+    /** Serves one scripted connection per mode: drop or close after a permit, or refuse the upgrade. */
+    private class ScriptedServer(private val modes: java.util.concurrent.ConcurrentLinkedQueue<String>) {
+        val permits = java.util.concurrent.Semaphore(0)
+        private val socket = ServerSocket(0)
+        val port: Int = socket.localPort
+        private val worker = Thread {
+            try {
+                while (true) {
+                    val client = socket.accept()
+                    val input = client.getInputStream().bufferedReader()
+                    var key = ""
+                    while (true) {
+                        val line = input.readLine() ?: break
+                        if (line.isEmpty()) break
+                        if (line.startsWith("Sec-WebSocket-Key:", ignoreCase = true)) {
+                            key = line.substringAfter(':').trim()
+                        }
+                    }
+                    val mode = modes.poll() ?: "drop"
+                    val out = client.getOutputStream()
+                    if (mode == "refuse") {
+                        out.write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n".toByteArray())
+                        out.flush()
+                        client.close()
+                        continue
+                    }
+                    val accept = Base64.getEncoder().encodeToString(
+                        MessageDigest.getInstance(
+                            "SHA-1",
+                        ).digest((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").toByteArray()),
+                    )
+                    out.write(
+                        (
+                            "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+                                "Sec-WebSocket-Accept: $accept\r\n\r\n"
+                            ).toByteArray(),
+                    )
+                    out.flush()
+                    permits.acquire()
+                    if (mode == "close") {
+                        out.write(byteArrayOf(0x88.toByte(), 2, 0x03, 0xE8.toByte()))
+                        out.flush()
+                    }
+                    client.close()
+                }
+            } catch (_: Exception) {
+            }
+        }.apply {
+            isDaemon = true
+            start()
+        }
+        fun stop() = socket.close()
+    }
+
+    private class Rig(modes: List<String>) {
+        val clock = java.util.concurrent.atomic.AtomicLong(1_000)
+        val queue = java.util.concurrent.ConcurrentLinkedQueue(modes)
+        val server = ScriptedServer(queue)
+        val transport = WebSocketTransport("ws://127.0.0.1:${server.port}").also { it.clockMs = { clock.get() } }
+
+        /** Opens a session, lets [lastsMs] pass on the test clock, then ends it as the next mode says. */
+        suspend fun session(lastsMs: Long = 100): TransportState.Error {
+            transport.connect()
+            clock.addAndGet(lastsMs)
+            server.permits.release()
+            return withTimeout(10_000) { transport.state.first { it is TransportState.Error } } as TransportState.Error
+        }
+    }
+
+    private fun rig(vararg modes: String): Rig = Rig(modes.toList()).also { servers += it.server::stop }
+
+    @Test
+    fun fiveQuickDropsInARowAreNotRecoverableAndFourAre() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop")
+        repeat(4) { assertTrue(r.session().recoverable) }
+        val fifth = r.session()
+        assertFalse(fifth.recoverable)
+        assertTrue(fifth.cause.message!!.contains("only WebSocket slot"))
+        r.transport.disconnect()
+    }
+
+    @Test
+    fun aSessionOfThirtySecondsResetsTheDropCount() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop")
+        repeat(4) { assertTrue(r.session().recoverable) }
+        assertTrue(r.session(lastsMs = 30_000).recoverable)
+        repeat(4) { assertTrue(r.session().recoverable) }
+        assertFalse(r.session().recoverable)
+        r.transport.disconnect()
+    }
+
+    @Test
+    fun aSessionEndedByACloseFrameResetsTheDropCount() = run {
+        val r = rig("drop", "drop", "drop", "drop", "close", "drop", "drop", "drop", "drop", "drop")
+        repeat(4) { assertTrue(r.session().recoverable) }
+        assertTrue(r.session().recoverable)
+        repeat(4) { assertTrue(r.session().recoverable) }
+        assertFalse(r.session().recoverable)
+        r.transport.disconnect()
+    }
+
+    @Test
+    fun aConnectThatNeverOpenedIsNeitherCountedNorResets() = run {
+        val r = rig("drop", "drop", "drop", "refuse", "refuse", "drop", "drop")
+        repeat(3) { assertTrue(r.session().recoverable) }
+        repeat(2) { assertFailsWith<MeshtasticException.Transport> { r.transport.connect() } }
+        assertTrue(r.session().recoverable)
+        assertFalse(r.session().recoverable)
+        r.transport.disconnect()
+    }
+
+    @Test
+    fun hostDisconnectResetsTheDropCount() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop")
+        repeat(4) { assertTrue(r.session().recoverable) }
+        r.transport.disconnect()
+        repeat(4) { assertTrue(r.session().recoverable) }
+        assertFalse(r.session().recoverable)
+        r.transport.disconnect()
+    }
+
+    private class FloorProbe {
+        val requested = java.util.concurrent.atomic.AtomicLong(-1)
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val cancelled = CompletableDeferred<Unit>()
+        val hook: suspend (Long) -> Unit = { ms ->
+            requested.set(ms)
+            started.complete(Unit)
+            try {
+                release.await()
+            } catch (e: CancellationException) {
+                cancelled.complete(Unit)
+                throw e
+            }
+        }
+    }
+
+    private data class FloorRig(
+        val transport: WebSocketTransport,
+        val clock: java.util.concurrent.atomic.AtomicLong,
+        val probe: FloorProbe,
+    )
+
+    private fun closeCodeRig(code: Short): FloorRig {
+        val s = server {
+            delay(50)
+            close(CloseReason(code, "bye"))
+        }
+        val clock = java.util.concurrent.atomic.AtomicLong(5_000)
+        val probe = FloorProbe()
+        val t = transportFor(s.port).also {
+            it.clockMs = { clock.get() }
+            it.floorDelay = probe.hook
+        }
+        return FloorRig(t, clock, probe)
+    }
+
+    @Test
+    fun connectAfter1013WaitsUntilThirtySecondsPastTheEnd() = run {
+        val (t, clock, probe) = closeCodeRig(1013)
+        t.connect()
+        t.awaitError()
+        clock.addAndGet(10_000)
+        val next = async(Dispatchers.Default) { t.connect() }
+        withTimeout(5_000) { probe.started.await() }
+        assertEquals(20_000L, probe.requested.get())
+        assertEquals(TransportState.Connecting, t.state.value)
+        probe.release.complete(Unit)
+        withTimeout(10_000) { next.await() }
+        assertEquals(TransportState.Connected, t.state.value)
+        t.disconnect()
+    }
+
+    @Test
+    fun disconnectDuringThe1013WaitEndsItCleanly() = run {
+        val (t, _, probe) = closeCodeRig(1013)
+        t.connect()
+        t.awaitError()
+        val next = async(Dispatchers.Default) { runCatching { t.connect() } }
+        withTimeout(5_000) { probe.started.await() }
+        t.disconnect()
+        val outcome = withTimeout(10_000) { next.await() }
+        assertIs<MeshtasticException.Transport>(outcome.exceptionOrNull())
+        withTimeout(5_000) { probe.cancelled.await() }
+        assertEquals(TransportState.Disconnected, t.state.value)
+    }
+
+    @Test
+    fun noWaitAfterOtherCloseCodes() = run {
+        for (code in listOf<Short>(1000, 1001, 1011)) {
+            val (t, _, probe) = closeCodeRig(code)
+            t.connect()
+            t.awaitError()
+            t.connect()
+            assertEquals(-1L, probe.requested.get())
+            t.disconnect()
+        }
     }
 }

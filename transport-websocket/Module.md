@@ -51,7 +51,18 @@ The node serves one client at a time. When a session ends the transport publishe
 | 1000 | normal close, including the 15 minute idle limit | `true` |
 | no close frame | dropped connection | `true` |
 
-The transport never reconnects; that belongs to the engine's `AutoReconnectConfig`. A node that
+The transport never reconnects; that belongs to the engine's `AutoReconnectConfig`.
+Two firmware behaviors are tracked across `connect()` calls on one instance:
+
+- **Contested slot:** ESP32 aborts a displaced client without a close frame when it cannot write,
+  so a 4001 may never arrive. After five sessions in a row that open and then end without a close
+  frame within 30 seconds, the end is `recoverable = false` and the message names the other
+  client. A session of 30 seconds or more, an end with a close frame, or `disconnect()` resets the
+  count; a connect that never opened does not count.
+- **1013:** the next `connect()` waits until 30 seconds after that session ended, staying in
+  `Connecting`; `disconnect()` ends the wait.
+
+On JVM, Android and iOS the SDK-created client times out a connect after 30 seconds. A node that
 stops being read for 10 seconds drops the client (ESP32), which arrives as a drop.
 
 ## Custom client
