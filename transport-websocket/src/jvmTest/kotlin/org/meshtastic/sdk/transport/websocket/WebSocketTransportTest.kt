@@ -27,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
@@ -480,6 +481,22 @@ class WebSocketTransportTest {
         assertTrue(e.cause.message!!.contains("512"))
         assertTrue(t.frames().let { withTimeoutOrNull(300) { it.first() } } == null)
         t.disconnect()
+    }
+
+    @Test
+    fun overBoundMessageAlwaysEndsTheSessionWithTheOversizeError() = run {
+        val s = server {
+            send(WsFrame.Binary(true, ByteArray(MAX_INBOUND_FRAME_BYTES.toInt() * 2)))
+            incoming.receiveCatching()
+        }
+        repeat(300) {
+            val t = transportFor(s.port)
+            t.connect()
+            val e = t.awaitError()
+            assertFalse(e.recoverable)
+            assertTrue(e.cause.message!!.contains("512"))
+            t.disconnect()
+        }
     }
 
     private class ManualDispatcher : CoroutineDispatcher() {

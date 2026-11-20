@@ -253,6 +253,7 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
     private suspend fun readUntilClosed(open: DefaultClientWebSocketSession, gen: Long) {
         var dropped: Throwable? = null
         var oversize = -1L
+        pumpProbe?.invoke("started")
         try {
             for (message in open.incoming) {
                 if (message !is WsFrame.Binary) continue
@@ -264,7 +265,9 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                 inbound.send(Frame(withHeader(message.readBytes())))
             }
         } catch (e: CancellationException) {
-            throw e
+            // Ktor cancels `incoming` itself once the attempt's block returns; that is a session end, not ours.
+            currentCoroutineContext().ensureActive()
+            dropped = e
         } catch (e: FrameTooBigException) {
             oversize = e.frameSize
         } catch (e: Exception) {
@@ -287,7 +290,8 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                 null
             }
             val (message, recoverable) = describeSessionEnd(reason?.code?.toInt(), reason?.message, dropped)
-            ended = TransportState.Error(MeshtasticException.Transport(message, dropped), recoverable)
+            val cause = dropped?.takeUnless { it is CancellationException }
+            ended = TransportState.Error(MeshtasticException.Transport(message, cause), recoverable)
         }
         pumpProbe?.invoke("ending")
         try {
