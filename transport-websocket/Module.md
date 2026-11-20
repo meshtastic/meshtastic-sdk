@@ -18,6 +18,7 @@ client that sends WebSocket pings is disconnected.
 | Android (API 26+, `INTERNET` permission) | CIO |
 | JVM (macOS, Linux, Windows) | CIO |
 | iOS (arm64, x64, Simulator arm64) | Darwin |
+| JS (browser, Node.js) | Js (platform `WebSocket`) |
 
 ## Connection behavior
 
@@ -37,6 +38,14 @@ client that sends WebSocket pings is disconnected.
   host unreachable, upgrade refused with the HTTP status, or an untrusted certificate. A `wss://`
   node with a self-signed certificate needs `ws://` (meshtasticd's plain `HTTPPort`) or a host
   `HttpClient` that trusts it.
+
+## Browser hosts
+
+On JS the transport uses the platform `WebSocket`, so TLS trust and mixed-content rules are the
+browser's: an `https` page cannot open `ws://` to another host, and a self-signed `wss://` node must
+be trusted in the browser first. `ws://localhost` from an `https` page is allowed, which fits
+meshtasticd's plain `HTTPPort` ([firmware#12414](https://github.com/meshtastic/firmware/pull/12414)).
+The 512 byte send check and the 1024 byte receive bound still apply.
 
 ## Session end
 
