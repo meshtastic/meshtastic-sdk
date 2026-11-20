@@ -49,13 +49,22 @@ internal class FileTransferApiImpl(
 
     // Guarded by [busy]: whether the last abandoned attempt got no answer to its request at all.
     private var lastResyncSilent = false
+
+    // Guarded by [busy]: replies owed to the last attempt's cleanup frames that never arrived in time.
+    private var staleReplies: Set<XModem.Control> = emptySet()
     private val _progress = MutableStateFlow<FileTransferProgress?>(null)
     override val progress: StateFlow<FileTransferProgress?> = _progress.asStateFlow()
 
     override suspend fun download(path: String): FileTransferResult<ByteString> {
         if (!XModemProtocol.validPath(path)) return FileTransferResult.Failure(FileTransferFailure.InvalidPath)
         return run(path, FileTransferDirection.Download, MAX_RESTARTS) {
-            XModemDownload(path, maxBytes = maxBytes, maxRetries = maxRetries, blockTimeoutMs = blockTimeoutMs)
+            XModemDownload(
+                path,
+                maxBytes = maxBytes,
+                maxRetries = maxRetries,
+                blockTimeoutMs = blockTimeoutMs,
+                staleReplies = it,
+            )
         }
     }
 
@@ -82,7 +91,7 @@ internal class FileTransferApiImpl(
         path: String,
         direction: FileTransferDirection,
         restarts: Int,
-        newMachine: () -> XModemMachine<T>,
+        newMachine: (Set<XModem.Control>) -> XModemMachine<T>,
     ): FileTransferResult<T> {
         if (!busy.tryLock()) return FileTransferResult.Failure(FileTransferFailure.Busy)
         try {
@@ -93,7 +102,12 @@ internal class FileTransferApiImpl(
             lastResyncSilent = false
             repeat(restarts + 1) {
                 _progress.value = null
-                drive(path, direction, newMachine())?.let { return it }
+                val machine = newMachine(staleReplies)
+                try {
+                    drive(path, direction, machine)?.let { return it }
+                } finally {
+                    staleReplies = machine.pendingReply
+                }
             }
             val failure = if (lastResyncSilent) FileTransferFailure.Timeout else FileTransferFailure.RetriesExhausted
             return FileTransferResult.Failure(failure)

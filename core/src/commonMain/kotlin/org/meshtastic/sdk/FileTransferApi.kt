@@ -18,9 +18,10 @@ import okio.ByteString
  *
  * One transfer runs at a time per client; a second call fails fast with
  * [FileTransferFailure.Busy]. Cancelling the calling coroutine aborts the transfer and leaves
- * the device idle: once the device has acknowledged the upload request, an upload sends `CAN`,
- * which makes firmware delete the partial file; before that it re-sends the request to learn
- * the device's state and never sends `CAN`, which could delete an unrelated file. A
+ * the device idle: once the device has acknowledged the upload request and until the final
+ * `EOT`, an upload sends `CAN`, which makes firmware delete the partial file; before the request
+ * is acknowledged it re-sends the request to learn the device's state, and after `EOT` it only
+ * waits for the device's reply, because `CAN` there would delete the finished file. A
  * download sends a frame firmware treats as unexpected, so the source file is kept (firmware
  * deletes the file named by the last request when it receives `CAN`).
  *
@@ -31,11 +32,13 @@ import okio.ByteString
  * **Timeouts:** device frames can be lost, so a silent wait is recovered quickly. A data block
  * that does not arrive within 3 s (six BLE round trips of about 500 ms; serial takes tens of ms)
  * is re-requested with a `NAK`, up to 10 times in a row. After the last block the device's closing
- * frame is awaited 1.5 s, then the bytes are returned anyway. A request with no reply within 3 s
- * is abandoned and the whole download restarts, up to twice. A reply to a cleanup frame is awaited
- * 1.5 s. A download from a silent device therefore fails with [FileTransferFailure.Timeout] within
- * 3 x (3 s + 1.5 s) = 13.5 s, and one that stalls after its first block within
- * 10 x 3 s + 1.5 s = 31.5 s of the last frame received, plus at most two restarts of 4.5 s each.
+ * frame is awaited 1.5 s, then the bytes are returned anyway after one more ACK and a 1.5 s wait
+ * for its reply, so 3 s after the last block with no closing reply. A request with no reply within
+ * 3 s is abandoned and the whole download restarts, up to twice. A reply to a cleanup frame is
+ * awaited 1.5 s. A download from a silent device therefore fails with [FileTransferFailure.Timeout]
+ * within 3 x (3 s + 1.5 s) = 13.5 s, and one that stalls after its first block within
+ * 11 x 3 s + 1.5 s = 34.5 s of the last frame received (ten NAKs, then the abort and its reply),
+ * plus at most two restarts of 4.5 s each.
  *
  * **Inbound delivery:** the transfer reads device frames from [RadioClient.events], a bounded
  * drop-oldest buffer. Firmware sends one frame and waits for the reply, and the transfer reads

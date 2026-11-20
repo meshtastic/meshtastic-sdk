@@ -7,11 +7,11 @@
  */
 package org.meshtastic.sdk
 
-import kotlinx.coroutines.CoroutineScope
+import app.cash.turbine.Event
+import app.cash.turbine.test
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -69,9 +69,17 @@ private class FirmwareXModem(val files: MutableMap<String, ByteString> = mutable
 
     private fun ctl(c: XModem.Control) = XModemProtocol.control(c)
 
+    /** Refuse a repeated request while receiving, as firmware does when it cannot remove the partial file. */
+    var refuseRestart = false
+
     fun handle(x: XModem): XModem? {
         when (x.control) {
             XModem.Control.SOH, XModem.Control.STX -> {
+                if (x.seq == 0 && receiving != null) {
+                    // xmodem.cpp:142-167: a new request while receiving abandons the partial file
+                    if (refuseRestart) return ctl(XModem.Control.NAK)
+                    receiving = null
+                }
                 if (x.seq == 0 && receiving == null && transmitting == null) {
                     path = x.buffer.utf8().substringBefore('\u0000')
                     if (x.control == XModem.Control.SOH) {
@@ -236,6 +244,14 @@ class FileTransferApiTest {
 
     private fun bytesOf(size: Int): ByteString = ByteArray(size) { ((it * 31 + 5) and 0xFF).toByte() }.toByteString()
 
+    /** Hands the last frame the SDK wrote to the fake firmware and injects its reply. */
+    private fun TestScope.deliverLast(transport: FakeRadioTransport, firmware: FirmwareXModem) {
+        firmware.handle(sentXModem(transport).last())?.let {
+            transport.injectFrame(FromRadio.Builder().also { wb -> wb.xmodemPacket = it }.build().toFrame())
+        }
+        runCurrent()
+    }
+
     private suspend fun TestScope.connect(client: RadioClient) {
         client.connect()
         runCurrent()
@@ -372,17 +388,23 @@ class FileTransferApiTest {
         val content = bytesOf(225)
         val firmware = FirmwareXModem(mutableMapOf("/a" to content))
         firmware.sendingEot = true
-        val seen = mutableListOf<Int?>()
-        backgroundScope.launch { client.files.progress.collect { seen.add(it?.bytesTransferred) } }
-        val op = async { client.files.download("/a") }
-        pump(transport, firmware, op)
-        assertEquals(FileTransferResult.Success(content), op.await())
-        runCurrent()
-        val firstAttempt = seen.indexOf(128)
-        assertTrue(firstAttempt >= 0)
-        assertTrue(seen.drop(firstAttempt + 1).contains(null), "progress must reset between attempts: $seen")
-        assertTrue(seen.filterNotNull().all { it <= 225 })
-        assertNull(seen.last())
+        client.files.progress.test {
+            assertNull(awaitItem())
+            val op = async { client.files.download("/a") }
+            runCurrent()
+            deliverLast(transport, firmware)
+            assertEquals(128, awaitItem()?.bytesTransferred)
+            // the stale isEOT makes the device send EOT after a full block: the SDK restarts the download
+            deliverLast(transport, firmware)
+            assertNull(awaitItem(), "progress must reset before the restarted download delivers a block")
+            assertEquals(2, requests(transport))
+            pump(transport, firmware, op, from = sentXModem(transport).size - 1)
+            assertEquals(FileTransferResult.Success(content), op.await())
+            runCurrent()
+            val rest = cancelAndConsumeRemainingEvents().filterIsInstance<Event.Item<FileTransferProgress?>>()
+            assertTrue(rest.mapNotNull { it.value?.bytesTransferred }.all { it <= 225 })
+            assertNull(rest.last().value)
+        }
         runCatching { client.disconnect() }
     }
 
@@ -500,7 +522,7 @@ class FileTransferApiTest {
     }
 
     @Test
-    fun lostStartAckIsProbedAndLeavesTheDeviceIdle() = runTest {
+    fun lostStartAckIsRecoveredByTheProbe() = runTest {
         val (transport, client) = connectedClient()
         connect(client)
         val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(5)))
@@ -509,20 +531,118 @@ class FileTransferApiTest {
         // firmware accepts the request but its ACK is lost
         pump(transport, firmware, op, dropReplyTo = setOf(0))
         advanceTimeBy(3_001)
-        pump(transport, firmware, op, dropReplyTo = setOf(0), from = 1)
-        advanceTimeBy(20_000)
-        runCurrent()
-        assertEquals(FileTransferResult.Failure(FileTransferFailure.Timeout), op.await())
+        pump(transport, firmware, op, from = 1)
+        assertEquals(FileTransferResult.Success(Unit), op.await())
         assertNoConsecutiveRepeats(transport, base)
-        val frames = sentXModem(transport)
-        assertEquals(XModem.Control.CAN, frames.last().control)
-        assertEquals(listOf("/b"), firmware.removedByCan)
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        assertEquals(bytesOf(500), firmware.files["/b"])
         assertEquals(bytesOf(5), firmware.files["/a"])
-        // the ACK to that CAN was consumed before the slot was released: the next upload starts clean
-        val next = async { client.files.upload("/c", bytesOf(3)) }
-        pump(transport, firmware, next, from = frames.size)
-        assertEquals(FileTransferResult.Success(Unit), next.await())
-        assertEquals(bytesOf(3), firmware.files["/c"])
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun nakToTheProbeSendsNoCanAndKeepsTheFileAtThatPath() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem(mutableMapOf("/b" to bytesOf(5)))
+        firmware.refuseRestart = true
+        val op = async { client.files.upload("/b", bytesOf(500)) }
+        pump(transport, firmware, op, dropReplyTo = setOf(0))
+        advanceTimeBy(3_001)
+        pump(transport, firmware, op, from = 1)
+        assertEquals(FileTransferResult.Failure(FileTransferFailure.Refused), op.await())
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        assertTrue(firmware.removedByCan.isEmpty())
+        assertEquals(bytesOf(5), firmware.files["/b"])
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun cancellingUploadAfterEotSendsNoCanAndKeepsTheFinishedFile() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem()
+        val op = async { client.files.upload("/a", bytesOf(1)) }
+        runCurrent()
+        deliverLast(transport, firmware)
+        deliverLast(transport, firmware)
+        val eot = sentXModem(transport).last()
+        assertEquals(XModem.Control.EOT, eot.control)
+        op.cancel()
+        runCurrent()
+        assertTrue(sentXModem(transport).none { it.control == XModem.Control.CAN })
+        transport.injectFrame(
+            FromRadio.Builder().also { wb -> wb.xmodemPacket = firmware.handle(eot) }.build().toFrame(),
+        )
+        runCurrent()
+        assertEquals(bytesOf(1), firmware.files["/a"])
+        assertTrue(firmware.removedByCan.isEmpty())
+        assertNull(client.files.progress.value)
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun lateCanFromAnAbandonedAttemptDoesNotCancelTheRestartedDownload() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val content = bytesOf(10)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to content))
+        val op = async { client.files.download("/a") }
+        runCurrent()
+        // the request is never answered: the SDK sends its abort frame, waits 1.5 s and restarts
+        advanceTimeBy(3_001)
+        advanceTimeBy(1_501)
+        runCurrent()
+        assertEquals(2, requests(transport))
+        // the first attempt's CAN reply finally arrives
+        transport.injectFrame(
+            FromRadio.Builder().also { wb -> wb.xmodemPacket = XModemProtocol.control(XModem.Control.CAN) }.build()
+                .toFrame(),
+        )
+        runCurrent()
+        assertTrue(!op.isCompleted)
+        pump(transport, firmware, op, from = sentXModem(transport).size - 1)
+        assertEquals(FileTransferResult.Success(content), op.await())
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun aSecondCanBeforeTheFirstBlockStillCancelsTheRestartedDownload() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val op = async { client.files.download("/a") }
+        runCurrent()
+        advanceTimeBy(3_001)
+        advanceTimeBy(1_501)
+        runCurrent()
+        repeat(2) {
+            transport.injectFrame(
+                FromRadio.Builder().also { wb -> wb.xmodemPacket = XModemProtocol.control(XModem.Control.CAN) }.build()
+                    .toFrame(),
+            )
+            runCurrent()
+        }
+        assertEquals(FileTransferResult.Failure(FileTransferFailure.DeviceCancelled), op.await())
+        runCatching { client.disconnect() }
+    }
+
+    @Test
+    fun cancelAbortFrameClosesTheDeviceSideDownload() = runTest {
+        val (transport, client) = connectedClient()
+        connect(client)
+        val firmware = FirmwareXModem(mutableMapOf("/a" to bytesOf(1000)))
+        val op = async { client.files.download("/a") }
+        runCurrent()
+        deliverLast(transport, firmware)
+        assertTrue(firmware.transmitting != null)
+        op.cancel()
+        runCurrent()
+        assertEquals(XModem.Control.SOH, sentXModem(transport).last().control)
+        deliverLast(transport, firmware)
+        assertEquals(null, firmware.transmitting)
+        assertNull(client.files.progress.value)
+        assertTrue(op.isCancelled)
+        assertEquals(bytesOf(1000), firmware.files["/a"])
         runCatching { client.disconnect() }
     }
 
