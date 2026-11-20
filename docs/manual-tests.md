@@ -406,6 +406,17 @@ Each test specifies: **transport** • **steps** • **expected** • **how to v
     `Bonding` emitted; OS reports the bond cached).
   - Handshake proceeds immediately on `Connected`.
 
+#### I3 — `BleScanner.scan()` finds a radio and connects through `BleTransport(radio)`
+- **Transport:** BLE (Android, iOS, JVM)
+- **Pre-req:** A powered Meshtastic radio in range, advertising; the host holds the BLE scan permissions listed in the `BleScanner` KDoc.
+- **Steps:**
+  1. Collect `BleScanner.scan()` for 10 s and note each emitted `DiscoveredRadio` (`name`, `rssi`, `address`).
+  2. Build `BleTransport(radio)` from the strongest result and run `client.connect()`.
+  3. Cancel the scan collector and confirm the host's Bluetooth scan indicator goes off.
+  4. Repeat step 1 with Bluetooth switched off, and with the scan permission revoked (Android).
+  5. On Android, run `./gradlew :transport-ble:connectedAndroidTest` (`BleScannerDeviceTest`).
+- **Expected:** the radio is emitted repeatedly with a current RSSI; `Connected` within 30 s; scanning stops on cancel; with Bluetooth off or a missing permission the flow fails with `MeshtasticException.Transport`.
+
 ## Recording results
 
 For each release, copy this template into `docs/release-history/vX.Y.Z-conformance.md` and fill in:

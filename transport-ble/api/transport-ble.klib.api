@@ -21,6 +21,19 @@ final class org.meshtastic.sdk.transport.ble/BleTransport : org.meshtastic.sdk/R
     final suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.transport.ble/BleTransport.send|send(org.meshtastic.sdk.Frame){}[0]
 }
 
+final class org.meshtastic.sdk.transport.ble/DiscoveredRadio { // org.meshtastic.sdk.transport.ble/DiscoveredRadio|null[0]
+    final val address // org.meshtastic.sdk.transport.ble/DiscoveredRadio.address|{}address[0]
+        final fun <get-address>(): kotlin/String // org.meshtastic.sdk.transport.ble/DiscoveredRadio.address.<get-address>|<get-address>(){}[0]
+    final val name // org.meshtastic.sdk.transport.ble/DiscoveredRadio.name|{}name[0]
+        final fun <get-name>(): kotlin/String? // org.meshtastic.sdk.transport.ble/DiscoveredRadio.name.<get-name>|<get-name>(){}[0]
+    final val rssi // org.meshtastic.sdk.transport.ble/DiscoveredRadio.rssi|{}rssi[0]
+        final fun <get-rssi>(): kotlin/Int? // org.meshtastic.sdk.transport.ble/DiscoveredRadio.rssi.<get-rssi>|<get-rssi>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk.transport.ble/DiscoveredRadio.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk.transport.ble/DiscoveredRadio.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk.transport.ble/DiscoveredRadio.toString|toString(){}[0]
+}
+
 final object org.meshtastic.sdk.transport.ble/BleConstants { // org.meshtastic.sdk.transport.ble/BleConstants|null[0]
     final val FROMNUM // org.meshtastic.sdk.transport.ble/BleConstants.FROMNUM|{}FROMNUM[0]
         final fun <get-FROMNUM>(): com.juul.kable/Characteristic // org.meshtastic.sdk.transport.ble/BleConstants.FROMNUM.<get-FROMNUM>|<get-FROMNUM>(){}[0]
@@ -38,4 +51,9 @@ final object org.meshtastic.sdk.transport.ble/BleConstants { // org.meshtastic.s
         final fun <get-TORADIO_UUID>(): kotlin.uuid/Uuid // org.meshtastic.sdk.transport.ble/BleConstants.TORADIO_UUID.<get-TORADIO_UUID>|<get-TORADIO_UUID>(){}[0]
 }
 
+final object org.meshtastic.sdk.transport.ble/BleScanner { // org.meshtastic.sdk.transport.ble/BleScanner|null[0]
+    final fun scan(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk.transport.ble/DiscoveredRadio> // org.meshtastic.sdk.transport.ble/BleScanner.scan|scan(){}[0]
+}
+
+final fun org.meshtastic.sdk.transport.ble/BleTransport(org.meshtastic.sdk.transport.ble/DiscoveredRadio, kotlin.coroutines/CoroutineContext = ..., kotlin/Function1<com.juul.kable/PeripheralBuilder, kotlin/Unit> = ...): org.meshtastic.sdk.transport.ble/BleTransport // org.meshtastic.sdk.transport.ble/BleTransport|BleTransport(org.meshtastic.sdk.transport.ble.DiscoveredRadio;kotlin.coroutines.CoroutineContext;kotlin.Function1<com.juul.kable.PeripheralBuilder,kotlin.Unit>){}[0]
 final fun org.meshtastic.sdk.transport.ble/bleAdvertisementMatches(kotlin/String, kotlin/String?, kotlin/String?, kotlin/String): kotlin/Boolean // org.meshtastic.sdk.transport.ble/bleAdvertisementMatches|bleAdvertisementMatches(kotlin.String;kotlin.String?;kotlin.String?;kotlin.String){}[0]
