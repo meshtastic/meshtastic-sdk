@@ -11,6 +11,9 @@ Bluetooth LE transport for the Meshtastic KMP SDK. It implements `RadioTransport
 | JVM (macOS) | CoreBluetooth through btleplug | none beyond OS Bluetooth permission |
 | JVM (Linux) | BlueZ over D-Bus through btleplug | BlueZ 5 and access to the system bus (typically the `bluetooth` group) |
 | JVM (Windows) | WinRT Bluetooth APIs through btleplug | Windows 10 or later |
+| JavaScript and Wasm | Web Bluetooth | A supporting browser and a secure page. The chooser requires a user gesture. |
+
+Call `requestBleTransport()` directly from a user gesture to open the browser chooser. Hosts that already own a grant can pass their Kable `Peripheral` to `BleTransport` and retain responsibility for closing it.
 
 ## GATT services and characteristics
 
