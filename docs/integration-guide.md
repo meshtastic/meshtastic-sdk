@@ -217,13 +217,13 @@ when (val result = client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)) 
     else -> println("failed: $result")
 }
 
-// Change one field, starting from the current section
-val lora = client.configBundle.value?.configs?.firstNotNullOfOrNull { it.lora } ?: return
+// Change one field: the builder reads the current section, so the others keep their values
 client.admin.setLoraConfig {
-    lora.newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+    newBuilder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
 }
 
 // Write several sections in one transaction
+val lora = client.configBundle.value?.configs?.firstNotNullOfOrNull { it.lora } ?: return
 client.admin.editSettings {
     setConfig(Config.Builder().also { it.lora = lora }.build())
     setOwner(newOwner)
@@ -233,7 +233,7 @@ client.admin.editSettings {
 client.admin.forNode(NodeId(0x12345678)).reboot()
 ```
 
-A config builder's block starts from an empty section, not the device's values, and what it returns replaces the whole section, so build from the current config as shown. [api-reference.md, AdminApi](./api-reference.md#adminapi) has every method; [error-taxonomy.md](./error-taxonomy.md#adminresult) explains each `AdminResult`.
+A config builder reads the section from the targeted device before calling its block, and what the block returns replaces the whole section, so change only the fields you mean to. [api-reference.md, AdminApi](./api-reference.md#adminapi) has every method; [error-taxonomy.md](./error-taxonomy.md#adminresult) explains each `AdminResult`.
 
 ## 8. Logging and diagnostics
 
