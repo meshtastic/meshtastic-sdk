@@ -31,7 +31,7 @@
 A faithful Kotlin client of the Meshtastic device PhoneAPI (the host-side wire protocol — see §8 of the v1 plan for the full protocol reference, retained verbatim as `docs/protocol.md`). It owns: framing, handshake, state model, send tracking, admin RPC, telemetry, routing, decoding/encoding. It is consumed in-process by app code on Android, iOS, and JVM desktop.
 
 ### What this SDK is NOT (MVP)
-- **Not remote/RPC.** No wasm target, no kotlinx-rpc server, no browser story. These can be added later as a non-breaking adapter.
+- **Not remote/RPC.** No kotlinx-rpc server. It can be added later as a non-breaking adapter. Web hosts (`js`, `wasmJs`) run the engine in-process over `transport-websocket`.
 - **Not a host.** No bound `MeshtasticService`, no foreground-service helper, no notification policy, no WorkManager, no permission flow. Apps wire those.
 - **Not a UI library** and not a DI container.
 - **Not an MQTT bridge.** MQTT is *not* a PhoneAPI transport (see v1 §8.18); a `MqttClientProxy` module may land later as a side-channel, not as a `RadioTransport`.
@@ -1024,8 +1024,7 @@ Driven by adopter feedback; pick from:
 
 ### Future (post-1.0, non-breaking adds)
 
-- `rpc/`, `rpc-adapter/`, `transport-rpc/`, `host-rpc-server/` — remote engine for browser/wasm/decoupled-UI use cases. Designed as adapters around the local engine. Snapshot+delta + versioned envelopes (per critique). Doesn't touch local API.
-- `wasmJs` target on `core` (RPC client only) + `samples/wasm-browser/`.
+- `rpc/`, `rpc-adapter/`, `transport-rpc/`, `host-rpc-server/` — remote engine for decoupled-UI use cases and for web hosts whose radio is on BLE, serial or TCP. Designed as adapters around the local engine. Snapshot+delta + versioned envelopes (per critique). Doesn't touch local API.
 
 ---
 

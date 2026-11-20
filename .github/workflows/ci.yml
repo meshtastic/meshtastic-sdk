@@ -102,8 +102,8 @@ jobs:
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
-      - name: Build and test (Kotlin/JS, Node.js)
-        run: ./gradlew jsNodeTest
+      - name: Build and test (Kotlin/JS and Kotlin/Wasm, Node.js)
+        run: ./gradlew jsNodeTest wasmJsNodeTest
 
   test-ios:
     runs-on: macos-latest

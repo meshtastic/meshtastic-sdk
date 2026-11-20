@@ -1,0 +1,1 @@
+- `wasmJs` target on `sdk-core`, `sdk-testing` and `sdk-transport-websocket`, next to `js`, for Kotlin/Wasm hosts such as Compose Multiplatform for web. The websocket transport uses Ktor's JS engine over the platform `WebSocket` on both, and tests run on Node.js.
