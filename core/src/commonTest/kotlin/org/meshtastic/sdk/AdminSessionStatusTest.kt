@@ -233,6 +233,29 @@ class AdminSessionStatusTest {
         current.cancel()
     }
 
+    @Test
+    fun bufferedOlderKeyDoesNotReplaceTheLaterSeedKey() = runTest {
+        val device = SessionDevice(holdOwner = true, olderLocalKey = true)
+        val client = buildClient(device)
+        val connect = backgroundScope.async { client.connect() }
+        repeat(100) {
+            if (!device.ownerHeld) {
+                advanceTimeBy(100)
+                runCurrent()
+            }
+        }
+        assertTrue(device.ownerHeld, "handshake must reach the owner request")
+        advanceTimeBy(5_000)
+        runCurrent()
+        val releasedAt = Instant.fromEpochMilliseconds(currentTime)
+        device.releaseOwner()
+        runCurrent()
+        connect.await()
+
+        val local = assertIs<AdminSessionStatus.Active>(client.adminSessions.value[LOCAL])
+        assertEquals(releasedAt, local.refreshedAt)
+    }
+
     // ── Harness ─────────────────────────────────────────────────────────────
 
     private fun TestScope.buildClient(device: SessionDevice): RadioClient = RadioClient.Builder()
@@ -317,7 +340,8 @@ class AdminSessionStatusTest {
     }
 
     /** Minimal radio: two-stage handshake plus a `get_owner_response` that seeds [LOCAL_PASSKEY]. */
-    private class SessionDevice(private val holdOwner: Boolean = false) : RadioTransport {
+    private class SessionDevice(private val holdOwner: Boolean = false, private val olderLocalKey: Boolean = false) :
+        RadioTransport {
         private var heldOwner: FromRadio? = null
 
         val ownerHeld: Boolean get() = heldOwner != null
@@ -359,6 +383,20 @@ class AdminSessionStatusTest {
                 NONCE_STAGE2 -> {
                     inject(FromRadio.Builder().also { wb -> wb.config_complete_id = NONCE_STAGE2 }.build())
                     if (holdOwner) inject(remoteMetadataResponse())
+                    if (olderLocalKey) {
+                        inject(
+                            adminResponse(
+                                requestId = 0,
+                                from = LOCAL.raw,
+                                response = AdminMessage.Builder().also { wb ->
+                                    wb.get_device_metadata_response = DeviceMetadata.Builder().also { wb ->
+                                        wb.firmware_version = "2.7.0"
+                                    }.build()
+                                    wb.session_passkey = NEWER_PASSKEY.toByteString()
+                                }.build(),
+                            ),
+                        )
+                    }
                 }
             }
             val packet = toRadio.packet ?: return
