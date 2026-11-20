@@ -245,7 +245,8 @@ fun mySendTimesOut() = runTest {
 - **iOS** (`iosArm64`, `iosX64`, `iosSimulatorArm64`): the engine runs
   on `Dispatchers.Default.limitedParallelism(1)`. Kotlin/Native's
   `freeze` rules do not apply — the SDK targets the new memory model.
-- **JS / Wasm**: not currently supported. See [`roadmap.md`](roadmap.md).
+- **JS / Wasm** (`js`, `wasmJs`): one thread. `Dispatchers.Default` is the
+  host's event loop, so the engine and the host's UI share it.
 
 ### See also
 

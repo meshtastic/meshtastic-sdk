@@ -1,8 +1,8 @@
 # meshtastic-sdk
 
 > Kotlin Multiplatform SDK for [Meshtastic](https://meshtastic.org) mesh-network radios.
-> One library. Connects to Meshtastic devices over BLE, TCP, or USB-serial from Android, JVM, and iOS.
-> Wasm/browser is on the roadmap — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
+> One library. Connects to Meshtastic devices over BLE, TCP, or USB-serial from Android, JVM, and iOS,
+> and over the device's WebSocket phone API from those and from browser or Node.js hosts (Kotlin/JS and Kotlin/Wasm).
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/sdk-core)](https://central.sonatype.com/artifact/org.meshtastic/sdk-core)
@@ -23,7 +23,7 @@ Use it to build:
 
 - Companion apps (Android, iOS, desktop) that don't want to reinvent the protocol.
 - Headless gateways and mesh telemetry collectors on JVM/server.
-- (post-1.0) Web tools (wasm) via a sidecar RPC server — design parked in [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
+- Browser and Node.js tools on Kotlin/JS or Kotlin/Wasm, running the engine in-process over `transport-websocket`.
 
 This SDK does **not** include UI components, navigation, or storage policy — see [`docs/decisions/000-charter.md`](docs/decisions/000-charter.md) for the explicit non-goals.
 
@@ -67,7 +67,7 @@ dependencies {
 
 Snapshot artifacts are mutable and rebuilt on every commit to `main`. For reproducible builds, depend on a released version (e.g. `org.meshtastic:sdk-core:0.2.0`) rather than a `-SNAPSHOT`.
 
-Roadmap (post-1.0, non-breaking adds): `transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server`, `wasmJs` browser support — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
+Roadmap (post-1.0, non-breaking adds): `transport-mqtt-proxy`, `transport-rpc`, `host-rpc-server` — see [`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
 
 Full module matrix: [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md).
 
@@ -216,31 +216,33 @@ Full API reference: [`docs/api-reference.md`](docs/api-reference.md).
 
 All published modules target the same Kotlin Multiplatform target set via the shared
 `meshtastic.kmp.library` convention plugin: `jvm`, `androidTarget` (`minSdk = 26`),
-`iosArm64`, `iosX64`, and `iosSimulatorArm64`. `core` and `testing` also publish a Kotlin/JS
-klib (`js`, via `meshtastic.js.library`) for browser and Node.js consumers that bring their own
-transport. Per-module behaviour is summarised below;
+`iosArm64`, `iosX64`, and `iosSimulatorArm64`. `core`, `testing` and `transport-websocket` also
+publish Kotlin/JS and Kotlin/Wasm klibs (`js` and `wasmJs`, via `meshtastic.js.library`) for
+browser and Node.js consumers ([ADR-017](docs/decisions/017-web-targets.md)). They are not in
+0.2.0: until the next release, take them from the snapshot repository under Install. Per-module
+behaviour is summarised below;
 see [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md) for the
 authoritative dependency graph.
 
 ### Platform support matrix
 
-| Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | JS  | Notes                                                                 |
-|----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|:---:|-----------------------------------------------------------------------|
-| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
-| `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | —   | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
-| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | Built on Ktor sockets.                                                |
-| `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | Ktor client (CIO on JVM and Android, Darwin on iOS, Ktor's JS engine over the platform `WebSocket` on JS, browser or Node). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
-| `transport-serial`         | ✓   | ✓                     | —         | —             | —       | —   | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, host adds it). iOS targets compile (empty actuals) but no USB-serial API on iOS. |
-| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
-| `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |
+| Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | JS  | Wasm | Notes                                                                 |
+|----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|:---:|:----:|-----------------------------------------------------------------------|
+| `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Pure-Kotlin engine; re-exports the `org.meshtastic:protobufs` types (no other deps).                 |
+| `transport-ble`            | ✓¹  | ✓                     | ✓         | ✓             | ✓       | —   | —    | ¹ JVM uses `BlueZ`/`BleZ`-style adapter where available; see module README. |
+| `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Built on Ktor sockets.                                                |
+| `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Ktor client (CIO on JVM and Android, Darwin on iOS, Ktor's JS engine over the platform `WebSocket` on JS and Wasm, browser or Node). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
+| `transport-serial`         | ✓   | ✓                     | —         | —             | —       | —   | —    | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, host adds it). iOS targets compile (empty actuals) but no USB-serial API on iOS. |
+| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | SQLDelight native driver on iOS, JDBC on JVM/Android.                 |
+| `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | In-memory fakes + `TestClock`; safe to use in `commonTest`.           |
 
 ✓ = supported and exercised in CI; — = not applicable (no platform API for this transport, or no
-JS artifact yet).
+web artifact yet).
 
-The JS column is a Kotlin/JS klib (`org.meshtastic:sdk-core-js`): Kotlin/JS consumers compile it
-into their own bundle and supply a `RadioTransport` (Web Bluetooth, Web Serial, device HTTP API).
-`wasmJs` remains on the post-1.0 roadmap — see
-[`docs/future/wasm-rpc-roadmap.md`](docs/future/wasm-rpc-roadmap.md).
+The JS and Wasm columns are klibs (`org.meshtastic:sdk-core-js`, `org.meshtastic:sdk-core-wasm-js`)
+that Kotlin/JS and Kotlin/Wasm consumers compile into their own bundle, Compose Multiplatform for
+web among them. `transport-websocket` reaches a radio from either; a host can also supply its own
+`RadioTransport` (Web Bluetooth, Web Serial). Both are tested on Node.js, not in a browser.
 
 ## Documentation
 
