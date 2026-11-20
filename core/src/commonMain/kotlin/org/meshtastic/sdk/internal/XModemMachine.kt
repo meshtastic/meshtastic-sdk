@@ -60,7 +60,7 @@ internal object XModemProtocol {
     /**
      * Frame that ends a download without deleting the source file. Firmware answers `CAN` by
      * removing the file named in the last request; a data frame while it is transmitting makes it
-     * close the file and reply `CAN` instead (`xmodem.cpp:220-228`). `seq` is nonzero so an idle
+     * close the file and reply `CAN` instead (`xmodem.cpp:248-255`). `seq` is nonzero so an idle
      * device ignores it rather than reading it as a new request.
      */
     fun downloadAbort(): XModem = XModem.Builder().also { wb ->
@@ -138,6 +138,9 @@ internal interface XModemMachine<T> {
 
     val totalBytes: Int?
 
+    /** Reply controls the device still owes to cleanup frames this machine sent and never heard answered. */
+    val pendingReply: Set<XModem.Control> get() = emptySet()
+
     fun start(nowMs: Long): XModemStep<T>
 
     fun onFrame(frame: XModem, nowMs: Long): XModemStep<T>
@@ -161,10 +164,14 @@ internal class XModemDownload(
     private val maxBytes: Int = FileTransferApi.MAX_FILE_BYTES,
     private val maxRetries: Int = XModemProtocol.DEFAULT_MAX_RETRIES,
     private val blockTimeoutMs: Long = XModemProtocol.DEFAULT_BLOCK_TIMEOUT_MS,
+    /** Replies owed to an earlier attempt's cleanup frames; one of each arriving before the first block is not ours. */
+    private var staleReplies: Set<XModem.Control> = emptySet(),
 ) : XModemMachine<ByteString> {
     private enum class Phase { Idle, AwaitFirst, AwaitBlock, AwaitEot, Settling, Finished }
 
     private var phase = Phase.Idle
+    private var unanswered: Set<XModem.Control> = emptySet()
+    override val pendingReply: Set<XModem.Control> get() = unanswered
     private val data = Buffer()
     private var received = 0
     private var accepted = 0
@@ -190,6 +197,10 @@ internal class XModemDownload(
     override fun onFrame(frame: XModem, nowMs: Long): XModemStep<ByteString> {
         if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
         if (phase == Phase.Settling) return if (frame.control in settling!!.expect) endSettling() else XModemStep()
+        if (phase == Phase.AwaitFirst && frame.control in staleReplies) {
+            staleReplies = staleReplies - frame.control
+            return XModemStep()
+        }
         return when (frame.control) {
             // A short block is always the last (xmodem.cpp:189,274): the bytes are complete, CAN only closes.
             XModem.Control.CAN ->
@@ -223,7 +234,10 @@ internal class XModemDownload(
         if (phase == Phase.Idle || phase == Phase.Finished) return XModemStep()
         if (nowMs < deadlineMs) return XModemStep()
         return when (phase) {
-            Phase.Settling -> endSettling()
+            Phase.Settling -> {
+                unanswered = settling!!.expect
+                endSettling()
+            }
 
             Phase.AwaitBlock -> retry(nowMs, FileTransferFailure.Timeout, shortFrame = false)
 
@@ -263,7 +277,13 @@ internal class XModemDownload(
         val seq = frame.seq and XModemProtocol.SEQ_MASK
         val chunk = frame.buffer
         val crcOk = chunk.size <= XModemProtocol.BLOCK_SIZE && XModemProtocol.crc16(chunk) == frame.crc16
-        if (crcOk && accepted > 0 && seq == ((nextSeq - 1) and XModemProtocol.SEQ_MASK)) return XModemStep()
+        if (crcOk && accepted > 0 && seq == ((nextSeq - 1) and XModemProtocol.SEQ_MASK)) {
+            // Our NAK made the device resend a block whose ACK it never saw (xmodem.cpp:312-338): ACK it again
+            // so it moves on. Without a NAK outstanding the repeat is a late copy and the device has moved on.
+            if (retries == 0) return XModemStep()
+            deadlineMs = nowMs + blockTimeoutMs
+            return log.step(log.control(XModem.Control.ACK))
+        }
         val short = chunk.size < XModemProtocol.BLOCK_SIZE
         // NAK makes firmware resend only its current block and it never goes back (xmodem.cpp:296-305).
         if (seq != nextSeq && ((seq - nextSeq) and XModemProtocol.SEQ_MASK) in 1..SEQ_HALF) {
@@ -367,8 +387,13 @@ internal class XModemUpload(
 
             XModem.Control.NAK -> when (phase) {
                 Phase.AwaitStartAck -> fail(FileTransferFailure.Refused)
-                Phase.Probing -> settle(nowMs, XModem.Control.CAN, outcome(FileTransferFailure.Timeout))
+
+                // Firmware's CAN removes `filename` whatever the state (xmodem.cpp:268-278), and after a NAK
+                // that is the refused path, so nothing is sent: the device is idle.
+                Phase.Probing -> fail(if (cancelling) FileTransferFailure.Timeout else FileTransferFailure.Refused)
+
                 Phase.AwaitEotAck -> XModemStep()
+
                 else -> retry(nowMs, FileTransferFailure.RetriesExhausted)
             }
 
@@ -401,9 +426,9 @@ internal class XModemUpload(
     }
 
     /**
-     * `CAN` makes firmware delete the file named by its last request (`xmodem.cpp:240-250`), so it is
-     * sent only once firmware has ACKed this upload's request. Before that, [probe] finds out which
-     * state the device is in.
+     * `CAN` makes firmware delete the file named by its last request (`xmodem.cpp:268-278`), so it is
+     * sent only while that file is this upload's partial one: after firmware ACKed the request and
+     * before `EOT`. Before the ACK, [probe] finds out which state the device is in.
      */
     override fun cancel(nowMs: Long): XModemStep<Unit> = when (phase) {
         Phase.Settling -> XModemStep()
@@ -418,11 +443,15 @@ internal class XModemUpload(
             probe(nowMs)
         }
 
-        Phase.AwaitBlockAck, Phase.AwaitEotAck -> settle(
-            nowMs,
-            XModem.Control.CAN,
-            outcome(FileTransferFailure.Timeout),
-        )
+        Phase.AwaitBlockAck -> settle(nowMs, XModem.Control.CAN, outcome(FileTransferFailure.Timeout))
+
+        // EOT closed the file; a CAN now would delete the finished upload (xmodem.cpp:259-278). Wait for its ACK.
+        Phase.AwaitEotAck -> {
+            phase = Phase.Settling
+            settling = Settling(setOf(XModem.Control.ACK), outcome(FileTransferFailure.Timeout))
+            deadlineMs = nowMs + settleTimeoutMs
+            XModemStep()
+        }
 
         else -> {
             phase = Phase.Finished
@@ -433,8 +462,9 @@ internal class XModemUpload(
     /**
      * The start request got no reply: either it never arrived (device idle) or its ACK was lost
      * (device receiving, and refusing every later `seq = 0` request with `NAK`). Sending the request
-     * again tells them apart without touching any file: an idle device ACKs it, a receiving one
-     * NAKs it (`xmodem.cpp:142-172`, `203-219`), and then `filename` is this upload's own path.
+     * again tells them apart without touching any file: an idle device ACKs it, and so does a
+     * receiving one, which first drops its partial file and starts over (`xmodem.cpp:142-195`).
+     * A NAK is a refusal (`xmodem.cpp:152,164,177,197`).
      */
     private fun probe(nowMs: Long): XModemStep<Unit> {
         phase = Phase.Probing
