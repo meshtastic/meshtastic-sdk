@@ -45,7 +45,9 @@ On JS the transport uses the platform `WebSocket`, so TLS trust and mixed-conten
 browser's: an `https` page cannot open `ws://` to another host, and a self-signed `wss://` node must
 be trusted in the browser first. `ws://localhost` from an `https` page is allowed, which fits
 meshtasticd's plain `HTTPPort` ([firmware#12414](https://github.com/meshtastic/firmware/pull/12414)).
-The 512 byte send check and the 1024 byte receive bound still apply.
+The 512 byte send check applies. Ktor's JS engine cannot cap the frame size, so on JS a message
+over 512 bytes is received in full and then rejected: the session closes with 1009, as on other
+targets, but the oversized message is held in memory first.
 
 ## Session end
 

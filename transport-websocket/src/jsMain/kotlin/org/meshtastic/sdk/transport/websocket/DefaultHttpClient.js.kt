@@ -12,7 +12,8 @@ import io.ktor.client.engine.js.Js
 import io.ktor.client.plugins.websocket.WebSockets
 
 // The browser's WebSocket owns TLS trust and mixed-content rules; an https page cannot open ws:// to another host.
-// The JS engine refuses a maxFrameSize, so inbound size is bounded only by the transport's own 512-byte check.
+// The JS engine refuses a maxFrameSize, so an oversized message is buffered in full before the transport's 512-byte
+// check rejects it.
 internal actual fun createDefaultHttpClient(): HttpClient = HttpClient(Js) {
     install(WebSockets)
 }
