@@ -31,6 +31,7 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -205,7 +206,7 @@ class HandshakeAndReconnectTest {
         backgroundScope.launch { client.deviceLogs.collect { logs += it } }
         client.events.test {
             client.packets.test {
-                repeat(128) { index -> transport.injectAlivePacket(packetId = 3000 + index) }
+                repeat(HANDSHAKE_PACKET_CAP) { index -> transport.injectAlivePacket(packetId = 3000 + index) }
                 drainCurrent()
                 repeat(300) { index ->
                     transport.injectFromRadio(
@@ -224,7 +225,7 @@ class HandshakeAndReconnectTest {
                 )
                 drainCurrent()
                 connectJob.await()
-                repeat(128) { index -> assertEquals(3000 + index, awaitItem().id) }
+                repeat(HANDSHAKE_PACKET_CAP) { index -> assertEquals(3000 + index, awaitItem().id) }
                 cancelAndIgnoreRemainingEvents()
             }
             expectNoEvents()
@@ -1988,6 +1989,9 @@ class HandshakeAndReconnectTest {
 
     private companion object {
         const val NONCE_STAGE1 = 69420
+
+        // MeshEngine.HANDSHAKE_PACKET_BUFFER_CAP
+        const val HANDSHAKE_PACKET_CAP = 64
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L
