@@ -724,6 +724,8 @@ private class CapturingAdminApi(
 
     override fun forNode(dest: NodeId): AdminApi = this
 
+    override fun withRpcTimeout(timeout: Duration): AdminApi = this
+
     override suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata> = unused()
 
     override suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config> {
@@ -820,7 +822,7 @@ private class CapturingAdminApi(
 
     override suspend fun factoryReset(preserveBleBonds: Boolean): AdminResult<Unit> = unused()
 
-    override suspend fun nodeDbReset(): AdminResult<Unit> = unused()
+    override suspend fun nodeDbReset(preserveFavorites: Boolean): AdminResult<Unit> = unused()
 
     override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> = unused()
 

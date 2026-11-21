@@ -19,7 +19,6 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportSpec
 import org.meshtastic.sdk.transport.serial.internal.UsbSerialForAndroidTransport
-import java.io.IOException
 
 /**
  * Android USB serial over [usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android),
@@ -111,14 +110,14 @@ public object AndroidUsbSerialPorts {
                 "(VID ${device.vendorId.hex()} PID ${device.productId.hex()})",
         )
         val openPort: () -> UsbSerialPort = {
+            val port = driver.ports.first()
             val connection = manager.openDevice(device) ?: throw MeshtasticException.Transport(
                 "USB permission not granted for ${device.deviceName}",
             )
-            val port = driver.ports.first()
             try {
                 port.open(connection)
-            } catch (e: IOException) {
-                connection.close()
+            } catch (e: Exception) {
+                runCatching { connection.close() }
                 throw e
             }
             port

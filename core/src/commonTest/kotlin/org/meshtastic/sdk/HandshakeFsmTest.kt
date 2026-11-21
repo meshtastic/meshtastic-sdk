@@ -359,10 +359,10 @@ class HandshakeFsmTest {
 
     /**
      * Audit §1.6: `FromRadio.rebooted = true` mid-handshake must fail the pending connect with
-     * Protocol, emit `MeshEvent.DeviceRebooted`, and tear the session down to Disconnected.
+     * a transport error, emit `MeshEvent.DeviceRebooted`, and tear the session down to Disconnected.
      */
     @Test
-    fun deviceRebootMidHandshakeFailsProtocolAndEmitsEvent() = runTest {
+    fun deviceRebootMidHandshakeFailsTransportAndEmitsEvent() = runTest {
         val transport = RebootingTransport()
         val client = buildClient(transport)
 
@@ -376,7 +376,7 @@ class HandshakeFsmTest {
         runCurrent()
 
         val ex = connectResult.await().exceptionOrNull()
-        assertIs<MeshtasticException.Protocol>(ex)
+        assertIs<MeshtasticException.Transport>(ex)
         assertTrue(
             ex.message?.contains("rebooted") == true,
             "Expected reboot diagnostic, got: ${ex.message}",
@@ -410,6 +410,14 @@ class HandshakeFsmTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadioOrNull(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
+                // The dump has begun (my_info) when the radio restarts.
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.my_info = org.meshtastic.proto.MyNodeInfo.Builder().also { it.my_node_num = 1 }.build()
+                        }.build(),
+                    ),
+                )
                 inbound.trySend(
                     encodeFromRadio(
                         FromRadio.Builder().also { wb ->

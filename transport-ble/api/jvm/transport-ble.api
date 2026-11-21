@@ -46,6 +46,7 @@ public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtasti
 	public fun frames ()Lkotlinx/coroutines/flow/Flow;
 	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
 	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getLinkDropsOnRestartCommands ()Z
 	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun shutdown ()V
@@ -54,6 +55,11 @@ public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtasti
 public final class org/meshtastic/sdk/transport/ble/BleTransportFactoryKt {
 	public static final fun BleTransport (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lkotlin/coroutines/CoroutineContext;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static synthetic fun BleTransport$default (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lkotlin/coroutines/CoroutineContext;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleTransport_jvmKt {
+	public static final fun BleTransport (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static synthetic fun BleTransport$default (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 }
 
 public final class org/meshtastic/sdk/transport/ble/DiscoveredRadio {

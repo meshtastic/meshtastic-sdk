@@ -24,16 +24,17 @@ public sealed interface SendState {
     public data object Queued : SendState
 
     /**
-     * The device has accepted the packet and started transmission.
+     * The SDK has handed the packet to the transport writer.
      *
-     * (From `QueueStatus`.)
+     * Use [PacedMessageHandle.awaitQueueReceipt] to distinguish confirmed radio admission.
      */
     public data object Sent : SendState
 
     /**
-     * The device received an acknowledgment from the target (unicast only).
-     *
-     * (From device-emitted `Routing` ACK.)
+     * The radio reported a positive routing result for a unicast. A paced send without requested
+     * routing feedback completes here on confirmed radio admission. An ordinary [RadioClient.send]
+     * broadcast with `want_ack = false` and no `want_response` completes here as soon as it is
+     * handed to the transport, with no radio confirmation at all.
      */
     public data object Acked : SendState
 
@@ -112,6 +113,9 @@ public sealed interface SendFailure {
      * terminal state. The new send is rejected; the existing in-flight handle is preserved.
      */
     public data object IdCollision : SendFailure
+
+    /** The SDK already holds the maximum number of paced sends. */
+    public data object QueueFull : SendFailure
 
     /**
      * Per-send ACK timeout: the device did not produce a `Routing` ACK for a unicast `want_ack`
@@ -298,9 +302,11 @@ public sealed interface AdminResult<out T> {
     public data object Timeout : AdminResult<Nothing>
 
     /**
-     * The device rate-limited the request; back off before retrying.
+     * The request was not accepted for lack of capacity; back off before retrying.
      *
-     * (From `Routing.Error.RATE_LIMIT_EXCEEDED`.)
+     * From `Routing.Error.RATE_LIMIT_EXCEEDED`, a full firmware transmit queue, or a full SDK paced
+     * queue ([SendFailure.QueueFull]) while the link is up. A radio that is disabled or has no
+     * interface returns [Failed] with `Routing.Error.NO_INTERFACE` instead, since waiting cannot help.
      */
     public data object RateLimited : AdminResult<Nothing>
 

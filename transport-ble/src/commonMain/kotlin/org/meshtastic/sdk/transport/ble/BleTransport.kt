@@ -84,6 +84,8 @@ public class BleTransport(
     override val identity: TransportIdentity =
         TransportIdentity.of(TransportSpec.Ble(address))
 
+    override val linkDropsOnRestartCommands: Boolean = true
+
     private val _state: MutableStateFlow<TransportState> =
         MutableStateFlow(TransportState.Disconnected)
     override val state: StateFlow<TransportState> = _state.asStateFlow()
@@ -143,6 +145,7 @@ public class BleTransport(
     internal var bondControl: BondControl? = null
     internal var autoConnectSwitch: AutoConnectSwitch? = null
     internal var gattCacheRefresher: GattCacheRefresher? = null
+    internal var shouldRefreshGattCache: (discoveryIncomplete: Boolean) -> Boolean = { it }
     internal var ownsPeripheral: Boolean = false
 
     override suspend fun connect() {
@@ -164,7 +167,7 @@ public class BleTransport(
                 _state.value = TransportState.Connecting
             }
             connectWithRetry()
-            repairStaleGattCache()
+            refreshGattCacheIfNeeded()
 
             // Child of the transport scope (dies with it on shutdown), but independently
             // cancellable per connect cycle via cancelJobs()/disconnect().
@@ -420,8 +423,8 @@ public class BleTransport(
         }
 
     /**
-     * Releases internal coroutines and the frame channel and closes a peripheral created by
-     * the browser picker. The caller owns a peripheral supplied through the constructor.
+     * Releases internal coroutines and the frame channel. Closes a peripheral created by a
+     * factory. A peripheral supplied to the constructor remains the caller's responsibility.
      * Call [disconnect] first for graceful teardown. Idempotent.
      */
     public fun shutdown() {
@@ -496,13 +499,15 @@ public class BleTransport(
         }
     }
 
-    /** One cache refresh and rediscovery when discovery lacks the Meshtastic GATT table. */
-    private suspend fun repairStaleGattCache() {
+    /** At most one cache refresh and rediscovery before exposing this link to the engine. */
+    private suspend fun refreshGattCacheIfNeeded() {
         val refresher = gattCacheRefresher ?: return
-        if (!peripheral.services.value.isMissingMeshtasticGatt()) return
+        if (!shouldRefreshGattCache(peripheral.services.value.isMissingMeshtasticGatt())) return
         if (!refresher.refresh()) return
         try {
             peripheral.disconnect()
+        } catch (e: CancellationException) {
+            throw e
         } catch (_: Exception) { /* idempotent */ }
         delay(GATT_REFRESH_SETTLE_MS)
         connectWithRetry()

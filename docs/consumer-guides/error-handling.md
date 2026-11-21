@@ -93,7 +93,7 @@ when (val result = client.admin.getOwner()) {
     AdminResult.RateLimited -> retryLater()
     AdminResult.Unauthorized -> showError("This node doesn't accept admin from this client.")
     AdminResult.SessionKeyExpired -> offerRetry()   // the engine already retried once
-    is AdminResult.Failed -> showError("Device refused: ${result.routingError}")
+    is AdminResult.Failed -> showError("Not delivered: ${result.routingError}") // NO_ROUTE, MAX_RETRANSMIT, ...
 }
 ```
 
@@ -185,7 +185,7 @@ The engine reconnects for you when built with `Builder.autoReconnect(AutoReconne
 - Setup failures from `connect()` (`Transport`, `HandshakeTimeout`, `StorageUnavailable`): show them and offer a retry rather than retrying silently, unless auto-reconnect is handling a drop.
 - Transient send failures (`MaxRetransmit`, `Timeout`, `AckTimeout`, `DutyCycleLimit`, `RateLimited`, `QueueRejected`): retry with backoff and a capped attempt count, and surface only when the budget runs out.
 - Connectivity loss (`Disconnected` or `HandshakeFailed` on a send, `TransportError`, `Reconnecting`): wait for the connection, then resend.
-- Routing (`NoRoute`, `NodeUnreachable`): usually topology; let the user retry later or pick another destination.
+- Routing (`NoRoute`, or `AdminResult.Failed` with `NO_ROUTE` / `MAX_RETRANSMIT`): usually topology; let the user retry later or pick another destination. `AdminResult.NodeUnreachable` means the link was lost.
 - Persistence (`StorageDegraded`): keep running and warn that nothing is being saved.
 - Backpressure (`PacketsDropped`): fix the collector.
 

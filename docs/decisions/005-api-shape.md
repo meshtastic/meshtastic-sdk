@@ -101,6 +101,11 @@ The policy as decided; the current policy is in [`engine-actor.md`, Backpressure
 
 Silent loss is forbidden in the public surface. Drops are observable.
 
+The optional [session receive stream](../api-reference.md#session-receive) uses a separate
+bounded queue. The actor offers events without waiting, since application backpressure on
+PhoneAPI reads would also delay ACKs and replies. Overflow ends the stream with a typed error
+after the admitted events drain.
+
 ### `TransportIdentity` — fragmentation caveat
 
 Storage is keyed by `TransportIdentity`, derived from `TransportSpec`. `Of(spec)` lower-cases TCP host and HTTP base URL to absorb the obvious case-only divergence; everything else is a literal echo of the consumer's input.

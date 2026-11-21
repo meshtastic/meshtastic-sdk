@@ -9,11 +9,13 @@ package org.meshtastic.sdk.internal
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.MessageId
+import org.meshtastic.sdk.QueueReceipt
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.TransportState
 import kotlin.time.Duration
@@ -25,6 +27,7 @@ internal enum class HandshakeStage {
     Idle,
     Stage1Draining,
     Stage1Settling,
+    AwaitingLockdown,
     Stage2Draining,
     SeedingSession,
     Ready,
@@ -34,6 +37,7 @@ internal enum class HandshakeStage {
         Idle -> "Idle"
         Stage1Draining -> "Stage 1"
         Stage1Settling -> "Stage 1 (settling)"
+        AwaitingLockdown -> "Awaiting lockdown authorization"
         Stage2Draining -> "Stage 2"
         SeedingSession -> "Seeding Session"
         Ready -> "Ready"
@@ -70,10 +74,17 @@ internal sealed interface EngineMessage {
      */
     data class Disconnect(val cause: MeshtasticException? = null) : EngineMessage
 
+    data class RefreshNodeDb(val generation: Long) : EngineMessage
+
+    data class NodeDbRefreshTimeout(val request: Long) : EngineMessage
+
     // ── Inbound ────────────────────────────────────────────────────────────
 
     /** A framed packet received from the transport. */
-    data class FrameRx(val frame: Frame) : EngineMessage
+    data class FrameRx(val frame: Frame, val generation: Long) : EngineMessage
+
+    /** A read or write failure on a particular transport connection. */
+    data class LinkFailed(val cause: MeshtasticException, val generation: Long) : EngineMessage
 
     /** Transport connection state changed (posted by the transport-state observer coroutine). */
     data class TransportStateChanged(val state: TransportState) : EngineMessage
@@ -89,8 +100,24 @@ internal sealed interface EngineMessage {
     data class Send(val packet: MeshPacket, val id: MessageId, val stateFlow: MutableStateFlow<SendState>) :
         EngineMessage
 
+    data class PacedSend(
+        val packet: MeshPacket,
+        val id: MessageId,
+        val generation: Long?,
+        val state: MutableStateFlow<SendState>,
+        val admission: CompletableDeferred<Boolean>,
+        val dispatch: CompletableDeferred<Boolean>,
+        val receipt: CompletableDeferred<QueueReceipt>,
+        /** Completed by the outbound writer once `transport.send` has returned for this frame. */
+        val written: CompletableDeferred<Unit>? = null,
+    ) : EngineMessage
+
+    data class PacedWriteCompleted(val send: PacedSend) : EngineMessage
+
+    data class PacedQueueTimeout(val send: PacedSend) : EngineMessage
+
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
-    data class CancelHandle(val id: MessageId) : EngineMessage
+    data class CancelHandle(val id: MessageId, val expected: MutableStateFlow<SendState>? = null) : EngineMessage
 
     /**
      * Fire-and-forget admin message (no RPC correlation, no MessageHandle). Posted by
@@ -103,6 +130,8 @@ internal sealed interface EngineMessage {
         val wantResponse: Boolean,
         val to: Int,
     ) : EngineMessage
+
+    data class Lockdown(val auth: LockdownAuth, val generation: Long, val nodeNum: Int) : EngineMessage
 
     // ── Timers ─────────────────────────────────────────────────────────────
 
@@ -125,19 +154,19 @@ internal sealed interface EngineMessage {
      *
      * @param stage the handshake stage that timed out.
      */
-    data class HandshakeTimeout(val stage: HandshakeStage) : EngineMessage
+    data class HandshakeTimeout(val stage: HandshakeStage, val attempt: Long) : EngineMessage
 
     /**
      * The 100 ms inter-stage settle timer (after Stage 1 sentinel received) has elapsed.
      * The engine should now send the inter-stage heartbeat.
      */
-    data object HandshakeStage1SettleComplete : EngineMessage
+    data class HandshakeStage1SettleComplete(val attempt: Long) : EngineMessage
 
     /**
      * The 100 ms post-heartbeat settle timer has elapsed.
      * The engine should now send `want_config_id = 69421` to begin Stage 2.
      */
-    data object HandshakeHeartbeatSettleComplete : EngineMessage
+    data class HandshakeHeartbeatSettleComplete(val attempt: Long) : EngineMessage
 
     /** An in-flight admin RPC did not receive a response within its deadline. */
     data class AdminTimeout(val requestId: Int) : EngineMessage
@@ -172,7 +201,7 @@ internal sealed interface EngineMessage {
      * [HandshakeStage.Stage1Draining] with no `pendingMyInfo` observed, the engine re-sends
      * `want_config_id = NONCE_STAGE1` once before the original 20 s budget runs out.
      */
-    data object Stage1RetryWantConfig : EngineMessage
+    data class Stage1RetryWantConfig(val attempt: Long) : EngineMessage
 
     /**
      * Per-send ACK timeout fired (R-P0-6). Posted by the engine after the configured
@@ -180,7 +209,7 @@ internal sealed interface EngineMessage {
      * the in-flight handle to `SendState.Failed(SendFailure.AckTimeout)` if it is still
      * pending.
      */
-    data class SendAckTimeout(val id: MessageId) : EngineMessage
+    data class SendAckTimeout(val id: MessageId, val state: MutableStateFlow<SendState>) : EngineMessage
 
     // ── Auto-reconnect (DX-7 / COV-4) ──────────────────────────────────────
 

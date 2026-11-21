@@ -179,7 +179,7 @@ class AdminSessionStatusTest {
     }
 
     @Test
-    fun keyBufferedDuringTheHandshakeIsStampedAtReceipt() = runTest {
+    fun unsolicitedRemoteKeyBufferedDuringHandshakeIsIgnored() = runTest {
         val device = SessionDevice(holdOwner = true)
         val client = buildClient(device)
         val connect = backgroundScope.async { client.connect() }
@@ -196,10 +196,8 @@ class AdminSessionStatusTest {
         runCurrent()
         connect.await()
 
-        val remote = assertIs<AdminSessionStatus.Active>(client.adminSessions.value[REMOTE])
-        val local = assertIs<AdminSessionStatus.Active>(client.adminSessions.value[LOCAL])
-        val gap = local.refreshedAt - remote.refreshedAt
-        assertTrue(gap >= 5.seconds && gap < 8.seconds, "remote key must keep its receipt time, gap was $gap")
+        assertFalse(REMOTE in client.adminSessions.value)
+        assertIs<AdminSessionStatus.Active>(client.adminSessions.value[LOCAL])
     }
 
     @Test
@@ -277,6 +275,40 @@ class AdminSessionStatusTest {
             runCurrent()
             remaining -= step
         }
+    }
+
+    @Test
+    fun remoteReplyNeedsTheDispatchedRequestIdSenderAndPayloadKind() = runTest {
+        val device = SessionDevice()
+        val client = buildClient(device)
+        client.connect()
+        val reply = AdminMessage.Builder().also {
+            it.get_device_metadata_response = DeviceMetadata.Builder().build()
+            it.session_passkey = REMOTE_PASSKEY.toByteString()
+        }.build()
+        device.inject(adminResponse(requestId = 997, from = REMOTE.raw, response = reply))
+        runCurrent()
+        assertFalse(REMOTE in client.adminSessions.value)
+
+        val call = backgroundScope.async { client.admin.forNode(REMOTE).getDeviceMetadata() }
+        runCurrent()
+        val request = device.outboundPackets().last { it.to == REMOTE.raw }
+        device.inject(adminResponse(requestId = request.id, from = REMOTE.raw + 7, response = reply))
+        val wrongKind = AdminMessage.Builder().also {
+            it.get_owner_response = org.meshtastic.proto.User.Builder().build()
+            it.session_passkey = REMOTE_PASSKEY.toByteString()
+        }.build()
+        device.inject(adminResponse(requestId = request.id, from = REMOTE.raw, response = wrongKind))
+        runCurrent()
+        assertFalse(call.isCompleted)
+        assertFalse(REMOTE in client.adminSessions.value)
+        assertFalse(NodeId(REMOTE.raw + 7) in client.adminSessions.value)
+
+        device.inject(adminResponse(requestId = request.id, from = REMOTE.raw, response = reply))
+        runCurrent()
+        assertIs<AdminResult.Success<DeviceMetadata>>(call.await())
+        assertIs<AdminSessionStatus.Active>(client.adminSessions.value[REMOTE])
+        client.disconnect()
     }
 
     private fun TestScope.answerRemoteMetadata(client: RadioClient, device: SessionDevice, passkey: ByteArray) {
@@ -456,6 +488,7 @@ private fun adminResponse(requestId: Int, from: Int, response: AdminMessage): Fr
         wb.packet = MeshPacket.Builder().also { wb ->
             wb.from = from
             wb.to = 0
+            wb.pki_encrypted = true
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.ADMIN_APP
                 wb.payload = AdminMessage.ADAPTER.encode(response).toByteString()

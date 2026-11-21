@@ -107,7 +107,7 @@ class CommandDispatcherTest {
         val timeoutJob = Job()
         dispatcher.attachTimeoutJob(401, timeoutJob)
 
-        assertTrue(dispatcher.tryFailFromRouting(401, Routing.Error.NOT_AUTHORIZED))
+        assertTrue(dispatcher.tryFailFromRouting(401, Routing.Error.NOT_AUTHORIZED, sender = 0, localNode = 1))
         assertEquals(AdminResult.Unauthorized, failedDeferred.await())
         assertFalse(successDeferred.isCompleted)
         assertTrue(timeoutJob.isCancelled)
@@ -214,11 +214,47 @@ class CommandDispatcherTest {
     }
 
     @Test
+    fun localRetransmitFailureOnARemoteReadWaitsForTheReplyThenReportsAtTimeout() = runTest {
+        val dispatcher = CommandDispatcher()
+        val answered = CompletableDeferred<AdminResult<Any?>>()
+        val unanswered = CompletableDeferred<AdminResult<Any?>>()
+        dispatcher.register(501, ResponseKind.AdminOwner, answered, expectedSender = 0x20)
+        dispatcher.register(502, ResponseKind.AdminOwner, unanswered, expectedSender = 0x20)
+
+        assertTrue(dispatcher.tryFailFromRouting(501, Routing.Error.MAX_RETRANSMIT, sender = 1, localNode = 1))
+        assertTrue(dispatcher.tryFailFromRouting(502, Routing.Error.MAX_RETRANSMIT, sender = 0, localNode = 1))
+        assertFalse(answered.isCompleted)
+
+        val owner = User.Builder().also { it.long_name = "Remote" }.build()
+        val reply = adminPacket(501, AdminMessage.Builder().also { it.get_owner_response = owner }.build())
+        assertTrue(dispatcher.tryComplete(reply.newBuilder().also { it.from = 0x20 }.build()))
+        assertEquals(AdminResult.Success(owner), answered.await())
+
+        dispatcher.timeout(502)
+        assertEquals(AdminResult.Failed(Routing.Error.MAX_RETRANSMIT), unanswered.await())
+    }
+
+    @Test
+    fun retransmitFailureFromTheRemoteOrOnALocalReadIsImmediate() = runTest {
+        val dispatcher = CommandDispatcher()
+        val remote = CompletableDeferred<AdminResult<Any?>>()
+        val local = CompletableDeferred<AdminResult<Any?>>()
+        dispatcher.register(601, ResponseKind.AdminOwner, remote, expectedSender = 0x20)
+        dispatcher.register(602, ResponseKind.AdminOwner, local, expectedSender = 1)
+
+        assertTrue(dispatcher.tryFailFromRouting(601, Routing.Error.NO_ROUTE, sender = 1, localNode = 1))
+        assertTrue(dispatcher.tryFailFromRouting(602, Routing.Error.MAX_RETRANSMIT, sender = 1, localNode = 1))
+
+        assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), remote.await())
+        assertEquals(AdminResult.Failed(Routing.Error.MAX_RETRANSMIT), local.await())
+    }
+
+    @Test
     fun routingAckNoneLeavesPendingRequestWaiting() = runTest {
         val dispatcher = CommandDispatcher()
         val deferred = register(dispatcher, requestId = 901)
 
-        assertFalse(dispatcher.tryFailFromRouting(901, Routing.Error.NONE))
+        assertFalse(dispatcher.tryFailFromRouting(901, Routing.Error.NONE, sender = 0, localNode = 1))
 
         assertFalse(deferred.isCompleted)
         assertEquals(1, dispatcher.size())

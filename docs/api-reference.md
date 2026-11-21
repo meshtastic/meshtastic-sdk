@@ -148,10 +148,24 @@ A node that sends a session passkey has at least 150 s of validity left on it. A
 | `packets: Flow<MeshPacket>` | Decoded inbound mesh packets | 128 | The new packet is discarded and `events` gets `PacketsDropped(DroppedFlow.Packets, 1)` |
 | `events: Flow<MeshEvent>` | Advisory events | 64 | The oldest event is dropped, unreported |
 | `fromRadio: Flow<FromRadio>` | Every decoded inbound envelope, unredacted: handshake frames, config, channels, `log_record`, and packets | 256 | The oldest envelope is dropped, unreported |
+| `sessionEvents: Flow<RadioSessionEvent>?` | Optional single-consumer queue | Bounded by `Builder.sessionReceive(capacity)` |
 
 The engine never waits for a collector. All five are hot: collectors share one upstream and see only what is emitted while they collect. `nodes` is the exception for the baseline: each subscription first receives a `NodeChange.Snapshot` of the current node map, so a late subscriber never misses it. The handshake also emits a live `Snapshot` when it commits, after every reconnect, which existing subscribers treat as a full replacement. `Flow<NodeChange>.asNodeMap()` is the fold behind `nodeMap()`.
 
 `fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. It's the only place `FromRadio.log_record` (device logs over the phone API) surfaces; see [observability.md](./observability.md#device-logs).
+
+### Session receive
+
+Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, reported channels and nodes. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect creates a new ID on the same stream.
+
+Add `sessionReceiveEnvelopes()` to receive non-packet envelopes such as firmware queue status after `Ready`. They are offered in the same queue and share the packet sequence. The handshake snapshot and retained packets are delivered first.
+
+Call `requestNodeDbRefresh()` to start a nodes-only download on this connection. The matching completion produces `NodeDbRefreshed` in receive order. Packets continue through the engine during the download. Overlapping requests queue a single follow-up. If the download stalls, the SDK ends the connection to prevent a late response from being attributed to another request.
+
+The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet or envelope, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
+
+
+Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admission, dispatch and radio queue acceptance. It preserves a supplied wire ID. The next paced packet waits for a matching queue receipt, routing result or five seconds after the transport write. ID-zero queue reports also come from heartbeats and cannot identify a packet. The queue receipt remains unconfirmed when it is lost. Routing results can still settle the message after the queue slot opens.
 
 ### Outbound
 
@@ -159,6 +173,7 @@ The engine never waits for a collector. All five are hot: collectors share one u
 |---|---|---|
 | `send(packet: MeshPacket)` | `MessageHandle` in `Queued` | `PayloadTooLarge`, `NotConnected` |
 | `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0)` | `MessageHandle` | same as `send` |
+| `trySendRaw(frame: ToRadio)` | Whether the outbound queue accepted the encoded frame | — |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int)` | `MessageHandle` | same as `send` |
 | `suspend send(portnum: PortNum, payload: ByteArray, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), wantAck: Boolean = false, hopLimit: Int? = null)` | `MessageHandle` | same as `send` |
 | `suspend send(portnum: PortNum, payload: ByteString, …)` | `MessageHandle` | same as `send` |
@@ -410,11 +425,12 @@ public fun NodeId.isLocal(own: NodeId? = null): Boolean
 
 ## `AdminApi`
 
-Getters resolve when the response payload correlates by `request_id`; setters resolve on the routing ACK. A few calls are fire-and-forget and return `Success` once queued, among them `setTime` and `setTimeOnly`. Every call waits up to `Builder.rpcTimeout`.
+Getters resolve when the response payload correlates by `request_id`; setters resolve on the routing ACK. A few calls are fire-and-forget and return `Success` once queued, among them `setTime` and `setTimeOnly`. Every call waits up to `Builder.rpcTimeout`, or the timeout given to `withRpcTimeout`. Acked writes go through the paced send queue.
 
 ```kotlin
 public interface AdminApi {
     public fun forNode(dest: NodeId): AdminApi
+    public fun withRpcTimeout(timeout: Duration): AdminApi                     // same target, own timeout
 
     public suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata>
     public suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config>
@@ -441,7 +457,7 @@ public interface AdminApi {
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
     public suspend fun setTime(at: Instant? = null): AdminResult<Unit>          // null: the builder's clock
     public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>
 
@@ -464,7 +480,7 @@ public sealed interface AdminResult<out T> {
 
 `ADMIN_BAD_SESSION_KEY` triggers one automatic retry: the engine re-issues `get_owner_request` to refresh the passkey and replays the call once. A second rejection returns `SessionKeyExpired`. `RateLimited` means the device refused the call for arriving too soon; back off before retrying. The full wire mapping is in [error-taxonomy.md](./error-taxonomy.md#wire-to-adminresult-mapping).
 
-`editSettings` wraps `block` in `begin_edit_settings` and `commit_edit_settings`, so the device applies the writes together. Setters inside `block` (`AdminEdit`: `setConfig`, `setModuleConfig`, `setOwner`, `setChannel`, `setFavorite`, `setIgnored`) return once queued; the begin and commit are awaited. `batch` is the throwing counterpart and adds the getters `getConfig`, `getModuleConfig`, and `listChannels` (`AdminBatchScope`), which throw `AdminResultException` on failure. When `block` throws or is cancelled, the SDK still sends `commit_edit_settings` on the same connection, so writes queued before the failure are applied, then rethrows. On a replaced connection it sends nothing.
+`editSettings` wraps `block` in `begin_edit_settings` and `commit_edit_settings`, so the device applies the writes together. Setters inside `block` (`AdminEdit`: `setConfig`, `setModuleConfig`, `setOwner`, `setChannel`, `setFavorite`, `setIgnored`, `setFixedPosition`, `removeFixedPosition`) return once the paced queue dispatches them; the begin and commit are awaited. `batch` is the throwing counterpart and adds the getters `getConfig`, `getModuleConfig`, and `listChannels` (`AdminBatchScope`), which throw `AdminResultException` on failure. When `block` throws or is cancelled, the SDK still sends `commit_edit_settings` on the same connection, so writes queued before the failure are applied, then rethrows. On a replaced connection it sends nothing.
 
 `AdminResult` helpers follow `kotlin.Result` naming (there's no `kotlin.Result` in the public API): `getOrNull()`, `getOrThrow()` (throws `AdminResultException`), `getOrElse(…)`, `isSuccess()`, `map {}`, `fold(onSuccess, onFailure)`, `onSuccess {}`, `onFailure {}`.
 
@@ -746,6 +762,7 @@ public class InMemoryStorageProvider : StorageProvider
 ```kotlin
 public interface RadioTransport {
     public val identity: TransportIdentity
+    public val linkDropsOnRestartCommands: Boolean get() = false   // true for BLE: firmware drops it in restart handlers
     public suspend fun connect()
     public suspend fun disconnect()
     public suspend fun send(frame: Frame)

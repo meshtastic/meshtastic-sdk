@@ -31,6 +31,8 @@ final class org.meshtastic.sdk.transport.ble/BleTransport : org.meshtastic.sdk/R
 
     final val identity // org.meshtastic.sdk.transport.ble/BleTransport.identity|{}identity[0]
         final fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk.transport.ble/BleTransport.identity.<get-identity>|<get-identity>(){}[0]
+    final val linkDropsOnRestartCommands // org.meshtastic.sdk.transport.ble/BleTransport.linkDropsOnRestartCommands|{}linkDropsOnRestartCommands[0]
+        final fun <get-linkDropsOnRestartCommands>(): kotlin/Boolean // org.meshtastic.sdk.transport.ble/BleTransport.linkDropsOnRestartCommands.<get-linkDropsOnRestartCommands>|<get-linkDropsOnRestartCommands>(){}[0]
     final val state // org.meshtastic.sdk.transport.ble/BleTransport.state|{}state[0]
         final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk.transport.ble/BleTransport.state.<get-state>|<get-state>(){}[0]
 

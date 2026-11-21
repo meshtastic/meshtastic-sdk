@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
@@ -192,6 +193,23 @@ public class RadioClient internal constructor(
     public val packets: Flow<MeshPacket> = engine.packets.hide()
 
     /**
+     * Ordered handshake snapshots, packets and session boundaries for one consumer.
+     *
+     * Enable this stream with [Builder.sessionReceive] and start collecting before [connect].
+     * A protected radio may report [RadioSessionEvent.Lockdown] before [RadioSessionEvent.Ready].
+     * Ready precedes retained handshake packets and live packets. The stream spans automatic reconnects and completes when the client
+     * shuts down. Collect it directly for ordered delivery.
+     *
+     * If the SDK loses receive coverage, the stream drains accepted events and then throws
+     * [RadioSessionOverflowException]. The radio continues processing frames. Create a new
+     * client to restart this stream after overflow or collector cancellation. Delivery
+     * sequences measure SDK coverage. The radio or transport may lose packets upstream.
+     *
+     * `null` if session receive was left disabled.
+     */
+    public val sessionEvents: Flow<RadioSessionEvent>? = engine.sessionEvents
+
+    /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
      * drop notifications, and identity-rebind signals
      * ([MeshEvent.IdentityRebound] — emitted before the engine clears storage when the
@@ -233,6 +251,16 @@ public class RadioClient internal constructor(
         if (connection.value !is ConnectionState.Connected) throw MeshtasticException.NotConnected()
         return engine.nodeSnapshot()
     }
+
+    /**
+     * Queue a nodes-only download on the current connection. Requires the optional [sessionEvents] stream.
+     * A completed download emits [RadioSessionEvent.NodeDbRefreshed]. Requests received during a download
+     * coalesce into one follow-up. A stalled download ends the session so a late completion cannot be
+     * mistaken for a subsequent download.
+     *
+     * Returns whether the request entered the engine queue while the client was connected.
+     */
+    public fun requestNodeDbRefresh(): Boolean = engine.requestNodeDbRefresh()
 
     /**
      * Request a remote node to send its [NodeInfo] (user identity + position).
@@ -347,6 +375,38 @@ public class RadioClient internal constructor(
      */
     @Throws(MeshtasticException::class)
     public fun send(packet: MeshPacket): MessageHandle {
+        checkSendable(packet)
+        val id = engine.nextMessageId()
+        val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
+        val handle = MessageHandle(
+            id = id,
+            _state = stateFlow,
+            cancelFn = { cancelId -> engine.tryCancelSend(cancelId, stateFlow) },
+            packet = packet,
+            resendFn = { pkt -> send(pkt) },
+        )
+        engine.trySend(packet, id, stateFlow)
+        return handle
+    }
+
+    /**
+     * Queues one packet behind the current radio queue write. A matching firmware receipt or
+     * routing result releases the slot. If neither arrives within five seconds, the slot
+     * is released and its receipt is [QueueReceipt.Unconfirmed].
+     *
+     * Delivery can still complete after the queue slot is released. A nonzero [MeshPacket.id]
+     * is retained for durable callers and becomes the ID on the returned [MessageHandle].
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendPaced(packet: MeshPacket): PacedMessageHandle {
+        checkSendable(packet)
+        return engine.enqueuePaced(
+            packet,
+            resend = { original -> sendPaced(original.newBuilder().also { it.id = 0 }.build()).message },
+        )
+    }
+
+    private fun checkSendable(packet: MeshPacket) {
         val payloadSize = packet.decoded?.payload?.size ?: 0
         if (payloadSize > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
@@ -354,18 +414,6 @@ public class RadioClient internal constructor(
         if (connection.value !is ConnectionState.Connected) {
             throw MeshtasticException.NotConnected()
         }
-
-        val id = engine.nextMessageId()
-        val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
-        val handle = MessageHandle(
-            id = id,
-            _state = stateFlow,
-            cancelFn = { cancelId -> engine.tryCancelSend(cancelId) },
-            packet = packet,
-            resendFn = { pkt -> send(pkt) },
-        )
-        engine.trySend(packet, id, stateFlow)
-        return handle
     }
 
     /**
@@ -628,6 +676,22 @@ public class RadioClient internal constructor(
     }
 
     /**
+     * Attempts to enqueue local lockdown authentication, including before [ConnectionState.Connected].
+     * The device reports the outcome through [MeshEvent.LockdownStatusChanged] and [sessionEvents].
+     */
+    public fun tryLockdown(auth: LockdownAuth): Boolean =
+        engine.enqueueLockdown(auth, target = null) is AdminResult.Success
+
+    /**
+     * Attempts to enqueue a raw [ToRadio] frame while connected.
+     *
+     * @return true once the transport send queue accepts the encoded frame. Firmware acceptance and delivery
+     *     must be observed separately, just as with [sendRaw].
+     */
+    public fun trySendRaw(frame: ToRadio): Boolean =
+        connection.value is ConnectionState.Connected && engine.trySendToRadio(frame)
+
+    /**
      * The hop limit a convenience send uses when the caller passes `null`: the device's
      * `lora.hop_limit` once the handshake has delivered it, else the firmware default.
      */
@@ -683,6 +747,8 @@ public class RadioClient internal constructor(
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
         private var skipNodeDb: Boolean = false
+        private var sessionReceiveCapacity: Int? = null
+        private var sessionReceiveEnvelopes: Boolean = false
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -885,6 +951,25 @@ public class RadioClient internal constructor(
         public fun skipNodeDb(skip: Boolean = true): Builder = apply { skipNodeDb = skip }
 
         /**
+         * Enable [RadioClient.sessionEvents] with a bounded buffer for one collector.
+         *
+         * @param capacity Maximum number of queued events, including session boundaries.
+         * @throws IllegalArgumentException if capacity is nonpositive or unlimited.
+         */
+        public fun sessionReceive(capacity: Int = 256): Builder = apply {
+            require(capacity in 1 until Int.MAX_VALUE) { "Session receive capacity must be positive and finite" }
+            sessionReceiveCapacity = capacity
+        }
+
+        /**
+         * Include non-packet [FromRadio] envelopes received after the handshake in the ordered session stream.
+         *
+         * Enable [sessionReceive] as well. [RadioSessionEvent.Envelope] shares the same sequence and bounded queue
+         * as packets. Use this for protocol events such as queue status that a host must reconcile with its own state.
+         */
+        public fun sessionReceiveEnvelopes(): Builder = apply { sessionReceiveEnvelopes = true }
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -907,6 +992,8 @@ public class RadioClient internal constructor(
                 skipNodeDb = skipNodeDb,
                 protocolLogLevel = protocolLogLevel,
                 payloadRedactor = payloadRedactor,
+                sessionReceiveCapacity = sessionReceiveCapacity,
+                sessionReceiveEnvelopes = sessionReceiveEnvelopes,
             )
 
             return RadioClient(
