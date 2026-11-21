@@ -8,7 +8,9 @@
 package org.meshtastic.sdk
 
 import org.meshtastic.proto.Channel
+import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LoRaRegionPresetMap
 import org.meshtastic.proto.LockdownStatus
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
@@ -37,6 +39,10 @@ public sealed interface RadioSessionEvent {
         public val channels: List<Channel>?,
         /** Node map at the handshake boundary, before retained packets are applied. */
         public val nodes: Map<NodeId, NodeInfo>,
+        /** File manifest reported during the config download. */
+        public val files: List<FileInfo> = emptyList(),
+        /** Firmware regional modem presets, when reported. */
+        public val regionPresets: LoRaRegionPresetMap? = null,
     ) : RadioSessionEvent
 
     /** A packet accepted by the SDK receive pipeline and offered to this consumer. */

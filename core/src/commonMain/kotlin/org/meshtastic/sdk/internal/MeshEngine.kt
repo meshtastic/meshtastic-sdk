@@ -34,8 +34,10 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
+import org.meshtastic.proto.LoRaRegionPresetMap
 import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.LockdownStatus
 import org.meshtastic.proto.MeshPacket
@@ -244,6 +246,8 @@ internal class MeshEngine(
     private var pendingMyInfo: org.meshtastic.proto.MyNodeInfo? = null
     private var pendingMetadata: org.meshtastic.proto.DeviceMetadata? = null
     private var pendingDeviceUIConfig: org.meshtastic.proto.DeviceUIConfig? = null
+    private val pendingFiles = linkedMapOf<String, FileInfo>()
+    private var pendingRegionPresets: LoRaRegionPresetMap? = null
 
     // Sends that arrived while still handshaking — dispatched in flushQueuedSends().
     private val preSendQueue = mutableListOf<EngineMessage.Send>()
@@ -1130,8 +1134,8 @@ internal class MeshEngine(
         //   1. Reset handshake stage so any stale settle/stage timers become no-ops.
         //   2. Emit `MeshEvent.DeviceRebooted` so subscribers can distinguish this from a
         //      transport-level drop.
-        //   3. Fail the pending-connect deferred (if any) with Protocol so mid-handshake
-        //      reboots surface a clear error.
+        //   3. Fail the pending-connect deferred (if any) with Transport so the host can retry
+        //      after the device comes back.
         //   4. Cancel the supervisor → cleanup() runs, polite-goodbye is sent, transport
         //      disconnects, and `ConnectionState.Disconnected` is emitted.
         if (fromRadio.rebooted == true) {
@@ -1145,7 +1149,7 @@ internal class MeshEngine(
             if (deferred != null) {
                 pendingConnectDeferred = null
                 failPreSendQueueWith(SendFailure.HandshakeFailed)
-                deferred.completeExceptionally(MeshtasticException.Protocol("Device rebooted mid-handshake"))
+                deferred.completeExceptionally(MeshtasticException.Transport("Device rebooted mid-handshake"))
             }
             supervisorJobRef.value?.cancel()
             return
@@ -1228,6 +1232,8 @@ internal class MeshEngine(
         pendingMyInfo = null
         pendingMetadata = null
         pendingDeviceUIConfig = null
+        pendingFiles.clear()
+        pendingRegionPresets = null
         settleBuffer.clear()
         handshakePacketBuffer.clear()
     }
@@ -1449,7 +1455,9 @@ internal class MeshEngine(
                     meshState = meshState.withMyInfo(myInfo)
                     ownNode.value = pendingNodes[NodeId(myNodeNum)]
                 }
-                if (pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty()) {
+                if (pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty() ||
+                    pendingDeviceUIConfig != null
+                ) {
                     val bundle = ConfigBundle(
                         myInfo = myInfo ?: org.meshtastic.proto.MyNodeInfo.Builder().build(),
                         metadata = pendingMetadata ?: org.meshtastic.proto.DeviceMetadata.Builder().build(),
@@ -1705,10 +1713,13 @@ internal class MeshEngine(
                     sessionId = receive.sessionId,
                     myInfo = pendingMyInfo,
                     configBundle = configBundleState.value.takeIf {
-                        pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty()
+                        pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty() ||
+                            pendingDeviceUIConfig != null
                     },
                     channels = pendingChannels.takeIf { it.isNotEmpty() }?.toList(),
                     nodes = pendingNodes.toMap(),
+                    files = pendingFiles.values.toList(),
+                    regionPresets = pendingRegionPresets,
                 ),
             )
         }
@@ -2113,7 +2124,14 @@ internal class MeshEngine(
         }
 
         fromRadio.fileInfo != null -> {
-            events.tryEmit(MeshEvent.FileInfoReceived(fromRadio.fileInfo!!))
+            val file = fromRadio.fileInfo!!
+            if (stage != HandshakeStage.Ready) pendingFiles[file.file_name] = file
+            events.tryEmit(MeshEvent.FileInfoReceived(file))
+            true
+        }
+
+        fromRadio.region_presets != null -> {
+            if (stage != HandshakeStage.Ready) pendingRegionPresets = fromRadio.region_presets
             true
         }
 

@@ -359,10 +359,10 @@ class HandshakeFsmTest {
 
     /**
      * Audit §1.6: `FromRadio.rebooted = true` mid-handshake must fail the pending connect with
-     * Protocol, emit `MeshEvent.DeviceRebooted`, and tear the session down to Disconnected.
+     * a transport error, emit `MeshEvent.DeviceRebooted`, and tear the session down to Disconnected.
      */
     @Test
-    fun deviceRebootMidHandshakeFailsProtocolAndEmitsEvent() = runTest {
+    fun deviceRebootMidHandshakeFailsTransportAndEmitsEvent() = runTest {
         val transport = RebootingTransport()
         val client = buildClient(transport)
 
@@ -376,7 +376,7 @@ class HandshakeFsmTest {
         runCurrent()
 
         val ex = connectResult.await().exceptionOrNull()
-        assertIs<MeshtasticException.Protocol>(ex)
+        assertIs<MeshtasticException.Transport>(ex)
         assertTrue(
             ex.message?.contains("rebooted") == true,
             "Expected reboot diagnostic, got: ${ex.message}",

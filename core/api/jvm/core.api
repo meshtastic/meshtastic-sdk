@@ -1827,19 +1827,24 @@ public final class org/meshtastic/sdk/RadioSessionEvent$Packet : org/meshtastic/
 }
 
 public final class org/meshtastic/sdk/RadioSessionEvent$Ready : org/meshtastic/sdk/RadioSessionEvent {
-	public fun <init> (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;)V
+	public fun <init> (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;)V
+	public synthetic fun <init> (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()J
 	public final fun component2 ()Lorg/meshtastic/proto/MyNodeInfo;
 	public final fun component3 ()Lorg/meshtastic/sdk/ConfigBundle;
 	public final fun component4 ()Ljava/util/List;
 	public final fun component5 ()Ljava/util/Map;
-	public final fun copy (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ready;JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
+	public final fun copy (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ready;JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getChannels ()Ljava/util/List;
 	public final fun getConfigBundle ()Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun getFiles ()Ljava/util/List;
 	public final fun getMyInfo ()Lorg/meshtastic/proto/MyNodeInfo;
 	public final fun getNodes ()Ljava/util/Map;
+	public final fun getRegionPresets ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
 	public fun getSessionId ()J
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
