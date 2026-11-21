@@ -114,6 +114,21 @@ class DisplayReassemblerTest {
     }
 
     @Test
+    fun aPaletteSignatureChangeWithinAFrameIsDropped() {
+        val r = DisplayFrameReassembler()
+        r.accept(chunk(5, 0, bytes(0..3), 10, paletteSignature = 1))
+        assertIs<DisplayFrameReassembler.Outcome.Dropped>(r.accept(chunk(5, 4, bytes(4..9), 10, paletteSignature = 2)))
+    }
+
+    @Test
+    fun aRectangleChangeWithinAFrameIsDropped() {
+        val r = DisplayFrameReassembler()
+        r.accept(chunk(5, 0, bytes(0..3), 10).newBuilder().also { it.rect_x = 8 }.build())
+        val moved = chunk(5, 4, bytes(4..9), 10).newBuilder().also { it.rect_x = 16 }.build()
+        assertIs<DisplayFrameReassembler.Outcome.Dropped>(r.accept(moved))
+    }
+
+    @Test
     fun resetDiscardsPartialFrame() {
         val r = DisplayFrameReassembler()
         r.accept(chunk(5, 0, bytes(0..3), 10))
@@ -175,6 +190,13 @@ class DisplayReassemblerTest {
         assertNull(r.accept(paletteChunk(4, 2, 3, 2)))
         val whole = r.accept(paletteChunk(4, 0, 1, 9))
         assertEquals(listOf(9), whole!!.regions.map { it.x })
+    }
+
+    @Test
+    fun aRegionTotalChangeDiscardsThePartialPalette() {
+        val r = DisplayPaletteReassembler()
+        assertNull(r.accept(paletteChunk(3, 0, 3, 0)))
+        assertNull(r.accept(paletteChunk(3, 1, 2, 1)), "a continuation declaring a different total is rejected")
     }
 
     @Test

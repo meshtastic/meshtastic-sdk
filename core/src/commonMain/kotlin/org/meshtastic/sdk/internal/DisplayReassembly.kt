@@ -69,7 +69,7 @@ internal class DisplayFrameReassembler(private val maxFrameBytes: Int = MAX_DISP
         } else if (head.frame_id != chunk.frame_id) {
             reset()
             return Outcome.Dropped("chunk of frame ${chunk.frame_id} interrupted frame ${head.frame_id}")
-        } else if (head.total_size != total || head.format != chunk.format) {
+        } else if (!sameFrameShape(head, chunk)) {
             reset()
             return Outcome.Dropped("frame ${chunk.frame_id} changed shape mid-frame")
         } else if (offset.toLong() != buffer.size) {
@@ -104,11 +104,20 @@ internal class DisplayFrameReassembler(private val maxFrameBytes: Int = MAX_DISP
             ),
         )
     }
+
+    // Firmware fills every field on every chunk of a frame (ScreenMirror::copyChunk, copyMuiChunkLocked),
+    // so any difference means the chunk belongs to another frame.
+    private fun sameFrameShape(head: DisplayFrame, chunk: DisplayFrame): Boolean =
+        head.total_size == chunk.total_size && head.format == chunk.format &&
+            head.width == chunk.width && head.height == chunk.height &&
+            head.rect_x == chunk.rect_x && head.rect_y == chunk.rect_y &&
+            head.rect_width == chunk.rect_width && head.rect_height == chunk.rect_height &&
+            head.palette_signature == chunk.palette_signature
 }
 
 /**
- * Joins `FromRadio.display_palette` chunks into one [DisplayPalette]. A chunk whose `signature` or
- * `region_offset` does not continue the held partial discards it; a palette completes when
+ * Joins `FromRadio.display_palette` chunks into one [DisplayPalette]. A chunk whose `signature`,
+ * `region_total` or `region_offset` does not continue the held partial discards it; a palette completes when
  * `region_offset + regions.size == region_total`.
  */
 internal class DisplayPaletteReassembler {
@@ -124,7 +133,11 @@ internal class DisplayPaletteReassembler {
     fun accept(chunk: DisplayPalette): DisplayPalette? {
         if (chunk.region_offset == 0) {
             reset()
-        } else if (head?.signature != chunk.signature || chunk.region_offset != regions.size) {
+        } else if (
+            head?.signature != chunk.signature ||
+            head?.region_total != chunk.region_total ||
+            chunk.region_offset != regions.size
+        ) {
             reset()
             return null
         }
