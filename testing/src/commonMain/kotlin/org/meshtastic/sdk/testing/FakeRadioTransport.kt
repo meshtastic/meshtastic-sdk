@@ -21,6 +21,7 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
+import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.Routing
@@ -336,13 +337,10 @@ public class FakeRadioTransport(
     }
 
     private fun injectStage2Frames() {
-        // Firmware opens every config dump with my_info, the nodes-only one included.
+        // Firmware starts a nodes-only dump at its own node_info.
         injectFromRadio(
             FromRadio.Builder().also { wb ->
-                wb.my_info = MyNodeInfo.Builder().also { wb ->
-                    wb.my_node_num = nodeNum
-                    wb.device_id = deviceId
-                }.build()
+                wb.node_info = NodeInfo.Builder().also { it.num = nodeNum }.build()
             }.build(),
         )
         injectFromRadio(

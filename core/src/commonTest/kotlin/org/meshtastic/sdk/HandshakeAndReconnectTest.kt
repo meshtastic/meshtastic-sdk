@@ -1298,7 +1298,7 @@ class HandshakeAndReconnectTest {
             assertEquals(RadioSessionEvent.Ended(first.sessionId), awaitItem())
             val second = assertIs<RadioSessionEvent.Ready>(awaitItem())
             assertTrue(second.sessionId > first.sessionId)
-            assertTrue(second.nodes.isEmpty())
+            assertEquals(setOf(NodeId(transport.nodeNum)), second.nodes.keys)
             val packet = assertIs<RadioSessionEvent.Packet>(awaitItem())
             assertEquals(Triple(second.sessionId, 1L, 103), Triple(packet.sessionId, packet.sequence, packet.packet.id))
             client.disconnect()
@@ -1329,13 +1329,8 @@ class HandshakeAndReconnectTest {
             // Queued before the request reached the radio: live traffic, not part of the dump.
             transport.injectStage2Progress(0x9999)
             assertEquals(0x9999, assertIs<RadioSessionEvent.Envelope>(awaitItem()).envelope.node_info?.num)
-            transport.injectFromRadio(
-                FromRadio.Builder().also { frame ->
-                    frame.my_info = org.meshtastic.proto.MyNodeInfo.Builder().also {
-                        it.my_node_num = transport.nodeNum
-                    }.build()
-                }.build(),
-            )
+            // The dump opens with our own node_info.
+            transport.injectStage2Progress(transport.nodeNum)
             transport.injectStage2Progress(0x1234)
             transport.injectAlivePacket(201)
             val packet = assertIs<RadioSessionEvent.Packet>(awaitItem())
@@ -1348,21 +1343,16 @@ class HandshakeAndReconnectTest {
             val first = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
             assertEquals(ready.sessionId, first.sessionId)
             assertEquals(3L, first.sequence)
-            assertEquals(setOf(NodeId(0x1234)), first.nodes.keys)
+            assertEquals(setOf(NodeId(transport.nodeNum), NodeId(0x1234)), first.nodes.keys)
             runCurrent()
             assertEquals(3, stage2Count())
 
-            transport.injectFromRadio(
-                FromRadio.Builder().also { frame ->
-                    frame.my_info =
-                        org.meshtastic.proto.MyNodeInfo.Builder().also { it.my_node_num = transport.nodeNum }.build()
-                }.build(),
-            )
+            transport.injectStage2Progress(transport.nodeNum)
             transport.injectStage2Progress(0x4321)
             transport.injectFromRadio(complete)
             val second = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
             assertEquals(4L, second.sequence)
-            assertEquals(setOf(NodeId(0x4321)), second.nodes.keys)
+            assertEquals(setOf(NodeId(transport.nodeNum), NodeId(0x4321)), second.nodes.keys)
             assertEquals(3, stage2Count())
             client.disconnect()
             assertEquals(RadioSessionEvent.Ended(ready.sessionId), awaitItem())
@@ -1779,14 +1769,8 @@ class HandshakeAndReconnectTest {
                 return
             }
             if (!autoCompleteStage2) return
-            // Firmware opens every dump with my_info, the nodes-only one included.
-            inbound.tryEmit(
-                encodeFromRadioFrame(
-                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
-                        wb.my_info = MyNodeInfo.Builder().also { wb -> wb.my_node_num = nodeNum }.build()
-                    }.build(),
-                ),
-            )
+            // Firmware starts a nodes-only dump at its own node_info.
+            injectStage2Progress(nodeNum)
             inbound.tryEmit(
                 encodeFromRadioFrame(
                     org.meshtastic.proto.FromRadio.Builder().also { wb ->

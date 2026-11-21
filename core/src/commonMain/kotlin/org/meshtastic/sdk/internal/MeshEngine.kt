@@ -1218,7 +1218,7 @@ internal class MeshEngine(
         // resync garbage; that must not look like "the link is healthy" to the watchdog.
         livenessBudgetMs = LIVENESS_TIMEOUT_MS
 
-        // Firmware answers every want_config with my_info first (PhoneAPI handleStartConfig). A reboot
+        // Firmware answers a 69420 want_config with my_info first (PhoneAPI handleStartConfig). A reboot
         // or completion seen before it in Stage 1 was queued before the request and would end the new
         // handshake, so it is dropped.
         if (handshakeStage == HandshakeStage.Stage1Draining && !stage1DumpStarted) {
@@ -1960,14 +1960,14 @@ internal class MeshEngine(
 
     private fun handleNodeDbRefreshFrame(fromRadio: org.meshtastic.proto.FromRadio): Boolean {
         val refresh = nodeDbRefresh ?: return false
-        // The dump opens with my_info. Earlier frames were queued before the request reached the
-        // radio, so a node_info is live traffic and a completion belongs to an earlier dump.
-        if (fromRadio.my_info != null) {
-            nodeDbRefreshDumpStarted = true
-            return true
-        }
-        if (!nodeDbRefreshDumpStarted) return fromRadio.config_complete_id != null
         val node = fromRadio.node_info
+        // A nodes-only dump opens with the node's own node_info (PhoneAPI handleStartConfig starts 69421 at
+        // STATE_SEND_OWN_NODEINFO). Earlier frames were queued before the request reached the radio, so a
+        // node_info is live traffic and a completion belongs to an earlier dump.
+        if (!nodeDbRefreshDumpStarted) {
+            if (node == null || !isOwnNodeInfo(node)) return fromRadio.config_complete_id != null
+            nodeDbRefreshDumpStarted = true
+        }
         if (node != null) {
             refresh[NodeId(node.num)] = node
             return true
@@ -1983,6 +1983,8 @@ internal class MeshEngine(
         if (followUp) startNodeDbRefresh()
         return true
     }
+
+    private fun isOwnNodeInfo(node: NodeInfo): Boolean = node.num == myNodeNum
 
     private fun clearNodeDbRefresh() {
         nodeDbRefreshDumpStarted = false
