@@ -1152,8 +1152,10 @@ internal class MeshEngine(
         }
 
         val lockdownStatus = fromRadio.lockdown_status
-        if (lockdownStatus != null && handshakeStage != HandshakeStage.Ready) {
-            handleHandshakeLockdown(lockdownStatus)
+        if (lockdownStatus != null) {
+            if (handshakeStage != HandshakeStage.Ready) handleHandshakeLockdown(lockdownStatus)
+            events.tryEmit(MeshEvent.LockdownStatusChanged(lockdownStatus))
+            sessionReceive?.lockdown(lockdownStatus)
             return
         }
 
@@ -1216,7 +1218,6 @@ internal class MeshEngine(
 
             else -> Unit
         }
-        events.tryEmit(MeshEvent.LockdownStatusChanged(status))
     }
 
     private fun clearPendingHandshake() {
@@ -2113,15 +2114,6 @@ internal class MeshEngine(
 
         fromRadio.fileInfo != null -> {
             events.tryEmit(MeshEvent.FileInfoReceived(fromRadio.fileInfo!!))
-            true
-        }
-
-        // Lockdown state report from hardened (MESHTASTIC_LOCKDOWN) firmware builds. Sent right
-        // after config_complete_id (so it can arrive mid-handshake) and after every
-        // AdminApi.lockdown command. Surfaced as a typed event so hosts can drive provisioning /
-        // unlock UX without inspecting raw FromRadio variants.
-        fromRadio.lockdown_status != null -> {
-            events.tryEmit(MeshEvent.LockdownStatusChanged(fromRadio.lockdown_status!!))
             true
         }
 

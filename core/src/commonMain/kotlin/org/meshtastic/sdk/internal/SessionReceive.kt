@@ -10,6 +10,7 @@ package org.meshtastic.sdk.internal
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LockdownStatus
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.sdk.NodeId
@@ -25,14 +26,22 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
         private set
     private var sequence = 0L
     private var delivering = false
+    private var started = false
 
     fun begin(generation: Long) {
         sessionId = generation
         sequence = 0L
+        started = false
     }
 
     fun ready(snapshot: RadioSessionEvent.Ready) {
         delivering = offer(snapshot)
+        started = true
+    }
+
+    fun lockdown(status: LockdownStatus) {
+        started = true
+        offer(RadioSessionEvent.Lockdown(sessionId, ++sequence, status))
     }
 
     fun packet(packet: MeshPacket) {
@@ -48,7 +57,8 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
     }
 
     fun end() {
-        if (!delivering) return
+        if (!started) return
+        started = false
         delivering = false
         offer(RadioSessionEvent.Ended(sessionId))
     }
@@ -71,6 +81,7 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
         if (result.isFailure && !result.isClosed) {
             val missed = when (event) {
                 is RadioSessionEvent.Packet -> event.sequence
+                is RadioSessionEvent.Lockdown -> event.sequence
                 is RadioSessionEvent.Envelope -> event.sequence
                 is RadioSessionEvent.NodeDbRefreshed -> event.sequence
                 is RadioSessionEvent.Ready, is RadioSessionEvent.Ended -> null

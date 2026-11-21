@@ -118,16 +118,14 @@ class LockdownStatusEventTest {
             .sessionReceive()
             .build()
         val statuses = mutableListOf<LockdownStatus.State>()
-        val snapshots = mutableListOf<RadioSessionEvent.Ready>()
+        val sessionEvents = mutableListOf<RadioSessionEvent>()
         backgroundScope.launch {
             client.events.collect { event ->
                 if (event is MeshEvent.LockdownStatusChanged) statuses.add(event.status.state)
             }
         }
         backgroundScope.launch {
-            assertNotNull(client.sessionEvents).collect { event ->
-                if (event is RadioSessionEvent.Ready) snapshots.add(event)
-            }
+            assertNotNull(client.sessionEvents).collect { sessionEvents.add(it) }
         }
         val connecting = async { client.connect() }
         runCurrent()
@@ -136,7 +134,7 @@ class LockdownStatusEventTest {
         runCurrent()
 
         assertFalse(connecting.isCompleted)
-        assertTrue(snapshots.isEmpty())
+        assertEquals(LockdownStatus.State.LOCKED, (sessionEvents.single() as RadioSessionEvent.Lockdown).status.state)
         assertEquals(listOf(69420), configRequests)
         val auth = LockdownAuth.Builder().also { it.passphrase = "example".encodeUtf8() }.build()
         assertEquals(AdminResult.Unauthorized, client.admin.forNode(NodeId(2)).lockdown(auth))
@@ -156,7 +154,15 @@ class LockdownStatusEventTest {
         assertEquals(1, connectCount)
         assertEquals(listOf(69420, 69420, 69421), configRequests)
         assertEquals(ConnectionState.Connected, client.connection.value)
-        val bundle = assertNotNull(snapshots.single().configBundle)
+        val snapshot = sessionEvents.filterIsInstance<RadioSessionEvent.Ready>().single()
+        val controls = sessionEvents.takeWhile { it != snapshot }.filterIsInstance<RadioSessionEvent.Lockdown>()
+        assertEquals(
+            listOf(LockdownStatus.State.LOCKED, LockdownStatus.State.UNLOCK_FAILED, LockdownStatus.State.UNLOCKED),
+            controls.map { it.status.state },
+        )
+        assertEquals(listOf(1L, 2L, 3L), controls.map { it.sequence })
+        assertTrue(controls.all { it.sessionId == snapshot.sessionId })
+        val bundle = assertNotNull(snapshot.configBundle)
         assertEquals("2.8.4", bundle.metadata.firmware_version)
         assertTrue(bundle.configs.none { it.bluetooth != null })
         client.disconnect()

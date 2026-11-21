@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
@@ -195,8 +196,8 @@ public class RadioClient internal constructor(
      * Ordered handshake snapshots, packets and session boundaries for one consumer.
      *
      * Enable this stream with [Builder.sessionReceive] and start collecting before [connect].
-     * A new session starts with [RadioSessionEvent.Ready], then retained handshake packets,
-     * then live packets. The stream spans automatic reconnects and completes when the client
+     * A protected radio may report [RadioSessionEvent.Lockdown] before [RadioSessionEvent.Ready].
+     * Ready precedes retained handshake packets and live packets. The stream spans automatic reconnects and completes when the client
      * shuts down. Collect it directly for ordered delivery.
      *
      * If the SDK loses receive coverage, the stream drains accepted events and then throws
@@ -653,6 +654,13 @@ public class RadioClient internal constructor(
         }
         engine.sendToRadio(frame)
     }
+
+    /**
+     * Attempts to enqueue local lockdown authentication, including before [ConnectionState.Connected].
+     * The device reports the outcome through [MeshEvent.LockdownStatusChanged] and [sessionEvents].
+     */
+    public fun tryLockdown(auth: LockdownAuth): Boolean =
+        engine.enqueueLockdown(auth, target = null) is AdminResult.Success
 
     /**
      * Attempts to enqueue a raw [ToRadio] frame while connected.

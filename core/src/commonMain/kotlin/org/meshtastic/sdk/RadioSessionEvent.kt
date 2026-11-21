@@ -9,6 +9,7 @@ package org.meshtastic.sdk
 
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LockdownStatus
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -17,6 +18,13 @@ import org.meshtastic.proto.NodeInfo
 public sealed interface RadioSessionEvent {
     /** Connection generation that produced this event. */
     public val sessionId: Long
+
+    /** A lockdown status from this link. May precede [Ready] when authentication is required. */
+    public data class Lockdown(
+        override val sessionId: Long,
+        public val sequence: Long,
+        public val status: LockdownStatus,
+    ) : RadioSessionEvent
 
     /** Handshake snapshot published before any packets from this session. */
     public data class Ready(
@@ -34,7 +42,7 @@ public sealed interface RadioSessionEvent {
     /** A packet accepted by the SDK receive pipeline and offered to this consumer. */
     public data class Packet(
         override val sessionId: Long,
-        /** Delivery sequence within the session, starting at one. */
+        /** Delivery sequence within the session, including lockdown status. */
         public val sequence: Long,
         /** Decoded mesh packet, in the same form as [RadioClient.packets]. */
         public val packet: MeshPacket,
