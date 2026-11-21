@@ -19,7 +19,7 @@ okio                        = "3.18.2"
 
 # --- Protobuf / Wire ---
 wire                        = "7.2.2"            # wire-runtime version (transitive via protobufs SDK)
-meshtasticProtobufs         = "2.8.2"
+meshtasticProtobufs         = "2.8.3"
 
 # --- Storage ---
 sqldelight                  = "2.4.1"
@@ -33,7 +33,8 @@ usbSerialForAndroid         = "3.12.0"           # JitPack only; compileOnly in 
 
 # --- TUI (samples/cli) ---
 mosaic                      = "0.18.0"
-clikt                       = "5.2.0"
+clikt                       = "5.2.1"
+mcpKotlinSdk                = "0.16.0"           # samples/cli `mcp` subcommand only
 
 # --- Compose Multiplatform (samples/parity-app) ---
 composeMultiplatform        = "1.12.2"
@@ -62,7 +63,7 @@ ktlint                      = "1.8.0"
 spotless                    = "8.11.0"
 detekt                      = "2.0.0-alpha.6"
 detektComposeRules          = "0.6.8"
-axionRelease                = "1.21.4"
+axionRelease                = "1.21.5"
 kover                       = "0.9.11"
 
 [libraries]
@@ -99,6 +100,7 @@ usbSerialForAndroid         = { module = "com.github.mik3y:usb-serial-for-androi
 mosaicRuntime               = { module = "com.jakewharton.mosaic:mosaic-runtime",                 version.ref = "mosaic" }
 mosaicTerminal              = { module = "com.jakewharton.mosaic:mosaic-terminal",                version.ref = "mosaic" }
 clikt                       = { module = "com.github.ajalt.clikt:clikt",                          version.ref = "clikt" }
+mcpKotlinSdkServer          = { module = "io.modelcontextprotocol:kotlin-sdk-server",             version.ref = "mcpKotlinSdk" }
 
 kermit                      = { module = "co.touchlab:kermit",                                   version.ref = "kermit" }
 

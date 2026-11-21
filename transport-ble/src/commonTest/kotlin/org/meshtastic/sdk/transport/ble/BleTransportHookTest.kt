@@ -30,6 +30,24 @@ import kotlin.test.assertFalse
 class BleTransportHookTest {
 
     @Test
+    fun shutdownClosesOnlyOwnedPeripheralsAndOnlyOnce() {
+        val owned = FakeBlePeripheral()
+        val borrowed = FakeBlePeripheral()
+        val pickerTransport = BleTransport(owned, address = TEST_ADDRESS).also { it.ownsPeripheral = true }
+        val hostTransport = BleTransport(borrowed, address = TEST_ADDRESS)
+
+        try {
+            pickerTransport.shutdown()
+            pickerTransport.shutdown()
+            hostTransport.shutdown()
+            assertEquals(1, owned.closeCalls)
+            assertEquals(0, borrowed.closeCalls)
+        } finally {
+            borrowed.close()
+        }
+    }
+
+    @Test
     fun postConnectHookRunsOncePerConnectAndFailureIsNonFatal() = runTest {
         val transport = BleTransport(FakeBlePeripheral(), address = TEST_ADDRESS)
         var invocations = 0

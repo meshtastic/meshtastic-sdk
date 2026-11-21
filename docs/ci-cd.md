@@ -51,7 +51,7 @@ Protobuf types resolve from the published `org.meshtastic:protobufs` artifact, s
 
 ### Required checks
 
-The `main` ruleset requires eight checks: `test-jvm (17)`, `test-jvm (21)`, `test-android`, `test-ios (iosSimulatorArm64)`, `api-check`, `arch-consistency`, `full-check` and `Coverage (Kover -> Codecov)`. `test-js` runs on every PR but isn't required. The release workflow reads the same list and refuses a commit where any of them didn't pass. The GitHub DCO App enforces sign-off separately.
+The `main` ruleset requires nine checks: `test-jvm (17)`, `test-jvm (21)`, `test-android`, `test-ios (iosSimulatorArm64)`, `test-js`, `api-check`, `arch-consistency`, `full-check` and `Coverage (Kover -> Codecov)`. The release workflow reads the same list and refuses a commit where any of them didn't pass. The GitHub DCO App enforces sign-off separately.
 
 ## Gates and local equivalents
 
