@@ -20,21 +20,36 @@ import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 public interface RoutingApi {
 
     /**
-     * Send a `RouteDiscovery` request to [dest] and wait for the route_reply.
+     * Trace the route to [dest] and wait for its reply.
      *
-     * @param dest the destination [NodeId].
-     * @param hopLimit maximum mesh hops the discovery may traverse. The mesh truncates the
-     *   discovery if more nodes lie on the path. Default: `7` (firmware default).
-     * @return on success, the [RouteDiscovery] populated with `route` (forward) + `route_back`
-     *   plus per-hop SNR. On failure, an [AdminResult] error variant.
+     * Sends an empty `RouteDiscovery` on `TRACEROUTE_APP` with `want_response`, `want_ack` and
+     * `Data.dest`, as firmware's `TraceRouteModule` expects.
+     *
+     * @param hopLimit hops the request may travel; `null` uses the device's `lora.hop_limit`.
+     * @param channel channel to send on; `null` uses the channel [dest] was last heard on.
+     * @param requestId non-zero packet id to use, for a caller that logs the request; `null`
+     *   allocates one.
+     * @return on success, the [RouteDiscovery] with `route`, `route_back` and per-hop SNR.
      */
-    public suspend fun traceRoute(dest: NodeId, hopLimit: Int = DEFAULT_HOP_LIMIT): AdminResult<RouteDiscovery>
+    public suspend fun traceRoute(
+        dest: NodeId,
+        hopLimit: Int? = null,
+        channel: ChannelIndex? = null,
+        requestId: Int? = null,
+    ): AdminResult<RouteDiscovery>
 
     /**
-     * Request the [ProtoNeighborInfo] of [node] (default: local). Surfaces immediate neighbors and
-     * their last-heard SNR / interval.
+     * Request the [ProtoNeighborInfo] of [node] (default: local): its immediate neighbors and their
+     * last-heard SNR and interval. A remote request carries `want_ack`, `Data.dest` and the device
+     * hop limit, on [channel] or the channel the node was last heard on.
+     *
+     * @param requestId non-zero packet id to use; `null` allocates one.
      */
-    public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<ProtoNeighborInfo>
+    public suspend fun requestNeighborInfo(
+        node: NodeId = NodeId.LOCAL,
+        channel: ChannelIndex? = null,
+        requestId: Int? = null,
+    ): AdminResult<ProtoNeighborInfo>
 
     public companion object {
         public const val DEFAULT_HOP_LIMIT: Int = 7

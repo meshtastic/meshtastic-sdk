@@ -44,8 +44,8 @@ public interface TelemetryApi {
     /** Request the latest [AirQualityMetrics] from [node]. */
     public suspend fun requestAirQuality(node: NodeId = NodeId.LOCAL): AdminResult<AirQualityMetrics>
 
-    /** Request the local node's [LocalStats] (mesh-wide stats sourced from this device). */
-    public suspend fun requestLocalStats(): AdminResult<LocalStats>
+    /** Request [node]'s [LocalStats] (its mesh-wide counters); firmware answers a remote request too. */
+    public suspend fun requestLocalStats(node: NodeId = NodeId.LOCAL): AdminResult<LocalStats>
 
     /** Request the latest [HealthMetrics] from [node] (heart rate, SpO2, temperature). */
     public suspend fun requestHealth(node: NodeId = NodeId.LOCAL): AdminResult<HealthMetrics>

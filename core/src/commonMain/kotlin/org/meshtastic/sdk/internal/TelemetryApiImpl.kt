@@ -60,8 +60,8 @@ internal class TelemetryApiImpl(
         it.air_quality_metrics = AirQualityMetrics.Builder().build()
     }) { it.air_quality_metrics }
 
-    override suspend fun requestLocalStats(): AdminResult<LocalStats> =
-        requestTelemetry(NodeId.LOCAL, { it.local_stats = LocalStats.Builder().build() }) { it.local_stats }
+    override suspend fun requestLocalStats(node: NodeId): AdminResult<LocalStats> =
+        requestTelemetry(node, { it.local_stats = LocalStats.Builder().build() }) { it.local_stats }
 
     override suspend fun requestHealth(node: NodeId): AdminResult<HealthMetrics> =
         requestTelemetry(node, { it.health_metrics = HealthMetrics.Builder().build() }) { it.health_metrics }

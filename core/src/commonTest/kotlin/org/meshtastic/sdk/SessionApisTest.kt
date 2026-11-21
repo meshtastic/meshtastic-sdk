@@ -225,6 +225,38 @@ class SessionApisTest {
     }
 
     @Test
+    fun localStatsCanBeRequestedFromARemoteNode() = runTest {
+        val (transport, client) = connectedClient()
+        try {
+            val pending = async { client.telemetry.requestLocalStats(NodeId(peer)) }
+            runCurrent()
+            val sent = transport.outboundPackets().last()
+            assertEquals(peer, sent.to)
+            assertEquals(peer, sent.decoded?.dest)
+            assertNotNull(Telemetry.ADAPTER.decode(sent.decoded!!.payload).local_stats)
+            pending.cancel()
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    @Test
+    fun theSendBuilderCarriesThePriority() = runTest {
+        val (transport, client) = connectedClient()
+        try {
+            client.send {
+                data(PortNum.POSITION_APP, byteArrayOf(1))
+                to(NodeId(own))
+                priority(MeshPacket.Priority.BACKGROUND)
+            }
+            runCurrent()
+            assertEquals(MeshPacket.Priority.BACKGROUND, transport.outboundPackets().last().priority)
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    @Test
     fun requestLocalHistorySendsClientHistoryToOurOwnNode() = runTest {
         val (transport, client) = connectedClient()
         try {

@@ -346,8 +346,8 @@ abstract interface org.meshtastic.sdk/RemoteShellApi { // org.meshtastic.sdk/Rem
 }
 
 abstract interface org.meshtastic.sdk/RoutingApi { // org.meshtastic.sdk/RoutingApi|null[0]
-    abstract suspend fun requestNeighborInfo(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/NeighborInfo> // org.meshtastic.sdk/RoutingApi.requestNeighborInfo|requestNeighborInfo(org.meshtastic.sdk.NodeId){}[0]
-    abstract suspend fun traceRoute(org.meshtastic.sdk/NodeId, kotlin/Int = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/RouteDiscovery> // org.meshtastic.sdk/RoutingApi.traceRoute|traceRoute(org.meshtastic.sdk.NodeId;kotlin.Int){}[0]
+    abstract suspend fun requestNeighborInfo(org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex? = ..., kotlin/Int? = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/NeighborInfo> // org.meshtastic.sdk/RoutingApi.requestNeighborInfo|requestNeighborInfo(org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex?;kotlin.Int?){}[0]
+    abstract suspend fun traceRoute(org.meshtastic.sdk/NodeId, kotlin/Int? = ..., org.meshtastic.sdk/ChannelIndex? = ..., kotlin/Int? = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/RouteDiscovery> // org.meshtastic.sdk/RoutingApi.traceRoute|traceRoute(org.meshtastic.sdk.NodeId;kotlin.Int?;org.meshtastic.sdk.ChannelIndex?;kotlin.Int?){}[0]
 
     final object Companion { // org.meshtastic.sdk/RoutingApi.Companion|null[0]
         final const val DEFAULT_HOP_LIMIT // org.meshtastic.sdk/RoutingApi.Companion.DEFAULT_HOP_LIMIT|{}DEFAULT_HOP_LIMIT[0]
@@ -377,7 +377,7 @@ abstract interface org.meshtastic.sdk/TelemetryApi { // org.meshtastic.sdk/Telem
     abstract suspend fun requestEnvironment(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/EnvironmentMetrics> // org.meshtastic.sdk/TelemetryApi.requestEnvironment|requestEnvironment(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun requestHealth(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/HealthMetrics> // org.meshtastic.sdk/TelemetryApi.requestHealth|requestHealth(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun requestHost(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/HostMetrics> // org.meshtastic.sdk/TelemetryApi.requestHost|requestHost(org.meshtastic.sdk.NodeId){}[0]
-    abstract suspend fun requestLocalStats(): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/LocalStats> // org.meshtastic.sdk/TelemetryApi.requestLocalStats|requestLocalStats(){}[0]
+    abstract suspend fun requestLocalStats(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/LocalStats> // org.meshtastic.sdk/TelemetryApi.requestLocalStats|requestLocalStats(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun requestPower(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/PowerMetrics> // org.meshtastic.sdk/TelemetryApi.requestPower|requestPower(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun requestTrafficManagement(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/TrafficManagementStats> // org.meshtastic.sdk/TelemetryApi.requestTrafficManagement|requestTrafficManagement(org.meshtastic.sdk.NodeId){}[0]
 }
@@ -2343,6 +2343,7 @@ final class org.meshtastic.sdk/SendBuilder { // org.meshtastic.sdk/SendBuilder|n
     final fun data(org.meshtastic.proto/PortNum, kotlin/ByteArray) // org.meshtastic.sdk/SendBuilder.data|data(org.meshtastic.proto.PortNum;kotlin.ByteArray){}[0]
     final fun hopLimit(kotlin/Int?) // org.meshtastic.sdk/SendBuilder.hopLimit|hopLimit(kotlin.Int?){}[0]
     final fun position(org.meshtastic.sdk/LatLng) // org.meshtastic.sdk/SendBuilder.position|position(org.meshtastic.sdk.LatLng){}[0]
+    final fun priority(org.meshtastic.proto/MeshPacket.Priority) // org.meshtastic.sdk/SendBuilder.priority|priority(org.meshtastic.proto.MeshPacket.Priority){}[0]
     final fun proto(org.meshtastic.proto/MeshPacket) // org.meshtastic.sdk/SendBuilder.proto|proto(org.meshtastic.proto.MeshPacket){}[0]
     final fun text(kotlin/String) // org.meshtastic.sdk/SendBuilder.text|text(kotlin.String){}[0]
     final fun to(org.meshtastic.sdk/NodeId) // org.meshtastic.sdk/SendBuilder.to|to(org.meshtastic.sdk.NodeId){}[0]

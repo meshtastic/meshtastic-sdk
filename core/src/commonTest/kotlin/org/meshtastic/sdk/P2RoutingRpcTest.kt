@@ -16,6 +16,7 @@ import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
 import org.meshtastic.sdk.testing.FakeRadioTransport
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -42,20 +43,25 @@ class P2RoutingRpcTest {
     }
 
     @Test
-    fun traceRouteResolvesOnRouteReply() = runTest {
+    fun traceRouteGoesOutOnTheTraceroutePortAndResolvesOnItsReply() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
 
         val dest = NodeId(0xa1b2c3d4.toInt())
         val outboundBefore = transport.outboundPackets().size
-        val deferred = async { client.routing.traceRoute(dest, hopLimit = 5) }
+        val deferred = async { client.routing.traceRoute(dest, hopLimit = 5, requestId = 4242) }
         runCurrent()
 
+        // TraceRouteModule listens on TRACEROUTE_APP (firmware TraceRouteModule.cpp); RoutingModule never replies.
         val req = transport.outboundPackets().drop(outboundBefore)
-            .last { it.decoded?.portnum == PortNum.ROUTING_APP }
+            .last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
         assertEquals(dest.raw, req.to)
         assertEquals(5, req.hop_limit)
+        assertEquals(4242, req.id)
+        assertEquals(true, req.want_ack)
+        assertEquals(dest.raw, req.decoded?.dest)
+        assertEquals(true, req.decoded?.want_response)
 
         val expected = RouteDiscovery.Builder().also { wb ->
             wb.route = listOf(0x111, 0x222)
@@ -83,7 +89,7 @@ class P2RoutingRpcTest {
         runCurrent()
 
         val req = transport.outboundPackets().drop(outboundBefore)
-            .last { it.decoded?.portnum == PortNum.ROUTING_APP }
+            .last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
         transport.injectRoutingError(requestId = req.id, error = Routing.Error.NO_ROUTE)
         runCurrent()
 
@@ -137,6 +143,38 @@ class P2RoutingRpcTest {
         val result = deferred.await()
         assertIs<AdminResult.Success<ProtoNeighborInfo>>(result)
         assertEquals(expected, result.value)
+        client.disconnect()
+    }
+
+    @Test
+    fun aRemoteNeighborInfoRequestCarriesAckDestAndTheHeardChannel() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val peer = 0x2468
+        transport.injectFrame(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.node_info = org.meshtastic.proto.NodeInfo.Builder().also { n ->
+                    n.num = peer
+                    n.channel = 2
+                }.build()
+            }.build().toFrame(),
+        )
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async { client.routing.requestNeighborInfo(NodeId(peer), requestId = 777) }
+        runCurrent()
+
+        // Without want_ack, firmware keeps a zero hop limit (Router.cpp send) and the request stops at a neighbor.
+        val req = transport.outboundPackets().drop(outboundBefore)
+            .last { it.decoded?.portnum == PortNum.NEIGHBORINFO_APP }
+        assertEquals(777, req.id)
+        assertEquals(true, req.want_ack)
+        assertEquals(peer, req.decoded?.dest)
+        assertEquals(2, req.channel)
+        assertEquals(3, req.hop_limit)
+        deferred.cancel()
         client.disconnect()
     }
 }

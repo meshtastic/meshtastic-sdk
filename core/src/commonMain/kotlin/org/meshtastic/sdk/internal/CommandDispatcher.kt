@@ -242,17 +242,15 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         return AdminResult.Success(telem)
     }
 
+    // TraceRouteModule replies on TRACEROUTE_APP with the filled-in RouteDiscovery; a routing ACK for the
+    // request carries the same request_id on ROUTING_APP and must not complete it.
     private fun decodeRoute(payload: okio.ByteString, portnum: PortNum?): AdminResult<RouteDiscovery>? {
-        if (portnum != PortNum.ROUTING_APP) return null
-        val routing = try {
-            Routing.ADAPTER.decode(payload)
+        if (portnum != PortNum.TRACEROUTE_APP) return null
+        return try {
+            AdminResult.Success(RouteDiscovery.ADAPTER.decode(payload))
         } catch (_: Exception) {
-            return null
+            null
         }
-        // RouteDiscoveryReply is only resolved by the route_reply oneof arm. route_request /
-        // error_reason are handled elsewhere (the latter via tryFailFromRouting).
-        val reply = routing.route_reply ?: return null
-        return AdminResult.Success(reply)
     }
 
     private fun decodeNeighborInfo(payload: okio.ByteString, portnum: PortNum?): AdminResult<ProtoNeighborInfo>? {

@@ -60,6 +60,7 @@ public class SendBuilder internal constructor() {
     private var channel: ChannelIndex = ChannelIndex(0)
     private var wantAck: Boolean = false
     private var hopLimit: Int? = null
+    private var priority: MeshPacket.Priority = MeshPacket.Priority.UNSET
 
     /** Set the destination [NodeId]. Defaults to [NodeId.BROADCAST]. */
     public fun to(nodeId: NodeId) {
@@ -92,6 +93,12 @@ public class SendBuilder internal constructor() {
     public fun hopLimit(hops: Int?) {
         checkNotProtoOnly("hopLimit(Int)")
         this.hopLimit = hops
+    }
+
+    /** Set the packet priority, for example `BACKGROUND` for position and telemetry traffic. Defaults to `UNSET`. */
+    public fun priority(value: MeshPacket.Priority) {
+        checkNotProtoOnly("priority(Priority)")
+        this.priority = value
     }
 
     /** Encode [text] as a `TEXT_MESSAGE_APP` payload (UTF-8). Mutually exclusive with the other payload setters. */
@@ -160,6 +167,7 @@ public class SendBuilder internal constructor() {
             wb.channel = channel.raw
             wb.want_ack = wantAck
             wb.hop_limit = hopLimit ?: defaultHopLimit
+            wb.priority = priority
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = portnum
                 wb.payload = payload

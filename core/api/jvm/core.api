@@ -2137,10 +2137,10 @@ public final class org/meshtastic/sdk/RouteDiscoveryResult$Companion {
 public abstract interface class org/meshtastic/sdk/RoutingApi {
 	public static final field Companion Lorg/meshtastic/sdk/RoutingApi$Companion;
 	public static final field DEFAULT_HOP_LIMIT I
-	public abstract fun requestNeighborInfo-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun requestNeighborInfo-UyS-FeY$default (Lorg/meshtastic/sdk/RoutingApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public abstract fun traceRoute-TEw7vI0 (IILkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun traceRoute-TEw7vI0$default (Lorg/meshtastic/sdk/RoutingApi;IILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun requestNeighborInfo-TlUpBXE (ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun requestNeighborInfo-TlUpBXE$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun traceRoute-JW28Az8 (ILjava/lang/Integer;Lorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun traceRoute-JW28Az8$default (Lorg/meshtastic/sdk/RoutingApi;ILjava/lang/Integer;Lorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/RoutingApi$Companion {
@@ -2148,8 +2148,8 @@ public final class org/meshtastic/sdk/RoutingApi$Companion {
 }
 
 public final class org/meshtastic/sdk/RoutingApi$DefaultImpls {
-	public static synthetic fun requestNeighborInfo-UyS-FeY$default (Lorg/meshtastic/sdk/RoutingApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static synthetic fun traceRoute-TEw7vI0$default (Lorg/meshtastic/sdk/RoutingApi;IILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun requestNeighborInfo-TlUpBXE$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun traceRoute-JW28Az8$default (Lorg/meshtastic/sdk/RoutingApi;ILjava/lang/Integer;Lorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/RoutingErrorsKt {
@@ -2164,6 +2164,7 @@ public final class org/meshtastic/sdk/SendBuilder {
 	public final fun data (Lorg/meshtastic/proto/PortNum;[B)V
 	public final fun hopLimit (Ljava/lang/Integer;)V
 	public final fun position (Lorg/meshtastic/sdk/LatLng;)V
+	public final fun priority (Lorg/meshtastic/proto/MeshPacket$Priority;)V
 	public final fun proto (Lorg/meshtastic/proto/MeshPacket;)V
 	public final fun text (Ljava/lang/String;)V
 	public final fun to (Lorg/meshtastic/sdk/NodeId;)V
@@ -2566,7 +2567,8 @@ public abstract interface class org/meshtastic/sdk/TelemetryApi {
 	public static synthetic fun requestHealth-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun requestHost-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun requestHost-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public abstract fun requestLocalStats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun requestLocalStats-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun requestLocalStats-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun requestPower-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun requestPower-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun requestTrafficManagement-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -2579,6 +2581,7 @@ public final class org/meshtastic/sdk/TelemetryApi$DefaultImpls {
 	public static synthetic fun requestEnvironment-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun requestHealth-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun requestHost-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun requestLocalStats-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun requestPower-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun requestTrafficManagement-UyS-FeY$default (Lorg/meshtastic/sdk/TelemetryApi;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
