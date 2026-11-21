@@ -249,7 +249,7 @@ internal class MeshEngine(
     private var renumberedTo: Int? = null
     private var heldRenumberAck: EngineMessage.PacedSend? = null
     private var heldRenumberAckFrom = 0
-    private var renumberDeferredSend: EngineMessage.PacedSend? = null
+    private var renumberRestartJob: Job? = null
 
     // Command admission captures the exact physical link and node id before posting to the actor.
     private data class LockdownLink(val generation: Long, val nodeNum: Int)
@@ -673,7 +673,16 @@ internal class MeshEngine(
             val msg = drained.getOrNull()
             when (msg) {
                 is EngineMessage.Send -> msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+
                 is EngineMessage.PacedSend -> rejectPaced(msg, SendFailure.Disconnected)
+
+                // Their callers await these; the session is gone, so there is nothing left to apply.
+                is EngineMessage.ApplyConfigEdits -> msg.done.complete(Unit)
+
+                is EngineMessage.ApplyChannel -> msg.done.complete(Unit)
+
+                is EngineMessage.ApplyNodeWrite -> msg.done.complete(Unit)
+
                 else -> Unit
             }
             drained = inbox.tryReceive()
@@ -846,13 +855,18 @@ internal class MeshEngine(
             is EngineMessage.ChannelsRestored -> {
                 if (msg.generation == receiveGeneration && channelsState.value == null) {
                     channelsState.value = msg.channels
+                    meshState = meshState.withChannels(msg.channels)
                     sessionReceive?.channelsChanged(msg.channels)
                 }
             }
 
             is EngineMessage.StorageDegraded -> markStorageDegraded(msg.reason, msg.cause)
 
-            EngineMessage.RenumberRestart -> if (handshakeStage == HandshakeStage.Ready) restartSessionForRenumber()
+            EngineMessage.RenumberRestart -> if (
+                handshakeStage == HandshakeStage.Ready && renumberedTo != null && pacedSends.isEmpty()
+            ) {
+                restartSessionForRenumber()
+            }
 
             is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
 
@@ -2124,7 +2138,10 @@ internal class MeshEngine(
         return true
     }
 
-    private fun isOwnNodeInfo(node: NodeInfo): Boolean = node.num == myNodeNum
+    // A held ACK from another number for our own write marks a renumber firmware may not announce: it
+    // sends no my_info during a nodes-only dump, which then opens with our node_info under the new number.
+    private fun isOwnNodeInfo(node: NodeInfo): Boolean = node.num == myNodeNum || node.num == renumberedTo ||
+        (heldRenumberAck != null && node.num == heldRenumberAckFrom)
 
     private fun clearNodeDbRefresh() {
         nodeDbRefreshDumpStarted = false
@@ -2142,7 +2159,10 @@ internal class MeshEngine(
         when {
             packet != null -> processInboundMeshPacket(packet)
 
-            nodeInfo != null -> processInboundNodeInfo(nodeInfo)
+            nodeInfo != null -> {
+                if (heldRenumberAck != null && nodeInfo.num == heldRenumberAckFrom) beginRenumber(nodeInfo.num)
+                processInboundNodeInfo(nodeInfo)
+            }
 
             fromRadio.my_info != null -> handleReadyMyInfo(fromRadio.my_info!!)
 
@@ -2328,15 +2348,18 @@ internal class MeshEngine(
             "Rx packet id=${packet.id} from=0x${packet.from.toString(16)} " +
                 "port=${packet.decoded?.portnum ?: "encrypted"}"
         }
-        // any frame from a node counts as presence activity.
-        if (packet.from != 0) markNodeHeard(NodeId(packet.from))
-        if (shouldDropDuplicateInboundPacket(packet)) return
+        // Any frame from a node counts as presence activity. A packet the session sees is offered before
+        // the CameOnline it may cause.
+        val heard = { if (packet.from != 0) markNodeHeard(NodeId(packet.from)) }
+        if (shouldDropDuplicateInboundPacket(packet)) return heard()
         val decoded = packet.decoded
         if (decoded == null) {
+            heard()
             maybeWarnEncryptedPacketSkipped()
             return
         }
         if (decoded.portnum == PortNum.UNKNOWN_APP) {
+            heard()
             logger.warn(TAG) {
                 "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}"
             }
@@ -2367,6 +2390,7 @@ internal class MeshEngine(
             recognizesAdminReply(packet, decoded.request_id, adminMsg)
         // The session stream gets the packet before the node, config and event changes it causes.
         sessionReceive?.packet(packet, correlatedAdminResponse)
+        heard()
         mergeLivePacketIntoNodeDb(packet, decoded)
         emitPacketOrLog(packet)
         if (correlatedAdminResponse) {
@@ -2920,11 +2944,13 @@ internal class MeshEngine(
         failPreSendQueueWith(SendFailure.Disconnected)
         renumberedTo = null
         heldRenumberAck = null
-        renumberDeferredSend = null
+        renumberRestartJob?.cancel()
+        renumberRestartJob = null
     }
 
-    private fun handleReadyMyInfo(info: org.meshtastic.proto.MyNodeInfo) {
-        val newNum = info.my_node_num
+    private fun handleReadyMyInfo(info: org.meshtastic.proto.MyNodeInfo) = beginRenumber(info.my_node_num)
+
+    private fun beginRenumber(newNum: Int) {
         if (newNum == 0 || newNum == myNodeNum || newNum == renumberedTo) return
         logger.info(TAG) { "Node renumbered ${myNodeNum.toUInt()} -> ${newNum.toUInt()}; restarting the handshake" }
         renumberedTo = newNum
@@ -2934,17 +2960,31 @@ internal class MeshEngine(
             held.receipt.complete(QueueReceipt.Accepted)
             releaseQueueWrite(held)
         }
-        val inFlight = pacedSends.values.firstOrNull { it.packet.to == myNodeNum }
-        if (inFlight != null) {
-            // Its ACK, now accepted from the new number, or its timeout restarts the session.
-            renumberDeferredSend = inFlight
-        } else {
-            restartSessionForRenumber()
+        // Queued writes, a batch commit among them, still go out, addressed to the new number.
+        pumpPacedQueue()
+        maybeRestartForRenumber()
+    }
+
+    private fun retargetRenumbered(packet: MeshPacket): MeshPacket {
+        val newNum = renumberedTo ?: return packet
+        return if (packet.to == myNodeNum) packet.newBuilder().also { it.to = newNum }.build() else packet
+    }
+
+    // The handshake restarts once the paced queue has stayed empty for a moment, so a batch whose next
+    // write is a step away, its commit among them, is not cut off.
+    private fun maybeRestartForRenumber() {
+        if (renumberedTo == null || pacedSends.isNotEmpty()) return
+        renumberRestartJob?.cancel()
+        renumberRestartJob = engineScope?.launch {
+            delay(RENUMBER_SETTLE_MS)
+            inbox.trySend(EngineMessage.RenumberRestart)
         }
     }
 
     // A fresh handshake on the same link rebinds the identity the way a reconnect does.
     private fun restartSessionForRenumber() {
+        // Work begun under the old identity, an open editSettings among it, must not continue.
+        connectionGeneration.incrementAndGet()
         clearNodeDbRefresh()
         sessionReceive?.end()
         resetSessionState()
@@ -3087,10 +3127,10 @@ internal class MeshEngine(
     }
 
     private fun pumpPacedQueue() {
-        if (queueWrite != null || handshakeStage != HandshakeStage.Ready || renumberedTo != null) return
+        if (queueWrite != null || handshakeStage != HandshakeStage.Ready) return
         while (pacedQueue.isNotEmpty()) {
             val send = pacedQueue.removeFirst()
-            val packet = preparePacketForSend(send.packet, send.id.raw)
+            val packet = retargetRenumbered(preparePacketForSend(send.packet, send.id.raw))
             if (!trySendToRadio(ToRadio.Builder().also { it.packet = packet }.build(), pacedSend = send)) {
                 finishPaced(send, SendState.Failed(SendFailure.Disconnected))
                 send.dispatch.complete(false)
@@ -3187,14 +3227,11 @@ internal class MeshEngine(
 
     private fun finishPaced(send: EngineMessage.PacedSend, state: SendState) {
         if (heldRenumberAck === send) heldRenumberAck = null
-        if (renumberDeferredSend === send) {
-            renumberDeferredSend = null
-            inbox.trySend(EngineMessage.RenumberRestart)
-        }
         pacedSends.remove(send.id)
         pacedReservations.decrementAndGet()
         pendingSends.remove(send.id)
         ackTimeoutJobs.remove(send.id)?.cancel()
+        maybeRestartForRenumber()
         send.state.value = state
     }
 
@@ -3620,9 +3657,26 @@ internal class MeshEngine(
                 }
             }
 
-            is NodeWrite.Flags -> replaceNode(write.node) { wb ->
-                write.favorite?.let { wb.is_favorite = it }
-                write.ignored?.let { wb.is_ignored = it }
+            is NodeWrite.Flags -> {
+                // set_ignored_node creates an unknown node and erases its position and telemetry.
+                val nodeId = NodeId(write.node)
+                if (write.ignored == true && nodeId !in meshState.nodes && write.node != myNodeNum) {
+                    val created = NodeInfo.Builder().also { wb ->
+                        wb.num = write.node
+                        wb.is_ignored = true
+                    }.build()
+                    meshState = meshState.withNodes(meshState.nodes + (nodeId to created))
+                    emitNodeChangeOrLog(NodeChange.Added(created))
+                    return
+                }
+                replaceNode(write.node) { wb ->
+                    write.favorite?.let { wb.is_favorite = it }
+                    write.ignored?.let { wb.is_ignored = it }
+                    if (write.ignored == true) {
+                        wb.position = null
+                        wb.device_metrics = null
+                    }
+                }
             }
 
             is NodeWrite.Owner -> replaceNode(myNodeNum) { wb ->
@@ -3684,7 +3738,10 @@ internal class MeshEngine(
             list.toList()
         }
         val updated = channelsState.value
-        updated?.let { sessionReceive?.channelsChanged(it) }
+        updated?.let {
+            meshState = meshState.withChannels(it)
+            sessionReceive?.channelsChanged(it)
+        }
         if (updated != null) {
             engineScope?.launch {
                 try {
@@ -3907,6 +3964,9 @@ internal class MeshEngine(
         // How long one transport write may take before the link counts as failed. Separate from
         // sendTimeout, which bounds the wait for a routing ACK.
         val TRANSPORT_WRITE_TIMEOUT = 30.seconds
+
+        // How long the paced queue stays empty after a renumber before the handshake restarts.
+        const val RENUMBER_SETTLE_MS = 1_000L
 
         // name of the legacy secondary channel used for remote admin when PKC keys are
         // unavailable. Matched case-insensitively against ChannelSettings.name.

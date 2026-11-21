@@ -58,7 +58,7 @@ public class FakeRadioTransport(
      */
     public val autoHandshake: Boolean = false,
     /** `MyNodeInfo.my_node_num` to report during the auto-handshake. */
-    public val nodeNum: Int = DEFAULT_FAKE_NODE_NUM,
+    public var nodeNum: Int = DEFAULT_FAKE_NODE_NUM,
     /**
      * When `true`, answers every outbound `MeshPacket` with an accepting `QueueStatus`, as firmware
      * does, so paced sends release without the caller injecting queue evidence.

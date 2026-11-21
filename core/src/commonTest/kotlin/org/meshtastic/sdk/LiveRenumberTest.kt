@@ -43,8 +43,7 @@ class LiveRenumberTest {
 
         transport.injectRoutingAck(write.id, fromNode = RENUMBERED)
         runCurrent()
-        transport.injectFrame(myInfo(RENUMBERED))
-        runCurrent()
+        renumber(transport)
 
         assertIs<AdminResult.Success<Unit>>(save.await())
         assertSessionRestarted(transport, events)
@@ -58,7 +57,8 @@ class LiveRenumberTest {
         runCurrent()
         val write = lastAdminWrite(transport)
 
-        transport.injectFrame(myInfo(RENUMBERED))
+        renumber(transport)
+        advanceTimeBy(5_000)
         runCurrent()
         assertEquals(1, stage1Requests(transport), "the restart waits for the write to settle")
 
@@ -82,15 +82,80 @@ class LiveRenumberTest {
         client.disconnect()
     }
 
+    @Test
+    fun writesQueuedAfterARenumberGoToTheNewNumberBeforeTheRestart() = runTest {
+        val (transport, client, events) = connected()
+        renumber(transport)
+
+        val edit = async { client.admin.editSettings { setConfig(regionUs) } }
+        runCurrent()
+        fun admin() = transport.outboundPackets().filter { it.decoded?.portnum == PortNum.ADMIN_APP }
+        fun isCommit(p: MeshPacket) =
+            org.meshtastic.proto.AdminMessage.ADAPTER.decode(p.decoded!!.payload).commit_edit_settings == true
+        val acked = mutableSetOf<Int>()
+        while (admin().none(::isCommit)) {
+            val pending = admin().filter { it.want_ack && it.id !in acked }
+            check(pending.isNotEmpty()) { "batch stalled: ${admin()}" }
+            for (p in pending) {
+                acked += p.id
+                transport.injectRoutingAck(p.id, fromNode = RENUMBERED)
+            }
+            runCurrent()
+        }
+        val commit = admin().single(::isCommit)
+        val admin = admin()
+        assertTrue(admin.takeLast(3).all { it.to == RENUMBERED }, "begin, write and commit all go to the new number")
+        assertEquals(RENUMBERED, commit.to, "the commit is addressed to the new number")
+        assertEquals(1, stage1Requests(transport), "no restart while the batch is open")
+        transport.injectRoutingAck(commit.id, fromNode = RENUMBERED)
+        runCurrent()
+
+        assertIs<AdminResult.Success<Unit>>(edit.await())
+        assertSessionRestarted(transport, events)
+        client.disconnect()
+    }
+
+    @Test
+    fun aWriteStartedWhileTheRenumberingWriteAwaitsItsAckGoesToTheNewNumber() = runTest {
+        val (transport, client, events) = connected()
+        val first = async { client.admin.setConfig(regionUs) }
+        runCurrent()
+        val firstWrite = lastAdminWrite(transport)
+        renumber(transport)
+
+        val second = async { client.admin.setConfig(routerRole) }
+        runCurrent()
+        val secondWrite = lastAdminWrite(transport)
+        assertTrue(secondWrite.id != firstWrite.id)
+        assertEquals(RENUMBERED, secondWrite.to)
+        transport.injectRoutingAck(secondWrite.id, fromNode = RENUMBERED)
+        transport.injectRoutingAck(firstWrite.id, fromNode = RENUMBERED)
+        runCurrent()
+
+        assertIs<AdminResult.Success<Unit>>(first.await())
+        assertIs<AdminResult.Success<Unit>>(second.await())
+        assertSessionRestarted(transport, events)
+        client.disconnect()
+    }
+
+    // Firmware reports the new number from here on, the re-handshake included.
+    private fun TestScope.renumber(transport: FakeRadioTransport) {
+        transport.nodeNum = RENUMBERED
+        transport.injectFrame(myInfo(RENUMBERED))
+        runCurrent()
+    }
+
     private fun TestScope.assertSessionRestarted(transport: FakeRadioTransport, events: List<RadioSessionEvent>) {
-        // The handshake settles on timers.
-        advanceTimeBy(2_000)
+        // The restart waits for the paced queue to stay empty, then the handshake settles on timers.
+        advanceTimeBy(5_000)
         runCurrent()
         assertEquals(2, stage1Requests(transport), "a fresh Stage 1 on the same link")
         val ended = events.indexOfFirst { it is RadioSessionEvent.Ended }
         val readies = events.withIndex().filter { it.value is RadioSessionEvent.Ready }
         assertTrue(ended > 0 && readies.size == 2 && readies[1].index > ended, "Ended then a new Ready: $events")
         assertTrue(readies[1].value.sessionId > readies[0].value.sessionId)
+        val rebound = readies[1].value as RadioSessionEvent.Ready
+        assertEquals(RENUMBERED, rebound.myInfo?.my_node_num, "the new session carries the new identity")
     }
 
     private suspend fun TestScope.connected(): Triple<FakeRadioTransport, RadioClient, MutableList<RadioSessionEvent>> {
@@ -125,6 +190,10 @@ class LiveRenumberTest {
     private fun myInfo(num: Int) = FromRadio.Builder().also { wb ->
         wb.my_info = MyNodeInfo.Builder().also { it.my_node_num = num }.build()
     }.build().toFrame()
+
+    private val routerRole = Config.Builder().also { wb ->
+        wb.device = Config.DeviceConfig.Builder().also { it.role = Config.DeviceConfig.Role.ROUTER }.build()
+    }.build()
 
     private val regionUs = Config.Builder().also { wb ->
         wb.lora = Config.LoRaConfig.Builder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()

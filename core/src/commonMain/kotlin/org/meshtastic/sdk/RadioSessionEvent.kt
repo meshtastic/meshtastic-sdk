@@ -80,7 +80,8 @@ public sealed interface RadioSessionEvent {
     ) : RadioSessionEvent
 
     /**
-     * A [MeshEvent] from this session, in order with its packets. [MeshEvent.LockdownStatusChanged] arrives
+     * A [MeshEvent] raised after [Ready], in order with its packets. [MeshEvent.IdentityRebound] fires inside the
+     * handshake, so it never arrives here; [Ready.myInfo] carries the identity. [MeshEvent.LockdownStatusChanged] arrives
      * as [Lockdown] instead; [MeshEvent.QueueStatusChanged] and [MeshEvent.PacketsDropped] stay on
      * [RadioClient.events], since queue receipts settle handles and this stream reports its own loss.
      */

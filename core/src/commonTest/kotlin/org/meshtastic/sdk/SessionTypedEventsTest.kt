@@ -11,6 +11,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.encodeUtf8
@@ -30,6 +32,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /** The typed events a session consumer projects from, and their order relative to packets. */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -47,6 +50,27 @@ class SessionTypedEventsTest {
             it is RadioSessionEvent.NodeChanged && (it.change as? NodeChange.Added)?.node?.num == PEER
         }
         assertTrue(packetIndex >= 0 && nodeIndex > packetIndex, "packet then node change: $events")
+        client.disconnect()
+    }
+
+    @Test
+    fun aPacketFromAnOfflineNodeComesBeforeItsCameOnline() = runTest {
+        val (transport, client, events) = connected(presenceTimeout = 1.seconds)
+        transport.injectPacket(textFrom(PEER, id = 901))
+        runCurrent()
+        advanceTimeBy(30.seconds)
+        runCurrent()
+        assertTrue(events.any { it is RadioSessionEvent.NodeChanged && it.change is NodeChange.WentOffline })
+
+        transport.injectPacket(textFrom(PEER, id = 902))
+        runCurrent()
+
+        val packetIndex = events.indexOfFirst { it is RadioSessionEvent.Packet && it.packet.id == 902 }
+        val onlineIndex = events.indexOfFirst {
+            it is RadioSessionEvent.NodeChanged &&
+                it.change is NodeChange.CameOnline
+        }
+        assertTrue(packetIndex >= 0 && onlineIndex > packetIndex, "packet then CameOnline: $events")
         client.disconnect()
     }
 
@@ -112,7 +136,9 @@ class SessionTypedEventsTest {
         val events: MutableList<RadioSessionEvent>,
     )
 
-    private suspend fun TestScope.connected(): Connected {
+    private suspend fun TestScope.connected(
+        presenceTimeout: kotlin.time.Duration = kotlin.time.Duration.INFINITE,
+    ): Connected {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:typed-events"),
             frames = listOf(
@@ -145,6 +171,10 @@ class SessionTypedEventsTest {
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .sessionReceive()
+            .clock(object : kotlin.time.Clock {
+                override fun now() = kotlin.time.Instant.fromEpochMilliseconds(currentTime)
+            })
+            .apply { if (presenceTimeout.isFinite()) presenceTimeout(presenceTimeout) }
             .build()
         val events = mutableListOf<RadioSessionEvent>()
         backgroundScope.launch { client.sessionEvents?.collect { events += it } }
