@@ -252,4 +252,9 @@ internal sealed interface NodeWrite {
     data class Flags(val node: Int, val favorite: Boolean? = null, val ignored: Boolean? = null) : NodeWrite
 
     data class Owner(val user: org.meshtastic.proto.User) : NodeWrite
+
+    data class ToggleMuted(val node: Int) : NodeWrite
+
+    /** A fixed position for our own node; `null` removes it. */
+    data class FixedPosition(val position: org.meshtastic.proto.Position?) : NodeWrite
 }

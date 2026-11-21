@@ -130,6 +130,41 @@ class SessionTypedEventsTest {
         client.disconnect()
     }
 
+    @Test
+    fun anAckedMuteToggleFlipsTheNodesMutedFlag() = runTest {
+        val (transport, client, events) = connected()
+        transport.injectFrame(
+            FromRadio.Builder().also { wb ->
+                wb.node_info = NodeInfo.Builder().also { it.num = PEER }.build()
+            }.build().toFrame(),
+        )
+        runCurrent()
+
+        ackLastAdmin(transport) { client.admin.toggleMuted(NodeId(PEER)) }
+
+        val muted = assertIs<NodeChange.Updated>(assertIs<RadioSessionEvent.NodeChanged>(events.last()).change)
+        assertTrue(muted.node.is_muted)
+        client.disconnect()
+    }
+
+    @Test
+    fun anAckedFixedPositionMovesOurNodeAndSetsTheConfigFlag() = runTest {
+        val (transport, client, events) = connected()
+        val position = org.meshtastic.proto.Position.Builder().also { wb ->
+            wb.latitude_i = 377_749_000
+            wb.longitude_i = -1_224_194_000
+        }.build()
+
+        ackLastAdmin(transport) { client.admin.setFixedPosition(position) }
+
+        val moved = events.filterIsInstance<RadioSessionEvent.NodeChanged>().map { it.change }
+            .filterIsInstance<NodeChange.Updated>().last { it.node.num == LOCAL }
+        assertEquals(377_749_000, moved.node.position?.latitude_i)
+        val config = assertIs<RadioSessionEvent.ConfigChanged>(events.last())
+        assertEquals(true, config.bundle.configs.firstNotNullOf { it.position }.fixed_position)
+        client.disconnect()
+    }
+
     private data class Connected(
         val transport: FakeRadioTransport,
         val client: RadioClient,

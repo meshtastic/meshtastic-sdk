@@ -222,17 +222,17 @@ internal class AdminApiImpl(
 
     override suspend fun toggleMuted(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.toggle_muted_node = node.raw }.build())
-    }
+    }.alsoApplyLocally(NodeWrite.ToggleMuted(node.raw))
 
     // ── Position ────────────────────────────────────────────────────────────
 
     override suspend fun setFixedPosition(position: Position): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build())
-    }
+    }.alsoApplyLocally(NodeWrite.FixedPosition(position))
 
     override suspend fun removeFixedPosition(): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build())
-    }
+    }.alsoApplyLocally(NodeWrite.FixedPosition(null))
 
     // ── Device UI Config ────────────────────────────────────────────────────
 
@@ -721,12 +721,14 @@ internal class AdminApiImpl(
             enqueueOrThrow(msg)
             nodeWrites += NodeWrite.Flags(node.raw, ignored = ignored)
         }
-        override suspend fun setFixedPosition(position: Position) = enqueueOrThrow(
-            AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build(),
-        )
-        override suspend fun removeFixedPosition() = enqueueOrThrow(
-            AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build(),
-        )
+        override suspend fun setFixedPosition(position: Position) {
+            enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build())
+            nodeWrites += NodeWrite.FixedPosition(position)
+        }
+        override suspend fun removeFixedPosition() {
+            enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build())
+            nodeWrites += NodeWrite.FixedPosition(null)
+        }
 
         /**
          * Enqueue an admin packet inside an `editSettings` block. `want_ack = false` because the

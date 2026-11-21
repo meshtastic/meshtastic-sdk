@@ -3679,6 +3679,24 @@ internal class MeshEngine(
                 }
             }
 
+            is NodeWrite.ToggleMuted -> replaceNode(write.node) { wb -> wb.is_muted = !wb.is_muted }
+
+            // set_fixed_position stores the position on our node and sets fixed_position;
+            // remove_fixed_position only clears the flag.
+            is NodeWrite.FixedPosition -> {
+                write.position?.let { position -> replaceNode(myNodeNum) { wb -> wb.position = position } }
+                val bundle = configBundleState.value ?: return
+                val current =
+                    bundle.configs.firstNotNullOfOrNull { it.position }
+                        ?: org.meshtastic.proto.Config.PositionConfig.Builder().build()
+                val fixed = write.position != null
+                if (current.fixed_position == fixed) return
+                val positionConfig = org.meshtastic.proto.Config.Builder().also { wb ->
+                    wb.position = current.newBuilder().also { it.fixed_position = fixed }.build()
+                }.build()
+                commitConfigBundle(bundle.copy(configs = mergeConfigs(bundle.configs, listOf(positionConfig))))
+            }
+
             is NodeWrite.Owner -> replaceNode(myNodeNum) { wb ->
                 val o = write.user
                 val user = wb.user?.newBuilder() ?: org.meshtastic.proto.User.Builder()
