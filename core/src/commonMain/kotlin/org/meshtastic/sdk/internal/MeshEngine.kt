@@ -213,6 +213,9 @@ internal class MeshEngine(
     private var engineScope: CoroutineScope? = null
     private var frameReaderJob: Job? = null
     private var receiveGeneration = 0L
+
+    // receiveGeneration, readable by the outbound writer.
+    private val writeGeneration = atomic(0L)
     private var stage1DumpStarted = false
     private var nodeDbRefreshDumpStarted = false
 
@@ -394,12 +397,16 @@ internal class MeshEngine(
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
             for ((frame, link, paced, generation) in outbound) {
                 if (paced != null && paced.generation != readySendGeneration.value) continue
+                // A frame queued for a replaced link must not go out on its successor.
+                if (generation != writeGeneration.value) continue
                 try {
                     if (link == null) {
                         logProtocolTx(frame)
                         // A stalled write would hold the paced queue while inbound frames keep the watchdog quiet.
-                        withTimeoutOrNull(sendTimeout) { transport.send(frame) }
-                            ?: throw MeshtasticException.Transport("Transport write timed out after $sendTimeout")
+                        withTimeoutOrNull(TRANSPORT_WRITE_TIMEOUT) { transport.send(frame) }
+                            ?: throw MeshtasticException.Transport(
+                                "Transport write timed out after $TRANSPORT_WRITE_TIMEOUT",
+                            )
                     } else {
                         writeLockdownFrame(frame, link)
                     }
@@ -505,9 +512,9 @@ internal class MeshEngine(
     }
 
     fun requestNodeDbRefresh(): Boolean {
-        val generation = connectionGeneration.value
-        return sessionReceive != null && isConnectedAtGeneration(generation) &&
-            inbox.trySend(EngineMessage.RefreshNodeDb(generation)).isSuccess
+        // The link at admission: a request must not start a download on a link that replaced it.
+        val link = readySendGeneration.value ?: return false
+        return sessionReceive != null && inbox.trySend(EngineMessage.RefreshNodeDb(link)).isSuccess
     }
 
     /**
@@ -751,7 +758,11 @@ internal class MeshEngine(
             is EngineMessage.Disconnect -> handleDisconnect(msg)
 
             is EngineMessage.RefreshNodeDb -> {
-                if (isConnectedAtGeneration(msg.generation)) startNodeDbRefresh()
+                if (handshakeStage == HandshakeStage.Ready &&
+                    msg.generation == readySendGeneration.value
+                ) {
+                    startNodeDbRefresh()
+                }
             }
 
             is EngineMessage.NodeDbRefreshTimeout -> {
@@ -1030,6 +1041,7 @@ internal class MeshEngine(
      */
     private fun startStage1Handshake() {
         val generation = ++receiveGeneration
+        writeGeneration.value = generation
         sessionReceive?.begin(generation)
         startFrameReader(generation)
 
@@ -3525,6 +3537,10 @@ internal class MeshEngine(
 
         // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
         const val HANDSHAKE_PACKET_BUFFER_CAP = 64
+
+        // How long one transport write may take before the link counts as failed. Separate from
+        // sendTimeout, which bounds the wait for a routing ACK.
+        val TRANSPORT_WRITE_TIMEOUT = 30.seconds
 
         // name of the legacy secondary channel used for remote admin when PKC keys are
         // unavailable. Matched case-insensitively against ChannelSettings.name.

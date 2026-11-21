@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.internal
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -532,10 +533,16 @@ internal class AdminApiImpl(
             isLocalTarget() && engine.linkDropsOnRestartCommands && adminMsg.dropsLinkBeforeAnswering()
         val written = if (appliedOnLinkLoss) CompletableDeferred<Unit>() else null
         val handle = enqueuePacedAdmin(adminMsg, wantAck = true, written = written)
-        val terminal = withTimeoutOrNull(rpcTimeout) {
-            handle.message.state.first {
-                it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
+        val terminal = try {
+            withTimeoutOrNull(rpcTimeout) {
+                handle.message.state.first {
+                    it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
+                }
             }
+        } catch (e: CancellationException) {
+            // A write still queued must not run after its caller is gone.
+            handle.message.cancel()
+            throw e
         }
         val appliedBeforeLinkLoss = written?.isCompleted == true && when (terminal) {
             null -> !engine.isConnectedAtGeneration(generation)
@@ -739,8 +746,15 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
+    // ERRNO_NO_INTERFACES and ERRNO_DISABLED (firmware MeshTypes.h): no radio to send on, so retrying cannot help.
+    is SendFailure.QueueRejected -> if (reason.res == ERRNO_NO_INTERFACES || reason.res == ERRNO_DISABLED) {
+        AdminResult.Failed(Routing.Error.NO_INTERFACE)
+    } else {
+        AdminResult.RateLimited
+    }
+
     // The SDK paced queue or the firmware transmit queue is full; the link is up, so back off and retry.
-    SendFailure.QueueFull, is SendFailure.QueueRejected, SendFailure.RateLimited -> AdminResult.RateLimited
+    SendFailure.QueueFull, SendFailure.RateLimited -> AdminResult.RateLimited
 
     is SendFailure.Other -> when (reason.routingError) {
         Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
@@ -759,3 +773,6 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
 @Suppress("UNCHECKED_CAST")
 private fun <T> AdminResult<*>.cast(): AdminResult<T> = this as AdminResult<T>
+
+private const val ERRNO_NO_INTERFACES = 33
+private const val ERRNO_DISABLED = 34

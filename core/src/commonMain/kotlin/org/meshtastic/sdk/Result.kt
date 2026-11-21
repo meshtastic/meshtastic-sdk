@@ -305,7 +305,8 @@ public sealed interface AdminResult<out T> {
      * The request was not accepted for lack of capacity; back off before retrying.
      *
      * From `Routing.Error.RATE_LIMIT_EXCEEDED`, a full firmware transmit queue, or a full SDK paced
-     * queue ([SendFailure.QueueFull]) while the link is up.
+     * queue ([SendFailure.QueueFull]) while the link is up. A radio that is disabled or has no
+     * interface returns [Failed] with `Routing.Error.NO_INTERFACE` instead, since waiting cannot help.
      */
     public data object RateLimited : AdminResult<Nothing>
 
