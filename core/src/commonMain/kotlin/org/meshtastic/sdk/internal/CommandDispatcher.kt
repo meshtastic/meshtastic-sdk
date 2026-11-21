@@ -46,9 +46,15 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
 
     private data class Pending(
         val kind: ResponseKind<*>,
+        val expectedSender: Int?,
         val deferred: CompletableDeferred<AdminResult<Any?>>,
         var timeoutJob: Job? = null,
     )
+
+    fun ownsRoutingFailure(requestId: Int, sender: Int, localNode: Int): Boolean {
+        val entry = pending[requestId] ?: return false
+        return entry.expectedSender == null || entry.expectedSender == sender || sender == 0 || sender == localNode
+    }
 
     /** Number of in-flight pending responses. Test/diagnostic use only. */
     fun size(): Int = pending.size
@@ -63,14 +69,19 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
      * timer fires, or the engine winds down. Use [attachTimeoutJob] after this returns so the
      * timer can be cancelled on early completion.
      */
-    fun register(requestId: Int, kind: ResponseKind<*>, deferred: CompletableDeferred<AdminResult<Any?>>) {
+    fun register(
+        requestId: Int,
+        kind: ResponseKind<*>,
+        deferred: CompletableDeferred<AdminResult<Any?>>,
+        expectedSender: Int? = null,
+    ) {
         // Cancel any prior pending under the same id (would be a wire-id collision; defensive).
         pending.remove(requestId)?.let {
             it.timeoutJob?.cancel()
             it.deferred.complete(AdminResult.Timeout)
             logger.warn(TAG) { "RPC id=$requestId replaced — prior entry timed out (wire-id collision)" }
         }
-        pending[requestId] = Pending(kind, deferred)
+        pending[requestId] = Pending(kind, expectedSender, deferred)
         logger.debug(TAG) { "RPC registered id=$requestId kind=$kind" }
     }
 
@@ -89,6 +100,11 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         val requestId = decoded.request_id
         if (requestId == 0) return false
         val entry = pending[requestId] ?: return false
+        if (entry.expectedSender != null &&
+            (entry.expectedSender != packet.from || decoded.portnum != PortNum.ADMIN_APP)
+        ) {
+            return false
+        }
 
         val resolved = when (entry.kind) {
             ResponseKind.AdminConfig -> decodeAdmin(decoded.payload) { it.get_config_response }

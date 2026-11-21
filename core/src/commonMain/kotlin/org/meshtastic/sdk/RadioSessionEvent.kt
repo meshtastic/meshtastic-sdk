@@ -52,6 +52,8 @@ public sealed interface RadioSessionEvent {
         public val sequence: Long,
         /** Decoded mesh packet, in the same form as [RadioClient.packets]. */
         public val packet: MeshPacket,
+        /** The SDK matched this ADMIN_APP response to a request on this link. */
+        public val correlatedAdminResponse: Boolean = false,
     ) : RadioSessionEvent
 
     /** A non-packet envelope received after the SDK handshake, offered when explicitly enabled. */

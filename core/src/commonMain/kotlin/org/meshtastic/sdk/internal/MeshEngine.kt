@@ -246,6 +246,10 @@ internal class MeshEngine(
     private var nextPasskeyGeneration = 0
 
     /** Wire id of an outbound admin request to the key generation it was stamped with; bounded. */
+    private data class ExpectedAdminReply(val sender: Int, val kind: ResponseKind<*>)
+
+    private val adminReplyTargets = linkedMapOf<Int, ExpectedAdminReply>()
+
     private val requestPasskeyGenerations = mutableMapOf<Int, Int>()
 
     /** Public view of [sessionPasskeys] (no key bytes); recomputed by [publishAdminSessions]. */
@@ -810,7 +814,13 @@ internal class MeshEngine(
             return
         }
         // Register before sending so a fast device reply can never race the registration.
-        dispatcher.register(msg.requestId, msg.kind, msg.deferred)
+        val adminTarget = if (msg.packet.decoded?.portnum == PortNum.ADMIN_APP) {
+            msg.packet.to.takeIf { it != 0 } ?: myNodeNum
+        } else {
+            null
+        }
+        dispatcher.register(msg.requestId, msg.kind, msg.deferred, expectedSender = adminTarget)
+        rememberAdminRequest(msg.packet)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
         val encoded = WireCodec.encodeToRadio(
@@ -1656,7 +1666,7 @@ internal class MeshEngine(
             return
         }
 
-        if (adminMsg.get_owner_response != null) {
+        if (adminMsg.get_owner_response != null && (packet.from == 0 || packet.from == myNodeNum)) {
             latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg)
             transitionToReady()
         } else {
@@ -1690,6 +1700,7 @@ internal class MeshEngine(
     private fun clearSessionPasskeys() {
         sessionPasskeys.clear()
         requestPasskeyGenerations.clear()
+        adminReplyTargets.clear()
         adminSessions.value = emptyMap()
     }
 
@@ -1707,21 +1718,49 @@ internal class MeshEngine(
         }
     }
 
-    /**
-     * Whether this admin message is response-shaped (one of the `get_*_response` oneof arms is
-     * set). Mirrors the firmware's `messageIsResponse` classification — only responses carry a
-     * passkey that the *sender* issued.
-     */
-    private fun AdminMessage.isAdminResponse(): Boolean = get_channel_response != null ||
-        get_owner_response != null ||
-        get_config_response != null ||
-        get_module_config_response != null ||
-        get_canned_message_module_messages_response != null ||
-        get_device_metadata_response != null ||
-        get_ringtone_response != null ||
-        get_device_connection_status_response != null ||
-        get_node_remote_hardware_pins_response != null ||
-        get_ui_config_response != null
+    private fun AdminMessage.adminRequestKind(): ResponseKind<*>? = when {
+        get_channel_request != null -> ResponseKind.AdminChannel
+        get_owner_request != null -> ResponseKind.AdminOwner
+        get_config_request != null -> ResponseKind.AdminConfig
+        get_module_config_request != null -> ResponseKind.AdminModuleConfig
+        get_canned_message_module_messages_request != null -> ResponseKind.AdminCannedMessages
+        get_device_metadata_request != null -> ResponseKind.AdminDeviceMetadata
+        get_ringtone_request != null -> ResponseKind.AdminRingtone
+        get_device_connection_status_request != null -> ResponseKind.AdminDeviceConnectionStatus
+        get_node_remote_hardware_pins_request != null -> ResponseKind.AdminRemoteHardwarePins
+        get_ui_config_request != null -> ResponseKind.AdminDeviceUIConfig
+        else -> null
+    }
+
+    private fun AdminMessage.adminResponseKind(): ResponseKind<*>? = when {
+        get_channel_response != null -> ResponseKind.AdminChannel
+        get_owner_response != null -> ResponseKind.AdminOwner
+        get_config_response != null -> ResponseKind.AdminConfig
+        get_module_config_response != null -> ResponseKind.AdminModuleConfig
+        get_canned_message_module_messages_response != null -> ResponseKind.AdminCannedMessages
+        get_device_metadata_response != null -> ResponseKind.AdminDeviceMetadata
+        get_ringtone_response != null -> ResponseKind.AdminRingtone
+        get_device_connection_status_response != null -> ResponseKind.AdminDeviceConnectionStatus
+        get_node_remote_hardware_pins_response != null -> ResponseKind.AdminRemoteHardwarePins
+        get_ui_config_response != null -> ResponseKind.AdminDeviceUIConfig
+        else -> null
+    }
+
+    private fun rememberAdminRequest(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (packet.id == 0 || packet.to == BROADCAST_ADDR || decoded.portnum != PortNum.ADMIN_APP) return
+        val admin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
+        val kind = admin.adminRequestKind() ?: return
+        adminReplyTargets.remove(packet.id)
+        if (adminReplyTargets.size >= ADMIN_REPLY_CAP) adminReplyTargets.remove(adminReplyTargets.keys.first())
+        adminReplyTargets[packet.id] = ExpectedAdminReply(packet.to.takeIf { it != 0 } ?: myNodeNum, kind)
+    }
+
+    private fun recognizesAdminReply(packet: MeshPacket, requestId: Int, admin: AdminMessage): Boolean {
+        val expected = adminReplyTargets[requestId] ?: return false
+        return expected.kind == admin.adminResponseKind() &&
+            (packet.from == expected.sender || (packet.from == 0 && expected.sender == myNodeNum))
+    }
 
     /** Returns the unexpired session passkey for [nodeNum], pruning a stale entry if present. */
     private fun validSessionEntryFor(nodeNum: Int): SessionPasskeyEntry? {
@@ -2101,13 +2140,11 @@ internal class MeshEngine(
         } else {
             null
         }
-        if (adminMsg != null && (decoded.request_id != 0 || adminMsg.isAdminResponse())) {
-            // every admin RESPONSE refreshes the responder's session passkey — latch them all
-            // (keyed per node) so remote admin sessions stay alive without re-seeding.
-            // Requests are excluded: when a remote node administers US, its request carries
-            // the passkey WE issued to it — latching that under the remote's key would poison
-            // our next RPC to that node with a passkey it never issued.
-            latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg, receivedAt)
+        val correlatedAdminResponse = adminMsg != null && recognizesAdminReply(packet, decoded.request_id, adminMsg)
+        if (correlatedAdminResponse) {
+            // Install the key before completing the RPC, so its caller can immediately use the session.
+            latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg, receivedAt)
+            adminReplyTargets.remove(decoded.request_id)
         }
         val connectionStatus = adminMsg?.get_device_connection_status_response
         if (connectionStatus != null && (packet.from == 0 || packet.from == myNodeNum)) {
@@ -2116,7 +2153,12 @@ internal class MeshEngine(
         // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
         // request matching this packet's request_id. Must run before processRoutingAck
         // so a route_reply doesn't get mistakenly classified as a generic Acked send.
-        dispatcher.tryComplete(packet)
+        val response = if (correlatedAdminResponse && packet.from == 0) {
+            packet.newBuilder().also { it.from = myNodeNum }.build()
+        } else {
+            packet
+        }
+        dispatcher.tryComplete(response)
         processRoutingAck(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
@@ -2125,7 +2167,7 @@ internal class MeshEngine(
         // External config change detection: unsolicited admin messages from firmware
         // indicating another client modified channels/config on this device.
         if (adminMsg != null) maybeProcessExternalAdminChange(packet, adminMsg)
-        sessionReceive?.packet(packet)
+        sessionReceive?.packet(packet, correlatedAdminResponse)
     }
 
     /**
@@ -2271,6 +2313,7 @@ internal class MeshEngine(
         // requests don't allocate a MessageHandle, so they wouldn't be in pendingSends.
         val errorReason = routing.error_reason
         if (errorReason != null && errorReason != Routing.Error.NONE &&
+            dispatcher.ownsRoutingFailure(messageId.raw, packet.from, myNodeNum) &&
             dispatcher.tryFailFromRouting(messageId.raw, errorReason)
         ) {
             // Defensive cleanup if a stale pendingSends entry shared the wire id.
@@ -2576,6 +2619,8 @@ internal class MeshEngine(
         lockdownLink.value = null
         readySendGeneration.value = null
         clearPacedSends()
+        clearSessionPasskeys()
+        dispatcher.cancelAll(AdminResult.NodeUnreachable)
         configBundleState.value = null
         lastMqttConnected = null
         clearPendingHandshake()
@@ -2725,6 +2770,7 @@ internal class MeshEngine(
                 continue
             }
 
+            rememberAdminRequest(packet)
             send.state.value = SendState.Sent
             queueWrite = send
             send.dispatch.complete(true)
@@ -2884,6 +2930,7 @@ internal class MeshEngine(
         // Remote ADMIN_APP packets pick up the target's session passkey + PKC routing here
         // (no-op for everything else).
         val packet = preparePacketForSend(msg.packet, wireId)
+        rememberAdminRequest(packet)
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
@@ -3356,6 +3403,7 @@ internal class MeshEngine(
         private const val TAG = "MeshEngine"
         private const val REASON_IDENTITY_MISMATCH = "identity_mismatch"
         private const val REASON_NODE_RENUMBERED = "node_renumbered"
+        private const val ADMIN_REPLY_CAP = 128
         private const val REQUEST_GENERATION_CAP = 64
         private const val MAX_PACED_SENDS = 128
         private val PACED_QUEUE_TIMEOUT = 5.seconds

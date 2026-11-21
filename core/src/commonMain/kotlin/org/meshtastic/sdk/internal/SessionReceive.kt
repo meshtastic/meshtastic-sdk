@@ -44,8 +44,10 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
         offer(RadioSessionEvent.Lockdown(sessionId, ++sequence, status))
     }
 
-    fun packet(packet: MeshPacket) {
-        if (delivering) delivering = offer(RadioSessionEvent.Packet(sessionId, ++sequence, packet))
+    fun packet(packet: MeshPacket, correlatedAdminResponse: Boolean) {
+        if (delivering) {
+            delivering = offer(RadioSessionEvent.Packet(sessionId, ++sequence, packet, correlatedAdminResponse))
+        }
     }
 
     fun envelope(envelope: FromRadio) {

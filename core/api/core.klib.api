@@ -999,8 +999,10 @@ sealed interface org.meshtastic.sdk/RadioSessionEvent { // org.meshtastic.sdk/Ra
     }
 
     final class Packet : org.meshtastic.sdk/RadioSessionEvent { // org.meshtastic.sdk/RadioSessionEvent.Packet|null[0]
-        constructor <init>(kotlin/Long, kotlin/Long, org.meshtastic.proto/MeshPacket) // org.meshtastic.sdk/RadioSessionEvent.Packet.<init>|<init>(kotlin.Long;kotlin.Long;org.meshtastic.proto.MeshPacket){}[0]
+        constructor <init>(kotlin/Long, kotlin/Long, org.meshtastic.proto/MeshPacket, kotlin/Boolean = ...) // org.meshtastic.sdk/RadioSessionEvent.Packet.<init>|<init>(kotlin.Long;kotlin.Long;org.meshtastic.proto.MeshPacket;kotlin.Boolean){}[0]
 
+        final val correlatedAdminResponse // org.meshtastic.sdk/RadioSessionEvent.Packet.correlatedAdminResponse|{}correlatedAdminResponse[0]
+            final fun <get-correlatedAdminResponse>(): kotlin/Boolean // org.meshtastic.sdk/RadioSessionEvent.Packet.correlatedAdminResponse.<get-correlatedAdminResponse>|<get-correlatedAdminResponse>(){}[0]
         final val packet // org.meshtastic.sdk/RadioSessionEvent.Packet.packet|{}packet[0]
             final fun <get-packet>(): org.meshtastic.proto/MeshPacket // org.meshtastic.sdk/RadioSessionEvent.Packet.packet.<get-packet>|<get-packet>(){}[0]
         final val sequence // org.meshtastic.sdk/RadioSessionEvent.Packet.sequence|{}sequence[0]
@@ -1011,7 +1013,8 @@ sealed interface org.meshtastic.sdk/RadioSessionEvent { // org.meshtastic.sdk/Ra
         final fun component1(): kotlin/Long // org.meshtastic.sdk/RadioSessionEvent.Packet.component1|component1(){}[0]
         final fun component2(): kotlin/Long // org.meshtastic.sdk/RadioSessionEvent.Packet.component2|component2(){}[0]
         final fun component3(): org.meshtastic.proto/MeshPacket // org.meshtastic.sdk/RadioSessionEvent.Packet.component3|component3(){}[0]
-        final fun copy(kotlin/Long = ..., kotlin/Long = ..., org.meshtastic.proto/MeshPacket = ...): org.meshtastic.sdk/RadioSessionEvent.Packet // org.meshtastic.sdk/RadioSessionEvent.Packet.copy|copy(kotlin.Long;kotlin.Long;org.meshtastic.proto.MeshPacket){}[0]
+        final fun component4(): kotlin/Boolean // org.meshtastic.sdk/RadioSessionEvent.Packet.component4|component4(){}[0]
+        final fun copy(kotlin/Long = ..., kotlin/Long = ..., org.meshtastic.proto/MeshPacket = ..., kotlin/Boolean = ...): org.meshtastic.sdk/RadioSessionEvent.Packet // org.meshtastic.sdk/RadioSessionEvent.Packet.copy|copy(kotlin.Long;kotlin.Long;org.meshtastic.proto.MeshPacket;kotlin.Boolean){}[0]
         final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/RadioSessionEvent.Packet.equals|equals(kotlin.Any?){}[0]
         final fun hashCode(): kotlin/Int // org.meshtastic.sdk/RadioSessionEvent.Packet.hashCode|hashCode(){}[0]
         final fun toString(): kotlin/String // org.meshtastic.sdk/RadioSessionEvent.Packet.toString|toString(){}[0]
