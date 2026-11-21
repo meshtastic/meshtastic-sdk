@@ -384,10 +384,12 @@ Under `69421`, Stage 2 sends rows 1 to 3, then row 9 (`OTHER_NODEINFOS` × N), t
 3. Between the Stage 1 sentinel and the Stage 2 trigger the client must send `ToRadio.heartbeat` and should wait about 100 ms on each side of it (Android `HandshakeStateMachine`: `delay(100); heartbeatSender.send(); delay(100)`). The wait lets the node's task queue drain before NodeDB streaming starts.
 4. After Stage 2 the client should send `AdminMessage(get_owner_request, want_response = true)`. The reply carries the `session_passkey` that state-changing admin requests need (§13).
 5. `FromRadio.rebooted = true` is a forced disconnect: clear session state and run both stages again.
-6. When a TCP or serial client disconnects, the node resets its `config_nonce` to `0` and clears session state, so a reconnect runs both stages.
+6. When a TCP or serial client disconnects, the node resets its `config_nonce` to `0` and clears session state, so a reconnect runs both stages. The SDK treats TCP peer EOF as a transport failure.
 7. Outbound packets queued in the node's router during the handshake are sent after `config_complete_id`. Incoming `MqttClientProxyMessage` from the client is dropped with a warning log during the handshake.
 
 ### Node DB after the handshake
+
+A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
 
 After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
 
@@ -764,7 +766,9 @@ message QueueStatus {
 }
 ```
 
-The SDK correlates `queue_status` by `mesh_packet_id`: `res` 0 or 35 marks the send `Sent`, any other value fails it at once with `SendFailure.QueueRejected(res)` instead of waiting out the ACK timer. A status with `mesh_packet_id == 0` is ignored. The SDK does not throttle on `free`; the node's queue is small (about 16 packets), so a bulk sender paces itself against `QueueRejected`. Every `queue_status` after the handshake also surfaces as `MeshEvent.QueueStatusChanged`.
+The SDK correlates `queue_status` by `mesh_packet_id`: `res` 0 or 35 marks the send `Sent`, any other value fails it at once with `SendFailure.QueueRejected(res)` instead of waiting out the ACK timer. A status with `mesh_packet_id == 0` is ignored. Every `queue_status` after the handshake also surfaces as `MeshEvent.QueueStatusChanged`.
+
+Firmware does not answer every written packet reliably: its to-phone status queue holds two entries and discards the oldest when full (`MAX_RX_QUEUESTATUS_TOPHONE` in `mesh-pb-constants.h`, `MeshService::sendQueueStatusToPhone`), so in a burst the client sees only the last couple. The transmit queue holds 16 packets (`MAX_TX_QUEUE` in `RadioInterface.h`), and a packet addressed to the node itself is delivered through `Router::sendLocal` without entering it. `RadioClient.send` writes at once and does not throttle on `free`, so a bulk sender paces itself against `QueueRejected`. `RadioClient.sendPaced` and every acked admin write keep one packet in flight: the next is written only after the previous one's status or a five-second receipt timeout, so paced sends alone cannot overrun that two-entry queue and each gets its own `QueueReceipt`. Ordinary sends and heartbeats written meanwhile add statuses of their own, so a paced send can still end `QueueReceipt.Unconfirmed`; callers handle it.
 
 ### Packet ID generation
 
@@ -871,7 +875,7 @@ The SDK keeps passkeys in memory only and drops them when the connection ends or
 
 The SDK exposes this as `AdminApi.editSettings { }` and `AdminApi.batch { }`. If the block throws or is cancelled, the SDK still closes the transaction the node accepted and keeps the original failure, but never sends the commit on a connection other than the one `begin_edit_settings` went out on. Edits made through `admin.forNode(dest)` never change `RadioClient.channels`, `RadioClient.configBundle` or device storage, which describe the connected node.
 
-> **Warning:** firmware calls `disableBluetooth()` on `commit_edit_settings`, before saving, which drops a BLE connection. The session ends; it comes back on its own only when `RadioClient.Builder.autoReconnect(...)` is enabled. TCP and serial are unaffected.
+> **Warning:** firmware calls `disableBluetooth()` on `commit_edit_settings`, before saving, which drops a BLE connection. The session ends; it comes back on its own only when `RadioClient.Builder.autoReconnect(...)` is enabled. TCP and serial are unaffected. Local delivery runs the commit handler before firmware sends the QueueStatus (`MeshService.cpp`), so over BLE neither it nor an ACK arrives. The same holds outside a transaction for a `set_config` or `set_module_config` that needs a reboot, the factory and NodeDB resets and `restore_preferences`; `enter_dfu_mode_request` jumps to the bootloader without answering. On a transport with `RadioTransport.linkDropsOnRestartCommands` (BLE), such a command to the connected node that the transport wrote before the link dropped is reported as `AdminResult.Success`. Acked admin writes, a transaction's included, go through the paced send queue, one in flight until its QueueStatus or ACK, because the NimBLE inbound queue holds three packets and drops the rest (`NimbleBluetooth.cpp`).
 
 ### Managed mode (`is_managed`)
 

@@ -62,6 +62,16 @@ public interface AdminApi {
      */
     public fun forNode(dest: NodeId): AdminApi
 
+    /**
+     * Return an [AdminApi] with the same target whose calls wait up to [timeout] for the device's
+     * answer, instead of the client's `rpcTimeout`. Use it for a multi-hop remote read whose reply
+     * can legitimately take longer than a local round-trip.
+     *
+     * @param timeout how long each call waits for its response or ACK
+     * @since 0.3.0
+     */
+    public fun withRpcTimeout(timeout: Duration): AdminApi
+
     // ── Device info ─────────────────────────────────────────────────────────
 
     /**
@@ -243,6 +253,7 @@ public interface AdminApi {
      * Provision, unlock, or lock the device's storage lockdown
      * (`MESHTASTIC_LOCKDOWN` hardened firmware builds only).
      *
+     * A protected radio can request authentication before the client reaches Connected.
      * The device reports its current state via [MeshEvent.LockdownStatusChanged] — observe that to
      * decide which [LockdownAuth] to send and to learn the outcome:
      * - **Provision / unlock:** set [LockdownAuth.passphrase] (1–32 bytes). On success the device
@@ -311,14 +322,14 @@ public interface AdminApi {
     /**
      * Wipe the device's NodeDB, forcing a fresh discovery cycle on the mesh.
      *
-     * The firmware always preserves favorite-marked entries during the wipe (this is
-     * firmware-enforced behavior). The `nodedb_reset` proto field uses proto3 semantics where
-     * only `true` can be encoded — a "wipe everything including favorites" mode is not
-     * available through this command.
+     * `nodedb_reset` is a oneof member, so `false` is sent and means favorites are wiped too.
+     * Firmware keeps favorites regardless on the `CLIENT_BASE`, `ROUTER` and `ROUTER_LATE` roles.
      *
      * The device will reboot after the reset completes.
+     *
+     * @param preserveFavorites keep favorite-marked entries through the wipe
      */
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
 
     // ── Time ────────────────────────────────────────────────────────────────
 
@@ -375,6 +386,20 @@ public interface AdminEdit {
     public suspend fun setChannel(channel: Channel)
     public suspend fun setFavorite(node: NodeId, favorite: Boolean)
     public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+
+    /**
+     * Pin the node's position to [position] and turn on `fixed_position`, applied at commit.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun setFixedPosition(position: Position)
+
+    /**
+     * Clear the node's fixed position and turn off `fixed_position`, applied at commit.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun removeFixedPosition()
 }
 
 /**

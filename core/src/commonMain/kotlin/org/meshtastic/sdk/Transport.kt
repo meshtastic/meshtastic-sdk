@@ -179,6 +179,17 @@ public interface RadioTransport {
     public val identity: TransportIdentity
 
     /**
+     * True when firmware takes this link down inside the handler of a restart-class admin command,
+     * before it can answer. Firmware calls `disableBluetooth()` there, so only BLE links set this.
+     * The SDK then counts such a command to the connected node as applied once this transport has
+     * written it and the link drops.
+     *
+     * @since 0.3.0
+     */
+    public val linkDropsOnRestartCommands: Boolean
+        get() = false
+
+    /**
      * Initiate connection. May throw [MeshtasticException.Transport] on fatal errors.
      *
      * The transport should transition [state] to [TransportState.Connecting], then
@@ -224,7 +235,9 @@ public interface RadioTransport {
     /**
      * Observe inbound framed packets.
      *
-     * Returns a cold flow that the SDK collects exactly once (at engine startup).
+     * The SDK calls this and collects the result once per successful [connect], including each
+     * auto-reconnect, and cancels that collection before the next [connect]. Return a flow for
+     * the current link on every call; a single shared `consumeAsFlow()` fails on reconnect.
      * Each element is a complete frame as received from the device.
      *
      * The SDK handles frame buffering, overflow, and backpressure; transports should emit

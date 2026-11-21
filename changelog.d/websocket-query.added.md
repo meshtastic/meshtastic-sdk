@@ -1,0 +1,1 @@
+- Allow WebSocket URLs with query parameters and keep the query out of the transport identity.

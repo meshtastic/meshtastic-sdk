@@ -19,6 +19,8 @@ import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -195,6 +197,8 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
         } catch (e: Exception) {
             throw e
         }
+        currentCoroutineContext().ensureActive()
+        throw MeshtasticException.Transport("TCP socket closed by peer")
     }
 
     private enum class FsmState {

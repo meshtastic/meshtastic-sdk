@@ -302,6 +302,19 @@ class RadioClientSendTest {
     }
 
     @Test
+    fun trySendRawReportsTransportQueueAdmission() = runTest {
+        val frame = ToRadio.Builder().also { it.disconnect = true }.build()
+        assertCondition(!buildClient().trySendRaw(frame), "Disconnected raw send must be rejected")
+
+        withConnectedClient { client, transport ->
+            val before = transport.outboundFrames().size
+            assertCondition(client.trySendRaw(frame), "Connected raw send should enter the transport queue")
+            runCurrent()
+            assertValue(frame, transport.lastNewOutboundFrame(before).decodeToRadio(), "outbound ToRadio frame")
+        }
+    }
+
+    @Test
     fun requestNodeInfo_connectedClientReturnsHandleWithOutboundId() = runTest {
         withConnectedClient { client, transport ->
             val before = transport.outboundPackets().size

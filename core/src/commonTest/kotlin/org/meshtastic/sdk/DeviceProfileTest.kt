@@ -28,6 +28,7 @@ import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -497,6 +498,7 @@ class DeviceProfileTest {
             identity = TransportIdentity("fake:device-profile:${frames.size}"),
             frames = frames,
             autoHandshake = true,
+            autoQueueStatus = true,
             nodeNum = 1,
         )
         val client = RadioClient.Builder()
@@ -557,4 +559,12 @@ private class RecordingEdit : AdminEdit {
     override suspend fun setFavorite(node: NodeId, favorite: Boolean) = Unit
 
     override suspend fun setIgnored(node: NodeId, ignored: Boolean) = Unit
+
+    override suspend fun setFixedPosition(position: Position) {
+        calls += "fixed_position"
+    }
+
+    override suspend fun removeFixedPosition() {
+        calls += "remove_fixed_position"
+    }
 }

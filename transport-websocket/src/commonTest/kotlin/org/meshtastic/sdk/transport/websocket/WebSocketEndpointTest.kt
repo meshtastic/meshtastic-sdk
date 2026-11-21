@@ -71,8 +71,14 @@ class WebSocketEndpointTest {
     }
 
     @Test
-    fun queryAndFragmentAreRefused() {
-        assertFailsWith<IllegalArgumentException> { parseWebSocketEndpoint("ws://h/api/v1/ws?x=1") }
+    fun queryIsSentAndOmittedFromIdentity() {
+        val endpoint = parseWebSocketEndpoint("ws://h?token=a%2Fb")
+        assertEquals("ws://h:80/api/v1/ws?token=a%2Fb", endpoint.url)
+        assertEquals("ws://h:80/api/v1/ws", endpoint.identityKey)
+    }
+
+    @Test
+    fun fragmentIsRefused() {
         assertFailsWith<IllegalArgumentException> { parseWebSocketEndpoint("ws://h#frag") }
     }
 

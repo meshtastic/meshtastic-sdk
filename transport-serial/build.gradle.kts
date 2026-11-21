@@ -20,6 +20,7 @@ plugins {
     id("meshtastic.kmp.library")
     id("meshtastic.android.library")
     id("meshtastic.publishing")
+    id("meshtastic.js.library")
 }
 
 kotlin {
