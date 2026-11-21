@@ -381,7 +381,7 @@ public class RadioClient internal constructor(
         val handle = MessageHandle(
             id = id,
             _state = stateFlow,
-            cancelFn = { cancelId -> engine.tryCancelSend(cancelId) },
+            cancelFn = { cancelId -> engine.tryCancelSend(cancelId, stateFlow) },
             packet = packet,
             resendFn = { pkt -> send(pkt) },
         )

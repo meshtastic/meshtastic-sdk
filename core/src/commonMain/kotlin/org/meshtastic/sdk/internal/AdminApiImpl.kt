@@ -542,6 +542,8 @@ internal class AdminApiImpl(
             is SendState.Failed -> terminal.reason == SendFailure.Disconnected
             else -> false
         }
+        // A write still queued behind another must not run after its caller saw Timeout.
+        if (terminal == null) handle.message.cancel()
         return when {
             appliedBeforeLinkLoss -> AdminResult.Success(Unit)
             terminal == null -> AdminResult.Timeout
@@ -735,10 +737,10 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     SendFailure.Timeout, SendFailure.AckTimeout -> AdminResult.Timeout
 
-    SendFailure.Cancelled, SendFailure.IdCollision, SendFailure.QueueFull -> AdminResult.NodeUnreachable
+    SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
-    // Firmware transmit queue rejected the packet (queue full) — back off and retry.
-    is SendFailure.QueueRejected, SendFailure.RateLimited -> AdminResult.RateLimited
+    // The SDK paced queue or the firmware transmit queue is full; the link is up, so back off and retry.
+    SendFailure.QueueFull, is SendFailure.QueueRejected, SendFailure.RateLimited -> AdminResult.RateLimited
 
     is SendFailure.Other -> when (reason.routingError) {
         Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired

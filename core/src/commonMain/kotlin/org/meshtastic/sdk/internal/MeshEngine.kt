@@ -171,6 +171,8 @@ internal class MeshEngine(
         val frame: Frame,
         val lockdownLink: LockdownLink? = null,
         val pacedSend: EngineMessage.PacedSend? = null,
+        // The link that enqueued the frame, so a failed write cannot tear down its replacement.
+        val generation: Long = 0L,
     )
 
     private val outbound = Channel<OutboundFrame>(Channel.UNLIMITED)
@@ -211,6 +213,8 @@ internal class MeshEngine(
     private var engineScope: CoroutineScope? = null
     private var frameReaderJob: Job? = null
     private var receiveGeneration = 0L
+    private var stage1DumpStarted = false
+    private var nodeDbRefreshDumpStarted = false
 
     // Command admission captures the exact physical link and node id before posting to the actor.
     private data class LockdownLink(val generation: Long, val nodeNum: Int)
@@ -388,12 +392,14 @@ internal class MeshEngine(
         }
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
-            for ((frame, link, paced) in outbound) {
+            for ((frame, link, paced, generation) in outbound) {
                 if (paced != null && paced.generation != readySendGeneration.value) continue
                 try {
                     if (link == null) {
                         logProtocolTx(frame)
-                        transport.send(frame)
+                        // A stalled write would hold the paced queue while inbound frames keep the watchdog quiet.
+                        withTimeoutOrNull(sendTimeout) { transport.send(frame) }
+                            ?: throw MeshtasticException.Transport("Transport write timed out after $sendTimeout")
                     } else {
                         writeLockdownFrame(frame, link)
                     }
@@ -404,11 +410,10 @@ internal class MeshEngine(
                     throw e
                 } catch (e: Exception) {
                     logger.warn(TAG, e) { "Transport send failed: ${e.message}" }
-                    inbox.trySend(
-                        EngineMessage.Disconnect(
-                            MeshtasticException.Transport(e.message ?: "send failed", e),
-                        ),
-                    )
+                    val cause =
+                        e as? MeshtasticException.Transport
+                            ?: MeshtasticException.Transport(e.message ?: "send failed", e)
+                    inbox.trySend(EngineMessage.LinkFailed(cause, generation))
                 }
             }
         }
@@ -494,8 +499,9 @@ internal class MeshEngine(
         }
     }
 
-    fun tryCancelSend(id: MessageId) {
-        inbox.trySend(EngineMessage.CancelHandle(id))
+    // [expected] binds the cancel to this handle, so a later send that reuses the id is untouched.
+    fun tryCancelSend(id: MessageId, expected: MutableStateFlow<SendState>) {
+        inbox.trySend(EngineMessage.CancelHandle(id, expected))
     }
 
     fun requestNodeDbRefresh(): Boolean {
@@ -760,8 +766,8 @@ internal class MeshEngine(
                 if (acceptsFramesFrom(msg.generation)) handleFrameRx(msg)
             }
 
-            is EngineMessage.FrameReaderFailed -> {
-                if (acceptsFramesFrom(msg.generation)) handleDisconnect(EngineMessage.Disconnect(msg.cause))
+            is EngineMessage.LinkFailed -> {
+                if (acceptsFramesFrom(msg.generation)) handleLinkFailure(msg.cause)
             }
 
             is EngineMessage.TransportStateChanged -> handleTransportStateChanged(msg)
@@ -837,7 +843,7 @@ internal class MeshEngine(
                 wb.packet = outboundPacket
             }.build(),
         )
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString())))
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
         val job = scope.launch {
@@ -930,9 +936,7 @@ internal class MeshEngine(
                 wb.priority = priority
             }.build()
         } else {
-            val adminIndex = channelsState.value
-                ?.indexOfFirst { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
-                ?.takeIf { it >= 0 } ?: 0
+            val adminIndex = adminChannelIndex() ?: 0
             packet.newBuilder().also { wb ->
                 wb.decoded = outDecoded
                 wb.channel = adminIndex
@@ -1034,7 +1038,7 @@ internal class MeshEngine(
         // BLE doesn't need this since each GATT write is self-framing.
         if (!transport.identity.raw.startsWith("ble:")) {
             val wakeBytes = byteArrayOf(0x94.toByte(), 0x94.toByte(), 0x94.toByte(), 0x94.toByte())
-            outbound.trySend(OutboundFrame(Frame(wakeBytes.toByteString())))
+            outbound.trySend(OutboundFrame(Frame(wakeBytes.toByteString()), generation = generation))
         }
 
         requestStage1Config()
@@ -1042,6 +1046,7 @@ internal class MeshEngine(
 
     private fun requestStage1Config() {
         val attempt = ++handshakeAttempt
+        stage1DumpStarted = false
         lockdownLink.value = null
         handshakeStage = HandshakeStage.Stage1Draining
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
@@ -1080,14 +1085,23 @@ internal class MeshEngine(
                     throw e
                 } catch (e: Exception) {
                     logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
-                    inbox.trySend(
-                        EngineMessage.FrameReaderFailed(
-                            MeshtasticException.Transport(e.message ?: "frame reader failed", e),
-                            generation,
-                        ),
-                    )
+                    val cause = e as? MeshtasticException.Transport
+                        ?: MeshtasticException.Transport(e.message ?: "frame reader failed", e)
+                    inbox.trySend(EngineMessage.LinkFailed(cause, generation))
                 }
             }
+    }
+
+    // A transport that throws from frames() or send() never publishes TransportState.Error, so
+    // this is the only place its failure meets the reconnect policy.
+    private fun handleLinkFailure(cause: MeshtasticException) {
+        if (!autoReconnectConfig.enabled || disconnecting) {
+            handleDisconnect(EngineMessage.Disconnect(cause))
+            return
+        }
+        val tagged = MeshtasticException.tag(cause, transportIdentity = transport.identity, operation = "engine.link")
+        events.tryEmit(MeshEvent.TransportError(tagged))
+        scheduleReconnect(tagged)
     }
 
     private fun handleDisconnect(msg: EngineMessage.Disconnect) {
@@ -1204,6 +1218,18 @@ internal class MeshEngine(
         // resync garbage; that must not look like "the link is healthy" to the watchdog.
         livenessBudgetMs = LIVENESS_TIMEOUT_MS
 
+        // Firmware answers every want_config with my_info first (PhoneAPI handleStartConfig). A reboot
+        // or completion seen before it in Stage 1 was queued before the request and would end the new
+        // handshake, so it is dropped.
+        if (handshakeStage == HandshakeStage.Stage1Draining && !stage1DumpStarted) {
+            if (fromRadio.my_info != null) {
+                stage1DumpStarted = true
+            } else if (fromRadio.rebooted == true || fromRadio.config_complete_id != null) {
+                logger.debug(TAG) { "Dropping a reboot or completion from before the Stage 1 dump" }
+                return
+            }
+        }
+
         // `FromRadio.rebooted = true` is a forced-disconnect signal — the
         // radio has restarted and all prior session state (session passkey, node DB, pending
         // sends) is now stale. Previously we only cancelled the supervisor, which meant pending
@@ -1293,8 +1319,9 @@ internal class MeshEngine(
                 handshakeStage == HandshakeStage.AwaitingLockdown
             ) {
                 // Firmware authorizes this link only once the unlocked configuration is loaded.
-                // Discard the redacted snapshot and keep the reader on the authorized link.
-                clearPendingHandshake()
+                // Discard the redacted snapshot and keep the reader on the authorized link. Mesh packets
+                // held for Ready are real traffic on this same link, so they stay.
+                clearPendingHandshake(keepHeldPackets = true)
                 requestStage1Config()
             }
 
@@ -1302,7 +1329,7 @@ internal class MeshEngine(
         }
     }
 
-    private fun clearPendingHandshake() {
+    private fun clearPendingHandshake(keepHeldPackets: Boolean = false) {
         pendingNodes.clear()
         pendingConfigs = emptyList()
         pendingModuleConfigs = emptyList()
@@ -1313,7 +1340,7 @@ internal class MeshEngine(
         pendingFiles.clear()
         pendingRegionPresets = null
         settleBuffer.clear()
-        handshakePacketBuffer.clear()
+        if (!keepHeldPackets) handshakePacketBuffer.clear()
     }
 
     private fun processStage1Envelope(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -1771,15 +1798,21 @@ internal class MeshEngine(
      */
     private fun isAuthenticatedAdminReply(packet: MeshPacket): Boolean {
         if (packet.from == 0 || packet.from == myNodeNum || packet.pki_encrypted) return true
-        val adminIndex = channelsState.value
-            ?.indexOfFirst { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
-            ?.takeIf { it >= 0 }
+        val adminIndex = adminChannelIndex()
         return adminIndex != null && packet.channel == adminIndex
     }
 
+    // The wire index, not the list position: the handshake list is in arrival order and may be sparse.
+    private fun adminChannelIndex(): Int? = channelsState.value
+        ?.firstOrNull { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
+        ?.index
+
     private fun recognizesAdminReply(packet: MeshPacket, requestId: Int, admin: AdminMessage): Boolean {
+        val kind = admin.adminResponseKind() ?: return false
+        // A live RPC is recognized by its registration; the bounded cache covers other sends and late replies.
+        if (dispatcher.expects(requestId, kind, packet.from, myNodeNum)) return true
         val expected = adminReplyTargets[requestId] ?: return false
-        return expected.kind == admin.adminResponseKind() &&
+        return expected.kind == kind &&
             (packet.from == expected.sender || (packet.from == 0 && expected.sender == myNodeNum))
     }
 
@@ -1916,6 +1949,7 @@ internal class MeshEngine(
             )
             return
         }
+        nodeDbRefreshDumpStarted = false
         nodeDbRefresh = linkedMapOf()
         val request = ++nodeDbRefreshRequest
         nodeDbRefreshWatchdog = engineScope?.launch {
@@ -1926,13 +1960,20 @@ internal class MeshEngine(
 
     private fun handleNodeDbRefreshFrame(fromRadio: org.meshtastic.proto.FromRadio): Boolean {
         val refresh = nodeDbRefresh ?: return false
+        // The dump opens with my_info. Earlier frames were queued before the request reached the
+        // radio, so a node_info is live traffic and a completion belongs to an earlier dump.
+        if (fromRadio.my_info != null) {
+            nodeDbRefreshDumpStarted = true
+            return true
+        }
+        if (!nodeDbRefreshDumpStarted) return fromRadio.config_complete_id != null
         val node = fromRadio.node_info
         if (node != null) {
             refresh[NodeId(node.num)] = node
             return true
         }
         if (fromRadio.config_complete_id != NONCE_STAGE2) {
-            return fromRadio.my_info != null || fromRadio.deviceuiConfig != null || fromRadio.config_complete_id != null
+            return fromRadio.deviceuiConfig != null || fromRadio.config_complete_id != null
         }
         // The collector sees the completed dump at its position in the receive stream.
         // The actor still processes mesh packets and routes ACKs while collecting the dump.
@@ -1944,6 +1985,7 @@ internal class MeshEngine(
     }
 
     private fun clearNodeDbRefresh() {
+        nodeDbRefreshDumpStarted = false
         nodeDbRefreshWatchdog?.cancel()
         nodeDbRefreshWatchdog = null
         nodeDbRefresh = null
@@ -2966,7 +3008,7 @@ internal class MeshEngine(
                 wb.packet = packet
             }.build(),
         )
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString())))
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
@@ -3148,7 +3190,7 @@ internal class MeshEngine(
         pacedSend: EngineMessage.PacedSend? = null,
     ): Boolean = try {
         val encoded = WireCodec.encodeToRadio(msg)
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend)).isSuccess
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
     } catch (e: Exception) {
         logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
         false

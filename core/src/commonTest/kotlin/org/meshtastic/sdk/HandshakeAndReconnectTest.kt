@@ -15,8 +15,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
@@ -665,6 +667,45 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun aReadFailureWithAutoReconnectReconnectsInsteadOfEndingTheSession() = runTest {
+        val transport = ScriptedTransport(
+            TransportIdentity("fake:reader-eof"),
+            nowMs = { currentTime },
+            failableReader = true,
+        )
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0),
+        )
+        client.connect()
+        runCurrent()
+
+        transport.failReader("TCP peer closed the connection")
+        runCurrent()
+        assertReconnectState(client.connection.value, attempt = 1)
+
+        advanceTimeBy(1_000L)
+        drainCurrent()
+        awaitConnected(client)
+        assertEquals(1, transport.reconnectAttemptTimes().size)
+    }
+
+    @Test
+    fun aRebootFrameQueuedBeforeTheHandshakeDoesNotFailIt() = runTest {
+        val staleReboot = FromRadio.Builder().also { it.rebooted = true }.build().toFrame()
+        val transport = org.meshtastic.sdk.testing.FakeRadioTransport(
+            TransportIdentity("fake:stale-reboot"),
+            frames = listOf(staleReboot),
+            autoHandshake = true,
+        )
+        val client = buildClient(transport)
+
+        client.connect()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
     fun recoveryStepRunsAfterBackoffAndBeforeEachConnect() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:reconnect-recovery"),
@@ -1285,6 +1326,9 @@ class HandshakeAndReconnectTest {
             assertEquals(2, stage2Count())
 
             transport.injectFromRadio(FromRadio.Builder().also { it.config_complete_id = NONCE_STAGE1 }.build())
+            // Queued before the request reached the radio: live traffic, not part of the dump.
+            transport.injectStage2Progress(0x9999)
+            assertEquals(0x9999, assertIs<RadioSessionEvent.Envelope>(awaitItem()).envelope.node_info?.num)
             transport.injectFromRadio(
                 FromRadio.Builder().also { frame ->
                     frame.my_info = org.meshtastic.proto.MyNodeInfo.Builder().also {
@@ -1303,15 +1347,21 @@ class HandshakeAndReconnectTest {
             transport.injectFromRadio(complete)
             val first = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
             assertEquals(ready.sessionId, first.sessionId)
-            assertEquals(2L, first.sequence)
+            assertEquals(3L, first.sequence)
             assertEquals(setOf(NodeId(0x1234)), first.nodes.keys)
             runCurrent()
             assertEquals(3, stage2Count())
 
+            transport.injectFromRadio(
+                FromRadio.Builder().also { frame ->
+                    frame.my_info =
+                        org.meshtastic.proto.MyNodeInfo.Builder().also { it.my_node_num = transport.nodeNum }.build()
+                }.build(),
+            )
             transport.injectStage2Progress(0x4321)
             transport.injectFromRadio(complete)
             val second = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
-            assertEquals(3L, second.sequence)
+            assertEquals(4L, second.sequence)
             assertEquals(setOf(NodeId(0x4321)), second.nodes.keys)
             assertEquals(3, stage2Count())
             client.disconnect()
@@ -1542,7 +1592,9 @@ class HandshakeAndReconnectTest {
         var autoRespondGetOwner: Boolean = true,
         private val sessionPasskey: ByteArray = SEEDED_PASSKEY,
         private val replaceInboundOnConnect: Boolean = false,
+        private val failableReader: Boolean = false,
     ) : RadioTransport {
+        private var readerFailure = CompletableDeferred<Throwable>()
         private val connectPlan = ArrayDeque(reconnectOutcomes)
         private val connectTimes = mutableListOf<Long>()
         private val outboundFrames = mutableListOf<Frame>()
@@ -1587,7 +1639,21 @@ class HandshakeAndReconnectTest {
             toRadio.packet?.let(::handleAdminPacket)
         }
 
-        override fun frames(): Flow<Frame> = inbound
+        override fun frames(): Flow<Frame> = if (!failableReader) {
+            inbound
+        } else {
+            val failure = readerFailure
+            channelFlow {
+                launch { throw failure.await() }
+                inbound.collect { send(it) }
+            }
+        }
+
+        // Ends the current frames() collection with [message], as a TCP read does on EOF.
+        fun failReader(message: String) {
+            readerFailure.complete(MeshtasticException.Transport(message))
+            readerFailure = CompletableDeferred()
+        }
 
         fun outboundFrames(): List<Frame> = outboundFrames.toList()
 
@@ -1713,6 +1779,14 @@ class HandshakeAndReconnectTest {
                 return
             }
             if (!autoCompleteStage2) return
+            // Firmware opens every dump with my_info, the nodes-only one included.
+            inbound.tryEmit(
+                encodeFromRadioFrame(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.my_info = MyNodeInfo.Builder().also { wb -> wb.my_node_num = nodeNum }.build()
+                    }.build(),
+                ),
+            )
             inbound.tryEmit(
                 encodeFromRadioFrame(
                     org.meshtastic.proto.FromRadio.Builder().also { wb ->

@@ -83,8 +83,8 @@ internal sealed interface EngineMessage {
     /** A framed packet received from the transport. */
     data class FrameRx(val frame: Frame, val generation: Long) : EngineMessage
 
-    /** A read failure from a particular transport connection. */
-    data class FrameReaderFailed(val cause: MeshtasticException, val generation: Long) : EngineMessage
+    /** A read or write failure on a particular transport connection. */
+    data class LinkFailed(val cause: MeshtasticException, val generation: Long) : EngineMessage
 
     /** Transport connection state changed (posted by the transport-state observer coroutine). */
     data class TransportStateChanged(val state: TransportState) : EngineMessage

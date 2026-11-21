@@ -235,7 +235,9 @@ public interface RadioTransport {
     /**
      * Observe inbound framed packets.
      *
-     * Returns a cold flow that the SDK collects exactly once (at engine startup).
+     * The SDK calls this and collects the result once per successful [connect], including each
+     * auto-reconnect, and cancels that collection before the next [connect]. Return a flow for
+     * the current link on every call; a single shared `consumeAsFlow()` fails on reconnect.
      * Each element is a complete frame as received from the device.
      *
      * The SDK handles frame buffering, overflow, and backpressure; transports should emit

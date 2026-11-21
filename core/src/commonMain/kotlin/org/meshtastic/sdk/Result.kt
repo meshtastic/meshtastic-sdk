@@ -31,8 +31,10 @@ public sealed interface SendState {
     public data object Sent : SendState
 
     /**
-     * The radio reported a positive routing result for a unicast. A send without
-     * requested routing feedback can also complete on confirmed radio admission.
+     * The radio reported a positive routing result for a unicast. A paced send without requested
+     * routing feedback completes here on confirmed radio admission. An ordinary [RadioClient.send]
+     * broadcast with `want_ack = false` and no `want_response` completes here as soon as it is
+     * handed to the transport, with no radio confirmation at all.
      */
     public data object Acked : SendState
 
@@ -300,9 +302,10 @@ public sealed interface AdminResult<out T> {
     public data object Timeout : AdminResult<Nothing>
 
     /**
-     * The device rate-limited the request; back off before retrying.
+     * The request was not accepted for lack of capacity; back off before retrying.
      *
-     * (From `Routing.Error.RATE_LIMIT_EXCEEDED`.)
+     * From `Routing.Error.RATE_LIMIT_EXCEEDED`, a full firmware transmit queue, or a full SDK paced
+     * queue ([SendFailure.QueueFull]) while the link is up.
      */
     public data object RateLimited : AdminResult<Nothing>
 

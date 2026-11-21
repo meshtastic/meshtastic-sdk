@@ -410,6 +410,14 @@ class HandshakeFsmTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadioOrNull(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
+                // The dump has begun (my_info) when the radio restarts.
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.my_info = org.meshtastic.proto.MyNodeInfo.Builder().also { it.my_node_num = 1 }.build()
+                        }.build(),
+                    ),
+                )
                 inbound.trySend(
                     encodeFromRadio(
                         FromRadio.Builder().also { wb ->

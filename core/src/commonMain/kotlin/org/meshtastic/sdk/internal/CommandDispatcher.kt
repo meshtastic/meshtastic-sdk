@@ -63,6 +63,13 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
 
     fun contains(requestId: Int): Boolean = pending.containsKey(requestId)
 
+    /** Whether a live registration awaits a [kind] reply to [requestId] from [sender]. */
+    fun expects(requestId: Int, kind: ResponseKind<*>, sender: Int, localNode: Int): Boolean {
+        val entry = pending[requestId] ?: return false
+        val expected = entry.expectedSender ?: return entry.kind == kind
+        return entry.kind == kind && (sender == expected || (sender == 0 && expected == localNode))
+    }
+
     /**
      * Register an outbound request awaiting a typed response.
      *

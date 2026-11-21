@@ -274,7 +274,7 @@ public class FakeRadioTransport(
 
     override suspend fun send(frame: Frame) {
         outboundFramesList.add(frame)
-        if (autoHandshake) handleOutboundFrame(frame)
+        if (autoHandshake || autoQueueStatus) handleOutboundFrame(frame)
     }
 
     override fun frames(): Flow<Frame> {
@@ -298,12 +298,14 @@ public class FakeRadioTransport(
         } catch (_: Exception) {
             return
         }
-        when (toRadio.want_config_id) {
-            NONCE_STAGE1 -> injectStage1Frames()
-            NONCE_STAGE2 -> injectStage2Frames()
+        if (autoHandshake) {
+            when (toRadio.want_config_id) {
+                NONCE_STAGE1 -> injectStage1Frames()
+                NONCE_STAGE2 -> injectStage2Frames()
+            }
         }
         val packet = toRadio.packet ?: return
-        handleAdminPacket(packet)
+        if (autoHandshake) handleAdminPacket(packet)
         if (autoQueueStatus) {
             injectFromRadio(
                 FromRadio.Builder().also { wb ->
@@ -334,6 +336,15 @@ public class FakeRadioTransport(
     }
 
     private fun injectStage2Frames() {
+        // Firmware opens every config dump with my_info, the nodes-only one included.
+        injectFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb ->
+                    wb.my_node_num = nodeNum
+                    wb.device_id = deviceId
+                }.build()
+            }.build(),
+        )
         injectFromRadio(
             FromRadio.Builder().also { wb ->
                 wb.config_complete_id = NONCE_STAGE2

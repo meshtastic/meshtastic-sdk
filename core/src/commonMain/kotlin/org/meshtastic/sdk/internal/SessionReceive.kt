@@ -28,15 +28,20 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
     private var delivering = false
     private var started = false
 
+    // Ended closes only a session that published Ready; a lockdown-only session ends silently.
+    private var readyPublished = false
+
     fun begin(generation: Long) {
         sessionId = generation
         sequence = 0L
         started = false
+        readyPublished = false
     }
 
     fun ready(snapshot: RadioSessionEvent.Ready) {
         delivering = offer(snapshot)
         started = true
+        readyPublished = true
     }
 
     fun lockdown(status: LockdownStatus) {
@@ -62,7 +67,8 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
         if (!started) return
         started = false
         delivering = false
-        offer(RadioSessionEvent.Ended(sessionId))
+        if (readyPublished) offer(RadioSessionEvent.Ended(sessionId))
+        readyPublished = false
     }
 
     fun nodeDbRefreshed(nodes: Map<NodeId, NodeInfo>) {
