@@ -15,7 +15,9 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MqttClientProxyMessage
@@ -47,6 +49,9 @@ class SessionApisTest {
     private val now = 1_700_000_500L
     private val peerKey = ByteString.of(*ByteArray(32) { it.toByte() })
 
+    /** Differs from the firmware fallback of 3, so a hardcoded default fails. */
+    private val deviceHopLimit = 5
+
     @Test
     fun requestNodeInfoOnHeardChannelCarriesOurUser() = runTest {
         val (transport, client) = connectedClient()
@@ -59,7 +64,7 @@ class SessionApisTest {
             assertEquals(peer, sent.to)
             assertEquals(2, sent.channel)
             assertFalse(sent.want_ack)
-            assertEquals(3, sent.hop_limit)
+            assertEquals(deviceHopLimit, sent.hop_limit)
             assertEquals(PortNum.NODEINFO_APP, sent.decoded?.portnum)
             assertEquals(true, sent.decoded?.want_response)
             assertEquals("FakeNode", User.ADAPTER.decode(sent.decoded!!.payload).long_name)
@@ -110,7 +115,7 @@ class SessionApisTest {
             assertEquals(3, sent.channel)
             assertEquals(MeshPacket.Priority.BACKGROUND, sent.priority)
             assertFalse(sent.want_ack)
-            assertEquals(3, sent.hop_limit)
+            assertEquals(deviceHopLimit, sent.hop_limit)
             assertEquals(true, sent.decoded?.want_response)
             val payload = Position.ADAPTER.decode(sent.decoded!!.payload)
             assertEquals(375_000_000, payload.latitude_i)
@@ -149,6 +154,7 @@ class SessionApisTest {
             assertFalse(sent.want_ack)
             assertEquals(PortNum.PAXCOUNTER_APP, sent.decoded?.portnum)
             assertEquals(true, sent.decoded?.want_response)
+            assertEquals(deviceHopLimit, sent.hop_limit)
             assertEquals(peer, sent.decoded?.dest)
             assertEquals(Paxcount.Builder().build(), Paxcount.ADAPTER.decode(sent.decoded!!.payload))
         } finally {
@@ -326,7 +332,7 @@ class SessionApisTest {
             assertEquals(peer, sent.to)
             assertEquals(2, sent.channel)
             assertTrue(sent.want_ack)
-            assertEquals(3, sent.hop_limit)
+            assertEquals(deviceHopLimit, sent.hop_limit)
             assertEquals(PortNum.TEXT_MESSAGE_APP, sent.decoded?.portnum)
             assertEquals("hello", sent.decoded?.payload?.utf8())
         } finally {
@@ -344,7 +350,7 @@ class SessionApisTest {
         val sent = transport.outboundPackets().last()
         assertEquals(peer, sent.to)
         assertEquals(2, sent.channel)
-        assertEquals(3, sent.hop_limit)
+        assertEquals(deviceHopLimit, sent.hop_limit)
         assertEquals(PortNum.TELEMETRY_APP, sent.decoded?.portnum)
         assertEquals(true, sent.decoded?.want_response)
         assertEquals(peer, sent.decoded?.dest)
@@ -409,6 +415,16 @@ class SessionApisTest {
     ): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:session-apis"),
+            frames = listOf(
+                FromRadio.Builder().also { wb ->
+                    wb.metadata = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "2.7.0" }.build()
+                }.build().toFrame(),
+                FromRadio.Builder().also { wb ->
+                    wb.config = Config.Builder().also { wb ->
+                        wb.lora = Config.LoRaConfig.Builder().also { wb -> wb.hop_limit = deviceHopLimit }.build()
+                    }.build()
+                }.build().toFrame(),
+            ),
             autoHandshake = true,
             nodeNum = own,
             autoQueueStatus = autoQueueStatus,
