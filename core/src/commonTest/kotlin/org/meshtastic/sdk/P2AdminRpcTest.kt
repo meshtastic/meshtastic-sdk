@@ -164,8 +164,7 @@ class P2AdminRpcTest {
         runCurrent()
 
         val result = deferred.await()
-        // SendFailure.NoRoute → AdminResult.NodeUnreachable per the AdminApiImpl mapping.
-        assertEquals(AdminResult.NodeUnreachable, result)
+        assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), result)
         client.disconnect()
     }
 

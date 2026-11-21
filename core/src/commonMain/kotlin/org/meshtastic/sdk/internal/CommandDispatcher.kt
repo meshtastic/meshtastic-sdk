@@ -49,6 +49,8 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         val expectedSender: Int?,
         val deferred: CompletableDeferred<AdminResult<Any?>>,
         var timeoutJob: Job? = null,
+        /** Reported at timeout when no reply arrives; see [tryFailFromRouting]. */
+        var failureAtTimeout: AdminResult<Nothing>? = null,
     )
 
     fun ownsRoutingFailure(requestId: Int, sender: Int, localNode: Int): Boolean {
@@ -163,11 +165,20 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
      * the matching pending entry. Called from the engine's existing routing-ACK pipeline so
      * remote-admin failures (Unauthorized, SessionKeyExpired, NoRoute) surface to getter callers.
      */
-    fun tryFailFromRouting(requestId: Int, error: Routing.Error): Boolean {
+    fun tryFailFromRouting(requestId: Int, error: Routing.Error, sender: Int, localNode: Int): Boolean {
         // NONE on ROUTING_APP is "ack" — a setter would resolve via MessageHandle, but a pending
         // dispatcher entry expects a response payload. Treat NONE as no-op here so the dispatcher
         // keeps waiting; the actual response packet (if any) will land via tryComplete.
         if (error == Routing.Error.NONE) return false
+        val entry = pending[requestId] ?: return false
+        val remoteTarget = entry.expectedSender != null && entry.expectedSender != localNode
+        val fromLocalRadio = sender == 0 || sender == localNode
+        if (error == Routing.Error.MAX_RETRANSMIT && remoteTarget && fromLocalRadio) {
+            // The local radio gave up on reliable-send ACKs, but the remote reply can still arrive
+            // later over another path. Keep waiting and report the retransmit failure at timeout.
+            entry.failureAtTimeout = mapRoutingError(error)
+            return true
+        }
         return tryFail(requestId, mapRoutingError(error))
     }
 
@@ -189,7 +200,7 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
     fun timeout(requestId: Int) {
         val entry = pending.remove(requestId) ?: return
         logger.debug(TAG) { "RPC timed out id=$requestId kind=${entry.kind}" }
-        entry.deferred.complete(AdminResult.Timeout)
+        entry.deferred.complete(entry.failureAtTimeout ?: AdminResult.Timeout)
     }
 
     /** Cancel every pending response (engine teardown). */
@@ -304,9 +315,9 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
          *  - `ADMIN_BAD_SESSION_KEY` → [AdminResult.SessionKeyExpired] so the caller can trigger
          *    a single-shot retry after re-seeding via `get_owner_request`.
          *  - `NOT_AUTHORIZED` / `ADMIN_PUBLIC_KEY_UNAUTHORIZED` → [AdminResult.Unauthorized].
-         *  - `NO_ROUTE` / `GOT_NAK` / `MAX_RETRANSMIT` → [AdminResult.NodeUnreachable].
          *  - `TIMEOUT` → [AdminResult.Timeout].
-         *  - everything else → [AdminResult.Failed] carrying the raw enum.
+         *  - everything else, including `NO_ROUTE` / `GOT_NAK` / `MAX_RETRANSMIT`, → [AdminResult.Failed]
+         *    carrying the raw enum. [AdminResult.NodeUnreachable] is left for a lost link.
          */
         fun mapRoutingError(error: Routing.Error): AdminResult<Nothing> = when (error) {
             Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
@@ -316,11 +327,6 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             -> AdminResult.Unauthorized
 
             Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
-
-            Routing.Error.NO_ROUTE,
-            Routing.Error.GOT_NAK,
-            Routing.Error.MAX_RETRANSMIT,
-            -> AdminResult.NodeUnreachable
 
             Routing.Error.TIMEOUT -> AdminResult.Timeout
 

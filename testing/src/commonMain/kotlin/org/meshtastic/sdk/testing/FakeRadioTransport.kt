@@ -63,6 +63,8 @@ public class FakeRadioTransport(
      * does, so paced sends release without the caller injecting queue evidence.
      */
     public val autoQueueStatus: Boolean = false,
+    /** Reported as [RadioTransport.linkDropsOnRestartCommands]; `true` models a BLE link. */
+    override val linkDropsOnRestartCommands: Boolean = false,
 ) : RadioTransport {
 
     /**

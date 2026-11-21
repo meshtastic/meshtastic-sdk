@@ -84,6 +84,8 @@ public class BleTransport(
     override val identity: TransportIdentity =
         TransportIdentity.of(TransportSpec.Ble(address))
 
+    override val linkDropsOnRestartCommands: Boolean = true
+
     private val _state: MutableStateFlow<TransportState> =
         MutableStateFlow(TransportState.Disconnected)
     override val state: StateFlow<TransportState> = _state.asStateFlow()

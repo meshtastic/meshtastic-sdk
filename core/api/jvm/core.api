@@ -66,6 +66,7 @@ public abstract interface class org/meshtastic/sdk/AdminApi {
 	public static synthetic fun shutdown-VtjQ1oo$default (Lorg/meshtastic/sdk/AdminApi;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun storeUIConfig (Lorg/meshtastic/proto/DeviceUIConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun toggleMuted-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun withRpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/AdminApi;
 }
 
 public final class org/meshtastic/sdk/AdminApi$DefaultImpls {
@@ -1884,8 +1885,13 @@ public abstract interface class org/meshtastic/sdk/RadioTransport {
 	public abstract fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun frames ()Lkotlinx/coroutines/flow/Flow;
 	public abstract fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getLinkDropsOnRestartCommands ()Z
 	public abstract fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/RadioTransport$DefaultImpls {
+	public static fun getLinkDropsOnRestartCommands (Lorg/meshtastic/sdk/RadioTransport;)Z
 }
 
 public abstract interface class org/meshtastic/sdk/ReconnectRecoveryStep {

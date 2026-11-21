@@ -127,11 +127,12 @@ RPC paths map a `Routing.Error` before it would become a `SendFailure`:
 | `ADMIN_BAD_SESSION_KEY` | `SessionKeyExpired`, after one automatic retry with a refreshed passkey |
 | `NOT_AUTHORIZED`, `ADMIN_PUBLIC_KEY_UNAUTHORIZED` | `Unauthorized` |
 | `RATE_LIMIT_EXCEEDED` | `RateLimited` |
-| `NO_ROUTE`, `GOT_NAK`, `MAX_RETRANSMIT` | `NodeUnreachable` |
 | `TIMEOUT` | `Timeout` |
-| anything else | `Failed(routingError)` |
+| anything else, `NO_ROUTE`, `GOT_NAK` and `MAX_RETRANSMIT` included | `Failed(routingError)` |
 
-Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute`, `MaxRetransmit`, `Disconnected`, `HandshakeFailed`, `DutyCycleLimit`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table.
+A remote read whose `MAX_RETRANSMIT` comes from the connected radio keeps waiting for the reply, which can still arrive over another path, and returns `Failed(MAX_RETRANSMIT)` only at its timeout.
+
+Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute` and `MaxRetransmit` become `Failed` with that error; `Disconnected`, `HandshakeFailed`, `DutyCycleLimit`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table. `NodeUnreachable` therefore means the link was lost or the send never left. Over BLE, a restart-class command to the connected node that the transport wrote before the link dropped returns `Success` (see [protocol.md](protocol.md), edit transactions).
 
 `lockdown` on an `AdminApi` from `forNode(…)` returns `Unauthorized`; it works on the local node only. When the local node's `security.is_managed` is set, most admin calls on the local node, `setTime` among them, return `Unauthorized` without sending.
 

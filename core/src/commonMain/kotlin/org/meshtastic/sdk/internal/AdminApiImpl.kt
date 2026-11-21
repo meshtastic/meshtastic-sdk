@@ -71,6 +71,13 @@ internal class AdminApiImpl(
         targetNode = dest,
     )
 
+    override fun withRpcTimeout(timeout: Duration): AdminApi = AdminApiImpl(
+        engine = engine,
+        rpcTimeout = timeout,
+        nowProvider = nowProvider,
+        targetNode = targetNode,
+    )
+
     override suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata> = retryOnSessionExpiry {
         submitAdminRpc(
             adminMsg = AdminMessage.Builder().also { wb ->
@@ -513,72 +520,18 @@ internal class AdminApiImpl(
     }
 
     /**
-     * Send an admin packet whose only success signal is a wire-level ACK. Goes through the
-     * existing send path so the engine's per-send ACK timer + Routing.Error mapping apply.
+     * Send an acked admin write through the paced queue and wait for its routing outcome.
+     *
+     * Firmware takes BLE down inside the handler of a restart-class command, before any ACK or
+     * QueueStatus. On such a link, a command to the connected node that the transport wrote and
+     * whose link then went away was applied.
      */
-    private suspend fun submitAdminAck(adminMsg: AdminMessage, to: NodeId = localNode()): AdminResult<Unit> {
-        val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
-        val id = engine.nextMessageId()
-        val packet = MeshPacket.Builder().also { wb ->
-            wb.id = id.raw
-            wb.from = engine.myNodeNumOrNull() ?: 0
-            wb.to = to.raw
-            wb.want_ack = true
-            wb.decoded = Data.Builder().also { wb ->
-                wb.portnum = PortNum.ADMIN_APP
-                wb.payload = payload
-                wb.want_response = false
-            }.build()
-        }.build()
-        val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
-        engine.trySend(packet, id, stateFlow)
-        val terminal = withTimeoutOrNull(rpcTimeout) {
-            stateFlow.first {
-                it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
-            }
-        } ?: return AdminResult.Timeout
-        return when (terminal) {
-            SendState.Acked, SendState.Delivered -> AdminResult.Success(Unit)
-            is SendState.Failed -> mapSendFailureToAdminResult(terminal.reason)
-            else -> AdminResult.Timeout
-        }
-    }
-
-    /**
-     * Queue an admin packet behind the engine's paced sends, which release one at a time on firmware
-     * queue evidence. Transaction writes and their commit share this queue so they keep their order
-     * and never overrun the device's small inbound buffer.
-     */
-    private fun enqueuePacedAdmin(
-        adminMsg: AdminMessage,
-        wantAck: Boolean,
-        written: CompletableDeferred<Unit>? = null,
-    ): PacedMessageHandle {
-        val packet = MeshPacket.Builder().also { wb ->
-            wb.from = engine.myNodeNumOrNull() ?: 0
-            wb.to = localNode().raw
-            wb.want_ack = wantAck
-            wb.decoded = Data.Builder().also { wb ->
-                wb.portnum = PortNum.ADMIN_APP
-                wb.payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
-                wb.want_response = false
-            }.build()
-        }.build()
-        return engine.enqueuePaced(packet, resend = null, written = written)
-    }
-
-    /**
-     * Firmware drops BLE inside the commit handler, before any ACK or QueueStatus, so a local commit
-     * whose frame the transport wrote and whose link then went away was applied.
-     */
-    private suspend fun submitCommit(): AdminResult<Unit> {
+    private suspend fun submitAdminAck(adminMsg: AdminMessage): AdminResult<Unit> {
         val generation = engine.connectionGeneration()
-        val written = if (isLocalTarget()) CompletableDeferred<Unit>() else null
-        val handle = enqueuePacedAdmin(
-            AdminMessage.Builder().also { wb -> wb.commit_edit_settings = true }.build(),
-            wantAck = true,
-            written = written,
-        )
+        val appliedOnLinkLoss =
+            isLocalTarget() && engine.linkDropsOnRestartCommands && adminMsg.dropsLinkBeforeAnswering()
+        val written = if (appliedOnLinkLoss) CompletableDeferred<Unit>() else null
+        val handle = enqueuePacedAdmin(adminMsg, wantAck = true, written = written)
         val terminal = withTimeoutOrNull(rpcTimeout) {
             handle.message.state.first {
                 it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
@@ -599,6 +552,28 @@ internal class AdminApiImpl(
     }
 
     /**
+     * Queue an admin packet behind the engine's paced sends, which release one at a time on firmware
+     * queue evidence, so writes keep their order and never overrun the device's small inbound buffer.
+     */
+    private fun enqueuePacedAdmin(
+        adminMsg: AdminMessage,
+        wantAck: Boolean,
+        written: CompletableDeferred<Unit>? = null,
+    ): PacedMessageHandle {
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.from = engine.myNodeNumOrNull() ?: 0
+            wb.to = localNode().raw
+            wb.want_ack = wantAck
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ADMIN_APP
+                wb.payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
+                wb.want_response = false
+            }.build()
+        }.build()
+        return engine.enqueuePaced(packet, resend = null, written = written)
+    }
+
+    /**
      * Send an admin packet without waiting for a firmware reply or routing ACK.
      */
     private fun submitAdminFireAndForget(adminMsg: AdminMessage, to: NodeId = localNode()): AdminResult<Unit> {
@@ -614,7 +589,9 @@ internal class AdminApiImpl(
         )
     }
 
-    private suspend fun commitEditSettings(): AdminResult<Unit> = retryOnSessionExpiry { submitCommit() }
+    private suspend fun commitEditSettings(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage.Builder().also { wb -> wb.commit_edit_settings = true }.build())
+    }
 
     private suspend fun closeEditSettings(generation: Long): Result<AdminResult<Unit>> = withContext(NonCancellable) {
         if (!engine.isConnectedAtGeneration(generation)) {
@@ -734,10 +711,27 @@ internal class AdminApiImpl(
 
 private class AdminEditFailure(val result: AdminResult<Nothing>) : RuntimeException()
 
+/**
+ * Admin commands whose firmware handler takes BLE down before it can answer (`disableBluetooth()` in
+ * `AdminModule.cpp`), or jumps to the bootloader without answering. `set_config` and
+ * `set_module_config` only do so when they need a reboot; an unrelated link loss after any of these
+ * is still read as applied.
+ */
+private fun AdminMessage.dropsLinkBeforeAnswering(): Boolean = commit_edit_settings == true ||
+    set_config != null ||
+    set_module_config != null ||
+    factory_reset_config != null ||
+    factory_reset_device != null ||
+    nodedb_reset != null ||
+    restore_preferences != null ||
+    enter_dfu_mode_request == true
+
 private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> = when (reason) {
-    SendFailure.NoRoute, SendFailure.MaxRetransmit, SendFailure.Disconnected,
-    SendFailure.HandshakeFailed, SendFailure.DutyCycleLimit,
-    -> AdminResult.NodeUnreachable
+    SendFailure.NoRoute -> AdminResult.Failed(Routing.Error.NO_ROUTE)
+
+    SendFailure.MaxRetransmit -> AdminResult.Failed(Routing.Error.MAX_RETRANSMIT)
+
+    SendFailure.Disconnected, SendFailure.HandshakeFailed, SendFailure.DutyCycleLimit -> AdminResult.NodeUnreachable
 
     SendFailure.Timeout, SendFailure.AckTimeout -> AdminResult.Timeout
 

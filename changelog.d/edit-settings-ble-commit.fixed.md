@@ -1,5 +1,7 @@
-- `AdminApi.editSettings` and `batch` report a local commit as applied when the transport wrote
-  it and the link then dropped. Firmware turns BLE off inside the commit handler, so over BLE no
-  ACK ever arrives.
-- Writes inside `editSettings` and `batch`, and their commit, go through the paced send queue, so
-  a long transaction no longer overruns the device's three-packet BLE inbound queue.
+- Over BLE, an admin command to the connected node whose firmware handler takes the link down
+  before answering (`commit_edit_settings`, `set_config`, `set_module_config`, the resets,
+  `restore_preferences`, DFU) reports `AdminResult.Success` once the transport wrote it and the link
+  dropped, instead of `NodeUnreachable`. A command still queued when the link drops does not.
+- A remote admin read whose `MAX_RETRANSMIT` comes from the connected radio keeps waiting for the
+  reply and reports `Failed(MAX_RETRANSMIT)` only at timeout, so a reply that arrives over another
+  path is no longer lost.

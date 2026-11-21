@@ -203,6 +203,7 @@ abstract fun interface org.meshtastic.sdk/ReconnectRecoveryStep { // org.meshtas
 
 abstract interface org.meshtastic.sdk/AdminApi { // org.meshtastic.sdk/AdminApi|null[0]
     abstract fun forNode(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/AdminApi // org.meshtastic.sdk/AdminApi.forNode|forNode(org.meshtastic.sdk.NodeId){}[0]
+    abstract fun withRpcTimeout(kotlin.time/Duration): org.meshtastic.sdk/AdminApi // org.meshtastic.sdk/AdminApi.withRpcTimeout|withRpcTimeout(kotlin.time.Duration){}[0]
     abstract suspend fun <#A1: kotlin/Any?> batch(kotlin.coroutines/SuspendFunction1<org.meshtastic.sdk/AdminBatchScope, #A1>): #A1 // org.meshtastic.sdk/AdminApi.batch|batch(kotlin.coroutines.SuspendFunction1<org.meshtastic.sdk.AdminBatchScope,0:0>){0§<kotlin.Any?>}[0]
     abstract suspend fun <#A1: kotlin/Any?> editSettings(kotlin.coroutines/SuspendFunction1<org.meshtastic.sdk/AdminEdit, #A1>): org.meshtastic.sdk/AdminResult<#A1> // org.meshtastic.sdk/AdminApi.editSettings|editSettings(kotlin.coroutines.SuspendFunction1<org.meshtastic.sdk.AdminEdit,0:0>){0§<kotlin.Any?>}[0]
     abstract suspend fun addContact(org.meshtastic.proto/SharedContact): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.addContact|addContact(org.meshtastic.proto.SharedContact){}[0]
@@ -320,6 +321,8 @@ abstract interface org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk/Rad
         abstract fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk/RadioTransport.identity.<get-identity>|<get-identity>(){}[0]
     abstract val state // org.meshtastic.sdk/RadioTransport.state|{}state[0]
         abstract fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk/RadioTransport.state.<get-state>|<get-state>(){}[0]
+    open val linkDropsOnRestartCommands // org.meshtastic.sdk/RadioTransport.linkDropsOnRestartCommands|{}linkDropsOnRestartCommands[0]
+        open fun <get-linkDropsOnRestartCommands>(): kotlin/Boolean // org.meshtastic.sdk/RadioTransport.linkDropsOnRestartCommands.<get-linkDropsOnRestartCommands>|<get-linkDropsOnRestartCommands>(){}[0]
 
     abstract fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk/RadioTransport.frames|frames(){}[0]
     abstract suspend fun connect() // org.meshtastic.sdk/RadioTransport.connect|connect(){}[0]

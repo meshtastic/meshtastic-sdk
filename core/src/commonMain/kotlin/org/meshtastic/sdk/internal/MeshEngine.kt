@@ -567,6 +567,9 @@ internal class MeshEngine(
 
     fun connectionGeneration(): Long = connectionGeneration.value
 
+    val linkDropsOnRestartCommands: Boolean
+        get() = transport.linkDropsOnRestartCommands
+
     fun isConnectedAtGeneration(generation: Long): Boolean =
         connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
 
@@ -2320,7 +2323,7 @@ internal class MeshEngine(
         val errorReason = routing.error_reason
         if (errorReason != null && errorReason != Routing.Error.NONE &&
             dispatcher.ownsRoutingFailure(messageId.raw, packet.from, myNodeNum) &&
-            dispatcher.tryFailFromRouting(messageId.raw, errorReason)
+            dispatcher.tryFailFromRouting(messageId.raw, errorReason, packet.from, myNodeNum)
         ) {
             // Defensive cleanup if a stale pendingSends entry shared the wire id.
             pendingSends.remove(messageId)

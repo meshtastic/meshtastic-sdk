@@ -62,6 +62,16 @@ public interface AdminApi {
      */
     public fun forNode(dest: NodeId): AdminApi
 
+    /**
+     * Return an [AdminApi] with the same target whose calls wait up to [timeout] for the device's
+     * answer, instead of the client's `rpcTimeout`. Use it for a multi-hop remote read whose reply
+     * can legitimately take longer than a local round-trip.
+     *
+     * @param timeout how long each call waits for its response or ACK
+     * @since 0.3.0
+     */
+    public fun withRpcTimeout(timeout: Duration): AdminApi
+
     // ── Device info ─────────────────────────────────────────────────────────
 
     /**
