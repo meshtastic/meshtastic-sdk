@@ -1359,13 +1359,17 @@ public final class org/meshtastic/sdk/MessageHandleRetryKt {
 }
 
 public final class org/meshtastic/sdk/MessageHelpersKt {
+	public static final fun channelFor-ynvfgPs (Lorg/meshtastic/sdk/RadioClient;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun requestPosition (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;)Lorg/meshtastic/sdk/MessageHandle;
 	public static final fun requestPosition-RB-pko4 (Lorg/meshtastic/sdk/RadioClient;II)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun requestPosition-RB-pko4$default (Lorg/meshtastic/sdk/RadioClient;IIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public static final fun requestPositionOnHeardChannel-ynvfgPs (Lorg/meshtastic/sdk/RadioClient;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun sendDirectMessage-BniPyuc (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendDirectMessage-BniPyuc$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;IZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun sendDirectMessageEncrypted-GrvDmtA (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendDirectMessageEncrypted-GrvDmtA$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun sendDirectMessageOnHeardChannel-GrvDmtA (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendDirectMessageOnHeardChannel-GrvDmtA$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun sendPosition-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/LatLng;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendPosition-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/LatLng;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
@@ -2765,6 +2769,18 @@ public final class org/meshtastic/sdk/TransportTarget$Tcp : org/meshtastic/sdk/T
 	public final fun getPort ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/WaypointsKt {
+	public static final fun canBeEditedBy (Lorg/meshtastic/proto/Waypoint;Lorg/meshtastic/sdk/NodeId;)Z
+	public static final fun canBeEditedBy-dMC3jmg (Lorg/meshtastic/proto/Waypoint;I)Z
+	public static final fun deleteWaypoint-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun deleteWaypoint-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun isExpired (Lorg/meshtastic/proto/Waypoint;Lkotlin/time/Instant;)Z
+	public static final fun newWaypointId (Lkotlin/random/Random;)I
+	public static synthetic fun newWaypointId$default (Lkotlin/random/Random;ILjava/lang/Object;)I
+	public static final fun sendWaypoint-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendWaypoint-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/WireCodec {
