@@ -86,6 +86,8 @@ class SessionTypedEventsTest {
         val changed = assertIs<RadioSessionEvent.ConfigChanged>(events.last())
         assertEquals(Config.DeviceConfig.Role.ROUTER, changed.bundle.configs.firstNotNullOf { it.device }.role)
         assertEquals("2.7.0", changed.bundle.metadata.firmware_version)
+        // Sections the write did not touch stay in the bundle.
+        assertEquals(Config.LoRaConfig.RegionCode.EU_868, changed.bundle.configs.firstNotNullOf { it.lora }.region)
         client.disconnect()
     }
 
@@ -193,6 +195,12 @@ class SessionTypedEventsTest {
                     wb.config = Config.Builder().also { wb ->
                         wb.device =
                             Config.DeviceConfig.Builder().also { it.role = Config.DeviceConfig.Role.CLIENT }.build()
+                    }.build()
+                }.build().toFrame(),
+                FromRadio.Builder().also { wb ->
+                    wb.config = Config.Builder().also { wb ->
+                        wb.lora =
+                            Config.LoRaConfig.Builder().also { it.region = Config.LoRaConfig.RegionCode.EU_868 }.build()
                     }.build()
                 }.build().toFrame(),
             ),

@@ -76,7 +76,12 @@ class LiveRenumberTest {
 
         transport.injectFrame(myInfo(LOCAL))
         runCurrent()
-        // Past the restart debounce, so a restart would have happened by now.
+        // A wrongly armed renumber restarts only once a paced write settles, so settle one.
+        val save = async { client.admin.setConfig(routerRole) }
+        runCurrent()
+        transport.injectRoutingAck(lastAdminWrite(transport).id, fromNode = LOCAL)
+        runCurrent()
+        assertIs<AdminResult.Success<Unit>>(save.await())
         advanceTimeBy(5_000)
         runCurrent()
 
@@ -110,6 +115,16 @@ class LiveRenumberTest {
         assertTrue(admin.takeLast(3).all { it.to == RENUMBERED }, "begin, write and commit all go to the new number")
         assertEquals(RENUMBERED, commit.to, "the commit is addressed to the new number")
         assertEquals(1, stage1Requests(transport), "no restart while the batch is open")
+        // Retargeted writes are still local admin: no remote passkey or admin-channel routing.
+        assertTrue(
+            events.none {
+                (it as? RadioSessionEvent.Event)?.event.let { e ->
+                    e is MeshEvent.ProtocolWarning &&
+                        e.message.contains("admin remote")
+                }
+            },
+            "retargeted writes treated as remote admin: $events",
+        )
         transport.injectRoutingAck(commit.id, fromNode = RENUMBERED)
         runCurrent()
 
