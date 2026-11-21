@@ -117,6 +117,7 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val syncTimeDuringHandshake: Boolean = false,
     private val protocolLogLevel: LogLevel = LogLevel.NONE,
     private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
     sessionReceiveCapacity: Int? = null,
@@ -1381,7 +1382,10 @@ internal class MeshEngine(
         // handleStartConfig resets its read index), so the same channels/config sections can
         // stream twice. Replace-by-key instead of append so the committed bundle has no dupes.
         when {
-            myInfo != null -> pendingMyInfo = myInfo
+            myInfo != null -> {
+                if (syncTimeDuringHandshake && pendingMyInfo == null) sendHandshakeTimeSync(myInfo.my_node_num)
+                pendingMyInfo = myInfo
+            }
 
             metadata != null -> {
                 pendingMetadata = metadata
@@ -3321,6 +3325,21 @@ internal class MeshEngine(
             val sent = withTimeoutOrNull(sendTimeout) { transport.send(frame) }
             checkNotNull(sent) { "Lockdown write timed out" }
         }
+    }
+
+    // my_info is the first Stage 1 frame. Firmware flushes its queued packets once Stage 1 ends and
+    // re-dates them when the clock turns valid (MeshService::reconcilePendingRxTimes), so the
+    // clock has to be set here. myNodeNum is still 0; firmware fills `from` and the packet id.
+    private fun sendHandshakeTimeSync(nodeNum: Int) {
+        val admin = AdminMessage.Builder().also { wb -> wb.set_time_only = clock.now().epochSeconds.toInt() }.build()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = nodeNum
+            wb.decoded = Data.Builder().also { d ->
+                d.portnum = PortNum.ADMIN_APP
+                d.payload = AdminMessage.ADAPTER.encode(admin).toByteString()
+            }.build()
+        }.build()
+        sendToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {

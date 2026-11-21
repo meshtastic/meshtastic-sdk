@@ -239,7 +239,7 @@ Each test gives the transport, steps, expected result, how to verify it, and any
 - **Steps:**
   1. Offset the host clock by 5 minutes (only on a node without GPS).
   2. Connect with `Builder.autoSyncTimeOnConnect(true)`.
-- **Expected:** after the handshake, the node's time matches the host within 60 s.
+- **Expected:** after the handshake, the node's time matches the host within 60 s, and packets the node queued before the connect carry a corrected `rx_time`.
 
 #### D4: Reboot drops the transport
 - **Steps:** `client.admin.reboot()`.

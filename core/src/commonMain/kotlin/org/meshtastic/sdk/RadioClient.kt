@@ -334,22 +334,6 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class, CancellationException::class)
     public suspend fun connect() {
         engine.connect()
-        if (autoSyncTimeOnConnect) {
-            // Best-effort and fire-and-forget: a slow / silent device must not delay connect()'s
-            // return. Launches under the same parent context as the engine so cancellation /
-            // shutdown propagates cleanly.
-            kotlinx.coroutines.CoroutineScope(parentContext).launch(
-                kotlinx.coroutines.CoroutineName("meshtastic-auto-time-sync"),
-            ) {
-                try {
-                    admin.setTime()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Swallow — clock sync is auxiliary, the session is otherwise live.
-                }
-            }
-        }
     }
 
     /**
@@ -821,7 +805,7 @@ public class RadioClient internal constructor(
          * Default: [kotlin.time.Clock.System].
          *
          * Wired through to [AdminApi.setTime] (when called with `at = null`) and to the
-         * post-handshake auto-sync trigger when [autoSyncTimeOnConnect] is enabled.
+         * clock sync the handshake sends when [autoSyncTimeOnConnect] is enabled.
          */
         public fun clock(clock: kotlin.time.Clock): Builder = apply { this.clock = clock }
 
@@ -854,12 +838,9 @@ public class RadioClient internal constructor(
         /**
          * Enable or disable automatic time sync on connect.
          *
-         * When enabled (default), [RadioClient.connect] fires a single [AdminApi.setTime] call
-         * after the handshake reaches [ConnectionState.Connected]. The supplied [clock] sources
-         * the value. Useful for GPS-less radios that lose wall-clock time across reboots.
-         *
-         * The current implementation syncs unconditionally on each Connected transition; a future
-         * iteration will gate on observed device skew (> 60 s drift).
+         * When enabled (default), the handshake sends one `set_time_only` from [clock] as soon as
+         * the Stage 1 `my_info` arrives, so firmware re-dates the packets it queued without a clock
+         * before it flushes them. Useful for GPS-less radios that lose time across reboots.
          */
         public fun autoSyncTimeOnConnect(enabled: Boolean): Builder = apply { autoSyncTimeOnConnect = enabled }
 
@@ -1007,6 +988,7 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                syncTimeDuringHandshake = autoSyncTimeOnConnect,
                 protocolLogLevel = protocolLogLevel,
                 payloadRedactor = payloadRedactor,
                 sessionReceiveCapacity = sessionReceiveCapacity,

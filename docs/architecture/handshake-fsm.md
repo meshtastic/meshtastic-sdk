@@ -58,6 +58,10 @@ While `Idle`, which covers the gap between `transport.connect()` reaching `Conne
 
 One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`.
 
+### Clock sync in handshake
+
+With `autoSyncTimeOnConnect` on (the default), the first Stage 1 `my_info` triggers one `set_time_only` admin packet addressed to `my_info.my_node_num`. Firmware flushes its queued packets once Stage 1 ends and re-dates the ones it stamped without a clock when the clock turns valid (`MeshService::reconcilePendingRxTimes`), so the sync must land before then. Firmware fills `from` and the packet id.
+
 ### No wake heartbeat before Stage 1
 
 The SDK sends the four `0x94` resync bytes on stream transports and nothing else before `want_config_id`; it sends no pre-handshake heartbeat on any transport. Firmware runs `powerFSM.trigger(EVENT_CONTACT_FROM_PHONE)` and refreshes `lastContactMsec` at the top of `PhoneAPI::handleToRadio` (`PhoneAPI.cpp:519-520`) for every `ToRadio` variant, so `want_config_id` itself is the contact event. `EVENT_CONTACT_FROM_PHONE` has a single transition, `stateDARK -> stateDARK` (`PowerFSM.cpp:470`), none from light sleep, and BLE writes reach `handleToRadio` through the same queue whatever the payload (`NimbleBluetooth.cpp:479-522`, `:256`).

@@ -128,9 +128,9 @@ Hosts that want a single observable view across radios fan-in flows themselves w
 Routers and headless devices without GPS rely on the phone for clock sync (`protocol.md` §19.17). The API provides:
 
 - `AdminApi.setTime(at: Instant = Clock.System.now()): AdminResult<Unit>` — push the host clock to the device as `set_time_only`.
-- `Builder.autoSyncTimeOnConnect(enabled: Boolean)` — default `true`. After Stage 2 completes, if the device's reported clock differs from the host's by more than 60 s, the engine calls `setTime()` automatically.
+- `Builder.autoSyncTimeOnConnect(enabled: Boolean)` — default `true`. The handshake sends one `set_time_only` from the builder's clock when the Stage 1 `my_info` arrives.
 
-> **Note:** `setTime` is `setTime(at: Instant? = null)`, where `null` means the builder's clock, and `autoSyncTimeOnConnect` calls it after every connect without checking skew ([`../roadmap.md`](../roadmap.md) R-6).
+> **Note:** `setTime` is `setTime(at: Instant? = null)`, where `null` means the builder's clock. The handshake sync does not check skew ([`../roadmap.md`](../roadmap.md) R-6).
 
 ### `:core` packages contract
 
