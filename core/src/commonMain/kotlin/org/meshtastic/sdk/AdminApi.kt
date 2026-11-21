@@ -243,6 +243,7 @@ public interface AdminApi {
      * Provision, unlock, or lock the device's storage lockdown
      * (`MESHTASTIC_LOCKDOWN` hardened firmware builds only).
      *
+     * A protected radio can request authentication before the client reaches Connected.
      * The device reports its current state via [MeshEvent.LockdownStatusChanged] — observe that to
      * decide which [LockdownAuth] to send and to learn the outcome:
      * - **Provision / unlock:** set [LockdownAuth.passphrase] (1–32 bytes). On success the device

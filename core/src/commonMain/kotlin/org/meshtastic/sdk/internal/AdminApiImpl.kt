@@ -367,25 +367,7 @@ internal class AdminApiImpl(
 
     // ── Lockdown (hardened builds) ──────────────────────────────────────────
 
-    override suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit> {
-        // Local-only: firmware (PhoneAPI::handleLockdownAuthInline) consumes lockdown_auth inline
-        // on the direct phone link and wipes the passphrase before it can reach the mesh. A
-        // remote-targeting instance must NOT send it — that would leak a passphrase onto the mesh
-        // where no inline handler exists. Managed-mode is intentionally NOT consulted: lockdown is
-        // a pre-auth security primitive, independent of admin authorization.
-        if (targetNode != null && targetNode.raw != engine.myNodeNumOrNull()) {
-            return AdminResult.Unauthorized
-        }
-        val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
-        // Fire-and-forget: the device answers with a fresh FromRadio.lockdown_status
-        // (MeshEvent.LockdownStatusChanged), not a routing ACK.
-        return submitAdminFireAndForget(
-            AdminMessage.Builder().also { wb ->
-                wb.lockdown_auth = auth
-            }.build(),
-            to = NodeId(local),
-        )
-    }
+    override suspend fun lockdown(auth: LockdownAuth): AdminResult<Unit> = engine.enqueueLockdown(auth, targetNode?.raw)
 
     // ── OTA updates ─────────────────────────────────────────────────────────
 

@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.yield
@@ -34,6 +36,8 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
+import org.meshtastic.proto.LockdownAuth
+import org.meshtastic.proto.LockdownStatus
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
@@ -158,7 +162,10 @@ internal class MeshEngine(
 
     private val inbox = Channel<EngineMessage>(Channel.UNLIMITED)
 
-    private val outbound = Channel<Frame>(Channel.UNLIMITED)
+    private data class OutboundFrame(val frame: Frame, val lockdownLink: LockdownLink? = null)
+
+    private val outbound = Channel<OutboundFrame>(Channel.UNLIMITED)
+    private val lockdownWriteMutex = Mutex()
 
     /**
      * Supervisor job hosting the engine and its sibling coroutines.
@@ -187,6 +194,12 @@ internal class MeshEngine(
     private var engineScope: CoroutineScope? = null
     private var frameReaderJob: Job? = null
     private var receiveGeneration = 0L
+
+    // Command admission captures the exact physical link and node id before posting to the actor.
+    private data class LockdownLink(val generation: Long, val nodeNum: Int)
+
+    private val lockdownLink = atomic<LockdownLink?>(null)
+    private var handshakeAttempt = 0L
     private var nodeDbRefresh: MutableMap<NodeId, NodeInfo>? = null
     private var nodeDbRefreshQueued = false
     private var nodeDbRefreshRequest = 0L
@@ -352,10 +365,14 @@ internal class MeshEngine(
         }
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
-            for (frame in outbound) {
+            for ((frame, link) in outbound) {
                 try {
-                    logProtocolTx(frame)
-                    transport.send(frame)
+                    if (link == null) {
+                        logProtocolTx(frame)
+                        transport.send(frame)
+                    } else {
+                        writeLockdownFrame(frame, link)
+                    }
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -613,18 +630,12 @@ internal class MeshEngine(
         supervisorJobRef.value = null
         engineScope = null
         handshakeStage = HandshakeStage.Idle
+        lockdownLink.value = null
         myNodeNum = 0
         previousMyNodeNum = null
         previousDeviceId = null
         clearSessionPasskeys()
-        handshakePacketBuffer.clear()
-        pendingNodes.clear()
-        pendingConfigs = emptyList()
-        pendingModuleConfigs = emptyList()
-        pendingChannels.clear()
-        pendingMyInfo = null
-        pendingMetadata = null
-        pendingDeviceUIConfig = null
+        clearPendingHandshake()
         preSendQueue.clear()
         // reset the degraded flag so the next connect attempt gets a fresh storage shot.
         storageDegraded = false
@@ -634,8 +645,6 @@ internal class MeshEngine(
         offlineNodes.clear()
         lastCongestionLevel.clear()
         lastMqttConnected = null
-        // clear any leftover settle-buffer entries so a reconnect starts clean.
-        settleBuffer.clear()
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
@@ -694,6 +703,8 @@ internal class MeshEngine(
 
             is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
 
+            is EngineMessage.Lockdown -> handleLockdownCommand(msg)
+
             EngineMessage.HeartbeatTick -> handleHeartbeatTick()
 
             EngineMessage.LivenessTick -> handleLivenessTick()
@@ -702,11 +713,19 @@ internal class MeshEngine(
 
             is EngineMessage.HandshakeTimeout -> handleHandshakeTimeout(msg)
 
-            EngineMessage.HandshakeStage1SettleComplete -> handleStage1SettleComplete()
+            is EngineMessage.HandshakeStage1SettleComplete -> if (msg.attempt ==
+                handshakeAttempt
+            ) {
+                handleStage1SettleComplete()
+            }
 
-            EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
+            is EngineMessage.HandshakeHeartbeatSettleComplete -> if (msg.attempt ==
+                handshakeAttempt
+            ) {
+                handleHeartbeatSettleComplete()
+            }
 
-            EngineMessage.Stage1RetryWantConfig -> handleStage1RetryWantConfig()
+            is EngineMessage.Stage1RetryWantConfig -> if (msg.attempt == handshakeAttempt) handleStage1RetryWantConfig()
 
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
 
@@ -737,7 +756,7 @@ internal class MeshEngine(
                 wb.packet = outboundPacket
             }.build(),
         )
-        outbound.trySend(Frame(encoded.toByteString()))
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString())))
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
         val job = scope.launch {
@@ -925,10 +944,8 @@ internal class MeshEngine(
      * supervisor can re-enter the handshake without re-running storage activation.
      */
     private fun startStage1Handshake() {
-        handshakeStage = HandshakeStage.Stage1Draining
         val generation = ++receiveGeneration
         sessionReceive?.begin(generation)
-        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
         startFrameReader(generation)
 
         // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
@@ -936,17 +953,25 @@ internal class MeshEngine(
         // BLE doesn't need this since each GATT write is self-framing.
         if (!transport.identity.raw.startsWith("ble:")) {
             val wakeBytes = byteArrayOf(0x94.toByte(), 0x94.toByte(), 0x94.toByte(), 0x94.toByte())
-            outbound.trySend(Frame(wakeBytes.toByteString()))
+            outbound.trySend(OutboundFrame(Frame(wakeBytes.toByteString())))
         }
 
+        requestStage1Config()
+    }
+
+    private fun requestStage1Config() {
+        val attempt = ++handshakeAttempt
+        lockdownLink.value = null
+        handshakeStage = HandshakeStage.Stage1Draining
+        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
         engineScope?.launch {
             delay(STAGE1_RETRY_MS)
-            inbox.trySend(EngineMessage.Stage1RetryWantConfig)
+            inbox.trySend(EngineMessage.Stage1RetryWantConfig(attempt))
         }
         engineScope?.launch {
             delay(STAGE1_TIMEOUT_MS)
-            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining))
+            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining, attempt))
         }
 
         logger.info(TAG) { "Handshake Stage 1 started (want_config_id=$NONCE_STAGE1)" }
@@ -1113,6 +1138,7 @@ internal class MeshEngine(
             logger.warn(TAG) { "Device rebooted — forcing disconnect" }
             events.tryEmit(MeshEvent.DeviceRebooted())
             handshakeStage = HandshakeStage.Idle
+            lockdownLink.value = null
             stage2WatchdogJob?.cancel()
             stage2WatchdogJob = null
             val deferred = pendingConnectDeferred
@@ -1125,8 +1151,16 @@ internal class MeshEngine(
             return
         }
 
+        val lockdownStatus = fromRadio.lockdown_status
+        if (lockdownStatus != null && handshakeStage != HandshakeStage.Ready) {
+            handleHandshakeLockdown(lockdownStatus)
+            return
+        }
+
         when (handshakeStage) {
-            HandshakeStage.Idle -> {
+            HandshakeStage.AwaitingLockdown,
+            HandshakeStage.Idle,
+            -> {
             }
 
             HandshakeStage.Stage1Settling -> {
@@ -1158,6 +1192,43 @@ internal class MeshEngine(
                 if (fromRadio.packet == null && !refreshFrame) sessionReceive?.envelope(fromRadio)
             }
         }
+    }
+
+    private fun handleHandshakeLockdown(status: LockdownStatus) {
+        when (status.state) {
+            LockdownStatus.State.LOCKED, LockdownStatus.State.NEEDS_PROVISION -> {
+                handshakeStage = HandshakeStage.AwaitingLockdown
+                lockdownLink.value = pendingMyInfo?.my_node_num?.takeIf { it != 0 }?.let {
+                    LockdownLink(receiveGeneration, it)
+                }
+                stage2WatchdogJob?.cancel()
+                stage2WatchdogJob = null
+            }
+
+            LockdownStatus.State.UNLOCKED, LockdownStatus.State.DISABLED -> if (
+                handshakeStage == HandshakeStage.AwaitingLockdown
+            ) {
+                // Firmware authorizes this link only once the unlocked configuration is loaded.
+                // Discard the redacted snapshot and keep the reader on the authorized link.
+                clearPendingHandshake()
+                requestStage1Config()
+            }
+
+            else -> Unit
+        }
+        events.tryEmit(MeshEvent.LockdownStatusChanged(status))
+    }
+
+    private fun clearPendingHandshake() {
+        pendingNodes.clear()
+        pendingConfigs = emptyList()
+        pendingModuleConfigs = emptyList()
+        pendingChannels.clear()
+        pendingMyInfo = null
+        pendingMetadata = null
+        pendingDeviceUIConfig = null
+        settleBuffer.clear()
+        handshakePacketBuffer.clear()
     }
 
     private fun processStage1Envelope(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -1210,9 +1281,10 @@ internal class MeshEngine(
                 logger.info(TAG) { "Stage 1 complete; entering 100 ms settle" }
                 handshakeStage = HandshakeStage.Stage1Settling
                 connectionState.value = ConnectionState.Configuring(ConfigPhase.Settling, 0.5f)
+                val attempt = handshakeAttempt
                 engineScope?.launch {
                     delay(INTER_STAGE_SETTLE_MS)
-                    inbox.trySend(EngineMessage.HandshakeStage1SettleComplete)
+                    inbox.trySend(EngineMessage.HandshakeStage1SettleComplete(attempt))
                 }
             }
 
@@ -1262,13 +1334,16 @@ internal class MeshEngine(
 
         val nonce = sendKeepaliveHeartbeat()
         logger.debug(TAG) { "Sent inter-stage heartbeat nonce=$nonce" }
+        val attempt = handshakeAttempt
         engineScope?.launch {
             delay(INTER_STAGE_SETTLE_MS)
-            inbox.trySend(EngineMessage.HandshakeHeartbeatSettleComplete)
+            inbox.trySend(EngineMessage.HandshakeHeartbeatSettleComplete(attempt))
         }
     }
 
     private fun handleHeartbeatSettleComplete() {
+        if (handshakeStage != HandshakeStage.Stage1Settling) return
+        val attempt = handshakeAttempt
         // Config-only: finish after Stage 1 via a synthetic Stage-2 completion; no NodeDB request (§6).
         if (skipNodeDb) {
             handshakeStage = HandshakeStage.Stage2Draining
@@ -1298,13 +1373,13 @@ internal class MeshEngine(
                 elapsedMs += STAGE2_PROGRESS_TICK_MS
                 val current = stage2ProgressCounter
                 if (current == lastCounter) {
-                    inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining))
+                    inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining, attempt))
                     return@launch
                 }
                 lastCounter = current
             }
             // Hard cap exceeded — even if frames are still trickling, abort.
-            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining))
+            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining, attempt))
         }
 
         logger.info(TAG) { "Handshake Stage 2 started (want_config_id=$NONCE_STAGE2)" }
@@ -1465,9 +1540,10 @@ internal class MeshEngine(
                         }.build(),
                         wantResponse = true,
                     )
+                    val attempt = handshakeAttempt
                     engineScope?.launch {
                         delay(SEED_TIMEOUT_MS)
-                        inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession))
+                        inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession, attempt))
                     }
                 } else {
                     // No myInfo: skip seeding and go Ready.
@@ -1604,6 +1680,7 @@ internal class MeshEngine(
 
     private fun transitionToReady() {
         handshakeStage = HandshakeStage.Ready
+        lockdownLink.value = myNodeNum.takeIf { it != 0 }?.let { LockdownLink(receiveGeneration, it) }
 
         // failure starts a fresh backoff schedule.
         reconnectAttempt = 0
@@ -2431,16 +2508,10 @@ internal class MeshEngine(
         // Reset session-level state so the next handshake starts clean. We deliberately keep
         // engineScope, storage, supervisorJobRef and channels live across the cycle.
         handshakeStage = HandshakeStage.Idle
+        lockdownLink.value = null
         configBundleState.value = null
         lastMqttConnected = null
-        pendingNodes.clear()
-        pendingConfigs = emptyList()
-        pendingModuleConfigs = emptyList()
-        pendingChannels.clear()
-        pendingMyInfo = null
-        pendingMetadata = null
-        settleBuffer.clear()
-        handshakePacketBuffer.clear()
+        clearPendingHandshake()
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
         stage2WatchdogJob?.cancel()
@@ -2477,10 +2548,12 @@ internal class MeshEngine(
         val previousReader = frameReaderJob
         scope.launch {
             val outcome = try {
-                autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
-                runCatching { transport.disconnect() }
-                previousReader?.join()
-                transport.connect()
+                lockdownWriteMutex.withLock {
+                    autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
+                    runCatching { transport.disconnect() }
+                    previousReader?.join()
+                    transport.connect()
+                }
                 EngineMessage.ReconnectAttemptResult(success = true, cause = null)
             } catch (e: CancellationException) {
                 throw e
@@ -2590,7 +2663,7 @@ internal class MeshEngine(
                 wb.packet = packet
             }.build(),
         )
-        outbound.trySend(Frame(encoded.toByteString()))
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString())))
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
@@ -2684,7 +2757,7 @@ internal class MeshEngine(
     private fun handleHandshakeTimeout(msg: EngineMessage.HandshakeTimeout) {
         if (handshakeStage == HandshakeStage.Ready) return // already succeeded
         // Stale timer from a stage we've already advanced past — ignore.
-        if (handshakeStage != msg.stage) return
+        if (msg.attempt != handshakeAttempt || handshakeStage != msg.stage) return
         logger.error(TAG) { "Handshake timeout at stage ${msg.stage.toDisplayName()}" }
 
         // emit a structured ProtocolWarning so consumers can distinguish
@@ -2757,9 +2830,11 @@ internal class MeshEngine(
         trySendToRadio(msg)
     }
 
-    internal fun trySendToRadio(msg: ToRadio): Boolean = try {
+    internal fun trySendToRadio(msg: ToRadio): Boolean = trySendToRadio(msg, link = null)
+
+    private fun trySendToRadio(msg: ToRadio, link: LockdownLink?): Boolean = try {
         val encoded = WireCodec.encodeToRadio(msg)
-        outbound.trySend(Frame(encoded.toByteString())).isSuccess
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link)).isSuccess
     } catch (e: Exception) {
         logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
         false
@@ -2772,6 +2847,46 @@ internal class MeshEngine(
      */
     internal fun sendAdmin(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
         inbox.trySend(EngineMessage.AdminFireAndForget(adminMsg, wantResponse, to))
+    }
+
+    fun enqueueLockdown(auth: LockdownAuth, target: Int?): AdminResult<Unit> {
+        val link = lockdownLink.value
+        if (target != null && target != link?.nodeNum) return AdminResult.Unauthorized
+        if (link == null) return AdminResult.NodeUnreachable
+        return if (inbox.trySend(EngineMessage.Lockdown(auth, link.generation, link.nodeNum)).isSuccess) {
+            AdminResult.Success(Unit)
+        } else {
+            AdminResult.NodeUnreachable
+        }
+    }
+
+    private fun handleLockdownCommand(msg: EngineMessage.Lockdown) {
+        val link = lockdownLink.value ?: return
+        if (msg.generation != link.generation || msg.nodeNum != link.nodeNum) return
+        val local = link.nodeNum
+        // Firmware consumes this command inline only when it targets the attached radio.
+        val admin = AdminMessage.Builder().also { it.lockdown_auth = msg.auth }.build()
+        val packet = MeshPacket.Builder().also {
+            it.to = local
+            it.from = local
+            it.id = nextMessageId().raw
+            it.decoded = Data.Builder().also { data ->
+                data.portnum = PortNum.ADMIN_APP
+                data.payload = AdminMessage.ADAPTER.encode(admin).toByteString()
+            }.build()
+        }.build()
+        trySendToRadio(ToRadio.Builder().also { it.packet = packet }.build(), link)
+    }
+
+    private suspend fun writeLockdownFrame(frame: Frame, link: LockdownLink) {
+        // Serialize credential writes with physical reconnection, so a queued command
+        // cannot reach a radio that has replaced its original link.
+        lockdownWriteMutex.withLock {
+            if (lockdownLink.value != link) return
+            logProtocolTx(frame)
+            val sent = withTimeoutOrNull(sendTimeout) { transport.send(frame) }
+            checkNotNull(sent) { "Lockdown write timed out" }
+        }
     }
 
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {

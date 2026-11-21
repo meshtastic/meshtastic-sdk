@@ -9,6 +9,7 @@ package org.meshtastic.sdk.internal
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.Frame
@@ -25,6 +26,7 @@ internal enum class HandshakeStage {
     Idle,
     Stage1Draining,
     Stage1Settling,
+    AwaitingLockdown,
     Stage2Draining,
     SeedingSession,
     Ready,
@@ -34,6 +36,7 @@ internal enum class HandshakeStage {
         Idle -> "Idle"
         Stage1Draining -> "Stage 1"
         Stage1Settling -> "Stage 1 (settling)"
+        AwaitingLockdown -> "Awaiting lockdown authorization"
         Stage2Draining -> "Stage 2"
         SeedingSession -> "Seeding Session"
         Ready -> "Ready"
@@ -111,6 +114,8 @@ internal sealed interface EngineMessage {
         val to: Int,
     ) : EngineMessage
 
+    data class Lockdown(val auth: LockdownAuth, val generation: Long, val nodeNum: Int) : EngineMessage
+
     // ── Timers ─────────────────────────────────────────────────────────────
 
     /** Periodic heartbeat tick (every 30 s per protocol.md §16). */
@@ -132,19 +137,19 @@ internal sealed interface EngineMessage {
      *
      * @param stage the handshake stage that timed out.
      */
-    data class HandshakeTimeout(val stage: HandshakeStage) : EngineMessage
+    data class HandshakeTimeout(val stage: HandshakeStage, val attempt: Long) : EngineMessage
 
     /**
      * The 100 ms inter-stage settle timer (after Stage 1 sentinel received) has elapsed.
      * The engine should now send the inter-stage heartbeat.
      */
-    data object HandshakeStage1SettleComplete : EngineMessage
+    data class HandshakeStage1SettleComplete(val attempt: Long) : EngineMessage
 
     /**
      * The 100 ms post-heartbeat settle timer has elapsed.
      * The engine should now send `want_config_id = 69421` to begin Stage 2.
      */
-    data object HandshakeHeartbeatSettleComplete : EngineMessage
+    data class HandshakeHeartbeatSettleComplete(val attempt: Long) : EngineMessage
 
     /** An in-flight admin RPC did not receive a response within its deadline. */
     data class AdminTimeout(val requestId: Int) : EngineMessage
@@ -179,7 +184,7 @@ internal sealed interface EngineMessage {
      * [HandshakeStage.Stage1Draining] with no `pendingMyInfo` observed, the engine re-sends
      * `want_config_id = NONCE_STAGE1` once before the original 20 s budget runs out.
      */
-    data object Stage1RetryWantConfig : EngineMessage
+    data class Stage1RetryWantConfig(val attempt: Long) : EngineMessage
 
     /**
      * Per-send ACK timeout fired (R-P0-6). Posted by the engine after the configured
