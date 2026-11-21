@@ -873,7 +873,7 @@ The SDK keeps passkeys in memory only and drops them when the connection ends or
 
 The SDK exposes this as `AdminApi.editSettings { }` and `AdminApi.batch { }`. If the block throws or is cancelled, the SDK still closes the transaction the node accepted and keeps the original failure, but never sends the commit on a connection other than the one `begin_edit_settings` went out on. Edits made through `admin.forNode(dest)` never change `RadioClient.channels`, `RadioClient.configBundle` or device storage, which describe the connected node.
 
-> **Warning:** firmware calls `disableBluetooth()` on `commit_edit_settings`, before saving, which drops a BLE connection. The session ends; it comes back on its own only when `RadioClient.Builder.autoReconnect(...)` is enabled. TCP and serial are unaffected.
+> **Warning:** firmware calls `disableBluetooth()` on `commit_edit_settings`, before saving, which drops a BLE connection. The session ends; it comes back on its own only when `RadioClient.Builder.autoReconnect(...)` is enabled. TCP and serial are unaffected. Local delivery runs the commit handler before firmware sends the QueueStatus (`MeshService.cpp`), so over BLE neither it nor an ACK arrives; a local commit that the transport wrote and whose link then dropped is reported as `AdminResult.Success`. The transaction's writes and its commit go through the paced send queue, one in flight until its QueueStatus, because the NimBLE inbound queue holds three packets and drops the rest (`NimbleBluetooth.cpp`).
 
 ### Managed mode (`is_managed`)
 

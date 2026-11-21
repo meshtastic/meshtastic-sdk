@@ -397,6 +397,8 @@ internal class MeshEngine(
                     } else {
                         writeLockdownFrame(frame, link)
                     }
+                    // Completed here, not on the actor, so the evidence exists before a link drop is processed.
+                    paced?.written?.complete(Unit)
                     if (paced != null) inbox.trySend(EngineMessage.PacedWriteCompleted(paced))
                 } catch (e: CancellationException) {
                     throw e
@@ -457,14 +459,18 @@ internal class MeshEngine(
         }
     }
 
-    fun enqueuePaced(packet: MeshPacket, resend: (MeshPacket) -> MessageHandle): PacedMessageHandle {
+    fun enqueuePaced(
+        packet: MeshPacket,
+        resend: ((MeshPacket) -> MessageHandle)?,
+        written: CompletableDeferred<Unit>? = null,
+    ): PacedMessageHandle {
         val id = if (packet.id == 0) nextMessageId() else MessageId(packet.id)
         val state = MutableStateFlow<SendState>(SendState.Queued)
         val receipt = CompletableDeferred<QueueReceipt>()
         val admission = CompletableDeferred<Boolean>()
         val dispatch = CompletableDeferred<Boolean>()
         val generation = readySendGeneration.value
-        val submission = EngineMessage.PacedSend(packet, id, generation, state, admission, dispatch, receipt)
+        val submission = EngineMessage.PacedSend(packet, id, generation, state, admission, dispatch, receipt, written)
         when {
             generation == null -> completeNotDispatched(submission, SendFailure.Disconnected)
             !reservePacedSend() -> completeNotDispatched(submission, SendFailure.QueueFull)

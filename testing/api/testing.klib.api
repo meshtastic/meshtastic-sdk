@@ -7,10 +7,12 @@
 
 // Library unique name: <org.meshtastic:testing>
 final class org.meshtastic.sdk.testing/FakeRadioTransport : org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk.testing/FakeRadioTransport|null[0]
-    constructor <init>(org.meshtastic.sdk/TransportIdentity, kotlin.collections/List<org.meshtastic.sdk/Frame> = ..., kotlin/Boolean = ..., kotlin/Int = ...) // org.meshtastic.sdk.testing/FakeRadioTransport.<init>|<init>(org.meshtastic.sdk.TransportIdentity;kotlin.collections.List<org.meshtastic.sdk.Frame>;kotlin.Boolean;kotlin.Int){}[0]
+    constructor <init>(org.meshtastic.sdk/TransportIdentity, kotlin.collections/List<org.meshtastic.sdk/Frame> = ..., kotlin/Boolean = ..., kotlin/Int = ..., kotlin/Boolean = ...) // org.meshtastic.sdk.testing/FakeRadioTransport.<init>|<init>(org.meshtastic.sdk.TransportIdentity;kotlin.collections.List<org.meshtastic.sdk.Frame>;kotlin.Boolean;kotlin.Int;kotlin.Boolean){}[0]
 
     final val autoHandshake // org.meshtastic.sdk.testing/FakeRadioTransport.autoHandshake|{}autoHandshake[0]
         final fun <get-autoHandshake>(): kotlin/Boolean // org.meshtastic.sdk.testing/FakeRadioTransport.autoHandshake.<get-autoHandshake>|<get-autoHandshake>(){}[0]
+    final val autoQueueStatus // org.meshtastic.sdk.testing/FakeRadioTransport.autoQueueStatus|{}autoQueueStatus[0]
+        final fun <get-autoQueueStatus>(): kotlin/Boolean // org.meshtastic.sdk.testing/FakeRadioTransport.autoQueueStatus.<get-autoQueueStatus>|<get-autoQueueStatus>(){}[0]
     final val identity // org.meshtastic.sdk.testing/FakeRadioTransport.identity|{}identity[0]
         final fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk.testing/FakeRadioTransport.identity.<get-identity>|<get-identity>(){}[0]
     final val nodeNum // org.meshtastic.sdk.testing/FakeRadioTransport.nodeNum|{}nodeNum[0]

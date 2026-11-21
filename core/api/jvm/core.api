@@ -86,9 +86,11 @@ public abstract interface class org/meshtastic/sdk/AdminBatchScope : org/meshtas
 }
 
 public abstract interface class org/meshtastic/sdk/AdminEdit {
+	public abstract fun removeFixedPosition (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setChannel (Lorg/meshtastic/proto/Channel;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setConfig (Lorg/meshtastic/proto/Config;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setFavorite-TEw7vI0 (IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setFixedPosition (Lorg/meshtastic/proto/Position;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setIgnored-TEw7vI0 (IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setModuleConfig (Lorg/meshtastic/proto/ModuleConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setOwner (Lorg/meshtastic/proto/User;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

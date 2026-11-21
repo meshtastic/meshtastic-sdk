@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.internal
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -38,6 +39,7 @@ import org.meshtastic.sdk.AdminEdit
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.NodeId
+import org.meshtastic.sdk.PacedMessageHandle
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.getOrThrow
@@ -543,6 +545,60 @@ internal class AdminApiImpl(
     }
 
     /**
+     * Queue an admin packet behind the engine's paced sends, which release one at a time on firmware
+     * queue evidence. Transaction writes and their commit share this queue so they keep their order
+     * and never overrun the device's small inbound buffer.
+     */
+    private fun enqueuePacedAdmin(
+        adminMsg: AdminMessage,
+        wantAck: Boolean,
+        written: CompletableDeferred<Unit>? = null,
+    ): PacedMessageHandle {
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.from = engine.myNodeNumOrNull() ?: 0
+            wb.to = localNode().raw
+            wb.want_ack = wantAck
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.ADMIN_APP
+                wb.payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
+                wb.want_response = false
+            }.build()
+        }.build()
+        return engine.enqueuePaced(packet, resend = null, written = written)
+    }
+
+    /**
+     * Firmware drops BLE inside the commit handler, before any ACK or QueueStatus, so a local commit
+     * whose frame the transport wrote and whose link then went away was applied.
+     */
+    private suspend fun submitCommit(): AdminResult<Unit> {
+        val generation = engine.connectionGeneration()
+        val written = if (isLocalTarget()) CompletableDeferred<Unit>() else null
+        val handle = enqueuePacedAdmin(
+            AdminMessage.Builder().also { wb -> wb.commit_edit_settings = true }.build(),
+            wantAck = true,
+            written = written,
+        )
+        val terminal = withTimeoutOrNull(rpcTimeout) {
+            handle.message.state.first {
+                it is SendState.Failed || it == SendState.Acked || it == SendState.Delivered
+            }
+        }
+        val appliedBeforeLinkLoss = written?.isCompleted == true && when (terminal) {
+            null -> !engine.isConnectedAtGeneration(generation)
+            is SendState.Failed -> terminal.reason == SendFailure.Disconnected
+            else -> false
+        }
+        return when {
+            appliedBeforeLinkLoss -> AdminResult.Success(Unit)
+            terminal == null -> AdminResult.Timeout
+            terminal == SendState.Acked || terminal == SendState.Delivered -> AdminResult.Success(Unit)
+            terminal is SendState.Failed -> mapSendFailureToAdminResult(terminal.reason)
+            else -> AdminResult.Timeout
+        }
+    }
+
+    /**
      * Send an admin packet without waiting for a firmware reply or routing ACK.
      */
     private fun submitAdminFireAndForget(adminMsg: AdminMessage, to: NodeId = localNode()): AdminResult<Unit> {
@@ -558,13 +614,7 @@ internal class AdminApiImpl(
         )
     }
 
-    private suspend fun commitEditSettings(): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(
-            AdminMessage.Builder().also { wb ->
-                wb.commit_edit_settings = true
-            }.build(),
-        )
-    }
+    private suspend fun commitEditSettings(): AdminResult<Unit> = retryOnSessionExpiry { submitCommit() }
 
     private suspend fun closeEditSettings(generation: Long): Result<AdminResult<Unit>> = withContext(NonCancellable) {
         if (!engine.isConnectedAtGeneration(generation)) {
@@ -658,35 +708,24 @@ internal class AdminApiImpl(
             }
             enqueueOrThrow(msg)
         }
+        override suspend fun setFixedPosition(position: Position) = enqueueOrThrow(
+            AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build(),
+        )
+        override suspend fun removeFixedPosition() = enqueueOrThrow(
+            AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build(),
+        )
 
         /**
          * Enqueue an admin packet inside an `editSettings` block. `want_ack = false` because the
-         * device buffers writes server-side and only ACKs at `commit_edit_settings`. If the
-         * engine isn't connected (Disconnected after Ready), throw [AdminEditFailure] so
-         * editSettings unwinds cleanly with the underlying failure.
+         * device buffers writes server-side and only ACKs at `commit_edit_settings`. Waiting for
+         * the paced dispatch holds the block to the device's pace. If the engine isn't connected,
+         * throw [AdminEditFailure] so editSettings unwinds cleanly with the underlying failure.
          */
         private suspend fun enqueueOrThrow(adminMsg: AdminMessage) {
             if (!engine.isConnectedAtGeneration(generation) || engine.myNodeNumOrNull() == null) {
                 throw AdminEditFailure(AdminResult.NodeUnreachable)
             }
-            val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
-            val id = engine.nextMessageId()
-            val packet = MeshPacket.Builder().also { wb ->
-                wb.id = id.raw
-                wb.from = engine.myNodeNumOrNull() ?: 0
-                wb.to = localNode().raw
-                wb.decoded = Data.Builder().also { wb ->
-                    wb.portnum = PortNum.ADMIN_APP
-                    wb.payload = payload
-                    wb.want_response = false
-                }.build()
-            }.build()
-            val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
-            engine.trySend(packet, id, stateFlow)
-            // Wait until the engine has at least transitioned out of Queued (i.e. dispatched to
-            // the wire) — a flat `Failed(Disconnected)` here means the engine inbox was closed.
-            val state = stateFlow.first { it != SendState.Queued }
-            if (state is SendState.Failed && state.reason is SendFailure.Disconnected) {
+            if (!enqueuePacedAdmin(adminMsg, wantAck = false).awaitDispatch()) {
                 throw AdminEditFailure(AdminResult.NodeUnreachable)
             }
         }

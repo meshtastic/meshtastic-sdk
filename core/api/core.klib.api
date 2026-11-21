@@ -259,9 +259,11 @@ abstract interface org.meshtastic.sdk/AdminBatchScope : org.meshtastic.sdk/Admin
 }
 
 abstract interface org.meshtastic.sdk/AdminEdit { // org.meshtastic.sdk/AdminEdit|null[0]
+    abstract suspend fun removeFixedPosition() // org.meshtastic.sdk/AdminEdit.removeFixedPosition|removeFixedPosition(){}[0]
     abstract suspend fun setChannel(org.meshtastic.proto/Channel) // org.meshtastic.sdk/AdminEdit.setChannel|setChannel(org.meshtastic.proto.Channel){}[0]
     abstract suspend fun setConfig(org.meshtastic.proto/Config) // org.meshtastic.sdk/AdminEdit.setConfig|setConfig(org.meshtastic.proto.Config){}[0]
     abstract suspend fun setFavorite(org.meshtastic.sdk/NodeId, kotlin/Boolean) // org.meshtastic.sdk/AdminEdit.setFavorite|setFavorite(org.meshtastic.sdk.NodeId;kotlin.Boolean){}[0]
+    abstract suspend fun setFixedPosition(org.meshtastic.proto/Position) // org.meshtastic.sdk/AdminEdit.setFixedPosition|setFixedPosition(org.meshtastic.proto.Position){}[0]
     abstract suspend fun setIgnored(org.meshtastic.sdk/NodeId, kotlin/Boolean) // org.meshtastic.sdk/AdminEdit.setIgnored|setIgnored(org.meshtastic.sdk.NodeId;kotlin.Boolean){}[0]
     abstract suspend fun setModuleConfig(org.meshtastic.proto/ModuleConfig) // org.meshtastic.sdk/AdminEdit.setModuleConfig|setModuleConfig(org.meshtastic.proto.ModuleConfig){}[0]
     abstract suspend fun setOwner(org.meshtastic.proto/User) // org.meshtastic.sdk/AdminEdit.setOwner|setOwner(org.meshtastic.proto.User){}[0]

@@ -22,6 +22,7 @@ import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
@@ -33,6 +34,7 @@ import org.meshtastic.sdk.TransportState
 private const val NONCE_STAGE1 = 69420
 private const val NONCE_STAGE2 = 69421
 private const val DEFAULT_FAKE_NODE_NUM = 1
+private const val FAKE_QUEUE_SIZE = 16
 
 /**
  * In-memory, script-driven [RadioTransport] for testing.
@@ -56,6 +58,11 @@ public class FakeRadioTransport(
     public val autoHandshake: Boolean = false,
     /** `MyNodeInfo.my_node_num` to report during the auto-handshake. */
     public val nodeNum: Int = DEFAULT_FAKE_NODE_NUM,
+    /**
+     * When `true`, answers every outbound `MeshPacket` with an accepting `QueueStatus`, as firmware
+     * does, so paced sends release without the caller injecting queue evidence.
+     */
+    public val autoQueueStatus: Boolean = false,
 ) : RadioTransport {
 
     /**
@@ -284,8 +291,19 @@ public class FakeRadioTransport(
             NONCE_STAGE1 -> injectStage1Frames()
             NONCE_STAGE2 -> injectStage2Frames()
         }
-        val packet = toRadio.packet
-        if (packet != null) handleAdminPacket(packet)
+        val packet = toRadio.packet ?: return
+        handleAdminPacket(packet)
+        if (autoQueueStatus) {
+            injectFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.queueStatus = QueueStatus.Builder().also { wb ->
+                        wb.free = FAKE_QUEUE_SIZE
+                        wb.maxlen = FAKE_QUEUE_SIZE
+                        wb.mesh_packet_id = packet.id
+                    }.build()
+                }.build(),
+            )
+        }
     }
 
     private fun injectStage1Frames() {

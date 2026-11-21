@@ -400,9 +400,10 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class)
     public fun sendPaced(packet: MeshPacket): PacedMessageHandle {
         checkSendable(packet)
-        return engine.enqueuePaced(packet) { original ->
-            sendPaced(original.newBuilder().also { it.id = 0 }.build()).message
-        }
+        return engine.enqueuePaced(
+            packet,
+            resend = { original -> sendPaced(original.newBuilder().also { it.id = 0 }.build()).message },
+        )
     }
 
     private fun checkSendable(packet: MeshPacket) {

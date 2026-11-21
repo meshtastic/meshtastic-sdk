@@ -108,6 +108,8 @@ internal sealed interface EngineMessage {
         val admission: CompletableDeferred<Boolean>,
         val dispatch: CompletableDeferred<Boolean>,
         val receipt: CompletableDeferred<QueueReceipt>,
+        /** Completed by the outbound writer once `transport.send` has returned for this frame. */
+        val written: CompletableDeferred<Unit>? = null,
     ) : EngineMessage
 
     data class PacedWriteCompleted(val send: PacedSend) : EngineMessage

@@ -1527,6 +1527,78 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun editSettingsLocalCommitThatDropsTheLinkIsApplied() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.editSettings { "edited" } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.simulateError(IllegalStateException("BLE dropped by commit"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.Success("edited"), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsCommitStillQueuedWhenTheLinkDropsIsUnreachable() = runTest {
+        val (transport, client) = connectedClient(autoQueueStatus = false)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.editSettings { setFavorite(NodeId(0x20202020), favorite = true) } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            // The device never reports queue evidence for the edit, so the commit waits behind it unwritten.
+            val admin = transport.outboundPackets().drop(outboundBefore).mapNotNull(::adminOf)
+            assertTrue(admin.none { it.commit_edit_settings == true })
+            transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsRemoteCommitThatLosesTheLinkIsUnreachable() = runTest {
+        val remote = NodeId(0x20202020)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).editSettings { Unit } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id, fromNode = remote.raw)
+            runCurrent()
+
+            latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
     fun editSettingsBlockFailureStillCommitsAndPreservesFailure() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
@@ -1627,11 +1699,13 @@ class AdminApiImplComprehensiveTest {
         rpcTimeout: Duration = 60.seconds,
         sendTimeout: Duration = 60.seconds,
         frames: List<Frame> = emptyList(),
+        autoQueueStatus: Boolean = true,
     ): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:admin-comprehensive:$nodeNum:${hashCode()}"),
             frames = frames,
             autoHandshake = true,
+            autoQueueStatus = autoQueueStatus,
             nodeNum = nodeNum,
         )
         val client = RadioClient.Builder()

@@ -376,6 +376,20 @@ public interface AdminEdit {
     public suspend fun setChannel(channel: Channel)
     public suspend fun setFavorite(node: NodeId, favorite: Boolean)
     public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+
+    /**
+     * Pin the node's position to [position] and turn on `fixed_position`, applied at commit.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun setFixedPosition(position: Position)
+
+    /**
+     * Clear the node's fixed position and turn off `fixed_position`, applied at commit.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun removeFixedPosition()
 }
 
 /**
