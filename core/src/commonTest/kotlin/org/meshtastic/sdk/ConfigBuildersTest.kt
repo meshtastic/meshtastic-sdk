@@ -822,7 +822,7 @@ private class CapturingAdminApi(
 
     override suspend fun factoryReset(preserveBleBonds: Boolean): AdminResult<Unit> = unused()
 
-    override suspend fun nodeDbReset(): AdminResult<Unit> = unused()
+    override suspend fun nodeDbReset(preserveFavorites: Boolean): AdminResult<Unit> = unused()
 
     override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> = unused()
 

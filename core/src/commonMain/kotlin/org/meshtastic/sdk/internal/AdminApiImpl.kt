@@ -433,8 +433,8 @@ internal class AdminApiImpl(
         submitAdminAck(msg)
     }
 
-    override suspend fun nodeDbReset(): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.nodedb_reset = true }.build())
+    override suspend fun nodeDbReset(preserveFavorites: Boolean): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage.Builder().also { wb -> wb.nodedb_reset = preserveFavorites }.build())
     }
 
     override suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit> {

@@ -322,14 +322,14 @@ public interface AdminApi {
     /**
      * Wipe the device's NodeDB, forcing a fresh discovery cycle on the mesh.
      *
-     * The firmware always preserves favorite-marked entries during the wipe (this is
-     * firmware-enforced behavior). The `nodedb_reset` proto field uses proto3 semantics where
-     * only `true` can be encoded — a "wipe everything including favorites" mode is not
-     * available through this command.
+     * `nodedb_reset` is a oneof member, so `false` is sent and means favorites are wiped too.
+     * Firmware keeps favorites regardless on the `CLIENT_BASE`, `ROUTER` and `ROUTER_LATE` roles.
      *
      * The device will reboot after the reset completes.
+     *
+     * @param preserveFavorites keep favorite-marked entries through the wipe
      */
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
 
     // ── Time ────────────────────────────────────────────────────────────────
 

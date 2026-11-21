@@ -1019,6 +1019,16 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun nodeDbResetCanWipeFavorites() = runTest {
+        assertAckedOperation(
+            call = { it.nodeDbReset(preserveFavorites = false) },
+            requestMatches = { it.nodedb_reset == false },
+        ) { transport, packet ->
+            transport.injectRoutingAck(packet.id)
+        }
+    }
+
+    @Test
     fun setOwnerTimeoutReturnsTimeout() = runTest {
         val user = User.Builder().also { wb ->
             wb.id = "!00000001"
