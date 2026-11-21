@@ -31,6 +31,7 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -138,6 +139,171 @@ class HandshakeAndReconnectTest {
         assertEquals("Stage 2", timeout.stage)
         assertEquals(ConnectionState.Disconnected, client.connection.value)
         assertTrue(currentTime - stage2StartedAt >= STAGE2_PROGRESS_TICK_MS)
+    }
+
+    @Test
+    fun injectedLogRecordReachesDeviceLogsWithItsFields() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:log-fields"), nowMs = { currentTime })
+        val client = buildClient(transport)
+        client.connect()
+        client.deviceLogs.test {
+            transport.injectFromRadio(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.log_record = LogRecord.Builder().also { lr ->
+                        lr.message = "hello"
+                        lr.source = "Router"
+                        lr.time = 1_700_000_000
+                        lr.level = LogRecord.Level.WARNING
+                    }.build()
+                }.build(),
+            )
+            drainCurrent()
+            val record = awaitItem()
+            assertEquals("hello", record.message)
+            assertEquals("Router", record.source)
+            assertEquals(1_700_000_000, record.time)
+            assertEquals(LogRecord.Level.WARNING, record.level)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun logFloodWithStalledCollectorDoesNotStallEngineOrPackets() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:log-flood"), nowMs = { currentTime })
+        val client = buildClient(transport)
+        client.connect()
+        backgroundScope.launch { client.deviceLogs.collect { kotlinx.coroutines.awaitCancellation() } }
+        runCurrent()
+
+        client.packets.test {
+            repeat(2_000) { index ->
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.log_record = LogRecord.Builder().also { lr -> lr.message = "log $index" }.build()
+                    }.build(),
+                )
+                if (index % 50 == 49) drainCurrent()
+            }
+            transport.injectAlivePacket(packetId = 4242)
+            drainCurrent()
+            assertEquals(4242, awaitItem().id)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun logRecordsDuringHandshakeAreDeliveredAndLeaveHandshakeBuffersAlone() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:log-handshake"),
+            nowMs = { currentTime },
+            autoCompleteStage2 = false,
+        )
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { client.connect() }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+
+        val logs = mutableListOf<LogRecord>()
+        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+        client.events.test {
+            client.packets.test {
+                repeat(HANDSHAKE_PACKET_CAP) { index -> transport.injectAlivePacket(packetId = 3000 + index) }
+                drainCurrent()
+                repeat(300) { index ->
+                    transport.injectFromRadio(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.log_record = LogRecord.Builder().also { lr -> lr.message = "log $index" }.build()
+                        }.build(),
+                    )
+                    if (index % 20 == 19) drainCurrent()
+                }
+                drainCurrent()
+                assertEquals(300, logs.size, "records arrive live, during the handshake")
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.config_complete_id = NONCE_STAGE2
+                    }.build(),
+                )
+                drainCurrent()
+                connectJob.await()
+                repeat(HANDSHAKE_PACKET_CAP) { index -> assertEquals(3000 + index, awaitItem().id) }
+                cancelAndIgnoreRemainingEvents()
+            }
+            expectNoEvents()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun firmwareBelowFloorFailsConnectWithoutReconnecting() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:fw-too-old"),
+            nowMs = { currentTime },
+            firmwareVersion = "2.3.14.abcdef0",
+        )
+        val client = buildClient(transport, autoReconnect = AutoReconnectConfig(enabled = true))
+        val errors = mutableListOf<MeshEvent.TransportError>()
+        backgroundScope.launch { client.events.collect { if (it is MeshEvent.TransportError) errors += it } }
+        runCurrent()
+
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        repeat(4) {
+            advanceTimeBy(150L)
+            drainCurrent()
+        }
+
+        val error = assertIs<MeshtasticException.FirmwareTooOld>(connectJob.await().exceptionOrNull())
+        assertEquals(20315, error.required)
+        assertEquals(20314, error.present)
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals(1, errors.size)
+        assertIs<MeshtasticException.FirmwareTooOld>(errors.single().error)
+
+        advanceTimeBy(120_000L)
+        drainCurrent()
+        assertTrue(transport.reconnectAttemptTimes().isEmpty(), "FirmwareTooOld must not be retried")
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun firmwareAtOrAboveAbsoluteFloorConnectsAndWarnsOnlyBelowRecommended() = runTest {
+        val expectWarning = mapOf(
+            "2.3.15" to true,
+            "2.5.13" to true,
+            "2.5.14" to false,
+            "2.8.3" to false,
+            "2.8.3.68f47ef" to false,
+            "garbage" to false,
+            "" to false,
+        )
+        for ((version, warns) in expectWarning) {
+            val transport = ScriptedTransport(
+                identity = TransportIdentity("fake:fw-ok-$version"),
+                nowMs = { currentTime },
+                firmwareVersion = version,
+            )
+            val client = buildClient(transport)
+            val warnings = mutableListOf<MeshEvent.ProtocolWarning>()
+            backgroundScope.launch {
+                client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
+            }
+            runCurrent()
+            val connectJob = backgroundScope.async { client.connect() }
+            repeat(4) {
+                advanceTimeBy(150L)
+                drainCurrent()
+            }
+            connectJob.await()
+            assertEquals(ConnectionState.Connected, client.connection.value, "version '$version'")
+            if (warns) {
+                val warning = warnings.single()
+                assertEquals("firmware should be updated", warning.message)
+                assertEquals(version, warning.details["present"])
+                assertEquals("2.5.14", warning.details["recommended"])
+            } else {
+                assertTrue(warnings.isEmpty(), "version '$version' got $warnings")
+            }
+            client.disconnect()
+        }
     }
 
     @Test
@@ -1248,6 +1414,80 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun logRecordsDuringTheSettleWindowDoNotEvictAHeldPacket() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:settle-logs"),
+            nowMs = { currentTime },
+            autoCompleteStage1 = false,
+        )
+        val client = buildClient(transport)
+        val logs = mutableListOf<LogRecord>()
+        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+        val connectJob = backgroundScope.async { client.connect() }
+        runCurrent()
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb -> wb.my_node_num = transport.nodeNum }.build()
+            }.build(),
+        )
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb -> wb.config_complete_id = NONCE_STAGE1 }.build(),
+        )
+        runCurrent()
+
+        client.packets.test {
+            // Inside the settle window: one packet, then more log records than the settle buffer holds.
+            transport.injectAlivePacket(packetId = 778)
+            repeat(SETTLE_BUFFER_CAP + 6) { index ->
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.log_record = LogRecord.Builder().also { it.message = "settle $index" }.build()
+                    }.build(),
+                )
+                // deviceLogs drops the oldest past 64 for a collector that falls behind; let it keep up.
+                if (index % 16 == 15) runCurrent()
+            }
+            repeat(4) {
+                advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+                drainCurrent()
+            }
+            connectJob.await()
+            assertEquals(778, awaitItem().id, "the held packet survives the log burst")
+            assertEquals(SETTLE_BUFFER_CAP + 6, logs.size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun firmwareAdvisoryRepeatsOncePerReconnectedSession() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:fw-advice-reconnect"),
+            nowMs = { currentTime },
+            firmwareVersion = "2.4.0",
+        )
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0),
+        )
+        val warnings = mutableListOf<MeshEvent.ProtocolWarning>()
+        backgroundScope.launch {
+            client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
+        }
+        runCurrent()
+        client.connect()
+        runCurrent()
+        assertEquals(1, warnings.size, "first session")
+
+        transport.simulateRecoverableError("drop")
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drainCurrent()
+        awaitConnected(client)
+
+        assertEquals(2, warnings.size, "the reconnected session warns again: $warnings")
+    }
+
+    @Test
     fun sessionReceiveStartsWithSnapshotAndKeepsOrderAcrossReconnect() = runTest {
         val transport = ScriptedTransport(
             TransportIdentity("fake:session-order"),
@@ -1579,6 +1819,7 @@ class HandshakeAndReconnectTest {
         var autoCompleteStage1: Boolean = true,
         var autoCompleteStage2: Boolean = true,
         var nodeNum: Int = DEFAULT_NODE_NUM,
+        var firmwareVersion: String? = null,
         var autoRespondGetOwner: Boolean = true,
         private val sessionPasskey: ByteArray = SEEDED_PASSKEY,
         private val replaceInboundOnConnect: Boolean = false,
@@ -1753,6 +1994,15 @@ class HandshakeAndReconnectTest {
                     }.build(),
                 ),
             )
+            firmwareVersion?.let { version ->
+                inbound.tryEmit(
+                    encodeFromRadioFrame(
+                        org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                            wb.metadata = DeviceMetadata.Builder().also { md -> md.firmware_version = version }.build()
+                        }.build(),
+                    ),
+                )
+            }
             inbound.tryEmit(
                 encodeFromRadioFrame(
                     org.meshtastic.proto.FromRadio.Builder().also { wb ->
@@ -1813,6 +2063,12 @@ class HandshakeAndReconnectTest {
 
     private companion object {
         const val NONCE_STAGE1 = 69420
+
+        // MeshEngine.HANDSHAKE_PACKET_BUFFER_CAP
+        const val HANDSHAKE_PACKET_CAP = 64
+
+        // MeshEngine.SETTLE_BUFFER_CAP
+        const val SETTLE_BUFFER_CAP = 64
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L

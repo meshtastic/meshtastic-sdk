@@ -344,8 +344,8 @@ public interface AdminApi {
     /**
      * Set the device's wall clock to [at] (default: `Clock.System.now()`).
      *
-     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, [RadioClient.connect] calls this
-     * once after every handshake, fire-and-forget, without checking the device's clock skew.
+     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, the handshake sends the same
+     * `set_time_only` once, when the Stage 1 `my_info` arrives, without checking the device's clock skew.
      */
     public suspend fun setTime(at: Instant? = null): AdminResult<Unit>
 

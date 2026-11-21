@@ -51,6 +51,7 @@ import kotlin.time.Duration.Companion.seconds
  *   session passkey is still seeded, and the session still reaches [ConnectionState.Connected].
  * - Peer nodes are absent from the session's node map — that's the trade the flag buys.
  * - The default builder, and an explicit `skipNodeDb(false)`, keep the two-stage handshake.
+ * - `autoSyncTimeOnConnect` sets the clock as soon as Stage 1 `my_info` arrives.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ConfigOnlyHandshakeTest {
@@ -179,18 +180,50 @@ class ConfigOnlyHandshakeTest {
         )
     }
 
+    @Test
+    fun autoTimeSyncGoesToTheNodeBeforeTheSettleHeartbeat() = runTest {
+        val transport = ScriptedDevice(TransportIdentity("fake:time-sync"))
+        val client = buildClient(transport, skipNodeDb = false, autoSyncTime = true)
+
+        client.connect()
+
+        val outbound = transport.outboundToRadio()
+        val syncs = outbound.withIndex().filter { (_, t) -> t.packet?.let(::adminOf)?.set_time_only != null }
+        assertEquals(1, syncs.size, "one clock sync per handshake")
+        assertEquals(DEVICE_NODE_NUM, syncs.single().value.packet?.to)
+        val stage1Index = outbound.indexOfFirst { it.want_config_id == NONCE_STAGE1 }
+        val heartbeatIndex = outbound.indexOfFirst { it.heartbeat != null }
+        assertTrue(
+            syncs.single().index in (stage1Index + 1) until heartbeatIndex,
+            "sync must precede the settle heartbeat",
+        )
+    }
+
+    @Test
+    fun autoTimeSyncOffSendsNoClock() = runTest {
+        val transport = ScriptedDevice(TransportIdentity("fake:time-sync-off"))
+        val client = buildClient(transport, skipNodeDb = false)
+
+        client.connect()
+
+        assertTrue(transport.outboundToRadio().none { it.packet?.let(::adminOf)?.set_time_only != null })
+    }
+
     // ── Harness ───────────────────────────────────────────────────────────────
 
-    private fun TestScope.buildClient(transport: RadioTransport, skipNodeDb: Boolean): RadioClient =
-        RadioClient.Builder()
-            .transport(transport)
-            .storage(InMemoryStorageProvider())
-            .clock(SchedulerClock { currentTime })
-            .coroutineContext(backgroundScope.coroutineContext)
-            .autoSyncTimeOnConnect(false)
-            .rpcTimeout(60.seconds)
-            .skipNodeDb(skipNodeDb)
-            .build()
+    private fun TestScope.buildClient(
+        transport: RadioTransport,
+        skipNodeDb: Boolean,
+        autoSyncTime: Boolean = false,
+    ): RadioClient = RadioClient.Builder()
+        .transport(transport)
+        .storage(InMemoryStorageProvider())
+        .clock(SchedulerClock { currentTime })
+        .coroutineContext(backgroundScope.coroutineContext)
+        .autoSyncTimeOnConnect(autoSyncTime)
+        .rpcTimeout(60.seconds)
+        .skipNodeDb(skipNodeDb)
+        .build()
 
     private fun adminOf(packet: MeshPacket): AdminMessage? {
         val payload = packet.decoded?.payload ?: return null

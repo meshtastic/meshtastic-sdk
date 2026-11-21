@@ -369,21 +369,24 @@ public final class org/meshtastic/sdk/ConfigBuildersKt {
 }
 
 public final class org/meshtastic/sdk/ConfigBundle {
-	public fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;)V
-	public synthetic fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;)V
+	public synthetic fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lorg/meshtastic/proto/MyNodeInfo;
 	public final fun component2 ()Lorg/meshtastic/proto/DeviceMetadata;
 	public final fun component3 ()Ljava/util/List;
 	public final fun component4 ()Ljava/util/List;
 	public final fun component5 ()Lorg/meshtastic/proto/DeviceUIConfig;
-	public final fun copy (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;)Lorg/meshtastic/sdk/ConfigBundle;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConfigBundle;Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;ILjava/lang/Object;)Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun component6 ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
+	public final fun copy (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;)Lorg/meshtastic/sdk/ConfigBundle;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConfigBundle;Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILjava/lang/Object;)Lorg/meshtastic/sdk/ConfigBundle;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCapabilities ()Lorg/meshtastic/sdk/DeviceCapabilities;
 	public final fun getConfigs ()Ljava/util/List;
 	public final fun getDeviceUIConfig ()Lorg/meshtastic/proto/DeviceUIConfig;
 	public final fun getMetadata ()Lorg/meshtastic/proto/DeviceMetadata;
 	public final fun getModuleConfigs ()Ljava/util/List;
 	public final fun getMyInfo ()Lorg/meshtastic/proto/MyNodeInfo;
+	public final fun getRegionPresets ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -503,15 +506,18 @@ public final class org/meshtastic/sdk/ConnectionState$Reconnecting : org/meshtas
 }
 
 public final class org/meshtastic/sdk/DeviceCapabilities {
-	public fun <init> (Ljava/lang/String;)V
+	public fun <init> (Ljava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;)Lorg/meshtastic/sdk/DeviceCapabilities;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/DeviceCapabilities;Ljava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/DeviceCapabilities;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lorg/meshtastic/sdk/DeviceCapabilities;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/DeviceCapabilities;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/DeviceCapabilities;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCanMuteNode ()Z
 	public final fun getCanSendVerifiedContacts ()Z
 	public final fun getCanToggleTelemetryEnabled ()Z
 	public final fun getCanToggleUnmessageable ()Z
+	public final fun getExcludedModules ()I
 	public final fun getFirmwareVersion ()Ljava/lang/String;
 	public final fun getSupportsEsp32Ota ()Z
 	public final fun getSupportsQrCodeSharing ()Z
@@ -519,6 +525,7 @@ public final class org/meshtastic/sdk/DeviceCapabilities {
 	public final fun getSupportsStatusMessage ()Z
 	public final fun getSupportsTakConfig ()Z
 	public final fun getSupportsTrafficManagementConfig ()Z
+	public final fun hasModule (Lorg/meshtastic/proto/ExcludedModules;)Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1685,6 +1692,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getChannels ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConfigBundle ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConnection ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getDeviceLogs ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getFiles ()Lorg/meshtastic/sdk/FileTransferApi;
 	public final fun getFromRadio ()Lkotlinx/coroutines/flow/Flow;

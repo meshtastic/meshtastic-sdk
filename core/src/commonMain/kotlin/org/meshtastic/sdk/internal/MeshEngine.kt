@@ -40,6 +40,7 @@ import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.LoRaRegionPresetMap
 import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.LockdownStatus
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
@@ -59,6 +60,7 @@ import org.meshtastic.sdk.CongestionLevel
 import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
+import org.meshtastic.sdk.DeviceVersion
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
@@ -115,6 +117,7 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val syncTimeDuringHandshake: Boolean = false,
     private val protocolLogLevel: LogLevel = LogLevel.NONE,
     private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
     sessionReceiveCapacity: Int? = null,
@@ -156,6 +159,13 @@ internal class MeshEngine(
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    // Device logs can arrive at any rate, so a slow collector loses the oldest records instead of
+    // slowing the engine, and nothing is replayed.
+    val deviceLogs = MutableSharedFlow<LogRecord>(
+        extraBufferCapacity = DEVICE_LOG_BUFFER,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
@@ -317,6 +327,7 @@ internal class MeshEngine(
      * [SETTLE_BUFFER_CAP].
      */
     private val settleBuffer = ArrayDeque<FromRadio>(SETTLE_BUFFER_CAP)
+    private var firmwareUpdateAdvised = false
 
     /**
      * `FromRadio.packet` frames (text messages, telemetry, waypoints, …) that arrive while the
@@ -727,6 +738,7 @@ internal class MeshEngine(
         offlineNodes.clear()
         lastCongestionLevel.clear()
         lastMqttConnected = null
+        firmwareUpdateAdvised = false
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
@@ -1041,6 +1053,8 @@ internal class MeshEngine(
      */
     private fun startStage1Handshake() {
         val generation = ++receiveGeneration
+        // Each session, a reconnect included, warns once about firmware below the recommended version.
+        firmwareUpdateAdvised = false
         writeGeneration.value = generation
         sessionReceive?.begin(generation)
         startFrameReader(generation)
@@ -1279,6 +1293,12 @@ internal class MeshEngine(
             return
         }
 
+        // Log records bypass the settle and handshake buffers, so a log burst cannot evict a held frame.
+        fromRadio.log_record?.let { record ->
+            deviceLogs.tryEmit(record)
+            return
+        }
+
         when (handshakeStage) {
             HandshakeStage.AwaitingLockdown,
             HandshakeStage.Idle,
@@ -1370,9 +1390,15 @@ internal class MeshEngine(
         // handleStartConfig resets its read index), so the same channels/config sections can
         // stream twice. Replace-by-key instead of append so the committed bundle has no dupes.
         when {
-            myInfo != null -> pendingMyInfo = myInfo
+            myInfo != null -> {
+                if (syncTimeDuringHandshake && pendingMyInfo == null) sendHandshakeTimeSync(myInfo.my_node_num)
+                pendingMyInfo = myInfo
+            }
 
-            metadata != null -> pendingMetadata = metadata
+            metadata != null -> {
+                pendingMetadata = metadata
+                enforceFirmwareFloor(metadata.firmware_version)
+            }
 
             channel != null -> {
                 pendingChannels.removeAll { it.index == channel.index }
@@ -1384,6 +1410,8 @@ internal class MeshEngine(
             modConfig != null -> pendingModuleConfigs = mergeModuleConfigs(pendingModuleConfigs, listOf(modConfig))
 
             deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
+
+            fromRadio.region_presets != null -> pendingRegionPresets = fromRadio.region_presets
 
             nodeInfo != null -> {
                 val nodeId = NodeId(nodeInfo.num)
@@ -1427,6 +1455,54 @@ internal class MeshEngine(
             // Python client, which skips bytes it can't frame/parse.
             else -> logger.debug(TAG) { "Stage 1: ignoring unrecognized FromRadio" }
         }
+    }
+
+    /**
+     * Ends the connect with [MeshtasticException.FirmwareTooOld] when [reported] parses below
+     * [DeviceVersion.ABS_MIN_SUPPORTED]. Below [DeviceVersion.MIN_SUPPORTED] it connects and emits
+     * one [MeshEvent.ProtocolWarning] per session. A blank or unparseable version only warns: a
+     * missing version is not an old one.
+     */
+    private fun enforceFirmwareFloor(reported: String) {
+        val present = DeviceVersion(reported).asInt
+        if (present == 0) {
+            logger.warn(TAG) { "Device reported no parseable firmware version ('$reported'); skipping the floor check" }
+            return
+        }
+        val required = DeviceVersion.ABS_MIN_SUPPORTED.asInt
+        if (present >= required) {
+            val recommended = DeviceVersion.MIN_SUPPORTED
+            if (present < recommended.asInt && !firmwareUpdateAdvised) {
+                firmwareUpdateAdvised = true
+                logger.warn(TAG) { "Firmware $reported is below the recommended ${recommended.versionString}" }
+                events.tryEmit(
+                    MeshEvent.ProtocolWarning(
+                        "firmware should be updated",
+                        details = mapOf(
+                            "present" to reported,
+                            "recommended" to recommended.versionString,
+                        ),
+                    ),
+                )
+            }
+            return
+        }
+
+        logger.error(TAG) {
+            "Firmware $reported is below the supported floor ${DeviceVersion.ABS_MIN_SUPPORTED.versionString}"
+        }
+        val cause = MeshtasticException.tag(
+            MeshtasticException.FirmwareTooOld(required = required, present = present),
+            transportIdentity = transport.identity,
+            operation = "handshake",
+        )
+        events.tryEmit(MeshEvent.TransportError(cause))
+        handshakeStage = HandshakeStage.Idle
+        failPreSendQueueWith(SendFailure.HandshakeFailed)
+        val deferred = pendingConnectDeferred
+        pendingConnectDeferred = null
+        deferred?.completeExceptionally(cause)
+        supervisorJobRef.value?.cancel()
     }
 
     private fun handleStage1SettleComplete() {
@@ -1581,6 +1657,7 @@ internal class MeshEngine(
                         configs = pendingConfigs,
                         moduleConfigs = pendingModuleConfigs,
                         deviceUIConfig = pendingDeviceUIConfig,
+                        regionPresets = pendingRegionPresets,
                     )
                     meshState = meshState.withConfig(bundle)
                 }
@@ -2269,8 +2346,7 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            // Legacy text log. Drop explicitly — the firmware has a richer log channel via
-            // ClientNotification; we don't persist these.
+            deviceLogs.tryEmit(fromRadio.log_record!!)
             true
         }
 
@@ -3259,6 +3335,21 @@ internal class MeshEngine(
         }
     }
 
+    // my_info is the first Stage 1 frame. Firmware flushes its queued packets once Stage 1 ends and
+    // re-dates them when the clock turns valid (MeshService::reconcilePendingRxTimes), so the
+    // clock has to be set here. myNodeNum is still 0; firmware fills `from` and the packet id.
+    private fun sendHandshakeTimeSync(nodeNum: Int) {
+        val admin = AdminMessage.Builder().also { wb -> wb.set_time_only = clock.now().epochSeconds.toInt() }.build()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = nodeNum
+            wb.decoded = Data.Builder().also { d ->
+                d.portnum = PortNum.ADMIN_APP
+                d.payload = AdminMessage.ADAPTER.encode(admin).toByteString()
+            }.build()
+        }.build()
+        sendToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
+    }
+
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
         if (myNodeNum == 0) return
         val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
@@ -3531,6 +3622,9 @@ internal class MeshEngine(
         // hard-cap was 120s — reduce to 60s to match upstream reference
         // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
         const val STAGE2_HARD_CAP_MS = 60_000L
+
+        // records a slow `deviceLogs` collector can fall behind by before the oldest are dropped.
+        const val DEVICE_LOG_BUFFER = 64
 
         // maximum frames buffered during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64

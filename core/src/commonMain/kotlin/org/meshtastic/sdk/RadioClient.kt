@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.LockdownAuth
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
@@ -230,6 +231,22 @@ public class RadioClient internal constructor(
      */
     public val fromRadio: Flow<FromRadio> = engine.rawFromRadio.hide()
 
+    /**
+     * Log lines the device sends over the phone API, in arrival order, handshake included.
+     *
+     * Firmware only sends them on stream transports (serial and TCP) while
+     * `security.debug_log_api_enabled` is set; turn it on with [AdminApi.setConfig] and a
+     * `Config.SecurityConfig`. The SDK never changes that setting. The BLE LogRadio
+     * characteristic is a separate transport-level path that the SDK does not read.
+     *
+     * Hot, no replay. Volume is unbounded, so a collector that falls more than 64 records
+     * behind loses the oldest ones; the engine and the other flows never wait for it, and no
+     * [MeshEvent.PacketsDropped] is emitted for logs.
+     *
+     * @since 0.3.0
+     */
+    public val deviceLogs: Flow<LogRecord> = engine.deviceLogs.hide()
+
     // ── On-demand query ─────────────────────────────────────────────────────
 
     /**
@@ -317,22 +334,6 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class, CancellationException::class)
     public suspend fun connect() {
         engine.connect()
-        if (autoSyncTimeOnConnect) {
-            // Best-effort and fire-and-forget: a slow / silent device must not delay connect()'s
-            // return. Launches under the same parent context as the engine so cancellation /
-            // shutdown propagates cleanly.
-            kotlinx.coroutines.CoroutineScope(parentContext).launch(
-                kotlinx.coroutines.CoroutineName("meshtastic-auto-time-sync"),
-            ) {
-                try {
-                    admin.setTime()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Swallow — clock sync is auxiliary, the session is otherwise live.
-                }
-            }
-        }
     }
 
     /**
@@ -804,7 +805,7 @@ public class RadioClient internal constructor(
          * Default: [kotlin.time.Clock.System].
          *
          * Wired through to [AdminApi.setTime] (when called with `at = null`) and to the
-         * post-handshake auto-sync trigger when [autoSyncTimeOnConnect] is enabled.
+         * clock sync the handshake sends when [autoSyncTimeOnConnect] is enabled.
          */
         public fun clock(clock: kotlin.time.Clock): Builder = apply { this.clock = clock }
 
@@ -837,12 +838,10 @@ public class RadioClient internal constructor(
         /**
          * Enable or disable automatic time sync on connect.
          *
-         * When enabled (default), [RadioClient.connect] fires a single [AdminApi.setTime] call
-         * after the handshake reaches [ConnectionState.Connected]. The supplied [clock] sources
-         * the value. Useful for GPS-less radios that lose wall-clock time across reboots.
-         *
-         * The current implementation syncs unconditionally on each Connected transition; a future
-         * iteration will gate on observed device skew (> 60 s drift).
+         * When enabled (default), the handshake sends one `set_time_only` from [clock] as soon as
+         * the Stage 1 `my_info` arrives, so firmware can re-date packets it queued without a clock
+         * while they are still queued. Best effort: a fast stream link can flush them first. Useful for
+         * GPS-less radios that lose time across reboots.
          */
         public fun autoSyncTimeOnConnect(enabled: Boolean): Builder = apply { autoSyncTimeOnConnect = enabled }
 
@@ -990,6 +989,7 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                syncTimeDuringHandshake = autoSyncTimeOnConnect,
                 protocolLogLevel = protocolLogLevel,
                 payloadRedactor = payloadRedactor,
                 sessionReceiveCapacity = sessionReceiveCapacity,

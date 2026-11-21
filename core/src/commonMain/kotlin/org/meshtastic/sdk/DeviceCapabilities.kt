@@ -19,7 +19,16 @@ public data class DeviceVersion(val versionString: String) : Comparable<DeviceVe
     override fun compareTo(other: DeviceVersion): Int = asInt.compareTo(other.asInt)
 
     public companion object {
+        /**
+         * Recommended minimum firmware. A device below it (and at or above [ABS_MIN_SUPPORTED])
+         * still connects; the engine emits one [MeshEvent.ProtocolWarning] per session.
+         */
         public val MIN_SUPPORTED: DeviceVersion = DeviceVersion("2.5.14")
+
+        /**
+         * Absolute minimum firmware. A device below it fails `connect()` with
+         * [MeshtasticException.FirmwareTooOld].
+         */
         public val ABS_MIN_SUPPORTED: DeviceVersion = DeviceVersion("2.3.15")
 
         private fun parseVersion(s: String): Int {
@@ -32,12 +41,25 @@ public data class DeviceVersion(val versionString: String) : Comparable<DeviceVe
 }
 
 /**
- * Firmware capability flags derived from a device's reported firmware version.
+ * Firmware capability flags derived from a device's reported firmware version and the modules it
+ * reports compiled out.
  *
+ * @property firmwareVersion the reported firmware version, or `null` when unknown.
+ * @property excludedModules the `DeviceMetadata.excluded_modules` bitfield; `0` (the default)
+ *   means the device reported no exclusions.
  * @since 0.1.0
  */
-public data class DeviceCapabilities(val firmwareVersion: String?) {
+public data class DeviceCapabilities(val firmwareVersion: String?, val excludedModules: Int = 0) {
     private val version: DeviceVersion? = firmwareVersion?.let { DeviceVersion(it) }
+
+    /**
+     * Whether the device has [module] compiled in, that is, its bit is not set in
+     * [excludedModules]. A device that reported no bitfield has every module.
+     *
+     * @since 0.3.0
+     */
+    public fun hasModule(module: org.meshtastic.proto.ExcludedModules): Boolean =
+        (excludedModules and module.value) == 0
 
     private fun atLeast(min: DeviceVersion): Boolean = version != null && version >= min
 
