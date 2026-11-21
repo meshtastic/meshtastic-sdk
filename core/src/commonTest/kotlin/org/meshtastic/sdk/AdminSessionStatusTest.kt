@@ -488,6 +488,7 @@ private fun adminResponse(requestId: Int, from: Int, response: AdminMessage): Fr
         wb.packet = MeshPacket.Builder().also { wb ->
             wb.from = from
             wb.to = 0
+            wb.pki_encrypted = true
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.ADMIN_APP
                 wb.payload = AdminMessage.ADAPTER.encode(response).toByteString()

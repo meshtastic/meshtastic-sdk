@@ -13,8 +13,8 @@ public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtasti
 	public fun getLinkDropsOnRestartCommands ()Z
 	public final fun getNodeNum ()I
 	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
-	public final fun injectAdminResponse (ILorg/meshtastic/proto/AdminMessage;I)V
-	public static synthetic fun injectAdminResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/AdminMessage;IILjava/lang/Object;)V
+	public final fun injectAdminResponse (ILorg/meshtastic/proto/AdminMessage;IZI)V
+	public static synthetic fun injectAdminResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/AdminMessage;IZIILjava/lang/Object;)V
 	public final fun injectFrame (Lorg/meshtastic/sdk/Frame;)V
 	public final fun injectNeighborInfoResponse (ILorg/meshtastic/proto/NeighborInfo;I)V
 	public static synthetic fun injectNeighborInfoResponse$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;ILorg/meshtastic/proto/NeighborInfo;IILjava/lang/Object;)V

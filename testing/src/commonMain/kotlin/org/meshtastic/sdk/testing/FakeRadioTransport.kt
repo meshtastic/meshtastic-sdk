@@ -117,11 +117,20 @@ public class FakeRadioTransport(
      * `decoded.request_id = requestId` so the engine's [CommandDispatcher] / `processRoutingAck`
      * can match it against an outstanding request.
      */
-    public fun injectAdminResponse(requestId: Int, response: AdminMessage, fromNode: Int = nodeNum) {
+    public fun injectAdminResponse(
+        requestId: Int,
+        response: AdminMessage,
+        fromNode: Int = nodeNum,
+        /** A reply from another node is PKI-encrypted by default, as firmware sends it when both sides have keys. */
+        pkiEncrypted: Boolean = fromNode != nodeNum,
+        channel: Int = 0,
+    ) {
         val payload = okio.ByteString.of(*AdminMessage.ADAPTER.encode(response))
         val packet = MeshPacket.Builder().also { wb ->
             wb.from = fromNode
             wb.to = 0
+            wb.pki_encrypted = pkiEncrypted
+            wb.channel = channel
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.ADMIN_APP
                 wb.payload = payload

@@ -1618,6 +1618,7 @@ class HandshakeAndReconnectTest {
             val packet = MeshPacket.Builder().also { wb ->
                 wb.from = fromNode
                 wb.to = 0
+                wb.pki_encrypted = fromNode != nodeNum
                 wb.decoded = Data.Builder().also { wb ->
                     wb.portnum = PortNum.ADMIN_APP
                     wb.payload = payload

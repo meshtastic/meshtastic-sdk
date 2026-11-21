@@ -1765,6 +1765,18 @@ internal class MeshEngine(
         adminReplyTargets[packet.id] = ExpectedAdminReply(packet.to.takeIf { it != 0 } ?: myNodeNum, kind)
     }
 
+    /**
+     * `from` and `request_id` travel in the clear, so an admin reply from another node is only as trustworthy as its
+     * encryption: PKI, or the legacy admin channel's PSK, the two paths firmware accepts remote admin on.
+     */
+    private fun isAuthenticatedAdminReply(packet: MeshPacket): Boolean {
+        if (packet.from == 0 || packet.from == myNodeNum || packet.pki_encrypted) return true
+        val adminIndex = channelsState.value
+            ?.indexOfFirst { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
+            ?.takeIf { it >= 0 }
+        return adminIndex != null && packet.channel == adminIndex
+    }
+
     private fun recognizesAdminReply(packet: MeshPacket, requestId: Int, admin: AdminMessage): Boolean {
         val expected = adminReplyTargets[requestId] ?: return false
         return expected.kind == admin.adminResponseKind() &&
@@ -2149,7 +2161,12 @@ internal class MeshEngine(
         } else {
             null
         }
-        val correlatedAdminResponse = adminMsg != null && recognizesAdminReply(packet, decoded.request_id, adminMsg)
+        val unauthenticatedAdminReply = decoded.portnum == PortNum.ADMIN_APP && !isAuthenticatedAdminReply(packet)
+        if (unauthenticatedAdminReply && decoded.request_id != 0) {
+            logger.warn(TAG) { "Ignored unauthenticated admin reply from ${packet.from.toUInt()}" }
+        }
+        val correlatedAdminResponse = adminMsg != null && !unauthenticatedAdminReply &&
+            recognizesAdminReply(packet, decoded.request_id, adminMsg)
         if (correlatedAdminResponse) {
             // Install the key before completing the RPC, so its caller can immediately use the session.
             latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg, receivedAt)
@@ -2167,7 +2184,7 @@ internal class MeshEngine(
         } else {
             packet
         }
-        dispatcher.tryComplete(response)
+        if (!unauthenticatedAdminReply) dispatcher.tryComplete(response)
         processRoutingAck(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.

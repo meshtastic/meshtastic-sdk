@@ -1171,6 +1171,41 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun aRemoteAdminReplyWithoutPkiOrTheAdminChannelIsIgnored() = runTest {
+        val remote = NodeId(0x12345678)
+        val genuine = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "genuine" }.build()
+        val forged = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "forged" }.build()
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).getDeviceMetadata() }
+            runCurrent()
+            val packet = latestAdminPacket(transport, outboundBefore) { it.get_device_metadata_request == true }
+
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = forged }.build(),
+                fromNode = remote.raw,
+                pkiEncrypted = false,
+            )
+            runCurrent()
+            assertFalse(deferred.isCompleted)
+
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = genuine }.build(),
+                fromNode = remote.raw,
+            )
+            runCurrent()
+            assertEquals(AdminResult.Success(genuine), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
     fun withRpcTimeoutLetsARemoteReadOutliveTheClientTimeout() = runTest {
         val remote = NodeId(0x12345678)
         val expected = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "late" }.build()

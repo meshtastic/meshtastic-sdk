@@ -27,7 +27,7 @@ final class org.meshtastic.sdk.testing/FakeRadioTransport : org.meshtastic.sdk/R
         final fun <set-deviceId>(okio/ByteString) // org.meshtastic.sdk.testing/FakeRadioTransport.deviceId.<set-deviceId>|<set-deviceId>(okio.ByteString){}[0]
 
     final fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk.testing/FakeRadioTransport.frames|frames(){}[0]
-    final fun injectAdminResponse(kotlin/Int, org.meshtastic.proto/AdminMessage, kotlin/Int = ...) // org.meshtastic.sdk.testing/FakeRadioTransport.injectAdminResponse|injectAdminResponse(kotlin.Int;org.meshtastic.proto.AdminMessage;kotlin.Int){}[0]
+    final fun injectAdminResponse(kotlin/Int, org.meshtastic.proto/AdminMessage, kotlin/Int = ..., kotlin/Boolean = ..., kotlin/Int = ...) // org.meshtastic.sdk.testing/FakeRadioTransport.injectAdminResponse|injectAdminResponse(kotlin.Int;org.meshtastic.proto.AdminMessage;kotlin.Int;kotlin.Boolean;kotlin.Int){}[0]
     final fun injectFrame(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.testing/FakeRadioTransport.injectFrame|injectFrame(org.meshtastic.sdk.Frame){}[0]
     final fun injectNeighborInfoResponse(kotlin/Int, org.meshtastic.proto/NeighborInfo, kotlin/Int = ...) // org.meshtastic.sdk.testing/FakeRadioTransport.injectNeighborInfoResponse|injectNeighborInfoResponse(kotlin.Int;org.meshtastic.proto.NeighborInfo;kotlin.Int){}[0]
     final fun injectPacket(org.meshtastic.proto/MeshPacket) // org.meshtastic.sdk.testing/FakeRadioTransport.injectPacket|injectPacket(org.meshtastic.proto.MeshPacket){}[0]
