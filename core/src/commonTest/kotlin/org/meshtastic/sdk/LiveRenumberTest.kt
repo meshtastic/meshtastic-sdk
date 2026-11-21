@@ -76,6 +76,9 @@ class LiveRenumberTest {
 
         transport.injectFrame(myInfo(LOCAL))
         runCurrent()
+        // Past the restart debounce, so a restart would have happened by now.
+        advanceTimeBy(5_000)
+        runCurrent()
 
         assertEquals(1, stage1Requests(transport))
         assertTrue(events.none { it is RadioSessionEvent.Ended })
