@@ -26,9 +26,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `AutoReconnectConfig` gained a seventh constructor parameter, `recoveryStep`. Named and
   default-argument call sites are unaffected; binaries built against the six-parameter
   constructor do not link.
-- `ConfigBundle` gained a sixth constructor parameter, `regionPresets`, and `DeviceCapabilities`
-  a second, `excludedModules`. Named and default-argument call sites are unaffected; binaries
-  built against the old constructors, `copy` or `componentN` do not link.
 - Published JVM and Android bytecode is JDK 17 (class file 61) and compiled with
   `-Xjdk-release=17`, as the README and constitution already stated; 0.2.0 shipped JDK 21
   bytecode. JDK 17 hosts can now load the artifacts.
@@ -42,12 +39,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   dependency of `:transport-tcp`), `AndroidTcpDiscovery(context)` (`NsdManager`) and
   `IosTcpDiscovery` (`NSNetServiceBrowser`). The iOS implementation compiles on every iOS
   target but has not been run on a device or simulator.
-- `ConfigBundle.regionPresets`: the device's own legal modem presets and default preset per
-  region (`FromRadio.region_presets`, sent in Stage 1, so config-only sessions get it too).
-  `null` on firmware that never sends it. Session-only: re-sent on every connect, not stored.
-- `DeviceCapabilities.hasModule(ExcludedModules)` and `ConfigBundle.capabilities`: whether the
-  device has a module compiled in, from `DeviceMetadata.excluded_modules`. A device that
-  reports no bitfield has every module.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.
@@ -81,14 +72,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
   coroutines 1.11 into the storage POM.
-- `connect()` throws `MeshtasticException.FirmwareTooOld` when the device reports firmware below
-  2.3.15 (`DeviceVersion.ABS_MIN_SUPPORTED`), instead of continuing into a handshake it may
-  not complete. Auto-reconnect does not retry it. Firmware from 2.3.15 up to 2.5.13 (below
-  `DeviceVersion.MIN_SUPPORTED`, 2.5.14) still connects and emits one
-  `MeshEvent.ProtocolWarning` per session recommending an update, with `present` and
-  `recommended` in `details`. A missing or unparseable version still connects. No new API: the
-  exception was already declared, so this needs no code change unless a host connects to
-  firmware older than 2.3.15.
 
 ### Fixed
 
