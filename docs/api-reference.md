@@ -143,7 +143,7 @@ A node that sends a session passkey has at least 150 s of validity left on it. A
 
 | Member | Contents | Buffer | When a collector falls behind |
 |---|---|---|---|
-| `nodes: Flow<NodeChange>` | Node snapshot, then deltas | 256 | The new delta is discarded and `events` gets `PacketsDropped(DroppedFlow.Events, 1)` |
+| `nodes: Flow<NodeChange>` | Node snapshot, then deltas | 256 | The new delta is discarded and `events` gets `PacketsDropped(DroppedFlow.Nodes, 1)` |
 | `RadioClient.nodeMap(): Flow<Map<NodeId, NodeInfo>>` | `nodes` folded into a map; first emission is an empty map | follows `nodes` | follows `nodes` |
 | `packets: Flow<MeshPacket>` | Decoded inbound mesh packets | 128 | The new packet is discarded and `events` gets `PacketsDropped(DroppedFlow.Packets, 1)` |
 | `events: Flow<MeshEvent>` | Advisory events | 64 | The oldest event is dropped, unreported |

@@ -168,7 +168,7 @@ public class RadioClient internal constructor(
      * **Buffering:** the underlying `MutableSharedFlow` has `extraBufferCapacity = 256` and the
      * engine emits with `tryEmit`, so it never suspends on a collector. When a slow collector
      * leaves the buffer full, the new change is dropped and [MeshEvent.PacketsDropped] with
-     * `flow = DroppedFlow.Events` is emitted on [events]; a new subscription's
+     * `flow = DroppedFlow.Nodes` is emitted on [events]; a new subscription's
      * [NodeChange.Snapshot] restores a complete map.
      */
     public val nodes: Flow<NodeChange> = engine.nodes

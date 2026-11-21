@@ -3238,7 +3238,7 @@ internal class MeshEngine(
     private fun emitNodeChangeOrLog(change: NodeChange) {
         if (!nodes.tryEmit(change)) {
             logger.warn(TAG) { "nodes flow rejected emit ($change); reporting drop" }
-            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Events, count = 1))
+            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Nodes, count = 1))
         }
     }
 
