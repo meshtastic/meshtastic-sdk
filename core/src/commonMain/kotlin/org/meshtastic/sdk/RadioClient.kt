@@ -252,6 +252,16 @@ public class RadioClient internal constructor(
     }
 
     /**
+     * Queue a nodes-only download on the current connection. Requires the optional [sessionEvents] stream.
+     * A completed download emits [RadioSessionEvent.NodeDbRefreshed]. Requests received during a download
+     * coalesce into one follow-up. A stalled download ends the session so a late completion cannot be
+     * mistaken for a subsequent download.
+     *
+     * Returns whether the request entered the engine queue while the client was connected.
+     */
+    public fun requestNodeDbRefresh(): Boolean = engine.requestNodeDbRefresh()
+
+    /**
      * Request a remote node to send its [NodeInfo] (user identity + position).
      *
      * Sends an empty `NODEINFO_APP` packet with `want_response = true`. The remote node will

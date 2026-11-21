@@ -169,6 +169,68 @@ class BleResilienceTest {
     }
 
     @Test
+    fun requestedRefreshRunsAfterLinkAndBeforePhoneApiAndIsConsumedOnce() = runTest {
+        val events = mutableListOf<String>()
+        val peripheral = FakeBlePeripheral(servicesAfterConnect = { meshtasticServices() }, events = events)
+        val transport = transport(peripheral)
+        var pending = true
+        transport.shouldRefreshGattCache = { incomplete ->
+            events += "check request"
+            assertFalse(incomplete)
+            pending.also { pending = false }
+        }
+        transport.gattCacheRefresher = GattCacheRefresher {
+            events += "refresh"
+            true
+        }
+        transport.postConnectHook = { events += "connected hook" }
+
+        transport.connect()
+
+        assertEquals(
+            listOf("connect#1", "check request", "refresh", "disconnect", "connect#2", "connected hook"),
+            events,
+        )
+
+        transport.disconnect()
+        events.clear()
+        transport.connect()
+
+        assertEquals(listOf("connect#3", "check request", "connected hook"), events)
+        transport.shutdown()
+    }
+
+    @Test
+    fun failedInitialLinkLeavesTheRefreshRequestUnread() = runTest {
+        val peripheral = FakeBlePeripheral(connectBehavior = { throw MeshtasticException.Transport("no link") })
+        val transport = transport(peripheral)
+        var checks = 0
+        transport.shouldRefreshGattCache = { ++checks > 0 }
+        transport.gattCacheRefresher = GattCacheRefresher { true }
+
+        assertFailsWith<MeshtasticException.Transport> { transport.connect() }
+        assertEquals(0, checks)
+        transport.shutdown()
+    }
+
+    @Test
+    fun shutdownClosesFactoryOwnedPeripheralOnlyOnce() {
+        val factoryPeripheral = FakeBlePeripheral()
+        val borrowedPeripheral = FakeBlePeripheral()
+        val owned = createBleTransport(ADDRESS, kotlin.coroutines.EmptyCoroutineContext, BleResilience.None, {}) {
+            factoryPeripheral
+        }
+
+        owned.shutdown()
+        owned.shutdown()
+        transport(borrowedPeripheral).shutdown()
+
+        assertEquals(1, factoryPeripheral.closeCalls)
+        assertEquals(0, borrowedPeripheral.closeCalls)
+        borrowedPeripheral.close()
+    }
+
+    @Test
     fun refusedRefreshLeavesTheConnectUnchanged() = runTest {
         val peripheral = FakeBlePeripheral(servicesAfterConnect = { emptyList() })
         val transport = transport(peripheral)

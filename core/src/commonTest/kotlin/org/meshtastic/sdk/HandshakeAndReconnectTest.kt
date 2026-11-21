@@ -1267,6 +1267,86 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun nodeDbRefreshKeepsPacketsFlowingAndCoalescesFollowUp() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:node-db-refresh"), nowMs = { currentTime })
+        val client = buildClient(transport, sessionReceiveCapacity = 8, includeEnvelopes = true)
+
+        assertNotNull(client.sessionEvents).test {
+            assertFalse(client.requestNodeDbRefresh())
+            client.connect()
+            val ready = assertIs<RadioSessionEvent.Ready>(awaitItem())
+            transport.autoCompleteStage2 = false
+            repeat(3) { assertTrue(client.requestNodeDbRefresh()) }
+            runCurrent()
+            fun stage2Count() = transport.outboundFrames().count {
+                decodeToRadioOrNull(it)?.want_config_id ==
+                    NONCE_STAGE2
+            }
+            assertEquals(2, stage2Count())
+
+            transport.injectFromRadio(FromRadio.Builder().also { it.config_complete_id = NONCE_STAGE1 }.build())
+            transport.injectFromRadio(
+                FromRadio.Builder().also { frame ->
+                    frame.my_info = org.meshtastic.proto.MyNodeInfo.Builder().also {
+                        it.my_node_num = transport.nodeNum
+                    }.build()
+                }.build(),
+            )
+            transport.injectStage2Progress(0x1234)
+            transport.injectAlivePacket(201)
+            val packet = assertIs<RadioSessionEvent.Packet>(awaitItem())
+            assertEquals(201, packet.packet.id)
+            assertEquals(ConnectionState.Connected, client.connection.value)
+            assertEquals(2, stage2Count())
+
+            val complete = FromRadio.Builder().also { it.config_complete_id = NONCE_STAGE2 }.build()
+            transport.injectFromRadio(complete)
+            val first = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
+            assertEquals(ready.sessionId, first.sessionId)
+            assertEquals(2L, first.sequence)
+            assertEquals(setOf(NodeId(0x1234)), first.nodes.keys)
+            runCurrent()
+            assertEquals(3, stage2Count())
+
+            transport.injectStage2Progress(0x4321)
+            transport.injectFromRadio(complete)
+            val second = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
+            assertEquals(3L, second.sequence)
+            assertEquals(setOf(NodeId(0x4321)), second.nodes.keys)
+            assertEquals(3, stage2Count())
+            client.disconnect()
+            assertEquals(RadioSessionEvent.Ended(ready.sessionId), awaitItem())
+            awaitComplete()
+        }
+    }
+
+    @Test
+    fun stalledNodeDbRefreshEndsSessionEvenWhenPacketsKeepArriving() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:node-db-timeout"), nowMs = { currentTime })
+        val client = buildClient(transport, sessionReceiveCapacity = 8)
+
+        assertNotNull(client.sessionEvents).test {
+            client.connect()
+            val ready = assertIs<RadioSessionEvent.Ready>(awaitItem())
+            transport.autoCompleteStage2 = false
+            assertTrue(client.requestNodeDbRefresh())
+            runCurrent()
+
+            repeat(5) { index ->
+                advanceTimeBy(11_000)
+                transport.injectAlivePacket(301 + index)
+                assertIs<RadioSessionEvent.Packet>(awaitItem())
+                assertEquals(ConnectionState.Connected, client.connection.value)
+            }
+            advanceTimeBy(6_000)
+            runCurrent()
+            assertEquals(RadioSessionEvent.Ended(ready.sessionId), awaitItem())
+            awaitComplete()
+            assertFalse(client.requestNodeDbRefresh())
+        }
+    }
+
+    @Test
     fun sessionReceiveOrdersQueueStatusWithPackets() = runTest {
         val transport = ScriptedTransport(TransportIdentity("fake:session-envelopes"), nowMs = { currentTime })
         val client = buildClient(transport, sessionReceiveCapacity = 8, includeEnvelopes = true)

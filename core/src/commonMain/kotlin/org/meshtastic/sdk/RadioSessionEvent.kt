@@ -49,6 +49,15 @@ public sealed interface RadioSessionEvent {
         public val envelope: FromRadio,
     ) : RadioSessionEvent
 
+    /** A complete nodes-only download from a session that remains connected. */
+    public data class NodeDbRefreshed(
+        override val sessionId: Long,
+        /** Delivery sequence shared with packets and envelopes in the session. */
+        public val sequence: Long,
+        /** Node records delivered by this refresh, keyed by node number. */
+        public val nodes: Map<NodeId, NodeInfo>,
+    ) : RadioSessionEvent
+
     /** End of a session that previously emitted [Ready]. */
     public data class Ended(override val sessionId: Long) : RadioSessionEvent
 }

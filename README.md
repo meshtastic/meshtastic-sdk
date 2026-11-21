@@ -175,7 +175,7 @@ Every published module builds `jvm`, `androidTarget` (`minSdk = 26`), `iosArm64`
 | Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | JS  | Wasm | Notes |
 |----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|:---:|:----:|-------|
 | `core`                     | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Transport-agnostic engine; re-exports the `org.meshtastic:protobufs` types. |
-| `transport-ble`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Kable; on the JVM through its btleplug backend (CoreBluetooth, BlueZ, WinRT). |
+| `transport-ble`            | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Kable. Web targets use the browser's Web Bluetooth backend. |
 | `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Ktor sockets; mDNS discovery per platform. |
 | `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Ktor client (CIO on JVM and Android, Darwin on iOS, the platform `WebSocket` on JS and Wasm). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | —   | —    | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, the host adds it). The iOS klibs carry only the common types; iOS has no serial backend. |

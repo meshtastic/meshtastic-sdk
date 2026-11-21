@@ -187,6 +187,10 @@ internal class MeshEngine(
     private var engineScope: CoroutineScope? = null
     private var frameReaderJob: Job? = null
     private var receiveGeneration = 0L
+    private var nodeDbRefresh: MutableMap<NodeId, NodeInfo>? = null
+    private var nodeDbRefreshQueued = false
+    private var nodeDbRefreshRequest = 0L
+    private var nodeDbRefreshWatchdog: Job? = null
 
     // Firmware drops a ToRadio write byte-identical to the previous one and reads heartbeat
     // nonce 1 as "broadcast NodeInfo", so keep-alive nonces count up from 2 and never reach 0 or 1.
@@ -415,6 +419,12 @@ internal class MeshEngine(
         inbox.trySend(EngineMessage.CancelHandle(id))
     }
 
+    fun requestNodeDbRefresh(): Boolean {
+        val generation = connectionGeneration.value
+        return sessionReceive != null && isConnectedAtGeneration(generation) &&
+            inbox.trySend(EngineMessage.RefreshNodeDb(generation)).isSuccess
+    }
+
     /**
      * Allocate the next monotonic wire id. Shared between user-facing sends ([RadioClient.send])
      * and RPCs so a `getConfig`'s request_id can never collide with a concurrent
@@ -511,6 +521,7 @@ internal class MeshEngine(
      * 9. Emit [ConnectionState.Disconnected] — unblocks `disconnect()` callers.
      */
     private suspend fun cleanup() {
+        clearNodeDbRefresh()
         sessionReceive?.finish()
         // stop the liveness watchdog before any other work so it cannot race with the
         // already disconnecting).
@@ -654,6 +665,18 @@ internal class MeshEngine(
             is EngineMessage.Connect -> handleConnect(msg)
 
             is EngineMessage.Disconnect -> handleDisconnect(msg)
+
+            is EngineMessage.RefreshNodeDb -> {
+                if (isConnectedAtGeneration(msg.generation)) startNodeDbRefresh()
+            }
+
+            is EngineMessage.NodeDbRefreshTimeout -> {
+                if (nodeDbRefresh != null && msg.request == nodeDbRefreshRequest) {
+                    handleDisconnect(
+                        EngineMessage.Disconnect(MeshtasticException.Transport("Node database refresh timed out")),
+                    )
+                }
+            }
 
             is EngineMessage.FrameRx -> {
                 if (acceptsFramesFrom(msg.generation)) handleFrameRx(msg)
@@ -1130,8 +1153,9 @@ internal class MeshEngine(
             HandshakeStage.SeedingSession -> processSeedingEnvelope(fromRadio)
 
             HandshakeStage.Ready -> {
+                val refreshFrame = handleNodeDbRefreshFrame(fromRadio)
                 routeNormalEnvelope(fromRadio)
-                if (fromRadio.packet == null) sessionReceive?.envelope(fromRadio)
+                if (fromRadio.packet == null && !refreshFrame) sessionReceive?.envelope(fromRadio)
             }
         }
     }
@@ -1666,6 +1690,55 @@ internal class MeshEngine(
         deferred?.complete(Unit)
 
         logger.info(TAG) { "Session Ready — myNodeNum=0x${myNodeNum.toString(16)}" }
+    }
+
+    private fun startNodeDbRefresh() {
+        if (nodeDbRefresh != null) {
+            nodeDbRefreshQueued = true
+            return
+        }
+        // The radio ignores byte-identical consecutive writes. A heartbeat separates the fixed
+        // nodes-only nonces even when the follow-up starts immediately after completion.
+        sendKeepaliveHeartbeat()
+        val sent = trySendToRadio(ToRadio.Builder().also { it.want_config_id = NONCE_STAGE2 }.build())
+        if (!sent) {
+            handleDisconnect(
+                EngineMessage.Disconnect(MeshtasticException.Transport("Could not queue node database refresh")),
+            )
+            return
+        }
+        nodeDbRefresh = linkedMapOf()
+        val request = ++nodeDbRefreshRequest
+        nodeDbRefreshWatchdog = engineScope?.launch {
+            delay(STAGE2_HARD_CAP_MS)
+            inbox.trySend(EngineMessage.NodeDbRefreshTimeout(request))
+        }
+    }
+
+    private fun handleNodeDbRefreshFrame(fromRadio: org.meshtastic.proto.FromRadio): Boolean {
+        val refresh = nodeDbRefresh ?: return false
+        val node = fromRadio.node_info
+        if (node != null) {
+            refresh[NodeId(node.num)] = node
+            return true
+        }
+        if (fromRadio.config_complete_id != NONCE_STAGE2) {
+            return fromRadio.my_info != null || fromRadio.deviceuiConfig != null || fromRadio.config_complete_id != null
+        }
+        // The collector sees the completed dump at its position in the receive stream.
+        // The actor still processes mesh packets and routes ACKs while collecting the dump.
+        val followUp = nodeDbRefreshQueued
+        clearNodeDbRefresh()
+        sessionReceive?.nodeDbRefreshed(refresh)
+        if (followUp) startNodeDbRefresh()
+        return true
+    }
+
+    private fun clearNodeDbRefresh() {
+        nodeDbRefreshWatchdog?.cancel()
+        nodeDbRefreshWatchdog = null
+        nodeDbRefresh = null
+        nodeDbRefreshQueued = false
     }
 
     private fun routeNormalEnvelope(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -2340,6 +2413,7 @@ internal class MeshEngine(
     }
 
     private fun scheduleReconnect(cause: MeshtasticException) {
+        clearNodeDbRefresh()
         sessionReceive?.end()
         frameReaderJob?.cancel()
         val cap = autoReconnectConfig.maxAttempts

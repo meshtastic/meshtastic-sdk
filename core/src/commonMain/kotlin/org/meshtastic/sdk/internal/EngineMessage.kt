@@ -70,6 +70,10 @@ internal sealed interface EngineMessage {
      */
     data class Disconnect(val cause: MeshtasticException? = null) : EngineMessage
 
+    data class RefreshNodeDb(val generation: Long) : EngineMessage
+
+    data class NodeDbRefreshTimeout(val request: Long) : EngineMessage
+
     // ── Inbound ────────────────────────────────────────────────────────────
 
     /** A framed packet received from the transport. */

@@ -16,6 +16,8 @@ USB serial transport for the Meshtastic KMP SDK. It implements `RadioTransport` 
 
 The default is **115200** baud (`DEFAULT_BAUD` on `JvmSerialPorts`, `AndroidSerialPorts` and `AndroidUsbSerialPorts`), 8 data bits, 1 stop bit, no parity and no flow control, which is what the firmware uses on its USB CDC and UART path. `open(portName, baudRate)` accepts other rates for unusual hardware.
 
+The reader stages at most the completed frames from one port read and hands them to the engine in order. If the frame channel fills, the reader waits before reading from the port again. The port and OS still determine how much incoming data can wait in their receive buffers.
+
 ## Finding a node
 
 `list()` returns every port the OS reports. `MESHTASTIC_USB_VENDOR_IDS` holds the USB vendor IDs Meshtastic nodes enumerate with: the nRF52 and RP2040 native USB stacks, Espressif native USB, Seeed boards, and the CP210x, CH34x and FTDI bridge chips most ESP32 boards carry. `SerialPortInfo.isLikelyMeshtastic()` tests a port against that set, and `JvmSerialPorts.findMeshtastic()` filters `list()` with it. The bridge chips are generic, so a match means the port is plausibly a Meshtastic node, not that it is one.

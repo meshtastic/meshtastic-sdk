@@ -160,6 +160,8 @@ Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an
 
 Add `sessionReceiveEnvelopes()` to receive non-packet envelopes such as firmware queue status after `Ready`. They are offered in the same queue and share the packet sequence. The handshake snapshot and retained packets are delivered first.
 
+Call `requestNodeDbRefresh()` to start a nodes-only download on this connection. The matching completion produces `NodeDbRefreshed` in receive order. Packets continue through the engine during the download. Overlapping requests queue a single follow-up. If the download stalls, the SDK ends the connection to prevent a late response from being attributed to another request.
+
 The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet or envelope, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
 
 

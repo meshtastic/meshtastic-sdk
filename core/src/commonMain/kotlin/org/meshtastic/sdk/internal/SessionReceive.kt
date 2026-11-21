@@ -11,6 +11,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.NodeInfo
+import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioSessionEvent
 import org.meshtastic.sdk.RadioSessionOverflowException
 
@@ -51,6 +53,10 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
         offer(RadioSessionEvent.Ended(sessionId))
     }
 
+    fun nodeDbRefreshed(nodes: Map<NodeId, NodeInfo>) {
+        if (delivering) delivering = offer(RadioSessionEvent.NodeDbRefreshed(sessionId, ++sequence, nodes))
+    }
+
     fun finish() {
         end()
         channel.close()
@@ -66,6 +72,7 @@ internal class SessionReceive(capacity: Int, private val includeEnvelopes: Boole
             val missed = when (event) {
                 is RadioSessionEvent.Packet -> event.sequence
                 is RadioSessionEvent.Envelope -> event.sequence
+                is RadioSessionEvent.NodeDbRefreshed -> event.sequence
                 is RadioSessionEvent.Ready, is RadioSessionEvent.Ended -> null
             }
             channel.close(RadioSessionOverflowException(sessionId, missed))

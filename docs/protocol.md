@@ -384,10 +384,12 @@ Under `69421`, Stage 2 sends rows 1 to 3, then row 9 (`OTHER_NODEINFOS` × N), t
 3. Between the Stage 1 sentinel and the Stage 2 trigger the client must send `ToRadio.heartbeat` and should wait about 100 ms on each side of it (Android `HandshakeStateMachine`: `delay(100); heartbeatSender.send(); delay(100)`). The wait lets the node's task queue drain before NodeDB streaming starts.
 4. After Stage 2 the client should send `AdminMessage(get_owner_request, want_response = true)`. The reply carries the `session_passkey` that state-changing admin requests need (§13).
 5. `FromRadio.rebooted = true` is a forced disconnect: clear session state and run both stages again.
-6. When a TCP or serial client disconnects, the node resets its `config_nonce` to `0` and clears session state, so a reconnect runs both stages.
+6. When a TCP or serial client disconnects, the node resets its `config_nonce` to `0` and clears session state, so a reconnect runs both stages. The SDK treats TCP peer EOF as a transport failure.
 7. Outbound packets queued in the node's router during the handshake are sent after `config_complete_id`. Incoming `MqttClientProxyMessage` from the client is dropped with a warning log during the handshake.
 
 ### Node DB after the handshake
+
+A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
 
 After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
 

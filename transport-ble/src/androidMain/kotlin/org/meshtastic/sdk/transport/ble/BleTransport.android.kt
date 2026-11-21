@@ -74,6 +74,28 @@ public fun BleTransport(
     Peripheral(address.toIdentifier(), configure)
 }
 
+/**
+ * Creates a transport that can refresh Android's GATT cache after a firmware update, even when
+ * discovery returns all required characteristics.
+ *
+ * [refreshGattCacheOnConnect] is called once after the link connects and before PhoneAPI I/O
+ * begins. Return true to attempt an immediate cache refresh and reconnect for rediscovery. A
+ * failed initial link leaves the callback unread, and a platform refusal keeps the existing link.
+ * If stale-cache repair is also enabled in [resilience], both triggers share one refresh per
+ * link. The callback must return promptly and must not perform I/O.
+ */
+public fun BleTransport(
+    address: String,
+    resilience: BleResilience,
+    refreshGattCacheOnConnect: () -> Boolean,
+    builderAction: PeripheralBuilder.() -> Unit,
+): BleTransport = BleTransport(address, resilience, builderAction).also { transport ->
+    transport.gattCacheRefresher = GattCacheRefresher { transport.peripheral.refreshHiddenGattCache() }
+    transport.shouldRefreshGattCache = { discoveryIncomplete ->
+        refreshGattCacheOnConnect() || (resilience.refreshStaleGattCache && discoveryIncomplete)
+    }
+}
+
 internal actual fun applyPlatformTuning(transport: BleTransport) {
     transport.postConnectHook = { connected ->
         val android = connected as? AndroidPeripheral

@@ -1,6 +1,6 @@
 // transport-ble/build.gradle.kts
 //
-// BLE transport via JuulLabs Kable. Targets: android, jvm, ios.
+// BLE transport via JuulLabs Kable. Targets: Android, JVM, iOS, JS, and Wasm.
 // Kable ships JVM backends for macOS, Windows, and Linux; same library
 // powers Meshtastic-Android.
 
@@ -8,6 +8,7 @@ plugins {
     id("meshtastic.kmp.library")
     id("meshtastic.android.library")
     id("meshtastic.publishing")
+    id("meshtastic.js.library")
     id("meshtastic.ios.framework")
 }
 

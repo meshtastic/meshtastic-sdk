@@ -11,6 +11,9 @@ Bluetooth LE transport for the Meshtastic KMP SDK. It implements `RadioTransport
 | JVM (macOS) | CoreBluetooth through btleplug | none beyond OS Bluetooth permission |
 | JVM (Linux) | BlueZ over D-Bus through btleplug | BlueZ 5 and access to the system bus (typically the `bluetooth` group) |
 | JVM (Windows) | WinRT Bluetooth APIs through btleplug | Windows 10 or later |
+| JavaScript and Wasm | Web Bluetooth | A supporting browser and a secure page. The chooser requires a user gesture. |
+
+Call `requestBleTransport()` directly from a user gesture to open the browser chooser. Hosts that already own a grant can pass their Kable `Peripheral` to `BleTransport` and retain responsibility for closing it.
 
 ## GATT services and characteristics
 
@@ -50,6 +53,7 @@ After the link-layer connect, the transport reads the encrypted `fromradio` char
   - `bondFirst` bonds before the GATT connect, publishing `TransportState.Bonding` with a 30-second limit; a refused bond fails the connect.
   - `autoConnectFallback` retries with `autoConnect = true` when a direct connect hasn't completed in 15 seconds; the next `connect()` starts direct again.
   - `refreshStaleGattCache` calls the hidden `BluetoothGatt.refresh()` (reflection into Kable's private fields; the AAR's `proguard.txt` carries the keep rules, so R8 applies them in a minified app) and reconnects once when discovery lacks the Meshtastic service or one of its characteristics. A refused refresh leaves the connect unchanged.
+  - The Android address factory's `refreshGattCacheOnConnect` callback lets an app consume a pending post-update refresh request after the link connects, even if discovery returned a complete table. The transport attempts at most one cache refresh before the PhoneAPI handshake.
   - The write type stays write-with-response: firmware declares `toradio` as `CHR_PROPS_WRITE` only (`NRF52Bluetooth.cpp`, `NimbleBluetooth.cpp`).
 - `BleTransport.deviceLogs(): Flow<LogRecord>`: opt-in device logs from the `logradio` characteristic. The flow is cold: it subscribes while collected and unsubscribes on cancel, so collect again after a reconnect. It buffers 64 records and drops the oldest, so a slow collector never backpressures the link. Firmware streams only while `security.debug_log_api_enabled` is on. Undecodable or MTU-truncated notifications are skipped. The legacy text characteristic (`6c6fd238-...`) isn't read, since the firmware doesn't create it. This is separate from the PhoneAPI `FromRadio.log_record` path.
 - `BleConstants`: the service and characteristic UUIDs as `kotlin.uuid.Uuid`, and prebuilt Kable `Characteristic` handles.
