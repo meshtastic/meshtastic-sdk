@@ -1414,6 +1414,80 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun logRecordsDuringTheSettleWindowDoNotEvictAHeldPacket() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:settle-logs"),
+            nowMs = { currentTime },
+            autoCompleteStage1 = false,
+        )
+        val client = buildClient(transport)
+        val logs = mutableListOf<LogRecord>()
+        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+        val connectJob = backgroundScope.async { client.connect() }
+        runCurrent()
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { wb -> wb.my_node_num = transport.nodeNum }.build()
+            }.build(),
+        )
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb -> wb.config_complete_id = NONCE_STAGE1 }.build(),
+        )
+        runCurrent()
+
+        client.packets.test {
+            // Inside the settle window: one packet, then more log records than the settle buffer holds.
+            transport.injectAlivePacket(packetId = 778)
+            repeat(SETTLE_BUFFER_CAP + 6) { index ->
+                transport.injectFromRadio(
+                    org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                        wb.log_record = LogRecord.Builder().also { it.message = "settle $index" }.build()
+                    }.build(),
+                )
+                // deviceLogs drops the oldest past 64 for a collector that falls behind; let it keep up.
+                if (index % 16 == 15) runCurrent()
+            }
+            repeat(4) {
+                advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+                drainCurrent()
+            }
+            connectJob.await()
+            assertEquals(778, awaitItem().id, "the held packet survives the log burst")
+            assertEquals(SETTLE_BUFFER_CAP + 6, logs.size)
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun firmwareAdvisoryRepeatsOncePerReconnectedSession() = runTest {
+        val transport = ScriptedTransport(
+            identity = TransportIdentity("fake:fw-advice-reconnect"),
+            nowMs = { currentTime },
+            firmwareVersion = "2.4.0",
+        )
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0),
+        )
+        val warnings = mutableListOf<MeshEvent.ProtocolWarning>()
+        backgroundScope.launch {
+            client.events.collect { if (it is MeshEvent.ProtocolWarning) warnings += it }
+        }
+        runCurrent()
+        client.connect()
+        runCurrent()
+        assertEquals(1, warnings.size, "first session")
+
+        transport.simulateRecoverableError("drop")
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drainCurrent()
+        awaitConnected(client)
+
+        assertEquals(2, warnings.size, "the reconnected session warns again: $warnings")
+    }
+
+    @Test
     fun sessionReceiveStartsWithSnapshotAndKeepsOrderAcrossReconnect() = runTest {
         val transport = ScriptedTransport(
             TransportIdentity("fake:session-order"),
@@ -1992,6 +2066,9 @@ class HandshakeAndReconnectTest {
 
         // MeshEngine.HANDSHAKE_PACKET_BUFFER_CAP
         const val HANDSHAKE_PACKET_CAP = 64
+
+        // MeshEngine.SETTLE_BUFFER_CAP
+        const val SETTLE_BUFFER_CAP = 64
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L

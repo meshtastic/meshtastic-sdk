@@ -57,7 +57,7 @@ RadioClient.Builder()
 
 `build()` throws `IllegalArgumentException` without `transport(...)` and `storage(...)`. The builder takes a constructed `RadioTransport`; there is no `transport(TransportSpec)` overload. To turn a user-typed target into a transport, parse it with `TransportTarget.parse` (see [Transport targets](#transport-targets)) and open the matching transport in host code.
 
-`autoSyncTimeOnConnect(true)` sends one `set_time_only` as soon as the Stage 1 `my_info` arrives, so firmware re-dates its queued packets before it flushes them. `disableBleHeartbeat()` stops the 30 s heartbeat on BLE only; TCP and serial always send it.
+`autoSyncTimeOnConnect(true)` sends one `set_time_only` as soon as the Stage 1 `my_info` arrives, so firmware can re-date packets it queued without a clock while they are still queued (best effort; see `architecture/handshake-fsm.md`). `disableBleHeartbeat()` stops the 30 s heartbeat on BLE only; TCP and serial always send it.
 
 Kotlin callers can use the builder-lambda factory instead:
 

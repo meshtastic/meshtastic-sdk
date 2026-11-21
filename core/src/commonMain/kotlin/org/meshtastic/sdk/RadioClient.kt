@@ -839,8 +839,9 @@ public class RadioClient internal constructor(
          * Enable or disable automatic time sync on connect.
          *
          * When enabled (default), the handshake sends one `set_time_only` from [clock] as soon as
-         * the Stage 1 `my_info` arrives, so firmware re-dates the packets it queued without a clock
-         * before it flushes them. Useful for GPS-less radios that lose time across reboots.
+         * the Stage 1 `my_info` arrives, so firmware can re-date packets it queued without a clock
+         * while they are still queued. Best effort: a fast stream link can flush them first. Useful for
+         * GPS-less radios that lose time across reboots.
          */
         public fun autoSyncTimeOnConnect(enabled: Boolean): Builder = apply { autoSyncTimeOnConnect = enabled }
 

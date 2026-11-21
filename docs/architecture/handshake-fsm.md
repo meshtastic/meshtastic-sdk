@@ -60,7 +60,7 @@ One heartbeat goes out between the Stage 1 settle and the Stage 2 request, follo
 
 ### Clock sync in handshake
 
-With `autoSyncTimeOnConnect` on (the default), the first Stage 1 `my_info` triggers one `set_time_only` admin packet addressed to `my_info.my_node_num`. Firmware flushes its queued packets once Stage 1 ends and re-dates the ones it stamped without a clock when the clock turns valid (`MeshService::reconcilePendingRxTimes`), so the sync must land before then. Firmware fills `from` and the packet id.
+With `autoSyncTimeOnConnect` on (the default), the first Stage 1 `my_info` triggers one `set_time_only` admin packet addressed to `my_info.my_node_num`. Firmware flushes its queued packets once Stage 1 ends and re-dates the ones it stamped without a clock when the clock turns valid (`MeshService::reconcilePendingRxTimes`), so packets still queued when the sync is read get a real `rx_time`. This is best effort: firmware reads input only between 100 ms write slices (`StreamAPI::runOncePart`, `STREAM_WRITE_BUDGET_MSEC`), so on a fast TCP link a short dump and its backlog can be written before the sync is read; over BLE and serial the sync usually lands mid-dump. Firmware fills `from` and the packet id.
 
 ### No wake heartbeat before Stage 1
 
@@ -73,11 +73,11 @@ A failure always returns to `Idle`. Reconnecting is off by default: the engine p
 Causes that DO NOT auto-reconnect:
 - `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
 - A non-recoverable transport error and an explicit `disconnect()`.
+- `MeshtasticException.HandshakeTimeout(stage)`: the engine tears the session down; the host connects again.
+- `MeshtasticException.StorageUnavailable(...)` from `StorageProvider.activate()`, which runs once per client before the handshake.
 
 Causes that DO auto-reconnect:
-- `MeshtasticException.Transport(...)`
-- `MeshtasticException.HandshakeTimeout(stage)`
-- `MeshtasticException.StorageUnavailable(...)` (single retry; second consecutive failure surfaces and stops)
+- A recoverable `TransportState.Error`, and a read or write failure on the current link (`MeshtasticException.Transport`).
 
 ## Related
 

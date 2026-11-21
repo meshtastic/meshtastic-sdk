@@ -239,7 +239,14 @@ Each test gives the transport, steps, expected result, how to verify it, and any
 - **Steps:**
   1. Offset the host clock by 5 minutes (only on a node without GPS).
   2. Connect with `Builder.autoSyncTimeOnConnect(true)`.
-- **Expected:** after the handshake, the node's time matches the host within 60 s, and packets the node queued before the connect carry a corrected `rx_time`.
+- **Expected:** after the handshake, the node's time matches the host within 60 s.
+
+#### D3b: queued packets get a real `rx_time`
+- **Steps:**
+  1. On firmware with `MeshService::reconcilePendingRxTimes` (2.8 and later) and no GPS, reboot the node so its clock is invalid.
+  2. With no client connected, have a second node send it a text.
+  3. Collect `client.packets` before calling `connect()` over BLE or serial, with `Builder.autoSyncTimeOnConnect(true)`.
+- **Expected:** the queued text arrives with a non-zero `rx_time` near the time it was sent. Over a fast TCP link it may still arrive with `rx_time` 0.
 
 #### D4: Reboot drops the transport
 - **Steps:** `client.admin.reboot()`.

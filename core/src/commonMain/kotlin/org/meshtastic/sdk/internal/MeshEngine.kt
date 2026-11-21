@@ -1053,6 +1053,8 @@ internal class MeshEngine(
      */
     private fun startStage1Handshake() {
         val generation = ++receiveGeneration
+        // Each session, a reconnect included, warns once about firmware below the recommended version.
+        firmwareUpdateAdvised = false
         writeGeneration.value = generation
         sessionReceive?.begin(generation)
         startFrameReader(generation)
@@ -1288,6 +1290,12 @@ internal class MeshEngine(
             if (handshakeStage != HandshakeStage.Ready) handleHandshakeLockdown(lockdownStatus)
             events.tryEmit(MeshEvent.LockdownStatusChanged(lockdownStatus))
             sessionReceive?.lockdown(lockdownStatus)
+            return
+        }
+
+        // Log records bypass the settle and handshake buffers, so a log burst cannot evict a held frame.
+        fromRadio.log_record?.let { record ->
+            deviceLogs.tryEmit(record)
             return
         }
 
