@@ -51,7 +51,7 @@ import kotlin.time.Duration.Companion.seconds
  *   session passkey is still seeded, and the session still reaches [ConnectionState.Connected].
  * - Peer nodes are absent from the session's node map — that's the trade the flag buys.
  * - The default builder, and an explicit `skipNodeDb(false)`, keep the two-stage handshake.
- * - `autoSyncTimeOnConnect` sets the clock as soon as Stage 1 `my_info` arrives, once per handshake.
+ * - `autoSyncTimeOnConnect` sets the clock as soon as Stage 1 `my_info` arrives.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ConfigOnlyHandshakeTest {
@@ -181,7 +181,7 @@ class ConfigOnlyHandshakeTest {
     }
 
     @Test
-    fun autoTimeSyncGoesOutRightAfterMyInfoAndOnlyOnce() = runTest {
+    fun autoTimeSyncGoesToTheNodeBeforeTheSettleHeartbeat() = runTest {
         val transport = ScriptedDevice(TransportIdentity("fake:time-sync"))
         val client = buildClient(transport, skipNodeDb = false, autoSyncTime = true)
 
