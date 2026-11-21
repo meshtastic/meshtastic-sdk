@@ -116,6 +116,24 @@ internal sealed interface EngineMessage {
 
     data class PacedQueueTimeout(val send: PacedSend) : EngineMessage
 
+    // ── State writes from outside the actor ─────────────────────────────────
+
+    /** Merge acknowledged local config writes into the bundle; [done] completes once applied. */
+    data class ApplyConfigEdits(
+        val configs: List<org.meshtastic.proto.Config>,
+        val moduleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+        val done: CompletableDeferred<Unit>,
+    ) : EngineMessage
+
+    /** Apply an acknowledged local channel write; [done] completes once applied. */
+    data class ApplyChannel(val channel: org.meshtastic.proto.Channel, val done: CompletableDeferred<Unit>) : EngineMessage
+
+    /** Channels loaded from storage for a session whose handshake reported none. */
+    data class ChannelsRestored(val channels: List<org.meshtastic.proto.Channel>, val generation: Long) : EngineMessage
+
+    /** A storage write made outside the actor failed. */
+    data class StorageDegraded(val reason: String, val cause: Throwable?) : EngineMessage
+
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
     data class CancelHandle(val id: MessageId, val expected: MutableStateFlow<SendState>? = null) : EngineMessage
 

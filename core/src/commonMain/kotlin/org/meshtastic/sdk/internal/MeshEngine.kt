@@ -822,6 +822,22 @@ internal class MeshEngine(
 
             is EngineMessage.CancelHandle -> handleCancelHandle(msg)
 
+            is EngineMessage.ApplyConfigEdits -> {
+                mergeConfigEdits(msg.configs, msg.moduleConfigs)
+                msg.done.complete(Unit)
+            }
+
+            is EngineMessage.ApplyChannel -> {
+                updateChannelAndPersist(msg.channel)
+                msg.done.complete(Unit)
+            }
+
+            is EngineMessage.ChannelsRestored -> {
+                if (msg.generation == receiveGeneration && channelsState.value == null) channelsState.value = msg.channels
+            }
+
+            is EngineMessage.StorageDegraded -> markStorageDegraded(msg.reason, msg.cause)
+
             is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
 
             is EngineMessage.Lockdown -> handleLockdownCommand(msg)
@@ -1707,6 +1723,7 @@ internal class MeshEngine(
                     val heartbeatSnapshot = nodesSnapshot.keys.associateWith { lastHeartbeatAt[it] }
                     val firmwareVersion = pendingMetadata?.firmware_version ?: ""
                     val bundleSnapshot = meshState.configBundle
+                    val sessionGeneration = receiveGeneration
                     engineScope?.launch {
                         if (storageDegraded) return@launch
                         val s = storage ?: return@launch
@@ -1726,11 +1743,13 @@ internal class MeshEngine(
                             }
                             if (channelsSnapshot.isNotEmpty()) {
                                 s.saveChannels(channelsSnapshot)
-                            } else if (channelsState.value == null) {
-                                // Reconnect sessions where the device skips re-sending
-                                // channels: fall back to the persisted set (storage I/O, so
-                                // it stays in this async block).
-                                channelsState.value = s.loadChannels().ifEmpty { null }
+                            } else {
+                                // Reconnect sessions where the device skips re-sending channels fall back to
+                                // the persisted set; the actor applies it only if the session still has none.
+                                val restored = s.loadChannels()
+                                if (restored.isNotEmpty()) {
+                                    inbox.trySend(EngineMessage.ChannelsRestored(restored, sessionGeneration))
+                                }
                             }
                             bundleSnapshot?.let { s.saveConfig(it) }
                         } catch (e: CancellationException) {
@@ -2316,8 +2335,6 @@ internal class MeshEngine(
             )
             return
         }
-        mergeLivePacketIntoNodeDb(packet, decoded)
-        emitPacketOrLog(packet)
         // Decode the admin payload once; both the passkey latch and external-change detection
         // need it, and inbound ADMIN_APP traffic is hot during config syncs.
         val adminMsg = if (decoded.portnum == PortNum.ADMIN_APP) {
@@ -2331,6 +2348,10 @@ internal class MeshEngine(
         }
         val correlatedAdminResponse = adminMsg != null && !unauthenticatedAdminReply &&
             recognizesAdminReply(packet, decoded.request_id, adminMsg)
+        // The session stream gets the packet before the node, config and event changes it causes.
+        sessionReceive?.packet(packet, correlatedAdminResponse)
+        mergeLivePacketIntoNodeDb(packet, decoded)
+        emitPacketOrLog(packet)
         if (correlatedAdminResponse) {
             // Install the key before completing the RPC, so its caller can immediately use the session.
             latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg, receivedAt)
@@ -2357,7 +2378,6 @@ internal class MeshEngine(
         // External config change detection: unsolicited admin messages from firmware
         // indicating another client modified channels/config on this device.
         if (adminMsg != null) maybeProcessExternalAdminChange(packet, adminMsg)
-        sessionReceive?.packet(packet, correlatedAdminResponse)
     }
 
     /**
@@ -3482,15 +3502,14 @@ internal class MeshEngine(
         }
     }
 
-    /**
-     * Atomically patches [channelsState] with the updated [channel] and enqueues a
-     * best-effort storage flush. Called from [AdminApiImpl] after a successful `setChannel` ACK.
-     *
-     * Thread-safe: uses `StateFlow.update` for the in-memory atomic update.
-     * Storage write is fire-and-forget on [engineScope] — failure is logged but does NOT
-     * degrade the session (the next handshake re-syncs channels from the device anyway).
-     */
-    internal fun updateChannelAndPersist(channel: org.meshtastic.proto.Channel) {
+    /** Applies an acknowledged local channel write on the actor and returns once it is visible. */
+    suspend fun applyChannelWrite(channel: org.meshtastic.proto.Channel) {
+        val done = CompletableDeferred<Unit>()
+        if (inbox.trySend(EngineMessage.ApplyChannel(channel, done)).isSuccess) done.await()
+    }
+
+    // Actor only. The storage flush is best effort: the next handshake re-reads channels anyway.
+    private fun updateChannelAndPersist(channel: org.meshtastic.proto.Channel) {
         val idx = channel.index
         if (idx < 0 || idx > ChannelIndex.MAX_CHANNEL_INDEX) {
             logger.warn(TAG) { "setChannel: ignoring out-of-range index $idx" }
@@ -3533,12 +3552,21 @@ internal class MeshEngine(
     }
 
     /**
-     * Optimistically update [configBundleState] after a successful `editSettings` commit.
-     *
-     * Merges written [Config] and [ModuleConfig] objects into the existing bundle, replacing
-     * sections that were written while preserving sections that weren't touched.
+     * Merges acknowledged local [Config] and [ModuleConfig] writes into [configBundleState] on the
+     * actor, replacing the written sections, and returns once the bundle shows them.
      */
-    internal fun applyConfigEdits(
+    suspend fun applyConfigEdits(
+        writtenConfigs: List<org.meshtastic.proto.Config>,
+        writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
+    ) {
+        if (writtenConfigs.isEmpty() && writtenModuleConfigs.isEmpty()) return
+        val done = CompletableDeferred<Unit>()
+        if (inbox.trySend(EngineMessage.ApplyConfigEdits(writtenConfigs, writtenModuleConfigs, done)).isSuccess) {
+            done.await()
+        }
+    }
+
+    private fun mergeConfigEdits(
         writtenConfigs: List<org.meshtastic.proto.Config>,
         writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
     ) {
@@ -3575,12 +3603,14 @@ internal class MeshEngine(
     }
 
     // ---- storage error wrapping ----
-    // All write paths funnel through `reportStorageDegraded` on failure so the user-visible
-    // events flow carries a single StorageDegraded signal per session. `runStorageWrite`
-    // is the actor-local form (blocking suspend); call sites already inside `engineScope.launch`
-    // use `runStorageWriteAsync`.
+    // Storage writes run in async blocks; their failures reach the actor as one StorageDegraded
+    // signal per session.
 
     private fun reportStorageDegraded(reason: String, cause: Throwable?) {
+        inbox.trySend(EngineMessage.StorageDegraded(reason, cause))
+    }
+
+    private fun markStorageDegraded(reason: String, cause: Throwable?) {
         logger.warn(TAG, cause) { "Storage degraded: $reason" }
         if (storageDegraded) return
         storageDegraded = true

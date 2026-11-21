@@ -167,7 +167,7 @@ internal class AdminApiImpl(
                 }.build(),
             )
         }
-        if (result is AdminResult.Success && isLocalTarget()) engine.updateChannelAndPersist(channel)
+        if (result is AdminResult.Success && isLocalTarget()) engine.applyChannelWrite(channel)
         return result
     }
 
@@ -668,7 +668,7 @@ internal class AdminApiImpl(
         private val writtenConfigs = mutableListOf<Config>()
         private val writtenModuleConfigs = mutableListOf<ModuleConfig>()
 
-        fun updateLocalConfigAfterCommit() {
+        suspend fun updateLocalConfigAfterCommit() {
             if (isLocalTarget()) engine.applyConfigEdits(writtenConfigs, writtenModuleConfigs)
         }
 
