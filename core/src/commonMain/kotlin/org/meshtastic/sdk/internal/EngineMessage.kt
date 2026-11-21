@@ -126,7 +126,11 @@ internal sealed interface EngineMessage {
     ) : EngineMessage
 
     /** Apply an acknowledged local channel write; [done] completes once applied. */
-    data class ApplyChannel(val channel: org.meshtastic.proto.Channel, val done: CompletableDeferred<Unit>) : EngineMessage
+    data class ApplyChannel(val channel: org.meshtastic.proto.Channel, val done: CompletableDeferred<Unit>) :
+        EngineMessage
+
+    /** Apply an acknowledged admin write that changes the node map; [done] completes once applied. */
+    data class ApplyNodeWrite(val write: NodeWrite, val done: CompletableDeferred<Unit>) : EngineMessage
 
     /** Channels loaded from storage for a session whose handshake reported none. */
     data class ChannelsRestored(val channels: List<org.meshtastic.proto.Channel>, val generation: Long) : EngineMessage
@@ -236,4 +240,13 @@ internal sealed interface EngineMessage {
 
     /** Outcome of a reconnect attempt initiated by [ReconnectTick]. */
     data class ReconnectAttemptResult(val success: Boolean, val cause: MeshtasticException?) : EngineMessage
+}
+
+/** An acknowledged admin write to the connected node that changes its node database, mirrored on the SDK map. */
+internal sealed interface NodeWrite {
+    data class Remove(val node: Int) : NodeWrite
+
+    data class Flags(val node: Int, val favorite: Boolean? = null, val ignored: Boolean? = null) : NodeWrite
+
+    data class Owner(val user: org.meshtastic.proto.User) : NodeWrite
 }

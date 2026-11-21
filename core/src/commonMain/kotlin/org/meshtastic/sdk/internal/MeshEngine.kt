@@ -124,7 +124,6 @@ internal class MeshEngine(
     private val protocolLogLevel: LogLevel = LogLevel.NONE,
     private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
     sessionReceiveCapacity: Int? = null,
-    sessionReceiveEnvelopes: Boolean = false,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -157,7 +156,7 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
-    private val sessionReceive = sessionReceiveCapacity?.let { SessionReceive(it, sessionReceiveEnvelopes) }
+    private val sessionReceive = sessionReceiveCapacity?.let { SessionReceive(it) }
     val sessionEvents = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
@@ -827,13 +826,21 @@ internal class MeshEngine(
                 msg.done.complete(Unit)
             }
 
+            is EngineMessage.ApplyNodeWrite -> {
+                mergeNodeWrite(msg.write)
+                msg.done.complete(Unit)
+            }
+
             is EngineMessage.ApplyChannel -> {
                 updateChannelAndPersist(msg.channel)
                 msg.done.complete(Unit)
             }
 
             is EngineMessage.ChannelsRestored -> {
-                if (msg.generation == receiveGeneration && channelsState.value == null) channelsState.value = msg.channels
+                if (msg.generation == receiveGeneration && channelsState.value == null) {
+                    channelsState.value = msg.channels
+                    sessionReceive?.channelsChanged(msg.channels)
+                }
             }
 
             is EngineMessage.StorageDegraded -> markStorageDegraded(msg.reason, msg.cause)
@@ -958,7 +965,7 @@ internal class MeshEngine(
                 }.build()
             }
         } else {
-            events.tryEmit(
+            emitEvent(
                 MeshEvent.ProtocolWarning(
                     "admin remote without session passkey",
                     details = mapOf("to" to packet.to),
@@ -1159,7 +1166,7 @@ internal class MeshEngine(
             return
         }
         val tagged = MeshtasticException.tag(cause, transportIdentity = transport.identity, operation = "engine.link")
-        events.tryEmit(MeshEvent.TransportError(tagged))
+        emitEvent(MeshEvent.TransportError(tagged))
         scheduleReconnect(tagged)
     }
 
@@ -1179,7 +1186,7 @@ internal class MeshEngine(
 
         if (msg.cause != null) {
             // Typed causes (HandshakeTimeout, StorageUnavailable) reach observers as themselves.
-            events.tryEmit(
+            emitEvent(
                 MeshEvent.TransportError(
                     MeshtasticException.tag(
                         msg.cause,
@@ -1255,7 +1262,7 @@ internal class MeshEngine(
             // "wire corruption" UI and ship logs. Keep the exception message + type in details
             // so downstream tooling can classify (e.g. MismatchedTag vs truncated payload).
             logger.warn(TAG, e) { "Failed to decode FromRadio: ${e.message}" }
-            events.tryEmit(
+            emitEvent(
                 MeshEvent.ProtocolWarning(
                     "FromRadio decode failed",
                     details = mapOf(
@@ -1302,7 +1309,7 @@ internal class MeshEngine(
         //      disconnects, and `ConnectionState.Disconnected` is emitted.
         if (fromRadio.rebooted == true) {
             logger.warn(TAG) { "Device rebooted — forcing disconnect" }
-            events.tryEmit(MeshEvent.DeviceRebooted())
+            emitEvent(MeshEvent.DeviceRebooted())
             handshakeStage = HandshakeStage.Idle
             lockdownLink.value = null
             readySendGeneration.value = null
@@ -1321,7 +1328,7 @@ internal class MeshEngine(
         val lockdownStatus = fromRadio.lockdown_status
         if (lockdownStatus != null) {
             if (handshakeStage != HandshakeStage.Ready) handleHandshakeLockdown(lockdownStatus)
-            events.tryEmit(MeshEvent.LockdownStatusChanged(lockdownStatus))
+            emitEvent(MeshEvent.LockdownStatusChanged(lockdownStatus))
             sessionReceive?.lockdown(lockdownStatus)
             return
         }
@@ -1349,7 +1356,7 @@ internal class MeshEngine(
                     logger.warn(TAG) {
                         "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropping oldest frame ($dropped)"
                     }
-                    events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
+                    emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
                 }
                 settleBuffer.addLast(fromRadio)
                 return
@@ -1362,9 +1369,8 @@ internal class MeshEngine(
             HandshakeStage.SeedingSession -> processSeedingEnvelope(fromRadio)
 
             HandshakeStage.Ready -> {
-                val refreshFrame = handleNodeDbRefreshFrame(fromRadio)
+                handleNodeDbRefreshFrame(fromRadio)
                 routeNormalEnvelope(fromRadio)
-                if (fromRadio.packet == null && !refreshFrame) sessionReceive?.envelope(fromRadio)
             }
         }
     }
@@ -1508,7 +1514,7 @@ internal class MeshEngine(
             if (present < recommended.asInt && !firmwareUpdateAdvised) {
                 firmwareUpdateAdvised = true
                 logger.warn(TAG) { "Firmware $reported is below the recommended ${recommended.versionString}" }
-                events.tryEmit(
+                emitEvent(
                     MeshEvent.ProtocolWarning(
                         "firmware should be updated",
                         details = mapOf(
@@ -1529,7 +1535,7 @@ internal class MeshEngine(
             transportIdentity = transport.identity,
             operation = "handshake",
         )
-        events.tryEmit(MeshEvent.TransportError(cause))
+        emitEvent(MeshEvent.TransportError(cause))
         handshakeStage = HandshakeStage.Idle
         failPreSendQueueWith(SendFailure.HandshakeFailed)
         val deferred = pendingConnectDeferred
@@ -1666,7 +1672,7 @@ internal class MeshEngine(
                         }
                         // passkeys issued under the previous identity are meaningless now.
                         clearSessionPasskeys()
-                        events.tryEmit(
+                        emitEvent(
                             MeshEvent.IdentityRebound(
                                 previousNodeNum = NodeId(prev),
                                 newNodeNum = NodeId(myInfo.my_node_num),
@@ -1959,7 +1965,7 @@ internal class MeshEngine(
             logger.warn(TAG) {
                 "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — dropping oldest"
             }
-            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
+            emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
         }
         handshakePacketBuffer.addLast(BufferedPacket(packet, clock.now()))
     }
@@ -2130,7 +2136,7 @@ internal class MeshEngine(
             nodeInfo != null -> processInboundNodeInfo(nodeInfo)
 
             queueStatus != null -> {
-                events.tryEmit(MeshEvent.QueueStatusChanged(queueStatus))
+                emitEvent(MeshEvent.QueueStatusChanged(queueStatus))
                 // Heartbeat replies also use ID zero. They report available capacity, so
                 // they cannot prove that the outstanding paced write was admitted.
                 if (queueStatus.mesh_packet_id == 0) return
@@ -2278,7 +2284,7 @@ internal class MeshEngine(
         if (reportedKeyMismatches.size > MAX_REPORTED_KEY_MISMATCHES) {
             reportedKeyMismatches.remove(reportedKeyMismatches.first())
         }
-        events.tryEmit(MeshEvent.SecurityWarning.PublicKeyMismatch(nodeId, offered))
+        emitEvent(MeshEvent.SecurityWarning.PublicKeyMismatch(nodeId, offered))
     }
 
     private fun mergePosition(wb: NodeInfo.Builder, previous: Position?, pos: Position) {
@@ -2323,7 +2329,7 @@ internal class MeshEngine(
             logger.warn(TAG) {
                 "Dropping packet id=${packet.id} with unknown port from=0x${packet.from.toString(16)}"
             }
-            events.tryEmit(
+            emitEvent(
                 MeshEvent.ProtocolWarning(
                     "packet dropped for unknown port",
                     details = mapOf(
@@ -2406,16 +2412,16 @@ internal class MeshEngine(
             // translate the security-relevant payload variants into typed SecurityWarning
             // sub-events so hosts can react without string-matching the message field.
             val cn = fromRadio.clientNotification!!
-            events.tryEmit(MeshEvent.Notification(cn))
+            emitEvent(MeshEvent.Notification(cn))
             when {
                 cn.duplicated_public_key != null ->
-                    events.tryEmit(MeshEvent.SecurityWarning.DuplicatedPublicKey)
+                    emitEvent(MeshEvent.SecurityWarning.DuplicatedPublicKey)
 
                 cn.low_entropy_key != null ->
-                    events.tryEmit(MeshEvent.SecurityWarning.LowEntropyKey)
+                    emitEvent(MeshEvent.SecurityWarning.LowEntropyKey)
 
                 cn.key_verification_number_request != null -> cn.key_verification_number_request!!.let { r ->
-                    events.tryEmit(
+                    emitEvent(
                         MeshEvent.KeyVerification(
                             KeyVerificationPrompt.EnterSecurityNumber(r.nonce, r.remote_longname),
                         ),
@@ -2423,7 +2429,7 @@ internal class MeshEngine(
                 }
 
                 cn.key_verification_number_inform != null -> cn.key_verification_number_inform!!.let { i ->
-                    events.tryEmit(
+                    emitEvent(
                         MeshEvent.KeyVerification(
                             KeyVerificationPrompt.ShowSecurityNumber(
                                 i.nonce,
@@ -2435,7 +2441,7 @@ internal class MeshEngine(
                 }
 
                 cn.key_verification_final != null -> cn.key_verification_final!!.let { f ->
-                    events.tryEmit(
+                    emitEvent(
                         MeshEvent.KeyVerification(
                             KeyVerificationPrompt.ConfirmVerification(
                                 f.nonce,
@@ -2454,26 +2460,31 @@ internal class MeshEngine(
             // MQTT client proxy: the device tunnels its MQTT traffic through the host.
             // Surfaced as a typed event; the host relays to the broker and answers via
             // RadioClient.sendRaw(ToRadio(mqttClientProxyMessage = …)).
-            events.tryEmit(MeshEvent.MqttProxyMessage(fromRadio.mqttClientProxyMessage!!))
+            emitEvent(MeshEvent.MqttProxyMessage(fromRadio.mqttClientProxyMessage!!))
             true
         }
 
         fromRadio.xmodemPacket != null -> {
             // XModem file-transfer frame (firmware update / file transfer flows).
-            events.tryEmit(MeshEvent.XmodemPacket(fromRadio.xmodemPacket!!))
+            emitEvent(MeshEvent.XmodemPacket(fromRadio.xmodemPacket!!))
             true
         }
 
         fromRadio.deviceuiConfig != null -> {
-            // Capture deviceuiConfig if it arrives post-handshake (e.g., after storeUIConfig).
-            pendingDeviceUIConfig = fromRadio.deviceuiConfig
+            val uiConfig = fromRadio.deviceuiConfig
+            val bundle = configBundleState.value
+            if (stage == HandshakeStage.Ready && bundle != null) {
+                commitConfigBundle(bundle.copy(deviceUIConfig = uiConfig))
+            } else {
+                pendingDeviceUIConfig = uiConfig
+            }
             true
         }
 
         fromRadio.fileInfo != null -> {
             val file = fromRadio.fileInfo!!
             if (stage != HandshakeStage.Ready) pendingFiles[file.file_name] = file
-            events.tryEmit(MeshEvent.FileInfoReceived(file))
+            emitEvent(MeshEvent.FileInfoReceived(file))
             true
         }
 
@@ -2517,9 +2528,9 @@ internal class MeshEngine(
         val previous = lastMqttConnected
         lastMqttConnected = connected
         if (connected && previous != true) {
-            events.tryEmit(MeshEvent.MqttConnected)
+            emitEvent(MeshEvent.MqttConnected)
         } else if (!connected && previous == true) {
-            events.tryEmit(MeshEvent.MqttDisconnected())
+            emitEvent(MeshEvent.MqttDisconnected())
         }
     }
 
@@ -2543,7 +2554,7 @@ internal class MeshEngine(
     private fun warnUnhandledVariant(variant: String, stage: HandshakeStage) {
         val details = mutableMapOf<String, Any?>("variant" to variant)
         if (stage != HandshakeStage.Ready) details["stage"] = stage.toDisplayName()
-        events.tryEmit(
+        emitEvent(
             MeshEvent.ProtocolWarning("FromRadio variant not yet surfaced", details = details),
         )
     }
@@ -2708,7 +2719,7 @@ internal class MeshEngine(
 
         if (prevLevel != metrics.level) {
             lastCongestionLevel[nodeId] = metrics.level
-            events.tryEmit(MeshEvent.CongestionWarning(metrics))
+            emitEvent(MeshEvent.CongestionWarning(metrics))
         }
     }
 
@@ -2730,7 +2741,7 @@ internal class MeshEngine(
         adminMsg.get_channel_response?.let { channel ->
             logger.info(TAG) { "External channel change detected (index=${channel.index})" }
             updateChannelAndPersist(channel)
-            events.tryEmit(MeshEvent.ExternalConfigChange(ExternalChangeKind.CHANNEL))
+            emitEvent(MeshEvent.ExternalConfigChange(ExternalChangeKind.CHANNEL))
             return
         }
 
@@ -2739,7 +2750,7 @@ internal class MeshEngine(
             val current = configBundleState.value ?: return
             val merged = mergeConfigs(current.configs, listOf(config))
             val updated = current.copy(configs = merged)
-            configBundleState.value = updated
+            commitConfigBundle(updated)
             // Persist the merged config bundle
             engineScope?.launch {
                 if (storageDegraded) return@launch
@@ -2747,7 +2758,7 @@ internal class MeshEngine(
                     storage?.saveConfig(updated)
                 } catch (_: Exception) { /* non-fatal */ }
             }
-            events.tryEmit(MeshEvent.ExternalConfigChange(ExternalChangeKind.CONFIG))
+            emitEvent(MeshEvent.ExternalConfigChange(ExternalChangeKind.CONFIG))
             return
         }
 
@@ -2756,14 +2767,14 @@ internal class MeshEngine(
             val current = configBundleState.value ?: return
             val merged = mergeModuleConfigs(current.moduleConfigs, listOf(moduleConfig))
             val updated = current.copy(moduleConfigs = merged)
-            configBundleState.value = updated
+            commitConfigBundle(updated)
             engineScope?.launch {
                 if (storageDegraded) return@launch
                 try {
                     storage?.saveConfig(updated)
                 } catch (_: Exception) { /* non-fatal */ }
             }
-            events.tryEmit(MeshEvent.ExternalConfigChange(ExternalChangeKind.MODULE_CONFIG))
+            emitEvent(MeshEvent.ExternalConfigChange(ExternalChangeKind.MODULE_CONFIG))
             return
         }
     }
@@ -2778,7 +2789,7 @@ internal class MeshEngine(
         if (now - lastEncryptedSkipWarningAtMs < ENCRYPTED_SKIP_WARNING_INTERVAL_MS) return
         lastEncryptedSkipWarningAtMs = now
         logger.warn(TAG) { "Dropping encrypted packet without decoded payload" }
-        events.tryEmit(
+        emitEvent(
             MeshEvent.ProtocolWarning(
                 "encrypted packet skipped for ACK correlation",
                 details = mapOf("rate_limited" to true),
@@ -2788,7 +2799,7 @@ internal class MeshEngine(
 
     private fun reportMalformedFrame(message: String, details: Map<String, Any?>) {
         logger.warn(TAG) { message }
-        events.tryEmit(MeshEvent.ProtocolWarning(message, details = details))
+        emitEvent(MeshEvent.ProtocolWarning(message, details = details))
     }
 
     private fun shouldDropDuplicateInboundPacket(packet: MeshPacket): Boolean {
@@ -2846,7 +2857,7 @@ internal class MeshEngine(
                     transportIdentity = transport.identity,
                     operation = "transport.observe",
                 )
-                events.tryEmit(MeshEvent.TransportError(cause))
+                emitEvent(MeshEvent.TransportError(cause))
 
                 // branch on whether the engine should attempt reconnect.
                 val retriable = autoReconnectConfig.enabled &&
@@ -3320,7 +3331,7 @@ internal class MeshEngine(
         // arrived) from "Stage 1/2 never started". The thrown HandshakeTimeout exception
         // already carries a stage string but only callers awaiting connect() see it; this
         // event surfaces the same signal on the events flow for passive observers.
-        events.tryEmit(
+        emitEvent(
             MeshEvent.ProtocolWarning(
                 "handshake stage timed out",
                 details = mapOf("stage" to msg.stage.toDisplayName()),
@@ -3488,18 +3499,93 @@ internal class MeshEngine(
     // subscriber leaves the buffer full. The engine never suspends on its own output: the
     // rejected item is dropped and reported as `MeshEvent.PacketsDropped`.
 
+    // Every MeshEvent goes through here so the session stream sees it in order with its packets.
+    private fun emitEvent(event: MeshEvent) {
+        events.tryEmit(event)
+        val sessionVisible = event !is MeshEvent.LockdownStatusChanged &&
+            event !is MeshEvent.QueueStatusChanged &&
+            event !is MeshEvent.PacketsDropped
+        if (sessionVisible) {
+            sessionReceive?.event(event)
+        }
+    }
+
+    // Every post-Ready config bundle change goes through here.
+    private fun commitConfigBundle(bundle: ConfigBundle) {
+        configBundleState.value = bundle
+        meshState = meshState.withConfig(bundle)
+        sessionReceive?.configChanged(bundle)
+    }
+
     private fun emitPacketOrLog(packet: MeshPacket) {
         if (!packets.tryEmit(packet)) {
             logger.warn(TAG) { "packets flow rejected emit (id=${packet.id}); reporting drop" }
-            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
+            emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
         }
     }
 
     private fun emitNodeChangeOrLog(change: NodeChange) {
+        if (change !is NodeChange.Snapshot) sessionReceive?.nodeChanged(change)
         if (!nodes.tryEmit(change)) {
             logger.warn(TAG) { "nodes flow rejected emit ($change); reporting drop" }
-            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Nodes, count = 1))
+            emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Nodes, count = 1))
         }
+    }
+
+    /** Applies an acknowledged node-database write on the actor and returns once the node map shows it. */
+    suspend fun applyNodeWrite(write: NodeWrite) {
+        val done = CompletableDeferred<Unit>()
+        if (inbox.trySend(EngineMessage.ApplyNodeWrite(write, done)).isSuccess) done.await()
+    }
+
+    // Mirrors AdminModule: removeNodeByNum, the favorite and ignored flags, and handleSetOwner.
+    private fun mergeNodeWrite(write: NodeWrite) {
+        when (write) {
+            is NodeWrite.Remove -> {
+                val nodeId = NodeId(write.node)
+                if (write.node == myNodeNum || nodeId !in meshState.nodes) return
+                meshState = meshState.withNodes(meshState.nodes - nodeId)
+                lastHeartbeatAt.remove(nodeId)
+                offlineNodes.remove(nodeId)
+                emitNodeChangeOrLog(NodeChange.Removed(nodeId))
+                val s = storage ?: return
+                engineScope?.launch {
+                    try {
+                        s.removeNode(nodeId)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        reportStorageDegraded("removeNode failed: ${e.message ?: e::class.simpleName}", e)
+                    }
+                }
+            }
+
+            is NodeWrite.Flags -> replaceNode(write.node) { wb ->
+                write.favorite?.let { wb.is_favorite = it }
+                write.ignored?.let { wb.is_ignored = it }
+            }
+
+            is NodeWrite.Owner -> replaceNode(myNodeNum) { wb ->
+                val o = write.user
+                val user = wb.user?.newBuilder() ?: org.meshtastic.proto.User.Builder()
+                if (o.long_name.isNotEmpty()) user.long_name = o.long_name
+                if (o.short_name.isNotEmpty()) user.short_name = o.short_name
+                user.is_licensed = o.is_licensed
+                o.is_unmessagable?.let { user.is_unmessagable = it }
+                wb.user = user.build()
+            }
+        }
+    }
+
+    private fun replaceNode(nodeNum: Int, edit: (NodeInfo.Builder) -> Unit) {
+        val nodeId = NodeId(nodeNum)
+        val existing = meshState.nodes[nodeId] ?: return
+        val updated = existing.newBuilder().also(edit).build()
+        val changed = diffNodeFields(existing, updated)
+        if (changed.isEmpty()) return
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (nodeNum == myNodeNum) ownNode.value = updated
+        emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
     }
 
     /** Applies an acknowledged local channel write on the actor and returns once it is visible. */
@@ -3538,6 +3624,7 @@ internal class MeshEngine(
             list.toList()
         }
         val updated = channelsState.value
+        updated?.let { sessionReceive?.channelsChanged(it) }
         if (updated != null) {
             engineScope?.launch {
                 try {
@@ -3586,8 +3673,7 @@ internal class MeshEngine(
         }
 
         val updated = current.copy(configs = mergedConfigs, moduleConfigs = mergedModuleConfigs)
-        configBundleState.value = updated
-        meshState = meshState.withConfig(updated)
+        commitConfigBundle(updated)
 
         // Persist the updated bundle to storage.
         engineScope?.launch {
@@ -3614,7 +3700,7 @@ internal class MeshEngine(
         logger.warn(TAG, cause) { "Storage degraded: $reason" }
         if (storageDegraded) return
         storageDegraded = true
-        events.tryEmit(MeshEvent.StorageDegraded(reason))
+        emitEvent(MeshEvent.StorageDegraded(reason))
     }
 
     // timestamp + dirty-mark a per-node heartbeat observation. Flushed to storage on the
