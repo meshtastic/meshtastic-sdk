@@ -766,7 +766,9 @@ message QueueStatus {
 }
 ```
 
-The SDK correlates `queue_status` by `mesh_packet_id`: `res` 0 or 35 marks the send `Sent`, any other value fails it at once with `SendFailure.QueueRejected(res)` instead of waiting out the ACK timer. A status with `mesh_packet_id == 0` is ignored. The SDK does not throttle on `free`; the node's queue is small (about 16 packets), so a bulk sender paces itself against `QueueRejected`. Every `queue_status` after the handshake also surfaces as `MeshEvent.QueueStatusChanged`.
+The SDK correlates `queue_status` by `mesh_packet_id`: `res` 0 or 35 marks the send `Sent`, any other value fails it at once with `SendFailure.QueueRejected(res)` instead of waiting out the ACK timer. A status with `mesh_packet_id == 0` is ignored. Every `queue_status` after the handshake also surfaces as `MeshEvent.QueueStatusChanged`.
+
+Firmware does not answer every written packet reliably: its to-phone status queue holds two entries and discards the oldest when full (`MAX_RX_QUEUESTATUS_TOPHONE` in `mesh-pb-constants.h`, `MeshService::sendQueueStatusToPhone`), so in a burst the client sees only the last couple. The transmit queue holds 16 packets (`MAX_TX_QUEUE` in `RadioInterface.h`), and a packet addressed to the node itself is delivered through `Router::sendLocal` without entering it. `RadioClient.send` writes at once and does not throttle on `free`, so a bulk sender paces itself against `QueueRejected`. `RadioClient.sendPaced` and every acked admin write keep one packet in flight: the next is written only after the previous one's status or a five-second receipt timeout, so a status is never lost to that two-entry queue and each send gets its own `QueueReceipt`.
 
 ### Packet ID generation
 
