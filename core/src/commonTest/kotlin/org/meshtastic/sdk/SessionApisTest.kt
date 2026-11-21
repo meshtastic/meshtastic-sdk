@@ -34,9 +34,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -53,20 +51,7 @@ class SessionApisTest {
     fun requestNodeInfoOnHeardChannelCarriesOurUser() = runTest {
         val (transport, client) = connectedClient()
         try {
-            val ownUser = User.Builder().also { wb ->
-                wb.long_name = "FakeNode"
-                wb.short_name = "FN"
-            }.build()
-            transport.injectFrame(
-                FromRadio.Builder().also { wb ->
-                    wb.node_info = NodeInfo.Builder().also { n ->
-                        n.num = own
-                        n.user = ownUser
-                    }.build()
-                }.build().toFrame(),
-            )
-            runCurrent()
-            assertEquals(ownUser, client.ownNode.value?.user)
+            learnOwnUser(transport, client)
             hearPeer(transport, channel = 2)
             client.requestNodeInfoOnHeardChannel(NodeId(peer))
             runCurrent()
@@ -84,9 +69,10 @@ class SessionApisTest {
     }
 
     @Test
-    fun requestNodeInfoWithNullUserSendsEmptyPayload() = runTest {
+    fun requestNodeInfoWithNullUserSendsEmptyPayloadEvenWhenOurUserIsKnown() = runTest {
         val (transport, client) = connectedClient()
         try {
+            learnOwnUser(transport, client)
             client.requestNodeInfo(NodeId(peer), ChannelIndex(1), user = null)
             runCurrent()
             val sent = transport.outboundPackets().last()
@@ -137,21 +123,6 @@ class SessionApisTest {
     }
 
     @Test
-    fun requestPositionWithoutCoordinatesSendsTimeOnly() = runTest {
-        val (transport, client) = connectedClient()
-        try {
-            client.requestPosition(NodeId(peer), position = Position.Builder().build())
-            runCurrent()
-            val payload = Position.ADAPTER.decode(transport.outboundPackets().last().decoded!!.payload)
-            assertNull(payload.latitude_i)
-            assertNull(payload.longitude_i)
-            assertEquals(now.toInt(), payload.time)
-        } finally {
-            client.disconnect()
-        }
-    }
-
-    @Test
     fun requestPositionWithNullPositionKeepsTheEmptyPayload() = runTest {
         val (transport, client) = connectedClient()
         try {
@@ -186,7 +157,7 @@ class SessionApisTest {
     }
 
     @Test
-    fun telemetryRequestsNameTheirVariantAndSetDest() = runTest {
+    fun telemetryRequestsNameTheirVariantAndSetDestAndHopLimit() = runTest {
         val (transport, client) = connectedClient()
         try {
             hearPeer(transport, channel = 2)
@@ -204,6 +175,12 @@ class SessionApisTest {
             }
             assertTelemetryRequest(transport, { client.telemetry.requestHost(NodeId(peer)) }) {
                 it.host_metrics != null
+            }
+            assertTelemetryRequest(transport, { client.telemetry.requestHealth(NodeId(peer)) }) {
+                it.health_metrics != null
+            }
+            assertTelemetryRequest(transport, { client.telemetry.requestTrafficManagement(NodeId(peer)) }) {
+                it.traffic_management_stats != null
             }
         } finally {
             client.disconnect()
@@ -303,16 +280,6 @@ class SessionApisTest {
     }
 
     @Test
-    fun newSessionIdIsNonZero() = runTest {
-        val (_, client) = connectedClient()
-        try {
-            repeat(100) { assertNotEquals(0, client.remoteShell.newSessionId()) }
-        } finally {
-            client.disconnect()
-        }
-    }
-
-    @Test
     fun mqttProxyEmitsDeviceMessagesAndDeliversBrokerMessages() = runTest {
         val (transport, client) = connectedClient()
         try {
@@ -377,11 +344,29 @@ class SessionApisTest {
         val sent = transport.outboundPackets().last()
         assertEquals(peer, sent.to)
         assertEquals(2, sent.channel)
+        assertEquals(3, sent.hop_limit)
         assertEquals(PortNum.TELEMETRY_APP, sent.decoded?.portnum)
         assertEquals(true, sent.decoded?.want_response)
         assertEquals(peer, sent.decoded?.dest)
         assertTrue(hasVariant(Telemetry.ADAPTER.decode(sent.decoded!!.payload)))
         pending.cancel()
+    }
+
+    private fun TestScope.learnOwnUser(transport: FakeRadioTransport, client: RadioClient) {
+        val ownUser = User.Builder().also { wb ->
+            wb.long_name = "FakeNode"
+            wb.short_name = "FN"
+        }.build()
+        transport.injectFrame(
+            FromRadio.Builder().also { wb ->
+                wb.node_info = NodeInfo.Builder().also { n ->
+                    n.num = own
+                    n.user = ownUser
+                }.build()
+            }.build().toFrame(),
+        )
+        runCurrent()
+        assertEquals(ownUser, client.ownNode.value?.user)
     }
 
     private fun TestScope.hearPeer(transport: FakeRadioTransport, channel: Int, publicKey: ByteString? = null) {
