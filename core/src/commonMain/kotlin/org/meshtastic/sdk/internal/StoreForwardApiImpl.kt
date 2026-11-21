@@ -25,6 +25,8 @@ import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.proto.StoreForwardPlusPlus
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ConnectionState
+import org.meshtastic.sdk.MeshtasticException
+import org.meshtastic.sdk.MessageHandle
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.SfppHash
@@ -41,6 +43,7 @@ internal class StoreForwardApiImpl(
     private val rpcTimeout: Duration,
     coroutineContext: CoroutineContext,
     private val nowProvider: () -> Instant,
+    private val sendPacket: (MeshPacket) -> MessageHandle,
 ) : StoreForwardApi {
 
     private val scope = CoroutineScope(coroutineContext + CoroutineName("meshtastic-store-forward"))
@@ -101,6 +104,30 @@ internal class StoreForwardApiImpl(
             AdminResult.RateLimited -> AdminResult.RateLimited
             is AdminResult.Failed -> result
         }
+    }
+
+    override fun requestLocalHistory(lastRequest: Int, windowMinutes: Int, maxMessages: Int): MessageHandle {
+        val myNode = engine.myNodeNumOrNull() ?: throw MeshtasticException.NotConnected()
+        val payload = StoreAndForward.ADAPTER.encode(
+            StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.CLIENT_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.last_request = lastRequest.coerceAtLeast(0)
+                    wb.window = windowMinutes.coerceAtLeast(0)
+                    wb.history_messages = maxMessages.coerceAtLeast(0)
+                }.build()
+            }.build(),
+        ).toByteString()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.from = myNode
+            wb.to = myNode
+            wb.priority = MeshPacket.Priority.BACKGROUND
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.STORE_FORWARD_APP
+                wb.payload = payload
+            }.build()
+        }.build()
+        return sendPacket(packet)
     }
 
     override suspend fun requestStats(server: NodeId?): AdminResult<StoreForwardStats> {

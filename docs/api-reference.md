@@ -8,7 +8,7 @@ Payload types named without a package (`MeshPacket`, `NodeInfo`, `Config`, `User
 
 | Package | Targets | Contents |
 |---|---|---|
-| `org.meshtastic.sdk` | JVM, Android, iOS, JS, Wasm | `RadioClient` and its `Builder`; the sub-APIs (`AdminApi`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `FileTransferApi`); send, event, and result types; ID value classes; the `RadioTransport` and `StorageProvider` contracts; `TransportSpec`, `TransportIdentity`, `TransportTarget`; `InMemoryStorageProvider`; payload and provenance accessors; LoRa region math; `WireCodec` and `WireFraming` |
+| `org.meshtastic.sdk` | JVM, Android, iOS, JS, Wasm | `RadioClient` and its `Builder`; the sub-APIs (`AdminApi`, `TelemetryApi`, `RoutingApi`, `StoreForwardApi`, `FileTransferApi`, `RemoteShellApi`, `MqttProxyApi`); send, event, and result types; ID value classes; the `RadioTransport` and `StorageProvider` contracts; `TransportSpec`, `TransportIdentity`, `TransportTarget`; `InMemoryStorageProvider`; payload and provenance accessors; LoRa region math; `WireCodec` and `WireFraming` |
 | `org.meshtastic.sdk.transport.tcp` | JVM, Android, iOS | `TcpTransport`; mDNS discovery: `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio`, `JvmTcpDiscovery`, `AndroidTcpDiscovery`, `IosTcpDiscovery` |
 | `org.meshtastic.sdk.transport.ble` | JVM, Android, iOS | `BleTransport` (with `deviceLogs()`), `BleScanner`, `DiscoveredRadio`, `BleConstants`, `BleResilience`, `bleAdvertisementMatches`; on Android, `BondedBleDevice` and `bondedBleDevices(context)` |
 | `org.meshtastic.sdk.transport.serial` | JVM, Android | `JvmSerialPorts`, `AndroidSerialPorts` (jSerialComm), `AndroidUsbSerialPorts` (usb-serial-for-android), `SerialPortInfo`, `SerialPortTransport`, `SerialFrameAssembler`, `MESHTASTIC_USB_VENDOR_IDS`, `isLikelyMeshtastic()` |
@@ -184,6 +184,7 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 | `suspend send(portnum: PortNum, payload: ByteArray, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), wantAck: Boolean = false, hopLimit: Int? = null)` | `MessageHandle` | same as `send` |
 | `suspend send(portnum: PortNum, payload: ByteString, …)` | `MessageHandle` | same as `send` |
 | `requestNodeInfo(node: NodeId)` | `MessageHandle`; the reply arrives on `nodes` | `NotConnected` |
+| `requestNodeInfo(node: NodeId, channel: ChannelIndex, user: User? = ownNode.value?.user)` | `MessageHandle`; sends `user` as the payload, no `want_ack` | `NotConnected`, `IllegalArgumentException` for our own node |
 | `sendRaw(frame: ToRadio)` | `Unit`; not tracked or acknowledged | `NotConnected` |
 | `suspend nodeSnapshot()` | `Map<NodeId, NodeInfo>` | `NotConnected` |
 
@@ -196,8 +197,11 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 | `RadioClient.channelFor(node: NodeId): ChannelIndex` | `NodeInfo.channel` for a node heard live; `0` for an unknown node, our own node and the primary channel |
 | `RadioClient.sendDirectMessageOnHeardChannel(to, text, wantAck)` | `sendDirectMessage` on `channelFor(to)` |
 | `RadioClient.requestPositionOnHeardChannel(from)` | `requestPosition` on `channelFor(from)` |
+| `RadioClient.requestPositionOnHeardChannel(from, position: Position?)` | `requestPosition(from, channel, position)` on `channelFor(from)` |
+| `RadioClient.requestNodeInfoOnHeardChannel(node)` | `requestNodeInfo(node, channel)` with our own user on `channelFor(node)` |
+| `RadioClient.requestPaxcount(node)` | Empty `Paxcount` on `PAXCOUNTER_APP` with `want_response` and `Data.dest`; decode the reply with `asPaxcount()` |
 
-`sendDirectMessage` and `requestPosition` keep their `ChannelIndex(0)` default. `requestPosition` sends an empty `POSITION_APP` payload with `want_response` at `BACKGROUND` priority.
+`sendDirectMessage` and `requestPosition` keep their `ChannelIndex(0)` default. `requestPosition` sends an empty `POSITION_APP` payload with `want_response` at `BACKGROUND` priority. `requestPosition(from, channel, position)` sends a non-null `position` instead, with `time` set from the client clock when it is `0`, and the device hop limit. Set coordinates only when they are valid; `null` keeps the empty payload.
 
 ### Waypoint helpers
 
@@ -222,13 +226,15 @@ val handle = client.send {
 }
 ```
 
+`sendPaced { … }` takes the same block and returns a `PacedMessageHandle`, as `sendPaced(packet)` does.
+
 `send { … }` configures a `SendBuilder`: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck()`, `wantAck(Boolean)`, `hopLimit(Int?)`.
 
 A `hopLimit` left unset, like `hopLimit = null` on the typed `send(portnum, …)` overloads, sends the device's `lora.hop_limit` from `configBundle`, or the firmware default of 3 before the bundle lands. The SDK resolves it on the host because firmware substitutes its default for a `0` only when `want_ack` is set. `send(packet: MeshPacket)` and `proto(...)` go out as given.
 
 ### Sub-APIs
 
-`client.admin`, `client.telemetry`, `client.routing`, `client.storeForward`, and `client.files` are created on first access and work while the client is `Connected`. Each RPC waits up to `Builder.rpcTimeout` and reports failure as a result value, not an exception.
+`client.admin`, `client.telemetry`, `client.routing`, `client.storeForward`, `client.files`, `client.remoteShell`, and `client.mqttProxy` are created on first access and work while the client is `Connected`. Each RPC waits up to `Builder.rpcTimeout` and reports failure as a result value, not an exception.
 
 ## `MessageHandle`
 
@@ -494,6 +500,7 @@ public interface AdminApi {
 
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
     public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
+    public suspend fun playRingtone(): AdminResult<Unit>                       // acked write
     // also: UI config, canned messages, ringtone, connection status, remote hardware pins,
     // preference backups, DFU and OTA, input events, sensor config, scale, simulator exit
 }
@@ -553,7 +560,7 @@ Export omits `security.private_key` unless `includePrivateKey` is true. Install 
 
 ## `TelemetryApi`
 
-Each `requestX` sends an empty `Telemetry` on `TELEMETRY_APP` with `want_response = true` and waits for the reply. `observe(node)` is a cold flow over inbound `packets` filtered by port and sender.
+Each `requestX` sends a `Telemetry` holding one empty submessage of the requested variant on `TELEMETRY_APP`, with `want_response = true` and `Data.dest` set, on the node's heard channel, and waits for the reply. Firmware answers only a request that names its variant. `observe(node)` is a cold flow over inbound `packets` filtered by port and sender.
 
 ```kotlin
 public interface TelemetryApi {
@@ -589,6 +596,7 @@ public interface StoreForwardApi {
     public val servers: StateFlow<List<NodeId>>
     public suspend fun requestHistory(since: Int? = null, server: NodeId? = null): AdminResult<Int>   // since: epoch seconds
     public suspend fun requestStats(server: NodeId? = null): AdminResult<StoreForwardStats>
+    public fun requestLocalHistory(lastRequest: Int, windowMinutes: Int, maxMessages: Int): MessageHandle
     public val events: Flow<StoreForwardEvent>
 }
 
@@ -608,6 +616,8 @@ public sealed interface StoreForwardEvent {
 }
 ```
 
+`requestLocalHistory` sends `CLIENT_HISTORY` to our own node at `BACKGROUND` priority with no ack, no response requested and hop limit `0`, as the Android app does. It reaches a connected node that is an S&F server itself.
+
 ### Replay dedupe
 
 A server replays stored text under a fresh packet id, with the stored id in `StoreAndForward.original_id` and the original sender in `MeshPacket.from`. `HistoryReplayComplete.delivered` counts each `(from, original_id)` once. `packets` still carries every replay as received; drop repeats with:
@@ -618,6 +628,27 @@ public fun Flow<MeshPacket>.dropDuplicateStoreForwardReplays(window: Int = 256):
 ```
 
 Each collection remembers the last `window` keys (replays and plain `TEXT_MESSAGE_APP` packets) and forgets the oldest first.
+
+## `RemoteShellApi`
+
+```kotlin
+public interface RemoteShellApi {
+    public suspend fun send(node: NodeId, frame: RemoteShell): MessageHandle
+    public fun frames(node: NodeId): Flow<RemoteShell>
+    public fun newSessionId(): Int                                              // random, non-zero
+}
+```
+
+`send` PKI-encrypts on channel `0` with the key stored for `node`, without `want_ack`, and throws `MeshtasticException.Protocol` when no key is stored. `frames` decodes inbound `REMOTE_SHELL_APP` packets from `node`. Session state and sequencing belong to the caller.
+
+## `MqttProxyApi`
+
+```kotlin
+public interface MqttProxyApi {
+    public val messages: Flow<MqttClientProxyMessage>                           // from MeshEvent.MqttProxyMessage
+    public suspend fun deliver(message: MqttClientProxyMessage): Boolean        // true once queued
+}
+```
 
 ## `FileTransferApi`
 

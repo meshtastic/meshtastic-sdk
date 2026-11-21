@@ -11,6 +11,7 @@ import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.Paxcount
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
 import kotlin.coroutines.cancellation.CancellationException
@@ -65,6 +66,85 @@ public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = Cha
             wb.portnum = PortNum.POSITION_APP
             wb.payload = ByteString.EMPTY
             wb.want_response = true
+        }.build()
+    }.build()
+    return send(packet)
+}
+
+/**
+ * [requestPosition] that also shares [position] with [from], as the Android app does.
+ *
+ * A non-null [position] is sent as the payload with `time` set to now when it is `0`, so set
+ * coordinates only when they are valid. `null` sends the empty payload of [requestPosition].
+ * Uses the device's hop limit.
+ *
+ * @since 0.3.0
+ */
+@Throws(MeshtasticException::class)
+public fun RadioClient.requestPosition(
+    from: NodeId,
+    channel: ChannelIndex = ChannelIndex(0),
+    position: Position?,
+): MessageHandle {
+    val payload = position?.let { pos ->
+        val stamped = if (pos.time == 0) pos.newBuilder().also { it.time = nowEpochSeconds() }.build() else pos
+        Position.ADAPTER.encode(stamped).toByteString()
+    } ?: ByteString.EMPTY
+    val packet = MeshPacket.Builder().also { wb ->
+        wb.to = from.raw
+        wb.channel = channel.raw
+        wb.want_ack = false
+        wb.hop_limit = defaultHopLimit()
+        wb.priority = MeshPacket.Priority.BACKGROUND
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.POSITION_APP
+            wb.payload = payload
+            wb.want_response = true
+        }.build()
+    }.build()
+    return send(packet)
+}
+
+/**
+ * [requestPosition] carrying [position] to [from] on the channel [channelFor] resolves for it.
+ *
+ * @since 0.3.0
+ */
+@Throws(MeshtasticException::class, CancellationException::class)
+public suspend fun RadioClient.requestPositionOnHeardChannel(from: NodeId, position: Position?): MessageHandle =
+    requestPosition(from, channelFor(from), position)
+
+/**
+ * [RadioClient.requestNodeInfo] carrying our own user to [node] on the channel [channelFor] resolves for it.
+ *
+ * @throws IllegalArgumentException if [node] is our own node or [NodeId.LOCAL]
+ * @since 0.3.0
+ */
+@Throws(MeshtasticException::class, IllegalArgumentException::class, CancellationException::class)
+public suspend fun RadioClient.requestNodeInfoOnHeardChannel(node: NodeId): MessageHandle =
+    requestNodeInfo(node, channelFor(node))
+
+/**
+ * Request [node]'s pax counter reading on the channel [channelFor] resolves for it.
+ *
+ * Sends an empty `Paxcount` on `PAXCOUNTER_APP` with `want_response = true`, `Data.dest = node`
+ * and no `want_ack`. The reply arrives on [RadioClient.packets]; decode it with [asPaxcount].
+ *
+ * @since 0.3.0
+ */
+@Throws(MeshtasticException::class, CancellationException::class)
+public suspend fun RadioClient.requestPaxcount(node: NodeId): MessageHandle {
+    val channel = channelFor(node)
+    val packet = MeshPacket.Builder().also { wb ->
+        wb.to = node.raw
+        wb.channel = channel.raw
+        wb.want_ack = false
+        wb.hop_limit = defaultHopLimit()
+        wb.decoded = Data.Builder().also { wb ->
+            wb.portnum = PortNum.PAXCOUNTER_APP
+            wb.payload = Paxcount.ADAPTER.encode(Paxcount.Builder().build()).toByteString()
+            wb.want_response = true
+            wb.dest = node.raw
         }.build()
     }.build()
     return send(packet)

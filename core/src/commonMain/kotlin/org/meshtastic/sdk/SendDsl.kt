@@ -190,3 +190,15 @@ public suspend fun RadioClient.send(block: SendBuilder.() -> Unit): MessageHandl
     val builder = SendBuilder().apply(block)
     return send(builder.build(defaultHopLimit = defaultHopLimit()))
 }
+
+/**
+ * DSL form of [RadioClient.sendPaced]. Builds the same [MeshPacket] as `send { … }` and queues it
+ * behind the current radio queue write.
+ *
+ * @throws IllegalStateException if zero or more than one payload setter was called
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.sendPaced(block: SendBuilder.() -> Unit): PacedMessageHandle {
+    val builder = SendBuilder().apply(block)
+    return sendPaced(builder.build(defaultHopLimit = defaultHopLimit()))
+}
