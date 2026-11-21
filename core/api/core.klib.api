@@ -228,6 +228,7 @@ abstract interface org.meshtastic.sdk/AdminApi { // org.meshtastic.sdk/AdminApi|
     abstract suspend fun lockdown(org.meshtastic.proto/LockdownAuth): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.lockdown|lockdown(org.meshtastic.proto.LockdownAuth){}[0]
     abstract suspend fun nodeDbReset(kotlin/Boolean = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.nodeDbReset|nodeDbReset(kotlin.Boolean){}[0]
     abstract suspend fun otaRequest(org.meshtastic.proto/AdminMessage.OTAEvent): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.otaRequest|otaRequest(org.meshtastic.proto.AdminMessage.OTAEvent){}[0]
+    abstract suspend fun playRingtone(): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.playRingtone|playRingtone(){}[0]
     abstract suspend fun reboot(kotlin.time/Duration = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.reboot|reboot(kotlin.time.Duration){}[0]
     abstract suspend fun rebootOta(kotlin.time/Duration = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.rebootOta|rebootOta(kotlin.time.Duration){}[0]
     abstract suspend fun removeBackupPreferences(org.meshtastic.proto/AdminMessage.BackupLocation = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/AdminApi.removeBackupPreferences|removeBackupPreferences(org.meshtastic.proto.AdminMessage.BackupLocation){}[0]
@@ -307,6 +308,13 @@ abstract interface org.meshtastic.sdk/FileTransferApi { // org.meshtastic.sdk/Fi
     }
 }
 
+abstract interface org.meshtastic.sdk/MqttProxyApi { // org.meshtastic.sdk/MqttProxyApi|null[0]
+    abstract val messages // org.meshtastic.sdk/MqttProxyApi.messages|{}messages[0]
+        abstract fun <get-messages>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/MqttClientProxyMessage> // org.meshtastic.sdk/MqttProxyApi.messages.<get-messages>|<get-messages>(){}[0]
+
+    abstract suspend fun deliver(org.meshtastic.proto/MqttClientProxyMessage): kotlin/Boolean // org.meshtastic.sdk/MqttProxyApi.deliver|deliver(org.meshtastic.proto.MqttClientProxyMessage){}[0]
+}
+
 abstract interface org.meshtastic.sdk/PayloadRedactor { // org.meshtastic.sdk/PayloadRedactor|null[0]
     open fun describe(org.meshtastic.proto/FromRadio): kotlin/String // org.meshtastic.sdk/PayloadRedactor.describe|describe(org.meshtastic.proto.FromRadio){}[0]
     open fun describe(org.meshtastic.proto/ToRadio): kotlin/String // org.meshtastic.sdk/PayloadRedactor.describe|describe(org.meshtastic.proto.ToRadio){}[0]
@@ -331,6 +339,12 @@ abstract interface org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk/Rad
     abstract suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk/RadioTransport.send|send(org.meshtastic.sdk.Frame){}[0]
 }
 
+abstract interface org.meshtastic.sdk/RemoteShellApi { // org.meshtastic.sdk/RemoteShellApi|null[0]
+    abstract fun frames(org.meshtastic.sdk/NodeId): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/RemoteShell> // org.meshtastic.sdk/RemoteShellApi.frames|frames(org.meshtastic.sdk.NodeId){}[0]
+    abstract fun newSessionId(): kotlin/Int // org.meshtastic.sdk/RemoteShellApi.newSessionId|newSessionId(){}[0]
+    abstract suspend fun send(org.meshtastic.sdk/NodeId, org.meshtastic.proto/RemoteShell): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RemoteShellApi.send|send(org.meshtastic.sdk.NodeId;org.meshtastic.proto.RemoteShell){}[0]
+}
+
 abstract interface org.meshtastic.sdk/RoutingApi { // org.meshtastic.sdk/RoutingApi|null[0]
     abstract suspend fun requestNeighborInfo(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/NeighborInfo> // org.meshtastic.sdk/RoutingApi.requestNeighborInfo|requestNeighborInfo(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun traceRoute(org.meshtastic.sdk/NodeId, kotlin/Int = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/RouteDiscovery> // org.meshtastic.sdk/RoutingApi.traceRoute|traceRoute(org.meshtastic.sdk.NodeId;kotlin.Int){}[0]
@@ -351,6 +365,7 @@ abstract interface org.meshtastic.sdk/StoreForwardApi { // org.meshtastic.sdk/St
     abstract val servers // org.meshtastic.sdk/StoreForwardApi.servers|{}servers[0]
         abstract fun <get-servers>(): kotlinx.coroutines.flow/StateFlow<kotlin.collections/List<org.meshtastic.sdk/NodeId>> // org.meshtastic.sdk/StoreForwardApi.servers.<get-servers>|<get-servers>(){}[0]
 
+    abstract fun requestLocalHistory(kotlin/Int, kotlin/Int, kotlin/Int): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/StoreForwardApi.requestLocalHistory|requestLocalHistory(kotlin.Int;kotlin.Int;kotlin.Int){}[0]
     abstract suspend fun requestHistory(kotlin/Int? = ..., org.meshtastic.sdk/NodeId? = ...): org.meshtastic.sdk/AdminResult<kotlin/Int> // org.meshtastic.sdk/StoreForwardApi.requestHistory|requestHistory(kotlin.Int?;org.meshtastic.sdk.NodeId?){}[0]
     abstract suspend fun requestStats(org.meshtastic.sdk/NodeId? = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.sdk/StoreForwardStats> // org.meshtastic.sdk/StoreForwardApi.requestStats|requestStats(org.meshtastic.sdk.NodeId?){}[0]
 }
@@ -2202,12 +2217,16 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun <get-files>(): org.meshtastic.sdk/FileTransferApi // org.meshtastic.sdk/RadioClient.files.<get-files>|<get-files>(){}[0]
     final val fromRadio // org.meshtastic.sdk/RadioClient.fromRadio|{}fromRadio[0]
         final fun <get-fromRadio>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/FromRadio> // org.meshtastic.sdk/RadioClient.fromRadio.<get-fromRadio>|<get-fromRadio>(){}[0]
+    final val mqttProxy // org.meshtastic.sdk/RadioClient.mqttProxy|{}mqttProxy[0]
+        final fun <get-mqttProxy>(): org.meshtastic.sdk/MqttProxyApi // org.meshtastic.sdk/RadioClient.mqttProxy.<get-mqttProxy>|<get-mqttProxy>(){}[0]
     final val nodes // org.meshtastic.sdk/RadioClient.nodes|{}nodes[0]
         final fun <get-nodes>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/NodeChange> // org.meshtastic.sdk/RadioClient.nodes.<get-nodes>|<get-nodes>(){}[0]
     final val ownNode // org.meshtastic.sdk/RadioClient.ownNode|{}ownNode[0]
         final fun <get-ownNode>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.proto/NodeInfo?> // org.meshtastic.sdk/RadioClient.ownNode.<get-ownNode>|<get-ownNode>(){}[0]
     final val packets // org.meshtastic.sdk/RadioClient.packets|{}packets[0]
         final fun <get-packets>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/MeshPacket> // org.meshtastic.sdk/RadioClient.packets.<get-packets>|<get-packets>(){}[0]
+    final val remoteShell // org.meshtastic.sdk/RadioClient.remoteShell|{}remoteShell[0]
+        final fun <get-remoteShell>(): org.meshtastic.sdk/RemoteShellApi // org.meshtastic.sdk/RadioClient.remoteShell.<get-remoteShell>|<get-remoteShell>(){}[0]
     final val routing // org.meshtastic.sdk/RadioClient.routing|{}routing[0]
         final fun <get-routing>(): org.meshtastic.sdk/RoutingApi // org.meshtastic.sdk/RadioClient.routing.<get-routing>|<get-routing>(){}[0]
     final val sessionEvents // org.meshtastic.sdk/RadioClient.sessionEvents|{}sessionEvents[0]
@@ -2220,6 +2239,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
     final fun adminSessionStatus(org.meshtastic.sdk/NodeId): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/AdminSessionStatus> // org.meshtastic.sdk/RadioClient.adminSessionStatus|adminSessionStatus(org.meshtastic.sdk.NodeId){}[0]
     final fun requestNodeDbRefresh(): kotlin/Boolean // org.meshtastic.sdk/RadioClient.requestNodeDbRefresh|requestNodeDbRefresh(){}[0]
     final fun requestNodeInfo(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.requestNodeInfo|requestNodeInfo(org.meshtastic.sdk.NodeId){}[0]
+    final fun requestNodeInfo(org.meshtastic.sdk/NodeId, org.meshtastic.sdk/ChannelIndex, org.meshtastic.proto/User? = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.requestNodeInfo|requestNodeInfo(org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;org.meshtastic.proto.User?){}[0]
     final fun send(org.meshtastic.proto/MeshPacket): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/RadioClient.send|send(org.meshtastic.proto.MeshPacket){}[0]
     final fun sendPaced(org.meshtastic.proto/MeshPacket): org.meshtastic.sdk/PacedMessageHandle // org.meshtastic.sdk/RadioClient.sendPaced|sendPaced(org.meshtastic.proto.MeshPacket){}[0]
     final fun sendRaw(org.meshtastic.proto/ToRadio) // org.meshtastic.sdk/RadioClient.sendRaw|sendRaw(org.meshtastic.proto.ToRadio){}[0]
@@ -2836,6 +2856,7 @@ final fun (org.meshtastic.sdk/NodeId.Companion).org.meshtastic.sdk/fromDefaultId
 final fun (org.meshtastic.sdk/NodeId.Companion).org.meshtastic.sdk/fromHex(kotlin/String): org.meshtastic.sdk/NodeId? // org.meshtastic.sdk/fromHex|fromHex@org.meshtastic.sdk.NodeId.Companion(kotlin.String){}[0]
 final fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/nodeMap(): kotlinx.coroutines.flow/Flow<kotlin.collections/Map<org.meshtastic.sdk/NodeId, org.meshtastic.proto/NodeInfo>> // org.meshtastic.sdk/nodeMap|nodeMap@org.meshtastic.sdk.RadioClient(){}[0]
 final fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/requestPosition(org.meshtastic.sdk/NodeId, org.meshtastic.sdk/ChannelIndex = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/requestPosition|requestPosition@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex){}[0]
+final fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/requestPosition(org.meshtastic.sdk/NodeId, org.meshtastic.sdk/ChannelIndex = ..., org.meshtastic.proto/Position?): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/requestPosition|requestPosition@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;org.meshtastic.proto.Position?){}[0]
 final fun (org.meshtastic.sdk/SendFailure).org.meshtastic.sdk/humanMessage(): kotlin/String // org.meshtastic.sdk/humanMessage|humanMessage@org.meshtastic.sdk.SendFailure(){}[0]
 final fun <#A: com.squareup.wire/Message<#A, *>> (org.meshtastic.proto/MeshPacket).org.meshtastic.sdk/decodeAs(com.squareup.wire/ProtoAdapter<#A>): #A? // org.meshtastic.sdk/decodeAs|decodeAs@org.meshtastic.proto.MeshPacket(com.squareup.wire.ProtoAdapter<0:0>){0§<com.squareup.wire.Message<0:0,*>>}[0]
 final fun <#A: kotlin/Any?> (org.meshtastic.sdk/AdminResult<#A>).org.meshtastic.sdk/getOrElse(#A): #A // org.meshtastic.sdk/getOrElse|getOrElse@org.meshtastic.sdk.AdminResult<0:0>(0:0){0§<kotlin.Any?>}[0]
@@ -2886,11 +2907,15 @@ final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/deleteWayp
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/enableHamMode(kotlin/String, kotlin/String? = ..., kotlin/String? = ..., kotlin/Int? = ..., kotlin/Float? = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/enableHamMode|enableHamMode@org.meshtastic.sdk.RadioClient(kotlin.String;kotlin.String?;kotlin.String?;kotlin.Int?;kotlin.Float?){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/exportDeviceProfile(kotlin/Boolean = ..., kotlin/Boolean = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/DeviceProfile> // org.meshtastic.sdk/exportDeviceProfile|exportDeviceProfile@org.meshtastic.sdk.RadioClient(kotlin.Boolean;kotlin.Boolean){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/installDeviceProfile(org.meshtastic.proto/DeviceProfile, kotlin/Boolean = ...): org.meshtastic.sdk/AdminResult<kotlin/Unit> // org.meshtastic.sdk/installDeviceProfile|installDeviceProfile@org.meshtastic.sdk.RadioClient(org.meshtastic.proto.DeviceProfile;kotlin.Boolean){}[0]
+final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/requestNodeInfoOnHeardChannel(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/requestNodeInfoOnHeardChannel|requestNodeInfoOnHeardChannel@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId){}[0]
+final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/requestPaxcount(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/requestPaxcount|requestPaxcount@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/requestPositionOnHeardChannel(org.meshtastic.sdk/NodeId): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/requestPositionOnHeardChannel|requestPositionOnHeardChannel@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId){}[0]
+final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/requestPositionOnHeardChannel(org.meshtastic.sdk/NodeId, org.meshtastic.proto/Position?): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/requestPositionOnHeardChannel|requestPositionOnHeardChannel@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId;org.meshtastic.proto.Position?){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/send(kotlin/Function1<org.meshtastic.sdk/SendBuilder, kotlin/Unit>): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/send|send@org.meshtastic.sdk.RadioClient(kotlin.Function1<org.meshtastic.sdk.SendBuilder,kotlin.Unit>){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/sendDirectMessage(org.meshtastic.sdk/NodeId, kotlin/String, org.meshtastic.sdk/ChannelIndex = ..., kotlin/Boolean = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/sendDirectMessage|sendDirectMessage@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId;kotlin.String;org.meshtastic.sdk.ChannelIndex;kotlin.Boolean){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/sendDirectMessageEncrypted(org.meshtastic.sdk/NodeId, kotlin/String, kotlin/Boolean = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/sendDirectMessageEncrypted|sendDirectMessageEncrypted@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId;kotlin.String;kotlin.Boolean){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/sendDirectMessageOnHeardChannel(org.meshtastic.sdk/NodeId, kotlin/String, kotlin/Boolean = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/sendDirectMessageOnHeardChannel|sendDirectMessageOnHeardChannel@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.NodeId;kotlin.String;kotlin.Boolean){}[0]
+final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/sendPaced(kotlin/Function1<org.meshtastic.sdk/SendBuilder, kotlin/Unit>): org.meshtastic.sdk/PacedMessageHandle // org.meshtastic.sdk/sendPaced|sendPaced@org.meshtastic.sdk.RadioClient(kotlin.Function1<org.meshtastic.sdk.SendBuilder,kotlin.Unit>){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/sendPosition(org.meshtastic.sdk/LatLng, org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex = ..., kotlin/Boolean = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/sendPosition|sendPosition@org.meshtastic.sdk.RadioClient(org.meshtastic.sdk.LatLng;org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;kotlin.Boolean){}[0]
 final suspend fun (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/sendWaypoint(org.meshtastic.proto/Waypoint, org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex = ..., kotlin/Boolean = ...): org.meshtastic.sdk/MessageHandle // org.meshtastic.sdk/sendWaypoint|sendWaypoint@org.meshtastic.sdk.RadioClient(org.meshtastic.proto.Waypoint;org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex;kotlin.Boolean){}[0]
 final suspend fun <#A: kotlin/Any?> (org.meshtastic.sdk/RadioClient).org.meshtastic.sdk/withConnection(kotlin.time/Duration = ..., kotlin.coroutines/SuspendFunction1<org.meshtastic.sdk/RadioClient, #A>): #A // org.meshtastic.sdk/withConnection|withConnection@org.meshtastic.sdk.RadioClient(kotlin.time.Duration;kotlin.coroutines.SuspendFunction1<org.meshtastic.sdk.RadioClient,0:0>){0§<kotlin.Any?>}[0]
