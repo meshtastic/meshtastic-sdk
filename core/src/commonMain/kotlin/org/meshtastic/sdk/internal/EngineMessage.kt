@@ -15,6 +15,7 @@ import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.MessageId
+import org.meshtastic.sdk.QueueReceipt
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.TransportState
 import kotlin.time.Duration
@@ -99,8 +100,22 @@ internal sealed interface EngineMessage {
     data class Send(val packet: MeshPacket, val id: MessageId, val stateFlow: MutableStateFlow<SendState>) :
         EngineMessage
 
+    data class PacedSend(
+        val packet: MeshPacket,
+        val id: MessageId,
+        val generation: Long?,
+        val state: MutableStateFlow<SendState>,
+        val admission: CompletableDeferred<Boolean>,
+        val dispatch: CompletableDeferred<Boolean>,
+        val receipt: CompletableDeferred<QueueReceipt>,
+    ) : EngineMessage
+
+    data class PacedWriteCompleted(val send: PacedSend) : EngineMessage
+
+    data class PacedQueueTimeout(val send: PacedSend) : EngineMessage
+
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
-    data class CancelHandle(val id: MessageId) : EngineMessage
+    data class CancelHandle(val id: MessageId, val expected: MutableStateFlow<SendState>? = null) : EngineMessage
 
     /**
      * Fire-and-forget admin message (no RPC correlation, no MessageHandle). Posted by
@@ -192,7 +207,7 @@ internal sealed interface EngineMessage {
      * the in-flight handle to `SendState.Failed(SendFailure.AckTimeout)` if it is still
      * pending.
      */
-    data class SendAckTimeout(val id: MessageId) : EngineMessage
+    data class SendAckTimeout(val id: MessageId, val state: MutableStateFlow<SendState>) : EngineMessage
 
     // ── Auto-reconnect (DX-7 / COV-4) ──────────────────────────────────────
 

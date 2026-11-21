@@ -702,7 +702,7 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     SendFailure.Timeout, SendFailure.AckTimeout -> AdminResult.Timeout
 
-    SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
+    SendFailure.Cancelled, SendFailure.IdCollision, SendFailure.QueueFull -> AdminResult.NodeUnreachable
 
     // Firmware transmit queue rejected the packet (queue full) — back off and retry.
     is SendFailure.QueueRejected, SendFailure.RateLimited -> AdminResult.RateLimited

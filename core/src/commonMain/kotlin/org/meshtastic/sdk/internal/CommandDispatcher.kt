@@ -53,6 +53,8 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
     /** Number of in-flight pending responses. Test/diagnostic use only. */
     fun size(): Int = pending.size
 
+    fun contains(requestId: Int): Boolean = pending.containsKey(requestId)
+
     /**
      * Register an outbound request awaiting a typed response.
      *

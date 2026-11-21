@@ -375,14 +375,7 @@ public class RadioClient internal constructor(
      */
     @Throws(MeshtasticException::class)
     public fun send(packet: MeshPacket): MessageHandle {
-        val payloadSize = packet.decoded?.payload?.size ?: 0
-        if (payloadSize > DATA_PAYLOAD_LEN) {
-            throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
-        }
-        if (connection.value !is ConnectionState.Connected) {
-            throw MeshtasticException.NotConnected()
-        }
-
+        checkSendable(packet)
         val id = engine.nextMessageId()
         val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
         val handle = MessageHandle(
@@ -394,6 +387,32 @@ public class RadioClient internal constructor(
         )
         engine.trySend(packet, id, stateFlow)
         return handle
+    }
+
+    /**
+     * Queues one packet behind the current radio queue write. A matching firmware receipt or
+     * routing result releases the slot. If neither arrives within five seconds, the slot
+     * is released and its receipt is [QueueReceipt.Unconfirmed].
+     *
+     * Delivery can still complete after the queue slot is released. A nonzero [MeshPacket.id]
+     * is retained for durable callers and becomes the ID on the returned [MessageHandle].
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendPaced(packet: MeshPacket): PacedMessageHandle {
+        checkSendable(packet)
+        return engine.enqueuePaced(packet) { original ->
+            sendPaced(original.newBuilder().also { it.id = 0 }.build()).message
+        }
+    }
+
+    private fun checkSendable(packet: MeshPacket) {
+        val payloadSize = packet.decoded?.payload?.size ?: 0
+        if (payloadSize > DATA_PAYLOAD_LEN) {
+            throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
+        }
+        if (connection.value !is ConnectionState.Connected) {
+            throw MeshtasticException.NotConnected()
+        }
     }
 
     /**

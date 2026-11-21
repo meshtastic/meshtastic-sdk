@@ -165,6 +165,8 @@ Call `requestNodeDbRefresh()` to start a nodes-only download on this connection.
 The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected packet or envelope, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
 
 
+Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admission, dispatch and radio queue acceptance. It preserves a supplied wire ID. The next paced packet waits for a matching queue receipt, routing result or five seconds after the transport write. ID-zero queue reports also come from heartbeats and cannot identify a packet. The queue receipt remains unconfirmed when it is lost. Routing results can still settle the message after the queue slot opens.
+
 ### Outbound
 
 | Member | Returns | Throws |

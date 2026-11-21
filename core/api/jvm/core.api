@@ -1541,6 +1541,13 @@ public final class org/meshtastic/sdk/NodeStatusKt {
 	public static synthetic fun isOnline-SxA4cEA$default (Lorg/meshtastic/proto/NodeInfo;IJILjava/lang/Object;)Z
 }
 
+public final class org/meshtastic/sdk/PacedMessageHandle {
+	public final fun awaitAdmission (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun awaitDispatch (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun awaitQueueReceipt (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getMessage ()Lorg/meshtastic/sdk/MessageHandle;
+}
+
 public final class org/meshtastic/sdk/PacketDecodeKt {
 	public static final fun decodeAs (Lorg/meshtastic/proto/MeshPacket;Lcom/squareup/wire/ProtoAdapter;)Lcom/squareup/wire/Message;
 }
@@ -1649,6 +1656,17 @@ public final class org/meshtastic/sdk/ProtoBytesKt {
 	public static final fun toToRadio ([B)Lorg/meshtastic/proto/ToRadio;
 }
 
+public final class org/meshtastic/sdk/QueueReceipt : java/lang/Enum {
+	public static final field Accepted Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field LocalDelivery Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field NotDispatched Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field Rejected Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field Unconfirmed Lorg/meshtastic/sdk/QueueReceipt;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/QueueReceipt;
+	public static fun values ()[Lorg/meshtastic/sdk/QueueReceipt;
+}
+
 public final class org/meshtastic/sdk/RadioClient {
 	public static final field Companion Lorg/meshtastic/sdk/RadioClient$Companion;
 	public fun <init> (Lorg/meshtastic/sdk/internal/MeshEngine;Lkotlin/time/Clock;Lkotlin/time/Duration;ZLkotlin/coroutines/CoroutineContext;)V
@@ -1680,6 +1698,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;Lokio/ByteString;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun sendPaced (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/PacedMessageHandle;
 	public final fun sendRaw (Lorg/meshtastic/proto/ToRadio;)V
 	public final fun sendReaction (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendReaction-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
@@ -2077,6 +2096,13 @@ public final class org/meshtastic/sdk/SendFailure$Other : org/meshtastic/sdk/Sen
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SendFailure$Other;Lorg/meshtastic/proto/Routing$Error;ILjava/lang/Object;)Lorg/meshtastic/sdk/SendFailure$Other;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getRoutingError ()Lorg/meshtastic/proto/Routing$Error;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/SendFailure$QueueFull : org/meshtastic/sdk/SendFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/SendFailure$QueueFull;
+	public fun equals (Ljava/lang/Object;)Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
