@@ -49,27 +49,16 @@ public suspend fun RadioClient.sendPosition(
 /**
  * Request the current [Position] from node [from].
  *
- * Sends an empty Position payload with `want_response = true` at background priority; the
- * firmware replies with its own position whatever the request carries
+ * Sends an empty Position payload with `want_response = true` at background priority and the
+ * device's hop limit, since firmware raises a zero hop limit only on a `want_ack` packet
+ * (`firmware:src/mesh/Router.cpp:468`); it replies with its own position whatever the request carries
  * (`firmware:src/modules/PositionModule.cpp:291-304`, `src/mesh/MeshModule.cpp:186-190`).
  * Use [requestPositionOnHeardChannel] to address the node on the channel it was last heard on.
  *
  * @since 0.1.0
  */
-public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = ChannelIndex(0)): MessageHandle {
-    val packet = MeshPacket.Builder().also { wb ->
-        wb.to = from.raw
-        wb.channel = channel.raw
-        wb.want_ack = false
-        wb.priority = MeshPacket.Priority.BACKGROUND
-        wb.decoded = Data.Builder().also { wb ->
-            wb.portnum = PortNum.POSITION_APP
-            wb.payload = ByteString.EMPTY
-            wb.want_response = true
-        }.build()
-    }.build()
-    return send(packet)
-}
+public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = ChannelIndex(0)): MessageHandle =
+    requestPosition(from, channel, position = null)
 
 /**
  * [requestPosition] that also shares [position] with [from], as the Android app does.

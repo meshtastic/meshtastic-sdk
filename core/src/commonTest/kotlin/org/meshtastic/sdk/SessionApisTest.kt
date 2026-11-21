@@ -142,6 +142,21 @@ class SessionApisTest {
     }
 
     @Test
+    fun aPlainPositionRequestCarriesTheDeviceHopLimit() = runTest {
+        val (transport, client) = connectedClient()
+        try {
+            client.requestPosition(NodeId(peer))
+            runCurrent()
+            val sent = transport.outboundPackets().last()
+            assertEquals(PortNum.POSITION_APP, sent.decoded?.portnum)
+            assertEquals(false, sent.want_ack)
+            assertEquals(deviceHopLimit, sent.hop_limit)
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    @Test
     fun requestPaxcountSendsEmptyPaxcountWithDest() = runTest {
         val (transport, client) = connectedClient()
         try {
