@@ -359,6 +359,18 @@ internal class AdminApiImpl(
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.send_input_event = event }.build())
     }
 
+    // Display mirror: firmware consumes these in PhoneAPI on the local link, before session-key and
+    // managed-mode checks, and refuses them over the mesh, so no retryOnSessionExpiry wrapper.
+    override suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit> {
+        if (!isLocalTarget()) return AdminResult.Unauthorized
+        return submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_display_mirror = enabled }.build())
+    }
+
+    override suspend fun requestDisplayFrame(): AdminResult<Unit> {
+        if (!isLocalTarget()) return AdminResult.Unauthorized
+        return submitAdminAck(AdminMessage.Builder().also { wb -> wb.get_display_frame_request = true }.build())
+    }
+
     // ── Contacts ────────────────────────────────────────────────────────────
 
     override suspend fun addContact(contact: SharedContact): AdminResult<Unit> = retryOnSessionExpiry {

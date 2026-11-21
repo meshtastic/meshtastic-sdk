@@ -918,6 +918,25 @@ Firmware built with `MESHTASTIC_LOCKDOWN` encrypts on-flash storage behind a pas
 
 The SDK surfaces the status as `MeshEvent.LockdownStatusChanged`. It is the only signal that lockdown exists, because lockdown is a build option with no firmware-version flag. `AdminApi.lockdown(LockdownAuth)` sends the command. It is local-only: a `forNode(...)`-scoped call returns `Unauthorized` rather than putting a passphrase on the mesh. It is also fire-and-forget: success means queued on the local link, and the outcome arrives as the next `LockdownStatusChanged`.
 
+### Display mirror
+
+- `AdminMessage.set_display_mirror` (true starts, false stops continuous mirroring) and
+  `AdminMessage.get_display_frame_request` (one frame) have no `AdminMessage` response. Firmware
+  consumes them in `PhoneAPI` on the local link and answers only the routing ACK, so the SDK sends
+  them `want_ack` through the ack path. They are local-only: `AdminModule` answers
+  `NOT_AUTHORIZED` over the mesh, so a `forNode(...)`-scoped call returns `Unauthorized` without
+  sending.
+- Frames arrive as `FromRadio.display_frame` chunks sharing one `frame_id`, contiguous and in
+  offset order. A chunk with `offset + data.size == total_size` completes the frame. The engine
+  accepts a chunk only when `offset` equals the bytes already held for that `frame_id`; a gap, a
+  `frame_id` or `total_size` change mid-frame, a chunk that overruns `total_size`, or a
+  `total_size` over 1 MiB drops the partial frame, which is never delivered. Offset 0 starts a new
+  frame and abandons any incomplete one. RGB565 partial-update rectangles are independent frames
+  with their own `frame_id`. State resets on disconnect.
+- `FromRadio.display_palette` chunks carry the colorization table for `palette_signature`.
+  Contiguous chunks (`region_offset == regions already held`, same `signature`) complete when
+  `region_offset + regions.size == region_total`; the SDK surfaces the whole palette.
+
 ---
 
 ## 14. MQTT proxy mode
