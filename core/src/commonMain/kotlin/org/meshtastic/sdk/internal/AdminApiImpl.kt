@@ -273,6 +273,10 @@ internal class AdminApiImpl(
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_ringtone_message = rtttl }.build())
     }
 
+    override suspend fun playRingtone(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage.Builder().also { wb -> wb.play_ringtone_request = true }.build())
+    }
+
     // ── Device status ───────────────────────────────────────────────────────
 
     override suspend fun getDeviceConnectionStatus(): AdminResult<DeviceConnectionStatus> = retryOnSessionExpiry {

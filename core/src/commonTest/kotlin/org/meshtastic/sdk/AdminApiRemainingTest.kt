@@ -192,6 +192,14 @@ class AdminApiRemainingTest {
     }
 
     @Test
+    fun playRingtoneSendsPlayRequestAsAckedWrite() = runTest {
+        assertAckSuccess(
+            call = { it.playRingtone() },
+            requestMatches = { it.play_ringtone_request == true },
+        )
+    }
+
+    @Test
     fun otaRequestSendsOtaEvent() = runTest {
         val event = AdminMessage.OTAEvent.Builder().build()
         assertAckSuccess(

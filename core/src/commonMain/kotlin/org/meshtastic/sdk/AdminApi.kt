@@ -175,6 +175,9 @@ public interface AdminApi {
     /** Write the device's ringtone (RTTTL format). */
     public suspend fun setRingtone(rtttl: String): AdminResult<Unit>
 
+    /** Play the device's ringtone once. Resolves on the routing ACK like other acked writes. */
+    public suspend fun playRingtone(): AdminResult<Unit>
+
     // ── Device status ───────────────────────────────────────────────────────
 
     /** Read the device's connection status (WiFi, BLE, Ethernet, MQTT). */
