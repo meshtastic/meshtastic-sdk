@@ -135,6 +135,9 @@ internal sealed interface EngineMessage {
     /** Channels loaded from storage for a session whose handshake reported none. */
     data class ChannelsRestored(val channels: List<org.meshtastic.proto.Channel>, val generation: Long) : EngineMessage
 
+    /** Restart the handshake on the current link after a live renumber settled its write. */
+    data object RenumberRestart : EngineMessage
+
     /** A storage write made outside the actor failed. */
     data class StorageDegraded(val reason: String, val cause: Throwable?) : EngineMessage
 

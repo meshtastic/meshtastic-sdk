@@ -34,8 +34,9 @@ internal class SessionReceive(capacity: Int) {
     // Ended closes only a session that published Ready; a lockdown-only session ends silently.
     private var readyPublished = false
 
-    fun begin(generation: Long) {
-        sessionId = generation
+    // Sessions are numbered here, not by link: a renumber restarts the handshake on the same link.
+    fun begin() {
+        sessionId++
         sequence = 0L
         started = false
         readyPublished = false

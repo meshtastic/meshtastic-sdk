@@ -244,6 +244,13 @@ internal class MeshEngine(
     private var stage1DumpStarted = false
     private var nodeDbRefreshDumpStarted = false
 
+    // Live renumber: firmware moves my_node_num to crc32(public_key) on the first region set and
+    // resends my_info. The ACK for that write carries the new number and may arrive first.
+    private var renumberedTo: Int? = null
+    private var heldRenumberAck: EngineMessage.PacedSend? = null
+    private var heldRenumberAckFrom = 0
+    private var renumberDeferredSend: EngineMessage.PacedSend? = null
+
     // Command admission captures the exact physical link and node id before posting to the actor.
     private data class LockdownLink(val generation: Long, val nodeNum: Int)
 
@@ -845,6 +852,8 @@ internal class MeshEngine(
 
             is EngineMessage.StorageDegraded -> markStorageDegraded(msg.reason, msg.cause)
 
+            EngineMessage.RenumberRestart -> if (handshakeStage == HandshakeStage.Ready) restartSessionForRenumber()
+
             is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
 
             is EngineMessage.Lockdown -> handleLockdownCommand(msg)
@@ -1096,7 +1105,7 @@ internal class MeshEngine(
         // Each session, a reconnect included, warns once about firmware below the recommended version.
         firmwareUpdateAdvised = false
         writeGeneration.value = generation
-        sessionReceive?.begin(generation)
+        sessionReceive?.begin()
         startFrameReader(generation)
 
         // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
@@ -2135,6 +2144,8 @@ internal class MeshEngine(
 
             nodeInfo != null -> processInboundNodeInfo(nodeInfo)
 
+            fromRadio.my_info != null -> handleReadyMyInfo(fromRadio.my_info!!)
+
             queueStatus != null -> {
                 emitEvent(MeshEvent.QueueStatusChanged(queueStatus))
                 // Heartbeat replies also use ID zero. They report available capacity, so
@@ -2878,24 +2889,9 @@ internal class MeshEngine(
         }
     }
 
-    private fun scheduleReconnect(cause: MeshtasticException) {
-        clearNodeDbRefresh()
-        sessionReceive?.end()
-        frameReaderJob?.cancel()
-        val cap = autoReconnectConfig.maxAttempts
-        if (cap != null && reconnectAttempt >= cap) {
-            logger.warn(TAG, cause) {
-                "Auto-reconnect attempt cap ($cap) exhausted; tearing down session"
-            }
-            connectionState.value = ConnectionState.Disconnected
-            supervisorJobRef.value?.cancel()
-            return
-        }
-        reconnectAttempt += 1
-        autoReconnectInProgress = true
-
-        // Reset session-level state so the next handshake starts clean. We deliberately keep
-        // engineScope, storage, supervisorJobRef and channels live across the cycle.
+    // Session state a new handshake must not inherit. Engine scope, storage, the supervisor and
+    // channels survive it.
+    private fun resetSessionState() {
         handshakeStage = HandshakeStage.Idle
         lockdownLink.value = null
         readySendGeneration.value = null
@@ -2922,6 +2918,56 @@ internal class MeshEngine(
         }
         pendingSends.clear()
         failPreSendQueueWith(SendFailure.Disconnected)
+        renumberedTo = null
+        heldRenumberAck = null
+        renumberDeferredSend = null
+    }
+
+    private fun handleReadyMyInfo(info: org.meshtastic.proto.MyNodeInfo) {
+        val newNum = info.my_node_num
+        if (newNum == 0 || newNum == myNodeNum || newNum == renumberedTo) return
+        logger.info(TAG) { "Node renumbered ${myNodeNum.toUInt()} -> ${newNum.toUInt()}; restarting the handshake" }
+        renumberedTo = newNum
+        val held = heldRenumberAck
+        if (held != null && heldRenumberAckFrom == newNum) {
+            finishPaced(held, SendState.Acked)
+            held.receipt.complete(QueueReceipt.Accepted)
+            releaseQueueWrite(held)
+        }
+        val inFlight = pacedSends.values.firstOrNull { it.packet.to == myNodeNum }
+        if (inFlight != null) {
+            // Its ACK, now accepted from the new number, or its timeout restarts the session.
+            renumberDeferredSend = inFlight
+        } else {
+            restartSessionForRenumber()
+        }
+    }
+
+    // A fresh handshake on the same link rebinds the identity the way a reconnect does.
+    private fun restartSessionForRenumber() {
+        clearNodeDbRefresh()
+        sessionReceive?.end()
+        resetSessionState()
+        sessionReceive?.begin()
+        requestStage1Config()
+    }
+
+    private fun scheduleReconnect(cause: MeshtasticException) {
+        clearNodeDbRefresh()
+        sessionReceive?.end()
+        frameReaderJob?.cancel()
+        val cap = autoReconnectConfig.maxAttempts
+        if (cap != null && reconnectAttempt >= cap) {
+            logger.warn(TAG, cause) {
+                "Auto-reconnect attempt cap ($cap) exhausted; tearing down session"
+            }
+            connectionState.value = ConnectionState.Disconnected
+            supervisorJobRef.value?.cancel()
+            return
+        }
+        reconnectAttempt += 1
+        autoReconnectInProgress = true
+        resetSessionState()
 
         connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
 
@@ -3041,7 +3087,7 @@ internal class MeshEngine(
     }
 
     private fun pumpPacedQueue() {
-        if (queueWrite != null || handshakeStage != HandshakeStage.Ready) return
+        if (queueWrite != null || handshakeStage != HandshakeStage.Ready || renumberedTo != null) return
         while (pacedQueue.isNotEmpty()) {
             val send = pacedQueue.removeFirst()
             val packet = preparePacketForSend(send.packet, send.id.raw)
@@ -3109,7 +3155,16 @@ internal class MeshEngine(
         val isLocal = packet.from == myNodeNum || packet.from == 0
         // A positive unicast response must come from the destination. Errors may also originate
         // in the local radio, for example when it exhausts its retransmissions.
-        if (success && !broadcast && packet.from != destination && !(destination == myNodeNum && isLocal)) return
+        val renumberAck = success && destination == myNodeNum && !isLocal && packet.from == renumberedTo
+        if (success && !broadcast && packet.from != destination && !(destination == myNodeNum && isLocal) &&
+            !renumberAck
+        ) {
+            if (destination == myNodeNum && !isLocal) {
+                heldRenumberAck = send
+                heldRenumberAckFrom = packet.from
+            }
+            return
+        }
         if (!success && (error == null || (!isLocal && packet.from != destination))) return
 
         val terminal = when {
@@ -3131,6 +3186,11 @@ internal class MeshEngine(
     }
 
     private fun finishPaced(send: EngineMessage.PacedSend, state: SendState) {
+        if (heldRenumberAck === send) heldRenumberAck = null
+        if (renumberDeferredSend === send) {
+            renumberDeferredSend = null
+            inbox.trySend(EngineMessage.RenumberRestart)
+        }
         pacedSends.remove(send.id)
         pacedReservations.decrementAndGet()
         pendingSends.remove(send.id)

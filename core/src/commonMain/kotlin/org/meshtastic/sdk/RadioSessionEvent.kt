@@ -17,7 +17,7 @@ import org.meshtastic.proto.NodeInfo
 
 /** Ordered receive events for a single [RadioClient]. Session IDs are scoped to that client. */
 public sealed interface RadioSessionEvent {
-    /** Connection generation that produced this event. */
+    /** Session number, increasing within one client: each handshake, including a reconnect, starts a new one. */
     public val sessionId: Long
 
     /** A lockdown status from this link. May precede [Ready] when authentication is required. */
