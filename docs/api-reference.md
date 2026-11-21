@@ -425,11 +425,12 @@ public fun NodeId.isLocal(own: NodeId? = null): Boolean
 
 ## `AdminApi`
 
-Getters resolve when the response payload correlates by `request_id`; setters resolve on the routing ACK. A few calls are fire-and-forget and return `Success` once queued, among them `setTime` and `setTimeOnly`. Every call waits up to `Builder.rpcTimeout`.
+Getters resolve when the response payload correlates by `request_id`; setters resolve on the routing ACK. A few calls are fire-and-forget and return `Success` once queued, among them `setTime` and `setTimeOnly`. Every call waits up to `Builder.rpcTimeout`, or the timeout given to `withRpcTimeout`. Acked writes go through the paced send queue.
 
 ```kotlin
 public interface AdminApi {
     public fun forNode(dest: NodeId): AdminApi
+    public fun withRpcTimeout(timeout: Duration): AdminApi                     // same target, own timeout
 
     public suspend fun getDeviceMetadata(): AdminResult<DeviceMetadata>
     public suspend fun getConfig(type: AdminMessage.ConfigType): AdminResult<Config>
@@ -456,7 +457,7 @@ public interface AdminApi {
     public suspend fun reboot(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun shutdown(after: Duration = Duration.ZERO): AdminResult<Unit>
     public suspend fun factoryReset(preserveBleBonds: Boolean = true): AdminResult<Unit>
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
     public suspend fun setTime(at: Instant? = null): AdminResult<Unit>          // null: the builder's clock
     public suspend fun setTimeOnly(unixTime: Int): AdminResult<Unit>
 
@@ -479,7 +480,7 @@ public sealed interface AdminResult<out T> {
 
 `ADMIN_BAD_SESSION_KEY` triggers one automatic retry: the engine re-issues `get_owner_request` to refresh the passkey and replays the call once. A second rejection returns `SessionKeyExpired`. `RateLimited` means the device refused the call for arriving too soon; back off before retrying. The full wire mapping is in [error-taxonomy.md](./error-taxonomy.md#wire-to-adminresult-mapping).
 
-`editSettings` wraps `block` in `begin_edit_settings` and `commit_edit_settings`, so the device applies the writes together. Setters inside `block` (`AdminEdit`: `setConfig`, `setModuleConfig`, `setOwner`, `setChannel`, `setFavorite`, `setIgnored`) return once queued; the begin and commit are awaited. `batch` is the throwing counterpart and adds the getters `getConfig`, `getModuleConfig`, and `listChannels` (`AdminBatchScope`), which throw `AdminResultException` on failure. When `block` throws or is cancelled, the SDK still sends `commit_edit_settings` on the same connection, so writes queued before the failure are applied, then rethrows. On a replaced connection it sends nothing.
+`editSettings` wraps `block` in `begin_edit_settings` and `commit_edit_settings`, so the device applies the writes together. Setters inside `block` (`AdminEdit`: `setConfig`, `setModuleConfig`, `setOwner`, `setChannel`, `setFavorite`, `setIgnored`, `setFixedPosition`, `removeFixedPosition`) return once the paced queue dispatches them; the begin and commit are awaited. `batch` is the throwing counterpart and adds the getters `getConfig`, `getModuleConfig`, and `listChannels` (`AdminBatchScope`), which throw `AdminResultException` on failure. When `block` throws or is cancelled, the SDK still sends `commit_edit_settings` on the same connection, so writes queued before the failure are applied, then rethrows. On a replaced connection it sends nothing.
 
 `AdminResult` helpers follow `kotlin.Result` naming (there's no `kotlin.Result` in the public API): `getOrNull()`, `getOrThrow()` (throws `AdminResultException`), `getOrElse(…)`, `isSuccess()`, `map {}`, `fold(onSuccess, onFailure)`, `onSuccess {}`, `onFailure {}`.
 
@@ -761,6 +762,7 @@ public class InMemoryStorageProvider : StorageProvider
 ```kotlin
 public interface RadioTransport {
     public val identity: TransportIdentity
+    public val linkDropsOnRestartCommands: Boolean get() = false   // true for BLE: firmware drops it in restart handlers
     public suspend fun connect()
     public suspend fun disconnect()
     public suspend fun send(frame: Frame)
