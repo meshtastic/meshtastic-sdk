@@ -64,6 +64,7 @@ final enum class org.meshtastic.sdk/ConnectionQuality : kotlin/Enum<org.meshtast
 
 final enum class org.meshtastic.sdk/DroppedFlow : kotlin/Enum<org.meshtastic.sdk/DroppedFlow> { // org.meshtastic.sdk/DroppedFlow|null[0]
     enum entry Events // org.meshtastic.sdk/DroppedFlow.Events|null[0]
+    enum entry Nodes // org.meshtastic.sdk/DroppedFlow.Nodes|null[0]
     enum entry Packets // org.meshtastic.sdk/DroppedFlow.Packets|null[0]
 
     final val entries // org.meshtastic.sdk/DroppedFlow.entries|#static{}entries[0]

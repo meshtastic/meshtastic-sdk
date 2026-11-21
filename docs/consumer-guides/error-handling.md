@@ -134,6 +134,7 @@ fun observe(client: RadioClient, scope: CoroutineScope) {
                 is MeshEvent.PacketsDropped -> when (event.flow) {
                     DroppedFlow.Packets -> metrics.increment("packets.dropped", event.count)
                     DroppedFlow.Events -> metrics.increment("events.dropped", event.count)
+                    DroppedFlow.Nodes -> metrics.increment("nodes.dropped", event.count)
                 }
                 is MeshEvent.SecurityWarning -> showBanner("Security warning: $event")
                 is MeshEvent.TransportError -> log("transport: ${event.error.message}")
