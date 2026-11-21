@@ -104,6 +104,7 @@ public fun SendFailure.humanMessage(): String = when (this) {
     SendFailure.Disconnected -> "Transport disconnected before send completed."
     SendFailure.HandshakeFailed -> "Send aborted because the handshake never completed."
     SendFailure.Cancelled -> "Send was cancelled before transmission."
+    SendFailure.QueueFull -> "The SDK send queue is full."
     SendFailure.IdCollision -> "A send with this id is already in flight; refusing to overwrite it."
     SendFailure.AckTimeout -> "No ACK received within the configured send timeout."
     is SendFailure.QueueRejected -> "Device transmit queue rejected the packet (res=$res); back off and retry."

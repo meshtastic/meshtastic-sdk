@@ -8,10 +8,12 @@
 package org.meshtastic.sdk.transport.serial.internal
 
 import com.hoho.android.usbserial.driver.UsbSerialPort
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -31,10 +33,8 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireFraming
-import org.meshtastic.sdk.transport.serial.SerialFrameAssembler
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -67,48 +67,35 @@ internal class UsbSerialForAndroidTransport(
     // ADR-012: lifecycle idempotency
     private val cleanedUp = AtomicBoolean(false)
 
-    private val publisher = FrameChannelPublisher(
-        target = frameChannel,
-        onDrop = { total ->
-            if (total == 1L || total % DROP_LOG_EVERY == 0L) {
-                logger.log(LogLevel.WARN, TAG, "Frame channel full; dropped frame (total dropped=$total)", null)
-            }
-        },
-    )
-
-    internal val droppedFrameCount: AtomicLong get() = publisher.dropCount
-
     override suspend fun connect() {
         check(!cleanedUp.get()) { "UsbSerialForAndroidTransport has been disconnected; construct a new instance" }
         _state.value = TransportState.Connecting
         try {
             val opened = withContext(ioDispatcher) {
                 openPort().also { p ->
-                    try {
-                        p.setParameters(
-                            baudRate,
-                            UsbSerialPort.DATABITS_8,
-                            UsbSerialPort.STOPBITS_1,
-                            UsbSerialPort.PARITY_NONE,
-                        )
-                        // Native USB-CDC boards (RAK4631, nRF52840) wait for the host to assert DTR/RTS before
-                        // they answer the wake bytes; bridge chips (CP210x, CH34x, FTDI) tolerate it.
-                        p.dtr = true
-                        p.rts = true
-                        p.write(WAKE_BYTES, WRITE_TIMEOUT_MS)
-                    } catch (e: IOException) {
-                        // Not yet published as `port`, so cleanup() cannot release it.
-                        runCatching { p.close() }
-                        throw e
-                    }
+                    // Record ownership before the dispatcher returns a result to the possibly cancelled caller.
+                    port = p
+                    p.setParameters(
+                        baudRate,
+                        UsbSerialPort.DATABITS_8,
+                        UsbSerialPort.STOPBITS_1,
+                        UsbSerialPort.PARITY_NONE,
+                    )
+                    // Native USB-CDC boards (RAK4631, nRF52840) wait for DTR/RTS before answering wake bytes.
+                    p.dtr = true
+                    p.rts = true
+                    p.write(WAKE_BYTES, WRITE_TIMEOUT_MS)
                 }
             }
-            port = opened
             val scope = CoroutineScope(parentContext + SupervisorJob() + ioDispatcher)
             readerScope = scope
-            readerJob = scope.launch { runReader(opened) }
             _state.value = TransportState.Connected
+            readerJob = scope.launch { runReader(opened) }
             logger.log(LogLevel.INFO, TAG, "Connected to ${identity.raw} at $baudRate baud", null)
+        } catch (e: CancellationException) {
+            _state.value = TransportState.Disconnected
+            withContext(NonCancellable) { cleanup() }
+            throw e
         } catch (e: MeshtasticException) {
             _state.value = TransportState.Error(e, recoverable = true)
             cleanup()
@@ -139,13 +126,13 @@ internal class UsbSerialForAndroidTransport(
 
     override fun frames(): Flow<Frame> = frameChannel.consumeAsFlow()
 
-    private fun runReader(port: UsbSerialPort) {
-        val assembler = SerialFrameAssembler { frame -> publisher.publish(frame) }.also { it.onTextLine = onTextLine }
+    private suspend fun runReader(port: UsbSerialPort) {
+        val reader = SerialFrameReader(frameChannel, onTextLine)
         val buf = ByteArray(READ_CHUNK_BYTES)
         try {
             while (!cleanedUp.get()) {
                 val read = port.read(buf, READ_TIMEOUT_MS)
-                if (read > 0) assembler.feed(buf, read)
+                if (read > 0) reader.publish(buf, read)
             }
         } catch (e: IOException) {
             if (cleanedUp.get()) return
@@ -163,7 +150,8 @@ internal class UsbSerialForAndroidTransport(
         val scope = readerScope
         readerScope = null
         try {
-            if (job != null && withTimeoutOrNull(READER_JOIN_TIMEOUT_MS) { job.join() } == null) job.cancel()
+            job?.cancel()
+            if (job != null) withTimeoutOrNull(READER_JOIN_TIMEOUT_MS) { job.join() }
         } finally {
             scope?.cancel()
             runCatching { port?.close() }
@@ -178,7 +166,6 @@ internal class UsbSerialForAndroidTransport(
         const val WRITE_TIMEOUT_MS = 2_000
         const val READ_CHUNK_BYTES = 256
         const val READER_JOIN_TIMEOUT_MS = 1_000L
-        const val DROP_LOG_EVERY = 100L
 
         /** 4× START1 per protocol.md §2 resync FSM. */
         val WAKE_BYTES = byteArrayOf(WireFraming.MAGIC_0, WireFraming.MAGIC_0, WireFraming.MAGIC_0, WireFraming.MAGIC_0)

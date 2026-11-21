@@ -179,6 +179,17 @@ public interface RadioTransport {
     public val identity: TransportIdentity
 
     /**
+     * True when firmware takes this link down inside the handler of a restart-class admin command,
+     * before it can answer. Firmware calls `disableBluetooth()` there, so only BLE links set this.
+     * The SDK then counts such a command to the connected node as applied once this transport has
+     * written it and the link drops.
+     *
+     * @since 0.3.0
+     */
+    public val linkDropsOnRestartCommands: Boolean
+        get() = false
+
+    /**
      * Initiate connection. May throw [MeshtasticException.Transport] on fatal errors.
      *
      * The transport should transition [state] to [TransportState.Connecting], then

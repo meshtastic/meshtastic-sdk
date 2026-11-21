@@ -54,6 +54,7 @@ internal fun createBleTransport(
         builderAction()
     }
     val transport = BleTransport(peripheral = peripheral, address = address, parentContext = parentContext)
+    transport.ownsPeripheral = true
     transport.autoConnectSwitch = switch
     applyPlatformTuning(transport)
     applyPlatformResilience(transport, resilience)

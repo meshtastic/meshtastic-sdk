@@ -19,6 +19,7 @@ import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.ModuleConfig
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -41,6 +42,7 @@ class P2AdminRpcTest {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:p2-admin"),
             autoHandshake = true,
+            autoQueueStatus = true,
             nodeNum = nodeNum,
         )
         val client = RadioClient.Builder()
@@ -162,8 +164,7 @@ class P2AdminRpcTest {
         runCurrent()
 
         val result = deferred.await()
-        // SendFailure.NoRoute → AdminResult.NodeUnreachable per the AdminApiImpl mapping.
-        assertEquals(AdminResult.NodeUnreachable, result)
+        assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), result)
         client.disconnect()
     }
 
@@ -338,6 +339,7 @@ class P2AdminRpcTest {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:p2-admin-clock"),
             autoHandshake = true,
+            autoQueueStatus = true,
         )
         val client = RadioClient.Builder()
             .transport(transport)
@@ -422,6 +424,38 @@ class P2AdminRpcTest {
         val commitIdx = orderedAdmin.indexOfFirst { it.second.commit_edit_settings == true }
         assertTrue(beginIdx in 0..<favIdx, "set_favorite must come after begin")
         assertTrue(favIdx < commitIdx, "set_favorite must come before commit")
+        client.disconnect()
+    }
+
+    @Test
+    fun editSettingsCarriesFixedPositionWritesInsideTheTransaction() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val position = Position.Builder().also { it.latitude_i = 375000000 }.build()
+        val deferred = async {
+            client.admin.editSettings {
+                setFixedPosition(position)
+                removeFixedPosition()
+            }
+        }
+        runCurrent()
+        val begin = transport.outboundPackets().drop(outboundBefore).last { adminOf(it)?.begin_edit_settings == true }
+        transport.injectRoutingAck(requestId = begin.id)
+        runCurrent()
+        val commit = transport.outboundPackets().drop(outboundBefore).last { adminOf(it)?.commit_edit_settings == true }
+        transport.injectRoutingAck(requestId = commit.id)
+        advanceUntilIdle()
+
+        assertIs<AdminResult.Success<Unit>>(deferred.await())
+        val admin = transport.outboundPackets().drop(outboundBefore).mapNotNull(::adminOf)
+        val beginIdx = admin.indexOfFirst { it.begin_edit_settings == true }
+        val setIdx = admin.indexOfFirst { it.set_fixed_position == position }
+        val removeIdx = admin.indexOfFirst { it.remove_fixed_position == true }
+        val commitIdx = admin.indexOfFirst { it.commit_edit_settings == true }
+        assertTrue(beginIdx in 0..<setIdx && setIdx < removeIdx && removeIdx < commitIdx)
         client.disconnect()
     }
 

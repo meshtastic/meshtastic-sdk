@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,4 +95,39 @@ public class MessageHandle internal constructor(
     public fun cancel() {
         cancelFn(id)
     }
+}
+
+/** The radio's admission outcome for a send submitted with [RadioClient.sendPaced]. */
+public enum class QueueReceipt {
+    /** A matching queue receipt or successful routing acknowledgment showed radio admission. */
+    Accepted,
+
+    /** The radio completed local delivery without a mesh transmission. */
+    LocalDelivery,
+
+    /** The radio rejected this packet. See [MessageHandle.state] for the reason. */
+    Rejected,
+
+    /** The packet left the host queue, but its queue receipt was lost or the link ended. */
+    Unconfirmed,
+
+    /** The packet never left the SDK queue. See [MessageHandle.state] for the reason. */
+    NotDispatched,
+}
+
+/** A paced send's independent queue admission and delivery results. */
+public class PacedMessageHandle internal constructor(
+    public val message: MessageHandle,
+    private val admission: Deferred<Boolean>,
+    private val dispatch: Deferred<Boolean>,
+    private val queueReceipt: Deferred<QueueReceipt>,
+) {
+    /** Waits for the SDK to reserve this packet ID in the current session. */
+    public suspend fun awaitAdmission(): Boolean = admission.await()
+
+    /** Waits for the paced queue to hand the packet to the transport writer. */
+    public suspend fun awaitDispatch(): Boolean = dispatch.await()
+
+    /** Waits for radio admission evidence. Cancellation only stops this caller's wait. */
+    public suspend fun awaitQueueReceipt(): QueueReceipt = queueReceipt.await()
 }

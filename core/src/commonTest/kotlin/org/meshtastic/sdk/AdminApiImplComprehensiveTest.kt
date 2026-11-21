@@ -659,7 +659,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun setChannelRoutingErrorMapsToNodeUnreachable() = runTest {
+    fun setChannelNoRouteMapsToFailed() = runTest {
         val channel = Channel.Builder().also { wb ->
             wb.index = 1
             wb.role = Channel.Role.SECONDARY
@@ -667,7 +667,7 @@ class AdminApiImplComprehensiveTest {
         assertAckedOperation(
             call = { it.setChannel(channel) },
             requestMatches = { it.set_channel == channel },
-            expected = AdminResult.NodeUnreachable,
+            expected = AdminResult.Failed(Routing.Error.NO_ROUTE),
         ) { transport, packet ->
             transport.injectFrame(buildRoutingErrorFrame(packet.id, Routing.Error.NO_ROUTE))
         }
@@ -1019,6 +1019,16 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun nodeDbResetCanWipeFavorites() = runTest {
+        assertAckedOperation(
+            call = { it.nodeDbReset(preserveFavorites = false) },
+            requestMatches = { it.nodedb_reset == false },
+        ) { transport, packet ->
+            transport.injectRoutingAck(packet.id)
+        }
+    }
+
+    @Test
     fun setOwnerTimeoutReturnsTimeout() = runTest {
         val user = User.Builder().also { wb ->
             wb.id = "!00000001"
@@ -1150,6 +1160,68 @@ class AdminApiImplComprehensiveTest {
                 AdminMessage.Builder().also { wb ->
                     wb.get_device_metadata_response = expected
                 }.build(),
+                fromNode = remote.raw,
+            )
+            runCurrent()
+
+            assertEquals(AdminResult.Success(expected), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun aRemoteAdminReplyWithoutPkiOrTheAdminChannelIsIgnored() = runTest {
+        val remote = NodeId(0x12345678)
+        val genuine = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "genuine" }.build()
+        val forged = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "forged" }.build()
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).getDeviceMetadata() }
+            runCurrent()
+            val packet = latestAdminPacket(transport, outboundBefore) { it.get_device_metadata_request == true }
+
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = forged }.build(),
+                fromNode = remote.raw,
+                pkiEncrypted = false,
+            )
+            runCurrent()
+            assertFalse(deferred.isCompleted)
+
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = genuine }.build(),
+                fromNode = remote.raw,
+            )
+            runCurrent()
+            assertEquals(AdminResult.Success(genuine), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun withRpcTimeoutLetsARemoteReadOutliveTheClientTimeout() = runTest {
+        val remote = NodeId(0x12345678)
+        val expected = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "late" }.build()
+        val (transport, client) = connectedClient(rpcTimeout = 5.seconds)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).withRpcTimeout(60.seconds).getDeviceMetadata() }
+            runCurrent()
+            val packet = latestAdminPacket(transport, outboundBefore) { it.get_device_metadata_request == true }
+
+            advanceTimeBy(30.seconds)
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = expected }.build(),
                 fromNode = remote.raw,
             )
             runCurrent()
@@ -1405,7 +1477,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun batchBeginFailureThrowsNodeUnreachable() = runTest {
+    fun batchBeginNoRouteThrowsRoutingFailed() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -1418,7 +1490,10 @@ class AdminApiImplComprehensiveTest {
             transport.injectFrame(buildRoutingErrorFrame(begin.id, Routing.Error.NO_ROUTE))
             runCurrent()
 
-            assertIs<AdminResultException.NodeUnreachable>(deferred.await().exceptionOrNull())
+            assertEquals(
+                Routing.Error.NO_ROUTE,
+                assertIs<AdminResultException.RoutingFailed>(deferred.await().exceptionOrNull()).error,
+            )
         } finally {
             runCatching { client.disconnect() }
         }
@@ -1483,7 +1558,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun editSettingsBeginFailureReturnsNodeUnreachable() = runTest {
+    fun editSettingsBeginNoRouteReturnsFailed() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -1496,7 +1571,7 @@ class AdminApiImplComprehensiveTest {
             transport.injectFrame(buildRoutingErrorFrame(begin.id, Routing.Error.NO_ROUTE))
             runCurrent()
 
-            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+            assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), deferred.await())
         } finally {
             runCatching { client.disconnect() }
         }
@@ -1521,6 +1596,123 @@ class AdminApiImplComprehensiveTest {
             runCurrent()
 
             assertEquals(AdminResult.Unauthorized, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsLocalCommitThatDropsTheLinkIsApplied() = runTest {
+        assertEquals(AdminResult.Success("edited"), localCommitThenLinkDrop(bluetoothLink = true))
+    }
+
+    @Test
+    fun editSettingsLocalCommitThatDropsANonBluetoothLinkIsUnreachable() = runTest {
+        assertEquals(AdminResult.NodeUnreachable, localCommitThenLinkDrop(bluetoothLink = false))
+    }
+
+    private suspend fun TestScope.localCommitThenLinkDrop(bluetoothLink: Boolean): AdminResult<String> {
+        val (transport, client) = connectedClient(bluetoothLink = bluetoothLink)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.editSettings { "edited" } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.simulateError(IllegalStateException("BLE dropped by commit"), recoverable = true)
+            runCurrent()
+            return deferred.await()
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun aRestartClassWriteThatDropsABluetoothLinkIsAppliedButOtherWritesAreNot() = runTest {
+        val rebootingConfig = Config.Builder().also { wb ->
+            wb.bluetooth = Config.BluetoothConfig.Builder().also { it.enabled = true }.build()
+        }.build()
+        assertEquals(
+            AdminResult.Success(Unit),
+            localWriteThenLinkDrop({ setConfig(rebootingConfig) }) { it.set_config != null },
+        )
+        assertEquals(
+            AdminResult.NodeUnreachable,
+            localWriteThenLinkDrop({ setFavorite(NodeId(0x20202020), favorite = true) }) {
+                it.set_favorite_node != 0
+            },
+        )
+    }
+
+    private suspend fun TestScope.localWriteThenLinkDrop(
+        write: suspend AdminApi.() -> AdminResult<Unit>,
+        matches: (AdminMessage) -> Boolean,
+    ): AdminResult<Unit> {
+        val (transport, client) = connectedClient(bluetoothLink = true)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.write() }
+            runCurrent()
+            latestAdminPacket(transport, outboundBefore, matches)
+            transport.simulateError(IllegalStateException("BLE dropped"), recoverable = true)
+            runCurrent()
+            return deferred.await()
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsCommitStillQueuedWhenTheLinkDropsIsUnreachable() = runTest {
+        val (transport, client) = connectedClient(autoQueueStatus = false)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.editSettings { setFavorite(NodeId(0x20202020), favorite = true) } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            // The device never reports queue evidence for the edit, so the commit waits behind it unwritten.
+            val admin = transport.outboundPackets().drop(outboundBefore).mapNotNull(::adminOf)
+            assertTrue(admin.none { it.commit_edit_settings == true })
+            transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsRemoteCommitThatLosesTheLinkIsUnreachable() = runTest {
+        val remote = NodeId(0x20202020)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).editSettings { Unit } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id, fromNode = remote.raw)
+            runCurrent()
+
+            latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.NodeUnreachable, deferred.await())
         } finally {
             runCatching { client.disconnect() }
         }
@@ -1627,12 +1819,16 @@ class AdminApiImplComprehensiveTest {
         rpcTimeout: Duration = 60.seconds,
         sendTimeout: Duration = 60.seconds,
         frames: List<Frame> = emptyList(),
+        autoQueueStatus: Boolean = true,
+        bluetoothLink: Boolean = false,
     ): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:admin-comprehensive:$nodeNum:${hashCode()}"),
             frames = frames,
             autoHandshake = true,
+            autoQueueStatus = autoQueueStatus,
             nodeNum = nodeNum,
+            linkDropsOnRestartCommands = bluetoothLink,
         )
         val client = RadioClient.Builder()
             .transport(transport)

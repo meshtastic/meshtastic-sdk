@@ -77,8 +77,9 @@ import io.ktor.websocket.Frame as WsFrame
  * and a blank or `/` path normalised to `/api/v1/ws`, so `ws://Node.local` and
  * `ws://node.local:80/api/v1/ws` share storage.
  *
- * @param url a `ws://` or `wss://` URL. A blank or `/` path becomes `/api/v1/ws`. User info, a query,
- *   a fragment, any other scheme or a port outside 1..65535 throws [IllegalArgumentException].
+ * @param url a `ws://` or `wss://` URL. A blank or `/` path becomes `/api/v1/ws`. The query is
+ *   sent with the request and omitted from transport identity. User info, fragments, other
+ *   schemes and ports outside 1..65535 throw [IllegalArgumentException].
  * @param httpClient a client to connect with, for example one that trusts a self-signed
  *   certificate. It must have the Ktor WebSockets plugin installed and should leave its ping
  *   interval unset. It keeps its own `maxFrameSize`; set one near 1 KiB to bound memory, since

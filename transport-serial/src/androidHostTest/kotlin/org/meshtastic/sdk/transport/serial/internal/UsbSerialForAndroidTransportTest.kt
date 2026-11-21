@@ -12,10 +12,14 @@ import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import com.hoho.android.usbserial.driver.UsbSerialDriver
 import com.hoho.android.usbserial.driver.UsbSerialPort
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.sdk.Frame
@@ -128,6 +132,25 @@ class UsbSerialForAndroidTransportTest {
     }
 
     @Test
+    fun cancellationDuringPortSetupClosesThePort() = runTest {
+        val port = FakePort()
+        val transport = UsbSerialForAndroidTransport(
+            openPort = { port },
+            identity = TransportIdentity("serial-android:test"),
+            baudRate = 115_200,
+            ioDispatcher = StandardTestDispatcher(testScheduler, "usb"),
+        )
+        val connecting = launch(start = CoroutineStart.LAZY) { transport.connect() }
+        port.onSetParameters = { connecting.cancel() }
+
+        connecting.start()
+        connecting.join()
+
+        assertTrue(port.closed)
+        assertEquals(TransportState.Disconnected, transport.state.value)
+    }
+
+    @Test
     fun readFailureDuringDisconnectKeepsDisconnected(): Unit = runBlocking {
         val port = FakePort()
         val transport = transport(port)
@@ -173,6 +196,7 @@ class UsbSerialForAndroidTransportTest {
         @Volatile
         var failNextRead: IOException? = null
         var failSetParameters: IOException? = null
+        var onSetParameters: () -> Unit = {}
 
         /** A real port throws on read once closed; the reader may be mid-read when disconnect closes it. */
         @Volatile
@@ -198,6 +222,7 @@ class UsbSerialForAndroidTransportTest {
         override fun write(src: ByteArray, length: Int, timeout: Int) = write(src.copyOf(length), timeout)
 
         override fun setParameters(baudRate: Int, dataBits: Int, stopBits: Int, parity: Int) {
+            onSetParameters()
             failSetParameters?.let { throw it }
             parameters.clear()
             parameters += listOf(baudRate, dataBits, stopBits, parity)

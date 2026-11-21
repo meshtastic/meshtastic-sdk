@@ -191,6 +191,7 @@ class SetConfigRefreshTest {
                 }.build().toFrame(),
             ),
             autoHandshake = true,
+            autoQueueStatus = true,
             nodeNum = 1,
         )
         val client = RadioClient.Builder()
