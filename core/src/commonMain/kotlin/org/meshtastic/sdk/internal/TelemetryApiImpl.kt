@@ -46,6 +46,8 @@ internal class TelemetryApiImpl(
     private val rpcTimeout: Duration,
 ) : TelemetryApi {
 
+    override fun withRpcTimeout(timeout: Duration): TelemetryApi = TelemetryApiImpl(engine, packetsFlow, timeout)
+
     override suspend fun requestDevice(node: NodeId): AdminResult<DeviceMetrics> =
         requestTelemetry(node, { it.device_metrics = DeviceMetrics.Builder().build() }) { it.device_metrics }
 

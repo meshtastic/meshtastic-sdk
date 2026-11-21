@@ -346,6 +346,7 @@ abstract interface org.meshtastic.sdk/RemoteShellApi { // org.meshtastic.sdk/Rem
 }
 
 abstract interface org.meshtastic.sdk/RoutingApi { // org.meshtastic.sdk/RoutingApi|null[0]
+    abstract fun withRpcTimeout(kotlin.time/Duration): org.meshtastic.sdk/RoutingApi // org.meshtastic.sdk/RoutingApi.withRpcTimeout|withRpcTimeout(kotlin.time.Duration){}[0]
     abstract suspend fun requestNeighborInfo(org.meshtastic.sdk/NodeId = ..., org.meshtastic.sdk/ChannelIndex? = ..., kotlin/Int? = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/NeighborInfo> // org.meshtastic.sdk/RoutingApi.requestNeighborInfo|requestNeighborInfo(org.meshtastic.sdk.NodeId;org.meshtastic.sdk.ChannelIndex?;kotlin.Int?){}[0]
     abstract suspend fun traceRoute(org.meshtastic.sdk/NodeId, kotlin/Int? = ..., org.meshtastic.sdk/ChannelIndex? = ..., kotlin/Int? = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/RouteDiscovery> // org.meshtastic.sdk/RoutingApi.traceRoute|traceRoute(org.meshtastic.sdk.NodeId;kotlin.Int?;org.meshtastic.sdk.ChannelIndex?;kotlin.Int?){}[0]
 
@@ -372,6 +373,7 @@ abstract interface org.meshtastic.sdk/StoreForwardApi { // org.meshtastic.sdk/St
 
 abstract interface org.meshtastic.sdk/TelemetryApi { // org.meshtastic.sdk/TelemetryApi|null[0]
     abstract fun observe(org.meshtastic.sdk/NodeId): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/Telemetry> // org.meshtastic.sdk/TelemetryApi.observe|observe(org.meshtastic.sdk.NodeId){}[0]
+    abstract fun withRpcTimeout(kotlin.time/Duration): org.meshtastic.sdk/TelemetryApi // org.meshtastic.sdk/TelemetryApi.withRpcTimeout|withRpcTimeout(kotlin.time.Duration){}[0]
     abstract suspend fun requestAirQuality(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/AirQualityMetrics> // org.meshtastic.sdk/TelemetryApi.requestAirQuality|requestAirQuality(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun requestDevice(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/DeviceMetrics> // org.meshtastic.sdk/TelemetryApi.requestDevice|requestDevice(org.meshtastic.sdk.NodeId){}[0]
     abstract suspend fun requestEnvironment(org.meshtastic.sdk/NodeId = ...): org.meshtastic.sdk/AdminResult<org.meshtastic.proto/EnvironmentMetrics> // org.meshtastic.sdk/TelemetryApi.requestEnvironment|requestEnvironment(org.meshtastic.sdk.NodeId){}[0]

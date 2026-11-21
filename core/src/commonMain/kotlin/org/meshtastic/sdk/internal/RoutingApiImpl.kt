@@ -31,6 +31,8 @@ import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
  */
 internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTimeout: Duration) : RoutingApi {
 
+    override fun withRpcTimeout(timeout: Duration): RoutingApi = RoutingApiImpl(engine, timeout)
+
     override suspend fun traceRoute(
         dest: NodeId,
         hopLimit: Int?,

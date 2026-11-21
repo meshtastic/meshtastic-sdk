@@ -8,6 +8,7 @@
 package org.meshtastic.sdk
 
 import org.meshtastic.proto.RouteDiscovery
+import kotlin.time.Duration
 import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
@@ -18,6 +19,15 @@ import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
  * @since 0.1.0
  */
 public interface RoutingApi {
+
+    /**
+     * Return a [RoutingApi] whose calls wait up to [timeout] for the reply, instead of the client's
+     * `rpcTimeout`. Use it for a multi-hop request whose answer, or the routing error that ends
+     * it, can arrive after a local round-trip would have.
+     *
+     * @param timeout how long each call waits for its reply or routing error
+     */
+    public fun withRpcTimeout(timeout: Duration): RoutingApi
 
     /**
      * Trace the route to [dest] and wait for its reply.

@@ -17,6 +17,7 @@ import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.PowerMetrics
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.TrafficManagementStats
+import kotlin.time.Duration
 
 /**
  * Telemetry RPCs and observation.
@@ -31,6 +32,15 @@ import org.meshtastic.proto.TrafficManagementStats
  * @since 0.1.0
  */
 public interface TelemetryApi {
+
+    /**
+     * Return a [TelemetryApi] whose calls wait up to [timeout] for the reply, instead of the client's
+     * `rpcTimeout`. Use it for a multi-hop request whose answer, or the routing error that ends
+     * it, can arrive after a local round-trip would have.
+     *
+     * @param timeout how long each call waits for its reply or routing error
+     */
+    public fun withRpcTimeout(timeout: Duration): TelemetryApi
 
     /** Request the latest [DeviceMetrics] from [node]. */
     public suspend fun requestDevice(node: NodeId = NodeId.LOCAL): AdminResult<DeviceMetrics>

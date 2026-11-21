@@ -19,6 +19,7 @@ import org.meshtastic.proto.EnvironmentMetrics
 import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.sdk.testing.FakeRadioTransport
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -99,6 +100,34 @@ class P2TelemetryRpcTest {
         val result = deferred.await()
         assertIs<AdminResult.Failed>(result)
         assertEquals(org.meshtastic.proto.Routing.Error.NO_RESPONSE, result.routingError)
+        client.disconnect()
+    }
+
+    @Test
+    fun aRoutingErrorAfterTheClientTimeoutStillSettlesALongerTimeoutRequest() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async { client.telemetry.withRpcTimeout(150.seconds).requestLocalStats(NodeId(0xdead)) }
+        runCurrent()
+        val req = transport.outboundPackets().drop(outboundBefore)
+            .last { it.decoded?.portnum == org.meshtastic.proto.PortNum.TELEMETRY_APP }
+        // Past the client's 60 s rpcTimeout, inside the 150 s override; radio traffic keeps the link live.
+        repeat(5) {
+            advanceTimeBy(20.seconds)
+            transport.injectFrame(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.queueStatus = org.meshtastic.proto.QueueStatus.Builder().also { it.free = 8 }.build()
+                }.build().toFrame(),
+            )
+            runCurrent()
+        }
+        transport.injectRoutingError(requestId = req.id, error = org.meshtastic.proto.Routing.Error.NO_ROUTE)
+        runCurrent()
+
+        assertEquals(AdminResult.Failed(org.meshtastic.proto.Routing.Error.NO_ROUTE), deferred.await())
         client.disconnect()
     }
 

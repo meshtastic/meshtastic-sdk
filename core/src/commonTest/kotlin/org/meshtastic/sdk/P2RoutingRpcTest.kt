@@ -115,6 +115,34 @@ class P2RoutingRpcTest {
     }
 
     @Test
+    fun aRoutingErrorAfterTheClientTimeoutStillSettlesALongerTimeoutTraceRoute() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+
+        val outboundBefore = transport.outboundPackets().size
+        val deferred = async { client.routing.withRpcTimeout(150.seconds).traceRoute(NodeId(0xdead)) }
+        runCurrent()
+        val req = transport.outboundPackets().drop(outboundBefore)
+            .last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
+        // Past the client's 60 s rpcTimeout, inside the 150 s override; radio traffic keeps the link live.
+        repeat(5) {
+            advanceTimeBy(20.seconds)
+            transport.injectFrame(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.queueStatus = org.meshtastic.proto.QueueStatus.Builder().also { it.free = 8 }.build()
+                }.build().toFrame(),
+            )
+            runCurrent()
+        }
+        transport.injectRoutingError(requestId = req.id, error = Routing.Error.NO_ROUTE)
+        runCurrent()
+
+        assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), deferred.await())
+        client.disconnect()
+    }
+
+    @Test
     fun requestNeighborInfoResolvesOnReply() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
