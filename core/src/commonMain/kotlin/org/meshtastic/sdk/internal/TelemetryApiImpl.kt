@@ -47,28 +47,32 @@ internal class TelemetryApiImpl(
 ) : TelemetryApi {
 
     override suspend fun requestDevice(node: NodeId): AdminResult<DeviceMetrics> =
-        requestTelemetry(node) { it.device_metrics }
+        requestTelemetry(node, { it.device_metrics = DeviceMetrics.Builder().build() }) { it.device_metrics }
 
-    override suspend fun requestEnvironment(node: NodeId): AdminResult<EnvironmentMetrics> =
-        requestTelemetry(node) { it.environment_metrics }
+    override suspend fun requestEnvironment(node: NodeId): AdminResult<EnvironmentMetrics> = requestTelemetry(node, {
+        it.environment_metrics = EnvironmentMetrics.Builder().build()
+    }) { it.environment_metrics }
 
     override suspend fun requestPower(node: NodeId): AdminResult<PowerMetrics> =
-        requestTelemetry(node) { it.power_metrics }
+        requestTelemetry(node, { it.power_metrics = PowerMetrics.Builder().build() }) { it.power_metrics }
 
-    override suspend fun requestAirQuality(node: NodeId): AdminResult<AirQualityMetrics> =
-        requestTelemetry(node) { it.air_quality_metrics }
+    override suspend fun requestAirQuality(node: NodeId): AdminResult<AirQualityMetrics> = requestTelemetry(node, {
+        it.air_quality_metrics = AirQualityMetrics.Builder().build()
+    }) { it.air_quality_metrics }
 
     override suspend fun requestLocalStats(): AdminResult<LocalStats> =
-        requestTelemetry(NodeId.LOCAL) { it.local_stats }
+        requestTelemetry(NodeId.LOCAL, { it.local_stats = LocalStats.Builder().build() }) { it.local_stats }
 
     override suspend fun requestHealth(node: NodeId): AdminResult<HealthMetrics> =
-        requestTelemetry(node) { it.health_metrics }
+        requestTelemetry(node, { it.health_metrics = HealthMetrics.Builder().build() }) { it.health_metrics }
 
     override suspend fun requestHost(node: NodeId): AdminResult<HostMetrics> =
-        requestTelemetry(node) { it.host_metrics }
+        requestTelemetry(node, { it.host_metrics = HostMetrics.Builder().build() }) { it.host_metrics }
 
     override suspend fun requestTrafficManagement(node: NodeId): AdminResult<TrafficManagementStats> =
-        requestTelemetry(node) { it.traffic_management_stats }
+        requestTelemetry(node, { it.traffic_management_stats = TrafficManagementStats.Builder().build() }) {
+            it.traffic_management_stats
+        }
 
     override fun observe(node: NodeId): Flow<Telemetry> = packetsFlow
         .filter { packet ->
@@ -85,22 +89,33 @@ internal class TelemetryApiImpl(
             }
         }
 
-    private suspend fun <T : Any> requestTelemetry(node: NodeId, select: (Telemetry) -> T?): AdminResult<T> {
+    /**
+     * Firmware answers only a request whose `Telemetry` names the variant it wants
+     * (`DeviceTelemetryModule::allocReply`), so [variant] sets that one empty submessage.
+     */
+    private suspend fun <T : Any> requestTelemetry(
+        node: NodeId,
+        variant: (Telemetry.Builder) -> Unit,
+        select: (Telemetry) -> T?,
+    ): AdminResult<T> {
         val target = if (node == NodeId.LOCAL) {
             NodeId(engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable)
         } else {
             node
         }
         val requestId = engine.nextMessageId().raw
-        val payload = Telemetry.ADAPTER.encode(Telemetry.Builder().build()).toByteString()
+        val payload = Telemetry.ADAPTER.encode(Telemetry.Builder().also(variant).build()).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
             wb.id = requestId
             wb.from = engine.myNodeNumOrNull() ?: 0
             wb.to = target.raw
+            wb.channel = engine.nodeSnapshot()[target]?.channel ?: 0
+            wb.hop_limit = engine.defaultHopLimit()
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.TELEMETRY_APP
                 wb.payload = payload
                 wb.want_response = true
+                wb.dest = target.raw
             }.build()
         }.build()
         val result = engine.submitRpc(packet, requestId, ResponseKind.Telemetry, rpcTimeout)
