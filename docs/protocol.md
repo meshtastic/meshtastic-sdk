@@ -389,8 +389,6 @@ Under `69421`, Stage 2 sends rows 1 to 3, then row 9 (`OTHER_NODEINFOS` × N), t
 
 ### Node DB after the handshake
 
-A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
-
 After `Connected` the SDK folds these into the node DB, each emitting `NodeChange.Added` (unknown node) or `NodeChange.Updated` (with the changed `NodeField`s):
 
 - **`FromRadio.node_info`** replaces the node's entry.
@@ -398,6 +396,16 @@ After `Connected` the SDK folds these into the node DB, each emitting `NodeChang
 - **`NODEINFO_APP`** replaces the sender's `user` (`id` rewritten to `!<node num hex>`) and sets `channel` to the packet's channel (firmware `updateUser`). An empty `User` (no names, no key) is ignored, and so is a user whose `public_key` differs from a stored 32-byte key.
 - **`POSITION_APP`** replaces the sender's `position` (firmware `updatePosition`): a position with no lat/lon and no time is ignored, a time-only position updates only the stored time, and a position with `time == 0` keeps the stored time. Our own position echo is accepted.
 - **`TELEMETRY_APP`** `device_metrics` set the node's `device_metrics` (known nodes, which every packet above creates).
+- **`NODE_STATUS_APP` and `PAXCOUNTER_APP`** only refresh the sender as any other packet does. `NodeInfo` has no field for a status string or a paxcount, and firmware keeps the status in a separate per-node map (`firmware:src/mesh/NodeDB.h:337`, `NodeDB.cpp:2184`) and the paxcount in no node entry, so a host that wants either decodes the packet from `RadioClient.packets` (`StatusMessage.ADAPTER`, `Paxcount.ADAPTER`) and stores it itself.
+
+A connected SDK client can request another `69421` download through its optional [session receive stream](./api-reference.md#session-receive). The SDK waits for the matching completion before offering the refreshed node batch and continues to route live traffic while collecting it.
+### Position requests and DM channels
+
+A request is a `POSITION_APP` packet with `want_response = true`. Firmware answers it from `PositionModule::allocReply`, which builds the reply from its own position and ignores the request payload (`firmware:src/modules/PositionModule.cpp:291-304`, dispatched by `src/mesh/MeshModule.cpp:186-190`), throttled to one reply per three minutes. An empty request therefore draws the same reply as one carrying our position, so `requestPosition` stays empty and goes out at `BACKGROUND` priority as Android's does (`CommandSenderImpl.kt:312`). A plain unicast is encrypted with the channel's key unless firmware PKI-encrypts it, in which case the channel does not matter (`Router.cpp:1170-1196`), so `channelFor` gives the channel from `NodeInfo.channel` the way Android does (`CommandSenderImpl.kt:141`).
+
+### Waypoints
+
+A `Waypoint` is keyed by `id`; a new one with a known id replaces the old on every device. Firmware reads `expire == 0` as "never expires" and `expire == 1` as "deleted"; any other value is an epoch-seconds deadline (`firmware:src/meshUtils.h:95-102`). A delete is the same waypoint re-sent with `expire = 1` (`firmware:src/modules/WaypointModule.cpp:226-227`; Android does the same, `WaypointDialogs.kt:101`). `locked_to == 0` leaves the waypoint open to anyone; otherwise only that node may change it, and firmware only removes a waypoint locked to another node locally, never mesh-wide (`WaypointModule.cpp:217-224`). Android refuses to send id `0` (`BaseMapViewModel.kt:224`) and takes new ids from its packet-id generator. The SDK exposes `Waypoint.isExpired`, `Waypoint.canBeEditedBy`, `newWaypointId`, `RadioClient.sendWaypoint` and `RadioClient.deleteWaypoint`, and keeps no waypoint store.
 
 ---
 
@@ -501,7 +509,7 @@ message Data {
 | `ROUTING_APP` | 5 | `Routing` | both | ACK/NAK and route discovery |
 | `ADMIN_APP` | 6 | `AdminMessage` | both | Device administration (see §13) |
 | `TEXT_MESSAGE_COMPRESSED_APP` | 7 | `unishox2`-compressed UTF-8 | both | Optional compression |
-| `WAYPOINT_APP` | 8 | `Waypoint` | both | Shared map markers |
+| `WAYPOINT_APP` | 8 | `Waypoint` | both | Shared map markers (rules below) |
 | `AUDIO_APP` | 9 | Codec2 audio frames | both | Push-to-talk |
 | `DETECTION_SENSOR_APP` | 10 | UTF-8 string | device→phone | GPIO event notifications |
 | `ALERT_APP` | 11 | UTF-8 string | both | High-priority broadcast alerts |
@@ -688,14 +696,30 @@ The cipher is AES-CCM, not AES-GCM. The SDK never runs it, because the node encr
 **The X25519 keypair lives on the device, not on the phone.** Both encryption (`encryptCurve25519`) and decryption (`decryptCurve25519`) happen inside the firmware (`firmware:src/mesh/CryptoEngine.cpp:106-178`). The phone:
 
 - Receives PKI direct messages already-decrypted in `MeshPacket.decoded` (the firmware decrypts before forwarding via PhoneAPI).
-- Sends PKI direct messages by setting `pki_encrypted = true` (or simply addressing a unicast packet to a node whose `User.public_key` the device has cached); the device performs the encryption.
+- Sends PKI direct messages by setting `pki_encrypted = true` and the recipient's key (or simply addressing a unicast packet to a node whose `User.public_key` the device has cached); the device performs the encryption.
 - Caches other nodes' public keys from `User.public_key` in `NODEINFO_APP` packets. They are ordinary NodeDB data, persisted with the rest of the cache.
 
 The node owns the keypair, so the SDK has no private-key storage. The local node's public key is `RadioClient.ownNode`'s `user.public_key`, for out-of-band display or QR verification.
 
 ### Key verification
 
-Firmware's `KeyVerificationModule` runs a security-number exchange between two nodes over `KEY_VERIFICATION_APP`, started with `AdminMessage.key_verification`; the number is compared over a second channel. The SDK decodes those packets with `asKeyVerification()`. A client can also show the local public key as a string or QR code for manual comparison.
+Firmware's `KeyVerificationModule` runs a security-number exchange between two nodes over `KEY_VERIFICATION_APP`, started with `AdminMessage.key_verification`; the number is compared over a second channel. The SDK decodes those packets with `asKeyVerification()`. It reports each step to the phone as a `ClientNotification` payload, which the SDK maps to `MeshEvent.KeyVerification` and also emits as the raw `MeshEvent.Notification`. A client can also show the local public key as a string or QR code for manual comparison.
+
+| Step | Device sends | `KeyVerificationPrompt` | Host replies with `AdminApi.keyVerification` |
+| --- | --- | --- | --- |
+| Responder receives the request | `key_verification_number_inform` (security number) | `ShowSecurityNumber` | nothing; the user reads the number to the initiator |
+| Initiator receives the response | `key_verification_number_request` | `EnterSecurityNumber` | `PROVIDE_SECURITY_NUMBER` with the `nonce` and the typed number |
+| Both receive the final hash | `key_verification_final` (`isSender` tells the side) | `ConfirmVerification` | `DO_VERIFY` or `DO_NOT_VERIFY` with the `nonce` |
+
+The host starts the exchange with `INITIATE_VERIFICATION` and the peer's `remote_nodenum`. `ClientNotification` payload variants beyond these (`duplicated_public_key`, `low_entropy_key`) surface as `MeshEvent.SecurityWarning`.
+
+### Public key in outbound DMs
+
+Firmware encrypts a unicast with its own NodeDB key for the destination (`firmware:src/mesh/Router.cpp:1318-1323`) and treats a phone-supplied `MeshPacket.public_key` only as a check: if `pki_encrypted` is set and `public_key` is non-zero and differs from the stored key, the send fails with `PKI_FAILED` (`Router.cpp:1344-1347`); an all-zero `public_key` is accepted. With no stored key the send fails with `PKI_SEND_FAIL_PUBLIC_KEY` (`Router.cpp:1340-1342`, `res = 39` in `QueueStatus`). `pki_encrypted` on a send firmware will not PKI-encrypt (licensed owner, for one: `Router.cpp:1178`) fails with `PKI_FAILED` (`Router.cpp:1361-1363`). A plain unicast to a node with a stored key is PKI-encrypted without any flag (`wouldEncryptWithPKC`, `Router.cpp:1170-1196`). `sendDirectMessageEncrypted` sets `pki_encrypted` and the key the SDK has stored for the recipient, as the Android app does (`CommandSenderImpl.kt:601-624`).
+
+### Key mismatch
+
+A `NODEINFO_APP` whose `public_key` differs from the stored 32-byte key is dropped by firmware (`firmware:src/mesh/NodeDB.cpp:4057-4061`, log only, no `ClientNotification`) and by the SDK. The SDK emits `MeshEvent.SecurityWarning.PublicKeyMismatch(node, offeredKey)` once per node and offered key (the last 256 pairs are remembered).
 
 ---
 

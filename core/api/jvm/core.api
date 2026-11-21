@@ -777,6 +777,53 @@ public final class org/meshtastic/sdk/InMemoryStorageProvider : org/meshtastic/s
 }
 
 public abstract interface class org/meshtastic/sdk/KeyVerificationPrompt {
+	public abstract fun getNonce ()J
+	public abstract fun getRemoteLongName ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification : org/meshtastic/sdk/KeyVerificationPrompt {
+	public fun <init> (JLjava/lang/String;ZLjava/lang/String;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (JLjava/lang/String;ZLjava/lang/String;)Lorg/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification;JLjava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNonce ()J
+	public fun getRemoteLongName ()Ljava/lang/String;
+	public final fun getVerificationCharacters ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isSender ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber : org/meshtastic/sdk/KeyVerificationPrompt {
+	public fun <init> (JLjava/lang/String;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (JLjava/lang/String;)Lorg/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber;JLjava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNonce ()J
+	public fun getRemoteLongName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber : org/meshtastic/sdk/KeyVerificationPrompt {
+	public fun <init> (JLjava/lang/String;I)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun copy (JLjava/lang/String;I)Lorg/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber;JLjava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNonce ()J
+	public fun getRemoteLongName ()Ljava/lang/String;
+	public final fun getSecurityNumber ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/LatLng {
@@ -1101,6 +1148,23 @@ public final class org/meshtastic/sdk/MeshEvent$SecurityWarning$LowEntropyKey : 
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch : org/meshtastic/sdk/MeshEvent$SecurityWarning {
+	public synthetic fun <init> (ILokio/ByteString;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/sdk/NodeId;Lokio/ByteString;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
+	public final fun component1-Unx0hic ()I
+	public final fun component2 ()Lokio/ByteString;
+	public final fun copy (Lorg/meshtastic/sdk/NodeId;Lokio/ByteString;)Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;
+	public final fun copy-UyS-FeY (ILokio/ByteString;)Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;
+	public static synthetic fun copy-UyS-FeY$default (Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;ILokio/ByteString;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNode ()Lorg/meshtastic/sdk/NodeId;
+	public final fun getNode-Unx0hic ()I
+	public final fun getOfferedKey ()Lokio/ByteString;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/MeshEvent$StorageDegraded : org/meshtastic/sdk/MeshEvent {
 	public fun <init> (Ljava/lang/String;)V
 	public final fun component1 ()Ljava/lang/String;
@@ -1295,14 +1359,17 @@ public final class org/meshtastic/sdk/MessageHandleRetryKt {
 }
 
 public final class org/meshtastic/sdk/MessageHelpersKt {
+	public static final fun channelFor-ynvfgPs (Lorg/meshtastic/sdk/RadioClient;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun requestPosition (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;)Lorg/meshtastic/sdk/MessageHandle;
 	public static final fun requestPosition-RB-pko4 (Lorg/meshtastic/sdk/RadioClient;II)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun requestPosition-RB-pko4$default (Lorg/meshtastic/sdk/RadioClient;IIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public static final fun requestPositionOnHeardChannel-ynvfgPs (Lorg/meshtastic/sdk/RadioClient;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun sendDirectMessage-BniPyuc (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendDirectMessage-BniPyuc$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;IZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static final fun sendDirectMessageEncrypted (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/NodeId;Ljava/lang/String;Z)Lorg/meshtastic/sdk/MessageHandle;
-	public static final fun sendDirectMessageEncrypted-UH2hNCI (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;Z)Lorg/meshtastic/sdk/MessageHandle;
-	public static synthetic fun sendDirectMessageEncrypted-UH2hNCI$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public static final fun sendDirectMessageEncrypted-GrvDmtA (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendDirectMessageEncrypted-GrvDmtA$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun sendDirectMessageOnHeardChannel-GrvDmtA (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendDirectMessageOnHeardChannel-GrvDmtA$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun sendPosition-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/LatLng;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendPosition-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/LatLng;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
@@ -2702,6 +2769,18 @@ public final class org/meshtastic/sdk/TransportTarget$Tcp : org/meshtastic/sdk/T
 	public final fun getPort ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/WaypointsKt {
+	public static final fun canBeEditedBy (Lorg/meshtastic/proto/Waypoint;Lorg/meshtastic/sdk/NodeId;)Z
+	public static final fun canBeEditedBy-dMC3jmg (Lorg/meshtastic/proto/Waypoint;I)Z
+	public static final fun deleteWaypoint-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun deleteWaypoint-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun isExpired (Lorg/meshtastic/proto/Waypoint;Lkotlin/time/Instant;)Z
+	public static final fun newWaypointId (Lkotlin/random/Random;)I
+	public static synthetic fun newWaypointId$default (Lkotlin/random/Random;ILjava/lang/Object;)I
+	public static final fun sendWaypoint-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendWaypoint-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/WireCodec {

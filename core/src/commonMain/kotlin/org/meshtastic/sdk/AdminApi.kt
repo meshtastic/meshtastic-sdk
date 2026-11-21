@@ -244,7 +244,13 @@ public interface AdminApi {
 
     // ── Key verification ────────────────────────────────────────────────────
 
-    /** Initiate or respond to a key verification exchange. */
+    /**
+     * Initiate or answer a key verification exchange. The device's steps arrive as
+     * [MeshEvent.KeyVerification]: send `INITIATE_VERIFICATION` with the peer's node number, wait
+     * for `EnterSecurityNumber` and send `PROVIDE_SECURITY_NUMBER`, then on `ConfirmVerification`
+     * send `DO_VERIFY` or `DO_NOT_VERIFY`; each reply echoes the prompt's `nonce`. The responding
+     * side only receives `ShowSecurityNumber` and then `ConfirmVerification`.
+     */
     public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
 
     // ── Lockdown (hardened builds) ──────────────────────────────────────────

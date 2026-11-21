@@ -184,6 +184,28 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 
 `PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendText` and `sendReaction` set `want_ack`. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`.
 
+### Channel-aware helpers
+
+| Member | Notes |
+|---|---|
+| `RadioClient.channelFor(node: NodeId): ChannelIndex` | `NodeInfo.channel` for a node heard live; `0` for an unknown node, our own node and the primary channel |
+| `RadioClient.sendDirectMessageOnHeardChannel(to, text, wantAck)` | `sendDirectMessage` on `channelFor(to)` |
+| `RadioClient.requestPositionOnHeardChannel(from)` | `requestPosition` on `channelFor(from)` |
+
+`sendDirectMessage` and `requestPosition` keep their `ChannelIndex(0)` default. `requestPosition` sends an empty `POSITION_APP` payload with `want_response` at `BACKGROUND` priority.
+
+### Waypoint helpers
+
+| Member | Notes |
+|---|---|
+| `Waypoint.isExpired(now: Instant): Boolean` | `expire == 0` never expires, `expire == 1` is deleted, otherwise expired once `now` reaches it |
+| `Waypoint.canBeEditedBy(node: NodeId): Boolean` | `locked_to == 0` or equal to `node` |
+| `newWaypointId(random: Random = Random): Int` | non-zero |
+| `RadioClient.sendWaypoint(waypoint, to, channel, wantAck): MessageHandle` | `WAYPOINT_APP`; throws `IllegalArgumentException` for id `0` and `MeshtasticException.Protocol` for a waypoint locked to another node |
+| `RadioClient.deleteWaypoint(waypoint, to, channel, wantAck): MessageHandle` | sends the waypoint with `expire = 1` |
+
+The SDK keeps no waypoint store; message and waypoint history belong to the consumer (roadmap R-10).
+
 ### Send DSL
 
 ```kotlin
@@ -280,6 +302,7 @@ public sealed interface MeshEvent {
     public sealed interface SecurityWarning : MeshEvent {
         public data object DuplicatedPublicKey : SecurityWarning
         public data object LowEntropyKey : SecurityWarning
+        public data class PublicKeyMismatch(val node: NodeId, val offeredKey: ByteString) : SecurityWarning
     }
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
     public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
@@ -289,7 +312,7 @@ public enum class DroppedFlow { Packets, Events }
 public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 ```
 
-When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference). `KeyVerification` is declared but the engine doesn't emit it.
+When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference).
 
 ## `NodeChange`
 

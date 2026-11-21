@@ -13,8 +13,10 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
+import kotlin.coroutines.cancellation.CancellationException
 
 internal const val POSITION_SCALE = 1e7
+private const val PKI_KEY_SIZE = 32
 
 /**
  * Send a [Position] payload to [to] (defaults to broadcast).
@@ -46,8 +48,10 @@ public suspend fun RadioClient.sendPosition(
 /**
  * Request the current [Position] from node [from].
  *
- * Sends an empty Position payload with `want_response = true`; the firmware
- * replies with the node's last known fix.
+ * Sends an empty Position payload with `want_response = true` at background priority; the
+ * firmware replies with its own position whatever the request carries
+ * (`firmware:src/modules/PositionModule.cpp:291-304`, `src/mesh/MeshModule.cpp:186-190`).
+ * Use [requestPositionOnHeardChannel] to address the node on the channel it was last heard on.
  *
  * @since 0.1.0
  */
@@ -56,6 +60,7 @@ public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = Cha
         wb.to = from.raw
         wb.channel = channel.raw
         wb.want_ack = false
+        wb.priority = MeshPacket.Priority.BACKGROUND
         wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.POSITION_APP
             wb.payload = ByteString.EMPTY
@@ -64,6 +69,36 @@ public fun RadioClient.requestPosition(from: NodeId, channel: ChannelIndex = Cha
     }.build()
     return send(packet)
 }
+
+/**
+ * The channel [node] was last heard on, from its node DB entry.
+ *
+ * `NodeInfo.channel` is `0` for the primary channel, for a node never heard live, for an unknown
+ * node and for our own node, so those all resolve to channel `0`. A PKI-encrypted DM ignores the
+ * channel; a plain unicast and a position request use it (Android: `CommandSenderImpl.kt:141`).
+ *
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.channelFor(node: NodeId): ChannelIndex = ChannelIndex(nodeSnapshot()[node]?.channel ?: 0)
+
+/**
+ * [requestPosition] to [from] on the channel [channelFor] resolves for it.
+ *
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.requestPositionOnHeardChannel(from: NodeId): MessageHandle =
+    requestPosition(from, channelFor(from))
+
+/**
+ * [sendDirectMessage] to [to] on the channel [channelFor] resolves for it.
+ *
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.sendDirectMessageOnHeardChannel(
+    to: NodeId,
+    text: String,
+    wantAck: Boolean = true,
+): MessageHandle = sendDirectMessage(to, text, channelFor(to), wantAck)
 
 /**
  * Send a unicast text message to [to]. Defaults [wantAck] to `true`.
@@ -86,17 +121,32 @@ public suspend fun RadioClient.sendDirectMessage(
 /**
  * Send a PKI-encrypted unicast text message to [to].
  *
- * Sets `pki_encrypted = true` and forces channel `0`. Requires the
- * recipient's public key to already be present in the local NodeDB.
+ * Sets `pki_encrypted = true`, forces channel `0` and fills `public_key` with the 32-byte key
+ * stored for [to]. The device encrypts with its own NodeDB key and only compares the supplied
+ * one: a different key fails the send with `PKI_FAILED`. With no stored key `public_key` stays
+ * empty and the device rejects the send with `PKI_SEND_FAIL_PUBLIC_KEY`, reported as
+ * [SendFailure.QueueRejected] (`res = 39`). A licensed (ham) device never uses PKI and fails
+ * the send with `PKI_FAILED`.
  *
+ * A plain [RadioClient.sendText] to a node the device holds a key for is PKI-encrypted by the
+ * device itself, so this helper is only needed to demand PKI or pin the key.
+ *
+ * @throws MeshtasticException.NotConnected if not currently connected
  * @since 0.1.0
  */
-public fun RadioClient.sendDirectMessageEncrypted(to: NodeId, text: String, wantAck: Boolean = true): MessageHandle {
+@Throws(MeshtasticException::class, CancellationException::class)
+public suspend fun RadioClient.sendDirectMessageEncrypted(
+    to: NodeId,
+    text: String,
+    wantAck: Boolean = true,
+): MessageHandle {
+    val storedKey = nodeSnapshot()[to]?.user?.public_key?.takeIf { it.size == PKI_KEY_SIZE }
     val packet = MeshPacket.Builder().also { wb ->
         wb.to = to.raw
         wb.channel = 0
         wb.want_ack = wantAck
         wb.pki_encrypted = true
+        if (storedKey != null) wb.public_key = storedKey
         wb.decoded = Data.Builder().also { wb ->
             wb.portnum = PortNum.TEXT_MESSAGE_APP
             wb.payload = text.encodeToByteArray().toByteString()
