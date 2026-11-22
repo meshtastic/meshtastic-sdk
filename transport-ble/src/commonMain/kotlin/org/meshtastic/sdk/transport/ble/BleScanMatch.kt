@@ -12,8 +12,8 @@ package org.meshtastic.sdk.transport.ble
  *
  * An empty needle matches everything. Otherwise the match is a case-insensitive substring of the
  * advertised [name], the [peripheralName] or the platform [identifier]. A MAC needle also matches
- * where the identifier is a BlueZ D-Bus object path (Kable's JVM identifier on Linux, for example
- * `/org/bluez/hci0/dev_34_B7_DA_62_18_C5`), which spells the MAC with underscores.
+ * where the identifier holds a BlueZ D-Bus object path (Kable's JVM identifier on Linux is
+ * `{"object_path":"/org/bluez/hci0/dev_34_B7_DA_62_18_C5"}`), which spells the MAC with underscores.
  *
  * @since 0.3.0
  */

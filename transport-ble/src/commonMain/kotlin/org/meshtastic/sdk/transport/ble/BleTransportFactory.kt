@@ -60,3 +60,18 @@ internal fun createBleTransport(
     applyPlatformResilience(transport, resilience)
     return transport
 }
+
+/**
+ * Like [createBleTransport] without resilience, but [resolvePeripheral] runs in the first
+ * [BleTransport.connect] instead of here, for a peripheral that has to be found first.
+ */
+internal fun createDeferredBleTransport(
+    address: String,
+    builderAction: PeripheralBuilder.() -> Unit,
+    resolvePeripheral: suspend (PeripheralBuilder.() -> Unit) -> Peripheral,
+): BleTransport {
+    val transport = BleTransport(null, address, EmptyCoroutineContext) { resolvePeripheral(builderAction) }
+    transport.ownsPeripheral = true
+    applyPlatformTuning(transport)
+    return transport
+}

@@ -25,9 +25,11 @@ import com.juul.kable.PlatformAdvertisement
  *   start with no reading, whether or not it is on air, so `null` there means "not heard in this
  *   scan yet".
  * @property address Stable platform identifier: the Bluetooth MAC address on Android, the
- *   CoreBluetooth peripheral UUID string on iOS, and on the JVM the Kable identifier's string form
- *   (on Linux a BlueZ object path, not a bare MAC). It is the value the platform `BleTransport`
- *   storage identity is keyed on, and on Android it can be passed to `BleTransport(address = ...)`.
+ *   CoreBluetooth peripheral UUID string on iOS, and on the JVM the Kable identifier's string form:
+ *   on Linux the BlueZ object path wrapped in JSON (`{"object_path":"/org/bluez/hci0/dev_..."}`),
+ *   on Windows the MAC, on macOS a CoreBluetooth UUID. It is the value the platform `BleTransport`
+ *   storage identity is keyed on, and on Android and the JVM it can be passed to
+ *   `BleTransport(address = ...)`.
  * @since 0.3.0
  */
 public class DiscoveredRadio internal constructor(

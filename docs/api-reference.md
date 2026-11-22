@@ -876,7 +876,7 @@ Frames carry the 4-byte stream header on every transport; `WebSocketTransport` s
 | Transport | Construct with |
 |---|---|
 | TCP | `TcpTransport(host, port)` |
-| BLE | `BleTransport(radio)` from `BleScanner.scan()`, on every target; on Android also `BleTransport(address, resilience, builderAction)` and `BleTransport(device: BondedBleDevice, …)` |
+| BLE | `BleTransport(radio)` from `BleScanner.scan()`, on every target; on Android also `BleTransport(address, resilience, builderAction)` and `BleTransport(device: BondedBleDevice, …)`; on the JVM `BleTransport(address, builderAction)` with a saved `DiscoveredRadio.address` or a MAC |
 | Serial, JVM | `JvmSerialPorts.open(portName, baudRate)` |
 | Serial, Android | `AndroidSerialPorts.open(portName, baudRate)` after `AndroidSerialPorts.init(context)`, or `AndroidUsbSerialPorts.open(context, deviceName)` |
 | WebSocket | `WebSocketTransport(url, httpClient = null)` for `ws://` or `wss://`; the path defaults to `/api/v1/ws` |

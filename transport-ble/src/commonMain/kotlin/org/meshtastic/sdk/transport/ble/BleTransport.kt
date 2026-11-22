@@ -71,15 +71,34 @@ import kotlin.coroutines.EmptyCoroutineContext
  * Strips/prepends the 4-byte stream header so the engine stays transport-agnostic.
  * [frames] allows one active collector at a time (re-collectable after disconnect);
  * [shutdown] is idempotent and cannot be undone.
- *
- * @param peripheral Kable peripheral pointing at the target radio.
- * @param address stable platform-specific address for storage identity keying.
  */
-public class BleTransport(
-    internal val peripheral: Peripheral,
+public class BleTransport internal constructor(
+    peripheral: Peripheral?,
     address: String,
-    parentContext: CoroutineContext = EmptyCoroutineContext,
+    parentContext: CoroutineContext,
+    private val resolvePeripheral: (suspend () -> Peripheral)?,
 ) : RadioTransport {
+
+    /**
+     * Creates a transport over a Kable peripheral the caller already holds.
+     *
+     * @param peripheral Kable peripheral pointing at the target radio.
+     * @param address stable platform-specific address for storage identity keying.
+     * @param parentContext parent coroutine context for the transport's internal scope.
+     */
+    public constructor(
+        peripheral: Peripheral,
+        address: String,
+        parentContext: CoroutineContext = EmptyCoroutineContext,
+    ) : this(peripheral, address, parentContext, null)
+
+    // ADR-012: native-handle ownership — set by the constructor, or by the first connect() that
+    // resolves it through resolvePeripheral; shutdown() takes an owned one back to close it.
+    private val resolvedPeripheral = atomic(peripheral)
+
+    internal val peripheral: Peripheral
+        get() = resolvedPeripheral.value
+            ?: throw MeshtasticException.Transport("BLE peripheral for ${identity.raw} is not resolved; call connect()")
 
     override val identity: TransportIdentity =
         TransportIdentity.of(TransportSpec.Ble(address))
@@ -162,6 +181,7 @@ public class BleTransport(
         frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
         try {
+            ensurePeripheral()
             bondControl?.let { control ->
                 control.ensureBonded(onBonding = { _state.value = TransportState.Bonding })
                 _state.value = TransportState.Connecting
@@ -258,6 +278,19 @@ public class BleTransport(
                 "BLE connect to ${identity.raw} failed: ${e.message}",
                 e,
             )
+        }
+    }
+
+    /** Resolves a deferred peripheral once; a later connect reuses it. */
+    private suspend fun ensurePeripheral() {
+        if (resolvedPeripheral.value != null) return
+        val resolve = checkNotNull(resolvePeripheral) { "BleTransport has neither a peripheral nor a resolver" }
+        val resolved = resolve()
+        resolvedPeripheral.value = resolved
+        if (shuttingDown.value) {
+            // shutdown() may have run before the store, when it had nothing to close.
+            if (resolvedPeripheral.compareAndSet(resolved, null)) resolved.close()
+            throw CancellationException("BleTransport shut down during connect")
         }
     }
 
@@ -437,7 +470,7 @@ public class BleTransport(
         coordinator = null
         scope.cancel()
         frameChannel.close()
-        if (ownsPeripheral) peripheral.close()
+        if (ownsPeripheral) resolvedPeripheral.getAndSet(null)?.close()
     }
 
     /** Cancel tracked jobs. Used by [disconnect]. */
