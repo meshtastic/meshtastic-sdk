@@ -525,8 +525,14 @@ internal class AdminApiImpl(
 
     // ── Internal helpers ────────────────────────────────────────────────────
 
-    /** The connected node shares one lock under any number or instance; a remote node has its own. */
-    private fun editLock() = if (isLocalTarget()) editLocks.local() else editLocks.remote(checkNotNull(targetNode).raw)
+    /**
+     * The connected node shares one lock under any number or instance, including the number a live
+     * renumber is moving it to before the session restarts; a remote node has its own.
+     */
+    private fun editLock() = when {
+        targetNode == null || engine.isConnectedNodeNum(targetNode.raw) -> editLocks.local()
+        else -> editLocks.remote(targetNode.raw)
+    }
 
     /**
      * Send an admin packet that carries a typed response on ADMIN_APP. Routes via

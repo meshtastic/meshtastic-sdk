@@ -16,9 +16,12 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Config
+import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.sdk.testing.FakeRadioTransport
+import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -115,6 +118,91 @@ class AdminEditExclusiveTest {
         )
         runCurrent()
         assertIs<AdminResult.Success<Unit>>(local.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun editsToTwoRemoteNodesDoNotWaitForEachOther() = runTest {
+        val remoteA = NodeId(0x20202020)
+        val remoteB = NodeId(0x40404040)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val gate = CompletableDeferred<Unit>()
+        fun last(to: NodeId, predicate: (AdminMessage) -> Boolean) = transport.outboundPackets().drop(before)
+            .last { it.to == to.raw && adminOf(it)?.let(predicate) == true }
+
+        val editA = async { client.admin.forNode(remoteA).editSettings { gate.await() } }
+        runCurrent()
+        transport.injectRoutingAck(last(remoteA) { it.begin_edit_settings == true }.id, fromNode = remoteA.raw)
+        runCurrent()
+
+        val editB = async {
+            client.admin.forNode(remoteB).editSettings { setFavorite(NodeId(0x30303030), favorite = true) }
+        }
+        runCurrent()
+        transport.injectRoutingAck(last(remoteB) { it.begin_edit_settings == true }.id, fromNode = remoteB.raw)
+        runCurrent()
+        transport.injectRoutingAck(last(remoteB) { it.commit_edit_settings == true }.id, fromNode = remoteB.raw)
+        runCurrent()
+
+        assertIs<AdminResult.Success<Unit>>(editB.await())
+        assertFalse(editA.isCompleted, "the edit to the first remote node is still open")
+
+        gate.complete(Unit)
+        runCurrent()
+        transport.injectRoutingAck(last(remoteA) { it.commit_edit_settings == true }.id, fromNode = remoteA.raw)
+        runCurrent()
+        assertIs<AdminResult.Success<Unit>>(editA.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun theConnectedNodeKeepsOneQueueAcrossARenumber() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val gate = CompletableDeferred<Unit>()
+
+        val first = async { client.admin.editSettings { gate.await() } }
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id)
+        runCurrent()
+
+        // Firmware 2.8.1+ moves the node to a new number mid-session and resends my_info.
+        transport.nodeNum = RENUMBERED
+        transport.injectFrame(
+            FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { it.my_node_num = RENUMBERED }.build()
+            }.build().toFrame(),
+        )
+        runCurrent()
+
+        val byClient = async { client.admin.editSettings { setConfig(deviceConfig) } }
+        val byNewNumber = async { client.admin.forNode(NodeId(RENUMBERED)).editSettings { setConfig(displayConfig) } }
+        runCurrent()
+        assertEquals(listOf(BEGIN), ops(transport, before), "both wait for the edit opened under the old number")
+
+        gate.complete(Unit)
+        runCurrent()
+        repeat(2) {
+            transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id, RENUMBERED)
+            runCurrent()
+            transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id, RENUMBERED)
+            runCurrent()
+        }
+        transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id, RENUMBERED)
+        runCurrent()
+
+        assertEquals(
+            listOf(BEGIN, COMMIT, BEGIN, "set:device", COMMIT, BEGIN, "set:display", COMMIT),
+            ops(transport, before),
+        )
+        assertIs<AdminResult.Success<Unit>>(first.await())
+        assertIs<AdminResult.Success<Unit>>(byClient.await())
+        assertIs<AdminResult.Success<Unit>>(byNewNumber.await())
         client.disconnect()
     }
 
@@ -216,6 +304,7 @@ class AdminEditExclusiveTest {
 
     private companion object {
         const val LOCAL = 1
+        const val RENUMBERED = 0x5EED0001
         const val BEGIN = "begin"
         const val COMMIT = "commit"
     }

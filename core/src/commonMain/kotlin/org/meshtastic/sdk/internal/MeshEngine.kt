@@ -642,6 +642,9 @@ internal class MeshEngine(
      */
     fun myNodeNumOrNull(): Int? = if (myNodeNum != 0) myNodeNum else null
 
+    /** Whether [num] is the connected node, under its number or the one a live renumber is moving it to. */
+    fun isConnectedNodeNum(num: Int): Boolean = num != 0 && (num == myNodeNum || num == renumberedTo)
+
     fun connectionGeneration(): Long = connectionGeneration.value
 
     val linkDropsOnRestartCommands: Boolean
