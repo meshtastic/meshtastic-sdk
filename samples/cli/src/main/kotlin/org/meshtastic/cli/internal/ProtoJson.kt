@@ -13,8 +13,8 @@ import com.squareup.wire.WireJsonAdapterFactory
 
 /**
  * Lazy singleton Moshi instance configured with [WireJsonAdapterFactory], so we can serialize
- * any generated proto [Message] into its canonical JSON form (snake_case keys, base64 bytes,
- * nested submessages, unknown fields preserved).
+ * any generated proto [Message] into its canonical JSON form (lowerCamelCase keys per the proto3
+ * JSON mapping, base64 bytes, nested submessages, unknown fields preserved).
  *
  * This is what lets `cli nodes`, `cli packets`, etc. emit complete proto payloads inside the
  * `data` slot of the NDJSON envelope without hand-mapping every field.
