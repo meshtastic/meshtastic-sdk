@@ -1835,8 +1835,11 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun sendReaction (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendReaction-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun sendReaction-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
-	public final fun sendText-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
+	public final synthetic fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;IZ)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun sendText-c0V3R2I (Ljava/lang/String;IIIZ)Lorg/meshtastic/sdk/MessageHandle;
+	public static synthetic fun sendText-c0V3R2I$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIZILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public final synthetic fun sendText-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun sendText-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun tryLockdown (Lorg/meshtastic/proto/LockdownAuth;)Z
 	public final fun trySendRaw (Lorg/meshtastic/proto/ToRadio;)Z

@@ -93,6 +93,24 @@ class HopLimitDefaultTest {
         }
     }
 
+    @Test
+    fun sendTextAsksForAnAckByDefaultAndWithoutOneCarriesTheDeviceHopLimit() = runTest {
+        val (transport, client) = connectedClient(loraHopLimit = 5)
+        try {
+            client.sendText("acked")
+            client.sendText("unacked", wantAck = false)
+            runCurrent()
+            val (acked, unacked) = transport.outboundPackets().filter {
+                it.decoded?.portnum == PortNum.TEXT_MESSAGE_APP
+            }
+            assertEquals(true, acked.want_ack)
+            assertEquals(false, unacked.want_ack)
+            assertEquals(5, unacked.hop_limit)
+        } finally {
+            client.disconnect()
+        }
+    }
+
     private suspend fun TestScope.connectedClient(loraHopLimit: Int?): Pair<FakeRadioTransport, RadioClient> {
         val frames = if (loraHopLimit == null) {
             emptyList()

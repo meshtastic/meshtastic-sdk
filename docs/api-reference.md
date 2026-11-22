@@ -178,7 +178,7 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 | Member | Returns | Throws |
 |---|---|---|
 | `send(packet: MeshPacket)` | `MessageHandle` in `Queued` | `PayloadTooLarge`, `NotConnected` |
-| `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0)` | `MessageHandle` | same as `send` |
+| `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0, wantAck: Boolean = true)` | `MessageHandle` | same as `send` |
 | `trySendRaw(frame: ToRadio)` | Whether the outbound queue accepted the encoded frame | — |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int)` | `MessageHandle` | same as `send` |
 | `suspend send(portnum: PortNum, payload: ByteArray, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), wantAck: Boolean = false, hopLimit: Int? = null)` | `MessageHandle` | same as `send` |
@@ -188,7 +188,7 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 | `sendRaw(frame: ToRadio)` | `Unit`; not tracked or acknowledged | `NotConnected` |
 | `suspend nodeSnapshot()` | `Map<NodeId, NodeInfo>` | `NotConnected` |
 
-`PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendText` and `sendReaction` set `want_ack`. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`. The request helpers return a handle for the send only; [`RoutingApi`](#routingapi) `requestPosition` and `requestNodeInfo` send the same requests and return the reply.
+`PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendReaction` sets `want_ack`, and so does `sendText` unless `wantAck = false`, which sends the device hop limit instead of `0` because firmware fills a zero hop limit only on a `want_ack` packet. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`. The request helpers return a handle for the send only; [`RoutingApi`](#routingapi) `requestPosition` and `requestNodeInfo` send the same requests and return the reply.
 
 ### Channel-aware helpers
 
