@@ -8,7 +8,6 @@
 package org.meshtastic.sdk
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,7 +38,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -82,40 +80,6 @@ class EngineAuditFixesTest {
         val bundle = client.configBundle.value
         assertNotNull(bundle, "ConfigBundle should be populated after handshake")
         assertEquals(uiConfig, bundle.deviceUIConfig, "DeviceUIConfig should be captured in ConfigBundle")
-
-        client.disconnect()
-    }
-
-    // ── P1-3: want_config_id is retried once on Stage 1 silence ────────────────
-
-    /**
-     * P1-3: drop the very first `want_config_id` and respond normally to the retry. The engine
-     * must still complete the handshake within the original 20 s budget.
-     */
-    @Test
-    fun stage1WantConfigIsRetriedOnSilence() = runTest {
-        val transport = DropFirstWantConfigTransport(TransportIdentity("fake:p1-3"))
-        val client = RadioClient.Builder()
-            .transport(transport)
-            .storage(InMemoryStorageProvider())
-            .coroutineContext(backgroundScope.coroutineContext)
-            .build()
-
-        val connectJob = async { runCatching { client.connect() } }
-
-        // Wait until Stage 1 is armed.
-        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
-        // Past the 10 s retry tick: the engine should re-send want_config_id.
-        advanceTimeBy(11_000L)
-        runCurrent()
-
-        val result = connectJob.await()
-        assertTrue(result.isSuccess, "Expected connect to succeed via the retry path; got: $result")
-        assertEquals(ConnectionState.Connected, client.connection.value)
-
-        // Two want_config_id=NONCE_STAGE1 frames must have been sent (initial + retry).
-        val stage1Sends = transport.outboundWantConfigCount(STAGE1_NONCE)
-        assertEquals(2, stage1Sends, "Expected exactly one Stage 1 want_config_id retry; got $stage1Sends")
 
         client.disconnect()
     }
@@ -423,96 +387,6 @@ class EngineAuditFixesTest {
                 }
             }
             // Auto-respond to get_owner_request so the handshake can complete.
-            val packet = to.packet ?: return
-            val decoded = packet.decoded ?: return
-            if (decoded.portnum != PortNum.ADMIN_APP) return
-            val admin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
-            if (admin.get_owner_request == true) {
-                val response = AdminMessage.Builder().also { wb ->
-                    wb.get_owner_response = org.meshtastic.proto.User.Builder().also { wb ->
-                        wb.id = "!00000001"
-                    }.build()
-                    wb.session_passkey = ByteString.EMPTY
-                }.build()
-                val responsePacket = MeshPacket.Builder().also { wb ->
-                    wb.from = 1
-                    wb.to = packet.from
-                    wb.decoded = Data.Builder().also { wb ->
-                        wb.portnum = PortNum.ADMIN_APP
-                        wb.payload = ByteString.of(*AdminMessage.ADAPTER.encode(response))
-                    }.build()
-                }.build()
-                inbound.trySend(
-                    encodeFromRadio(
-                        FromRadio.Builder().also { wb ->
-                            wb.packet = responsePacket
-                        }.build(),
-                    ),
-                )
-            }
-        }
-
-        override fun frames(): Flow<Frame> = flow { for (f in inbound) emit(f) }
-    }
-
-    /**
-     * Transport that drops the very first `want_config_id = STAGE1_NONCE`, then responds
-     * normally to subsequent ones. Verifies the engine's want_config_id retry behaviour.
-     */
-    private inner class DropFirstWantConfigTransport(override val identity: TransportIdentity) : RadioTransport {
-        private val _state = MutableStateFlow<TransportState>(TransportState.Disconnected)
-        private var inbound = Channel<Frame>(Channel.UNLIMITED)
-        private var stage1WantConfigSeen = 0
-        override val state: StateFlow<TransportState> = _state
-
-        fun outboundWantConfigCount(nonce: Int): Int = if (nonce == STAGE1_NONCE) stage1WantConfigSeen else 0
-
-        override suspend fun connect() {
-            inbound = Channel(Channel.UNLIMITED)
-            stage1WantConfigSeen = 0
-            _state.value = TransportState.Connecting
-            _state.value = TransportState.Connected
-        }
-
-        override suspend fun disconnect() {
-            inbound.close()
-            _state.value = TransportState.Disconnected
-        }
-
-        override suspend fun send(frame: Frame) {
-            val to = decodeToRadioOrNull(frame) ?: return
-            when (to.want_config_id) {
-                STAGE1_NONCE -> {
-                    stage1WantConfigSeen += 1
-                    if (stage1WantConfigSeen == 1) return // drop the first
-                    inbound.trySend(
-                        encodeFromRadio(
-                            FromRadio.Builder().also { wb ->
-                                wb.my_info = MyNodeInfo.Builder().also { wb ->
-                                    wb.my_node_num = 1
-                                }.build()
-                            }.build(),
-                        ),
-                    )
-                    inbound.trySend(
-                        encodeFromRadio(
-                            FromRadio.Builder().also { wb ->
-                                wb.config_complete_id = STAGE1_NONCE
-                            }.build(),
-                        ),
-                    )
-                }
-
-                STAGE2_NONCE -> {
-                    inbound.trySend(
-                        encodeFromRadio(
-                            FromRadio.Builder().also { wb ->
-                                wb.config_complete_id = STAGE2_NONCE
-                            }.build(),
-                        ),
-                    )
-                }
-            }
             val packet = to.packet ?: return
             val decoded = packet.decoded ?: return
             if (decoded.portnum != PortNum.ADMIN_APP) return

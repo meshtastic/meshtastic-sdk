@@ -951,8 +951,6 @@ internal class MeshEngine(
                 handleHeartbeatSettleComplete()
             }
 
-            is EngineMessage.Stage1RetryWantConfig -> if (msg.attempt == handshakeAttempt) handleStage1RetryWantConfig()
-
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
 
             is EngineMessage.PostRpc -> handlePostRpc(msg)
@@ -1219,11 +1217,9 @@ internal class MeshEngine(
         lockdownLink.value = null
         handshakeStage = HandshakeStage.Stage1Draining
         connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+        // Sent once per session: firmware's handleStartConfig has no re-entry guard (protocol.md §6),
+        // so a silent Stage 1 ends in HandshakeTimeout and a fresh session, never an in-session resend.
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
-        engineScope?.launch {
-            delay(STAGE1_RETRY_MS)
-            inbox.trySend(EngineMessage.Stage1RetryWantConfig(attempt))
-        }
         engineScope?.launch {
             delay(STAGE1_TIMEOUT_MS)
             inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining, attempt))
@@ -1527,8 +1523,7 @@ internal class MeshEngine(
         val deviceUIConf = fromRadio.deviceuiConfig
         val completeId = fromRadio.config_complete_id
 
-        // Accumulators must be idempotent: a `want_config_id` retry (Stage1RetryWantConfig) or a
-        // device-side hiccup restarts the firmware's config drain from scratch (PhoneAPI
+        // Accumulators must be idempotent: a device-side hiccup restarts the firmware's config drain from scratch (PhoneAPI
         // handleStartConfig resets its read index), so the same channels/config sections can
         // stream twice. Replace-by-key instead of append so the committed bundle has no dupes.
         when {
@@ -2192,7 +2187,7 @@ internal class MeshEngine(
         nodeDbRefresh = linkedMapOf()
         val request = ++nodeDbRefreshRequest
         nodeDbRefreshWatchdog = engineScope?.launch {
-            delay(STAGE2_HARD_CAP_MS)
+            delay(NODE_DB_REFRESH_TIMEOUT_MS)
             inbox.trySend(EngineMessage.NodeDbRefreshTimeout(request))
         }
     }
@@ -3575,30 +3570,27 @@ internal class MeshEngine(
         }
     }
 
-    /**
-     * one-shot Stage 1 retry. If we're still waiting for the device's first
-     * `my_info`/config envelope at the half-budget mark, re-send `want_config_id = NONCE_STAGE1`
-     * once. Bounded by the original 20 s Stage 1 timeout. Conservative by design — a chatty
-     * retry policy can confuse the firmware's want_config_id state machine.
-     */
-    private fun handleStage1RetryWantConfig() {
-        if (handshakeStage != HandshakeStage.Stage1Draining) return
-        if (pendingMyInfo != null) return
-        logger.warn(TAG) { "Stage 1 silent — retrying want_config_id=$NONCE_STAGE1" }
-        sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
-    }
-
     private fun handleHandshakeTimeout(msg: EngineMessage.HandshakeTimeout) {
         if (handshakeStage == HandshakeStage.Ready) return // already succeeded
         // Stale timer from a stage we've already advanced past — ignore.
         if (msg.attempt != handshakeAttempt || handshakeStage != msg.stage) return
+        if (msg.stage == HandshakeStage.SeedingSession) {
+            // Local admin writes need no passkey (firmware checks it only when from != 0), so a lost
+            // seed reply must not cost the connection; remote keys are seeded on demand.
+            logger.warn(TAG) { "No get_owner_response within ${SEED_TIMEOUT_MS}ms; Ready without the session passkey" }
+            emitEvent(
+                MeshEvent.ProtocolWarning(
+                    "session passkey seed timed out",
+                    details = mapOf("stage" to msg.stage.toDisplayName()),
+                ),
+            )
+            transitionToReady()
+            return
+        }
         logger.error(TAG) { "Handshake timeout at stage ${msg.stage.toDisplayName()}" }
 
-        // emit a structured ProtocolWarning so consumers can distinguish
-        // "seed never landed" (handshake reached SeedingSession but get_owner_response never
-        // arrived) from "Stage 1/2 never started". The thrown HandshakeTimeout exception
-        // already carries a stage string but only callers awaiting connect() see it; this
-        // event surfaces the same signal on the events flow for passive observers.
+        // The thrown HandshakeTimeout carries the stage, but only callers awaiting connect() see it;
+        // this event surfaces the same signal on the events flow for passive observers.
         emitEvent(
             MeshEvent.ProtocolWarning(
                 "handshake stage timed out",
@@ -4103,8 +4095,7 @@ internal class MeshEngine(
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
 
-        // one-shot retry of `want_config_id` at half the Stage 1 budget.
-        const val STAGE1_RETRY_MS = 10_000L
+        // Past this the session goes Ready without the local passkey; it never fails the connect.
         const val SEED_TIMEOUT_MS = 10_000L
         const val INTER_STAGE_SETTLE_MS = 100L
         const val HEARTBEAT_INTERVAL_MS = 30_000L
@@ -4125,16 +4116,14 @@ internal class MeshEngine(
         // anyway. Short by design — teardown latency must stay bounded.
         const val GOODBYE_TIMEOUT_MS = 500L
 
-        // sliding-timeout watchdog parameters for Stage 2. The engine fails the handshake
-        // if no Stage 2 frame arrives for one tick window (idle stall), or the total time
-        // exceeds the hard cap (regardless of progress). Tick is intentionally < legacy
-        // STAGE2_TIMEOUT_MS so the no-progress case still aborts within the same envelope as
-        // before.
+        // Stage 2 fails when a whole tick passes with no frame. The hard cap only ends a node that
+        // keeps streaming without ever completing: Android's stage guard stops re-arming after
+        // 10 x its 60 s Stage 2 budget (MeshConnectionManagerImpl STAGE_GUARD_TOTAL_CAP_FACTOR).
         const val STAGE2_PROGRESS_TICK_MS = 30_000L
+        const val STAGE2_HARD_CAP_MS = 600_000L
 
-        // hard-cap was 120s — reduce to 60s to match upstream reference
-        // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
-        const val STAGE2_HARD_CAP_MS = 60_000L
+        // An in-session nodes-only refresh (session receive) is bounded separately.
+        const val NODE_DB_REFRESH_TIMEOUT_MS = 60_000L
 
         // records a slow `deviceLogs` collector can fall behind by before the oldest are dropped.
         const val DEVICE_LOG_BUFFER = 64

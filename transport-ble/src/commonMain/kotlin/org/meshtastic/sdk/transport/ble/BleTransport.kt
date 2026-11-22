@@ -71,15 +71,34 @@ import kotlin.coroutines.EmptyCoroutineContext
  * Strips/prepends the 4-byte stream header so the engine stays transport-agnostic.
  * [frames] allows one active collector at a time (re-collectable after disconnect);
  * [shutdown] is idempotent and cannot be undone.
- *
- * @param peripheral Kable peripheral pointing at the target radio.
- * @param address stable platform-specific address for storage identity keying.
  */
-public class BleTransport(
-    internal val peripheral: Peripheral,
+public class BleTransport internal constructor(
+    peripheral: Peripheral?,
     address: String,
-    parentContext: CoroutineContext = EmptyCoroutineContext,
+    parentContext: CoroutineContext,
+    private val resolvePeripheral: (suspend () -> Peripheral)?,
 ) : RadioTransport {
+
+    /**
+     * Creates a transport over a Kable peripheral the caller already holds.
+     *
+     * @param peripheral Kable peripheral pointing at the target radio.
+     * @param address stable platform-specific address for storage identity keying.
+     * @param parentContext parent coroutine context for the transport's internal scope.
+     */
+    public constructor(
+        peripheral: Peripheral,
+        address: String,
+        parentContext: CoroutineContext = EmptyCoroutineContext,
+    ) : this(peripheral, address, parentContext, null)
+
+    // ADR-012: native-handle ownership — set by the constructor, or by the first connect() that
+    // resolves it through resolvePeripheral; shutdown() takes an owned one back to close it.
+    private val resolvedPeripheral = atomic(peripheral)
+
+    internal val peripheral: Peripheral
+        get() = resolvedPeripheral.value
+            ?: throw MeshtasticException.Transport("BLE peripheral for ${identity.raw} is not resolved; call connect()")
 
     override val identity: TransportIdentity =
         TransportIdentity.of(TransportSpec.Ble(address))
@@ -130,6 +149,10 @@ public class BleTransport(
     // ADR-012: lifecycle idempotency — only one Error transition per connect cycle.
     private val errorPublished = atomic(false)
 
+    // ADR-012: lifecycle idempotency — disconnect() advances it so a connect() still resolving its
+    // peripheral stops before any native connection work.
+    private val connectGeneration = atomic(0)
+
     /**
      * Platform hook invoked once per successful link establishment, after the GATT connection
      * (and Kable's service discovery) completes and before the warmup read. Platform factories
@@ -161,7 +184,9 @@ public class BleTransport(
         // disconnect().
         frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
+        val generation = connectGeneration.incrementAndGet()
         try {
+            ensurePeripheral(generation)
             bondControl?.let { control ->
                 control.ensureBonded(onBonding = { _state.value = TransportState.Bonding })
                 _state.value = TransportState.Connecting
@@ -262,6 +287,28 @@ public class BleTransport(
     }
 
     /**
+     * Resolves a deferred peripheral once; a later connect reuses it. Fails if [disconnect] ran
+     * since this connect began as [generation], so a late resolution never opens a link.
+     */
+    private suspend fun ensurePeripheral(generation: Int) {
+        if (resolvedPeripheral.value == null) resolvePeripheralOnce()
+        if (connectGeneration.value != generation) {
+            throw CancellationException("BleTransport disconnected during connect")
+        }
+    }
+
+    private suspend fun resolvePeripheralOnce() {
+        val resolve = checkNotNull(resolvePeripheral) { "BleTransport has neither a peripheral nor a resolver" }
+        val resolved = resolve()
+        resolvedPeripheral.value = resolved
+        if (shuttingDown.value) {
+            // shutdown() may have run before the store, when it had nothing to close.
+            if (resolvedPeripheral.compareAndSet(resolved, null)) resolved.close()
+            throw CancellationException("BleTransport shut down during connect")
+        }
+    }
+
+    /**
      * Encrypted warmup read with bonding-aware retry. Publishes [TransportState.Bonding]
      * on auth failure so UIs can hint. Returns null if link dropped.
      */
@@ -321,6 +368,7 @@ public class BleTransport(
         // Arm the error guard before publishing Disconnected, not after: a child failing in the
         // window between the two would otherwise overwrite Disconnected with Error.
         errorPublished.value = true
+        connectGeneration.incrementAndGet()
         _state.value = TransportState.Disconnected
         warmupComplete.value = false
         cancelJobs()
@@ -437,7 +485,7 @@ public class BleTransport(
         coordinator = null
         scope.cancel()
         frameChannel.close()
-        if (ownsPeripheral) peripheral.close()
+        if (ownsPeripheral) resolvedPeripheral.getAndSet(null)?.close()
     }
 
     /** Cancel tracked jobs. Used by [disconnect]. */

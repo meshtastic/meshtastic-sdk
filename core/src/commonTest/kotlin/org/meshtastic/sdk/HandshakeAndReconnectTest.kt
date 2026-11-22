@@ -11,11 +11,11 @@ import app.cash.turbine.test
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
@@ -348,16 +348,18 @@ class HandshakeAndReconnectTest {
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
         val stage2StartedAt = currentTime
 
-        advanceTimeBy(STAGE2_PROGRESS_TICK_MS - 1_000L)
+        // A frame inside every progress tick, so only the cap can end the stage.
+        val pumpInterval = STAGE2_PROGRESS_TICK_MS - 1_000L
+        var node = 0x2000
+        while (currentTime - stage2StartedAt + pumpInterval < STAGE2_HARD_CAP_MS) {
+            advanceTimeBy(pumpInterval)
+            runCurrent()
+            transport.injectStage2Progress(node = node++)
+            runCurrent()
+        }
+        advanceTimeBy(STAGE2_HARD_CAP_MS - (currentTime - stage2StartedAt) - 1)
         runCurrent()
-        transport.injectStage2Progress(node = 0x2001)
-        runCurrent()
-
-        advanceTimeBy(STAGE2_PROGRESS_TICK_MS - 1_000L)
-        runCurrent()
-        transport.injectStage2Progress(node = 0x2002)
-        runCurrent()
-        assertFalse(connectJob.isCompleted)
+        assertFalse(connectJob.isCompleted, "a chatty Stage 2 must run to the cap")
 
         advanceTimeBy(2_000L)
         runCurrent()
@@ -1886,9 +1888,13 @@ class HandshakeAndReconnectTest {
             inbound
         } else {
             val failure = readerFailure
-            channelFlow {
-                launch { throw failure.await() }
-                inbound.collect { send(it) }
+            // Subscribes to inbound as soon as the engine collects, so the reply to the single
+            // want_config_id is not lost to a dispatched channelFlow producer.
+            flow {
+                coroutineScope {
+                    launch { throw failure.await() }
+                    inbound.collect { emit(it) }
+                }
             }
         }
 
@@ -2084,7 +2090,9 @@ class HandshakeAndReconnectTest {
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L
-        const val STAGE2_HARD_CAP_MS = 60_000L
+
+        // Android: 60 s Stage 2 budget x STAGE_GUARD_TOTAL_CAP_FACTOR 10 (MeshConnectionManagerImpl).
+        const val STAGE2_HARD_CAP_MS = 600_000L
         val SEEDED_PASSKEY = byteArrayOf(1, 2, 3, 4)
         val REMOTE_PASSKEY = byteArrayOf(9, 8, 7, 6)
         val PASSKEY_A = byteArrayOf(10, 11, 12, 13)

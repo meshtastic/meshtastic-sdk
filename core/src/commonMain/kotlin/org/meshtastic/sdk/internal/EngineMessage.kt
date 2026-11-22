@@ -220,14 +220,6 @@ internal sealed interface EngineMessage {
     data class PendingResponseTimeout(val requestId: Int) : EngineMessage
 
     /**
-     * P1-3: Stage 1 want_config_id retry tick. Fires once at `STAGE1_RETRY_MS` after the
-     * initial want_config_id was sent. If the engine is still in
-     * [HandshakeStage.Stage1Draining] with no `pendingMyInfo` observed, the engine re-sends
-     * `want_config_id = NONCE_STAGE1` once before the original 20 s budget runs out.
-     */
-    data class Stage1RetryWantConfig(val attempt: Long) : EngineMessage
-
-    /**
      * Per-send ACK timeout fired (R-P0-6). Posted by the engine after the configured
      * `sendTimeout` elapses with no `Routing` ACK observed for [id]. The handler transitions
      * the in-flight handle to `SendState.Failed(SendFailure.AckTimeout)` if it is still

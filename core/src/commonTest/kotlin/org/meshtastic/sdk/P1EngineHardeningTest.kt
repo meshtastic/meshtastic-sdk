@@ -53,7 +53,7 @@ class P1EngineHardeningTest {
         const val STAGE1_NONCE = 69420
         const val STAGE2_NONCE = 69421
         const val STAGE2_PROGRESS_TICK_MS = 30_000L
-        const val STAGE2_HARD_CAP_MS = 120_000L
+        const val STAGE2_HARD_CAP_MS = 600_000L
     }
 
     // ── P1-3: duplicate routing ACK is ignored ──────────────────────────────
@@ -224,8 +224,8 @@ class P1EngineHardeningTest {
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
 
         // Pump 2 progress frames spaced just under the tick — total elapsed ≈ 2 * 29s = 58s,
-        // already well past a single sliding tick (30s) but under the hard cap (60s, audit
-        // P2-4). With sliding timeout it must NOT fire because each tick sees fresh progress.
+        // already well past a single sliding tick (30s) but under the hard cap (600 s, Android 10 x its
+        // 60 s Stage 2 budget). With sliding timeout it must NOT fire because each tick sees fresh progress.
         val pumpInterval = STAGE2_PROGRESS_TICK_MS - 1_000L
         repeat(2) { i ->
             advanceTimeBy(pumpInterval)
