@@ -264,6 +264,9 @@ internal class MeshEngine(
     // Firmware before 2.8.1 renumbers without resending my_info. A write to our old number then fails
     // PKI_SEND_FAIL_PUBLIC_KEY and is held for the NAK that names the new one.
     private var staleNumberWrite: EngineMessage.PacedSend? = null
+
+    // The first region set, run by the device (QueueStatus 0) and never acked: the number moved under it.
+    private var regionWrite: EngineMessage.PacedSend? = null
     private var silentRenumberProbe: Job? = null
 
     // Command admission captures the exact physical link and node id before posting to the actor.
@@ -815,6 +818,7 @@ internal class MeshEngine(
         renumberedTo = null
         heldRenumberAck = null
         staleNumberWrite = null
+        regionWrite = null
         configBundleState.value = null
         channelsState.value = null
 
@@ -945,16 +949,18 @@ internal class MeshEngine(
         }
         val requestId = if (chosenId != 0) chosenId else allocateFreeWireId()
         val packet = if (chosenId != 0) msg.packet else msg.packet.newBuilder().also { it.id = requestId }.build()
+        // Between a renumber and the restart, the device answers only to its new number.
+        val sent = retargetRenumbered(packet)
         // Register before sending so a fast device reply can never race the registration.
         val expectedSender = when {
-            packet.decoded?.portnum == PortNum.ADMIN_APP -> packet.to.takeIf { it != 0 } ?: myNodeNum
-            msg.kind.answeredByTarget -> packet.to
+            sent.decoded?.portnum == PortNum.ADMIN_APP -> sent.to.takeIf { it != 0 } ?: myNodeNum
+            msg.kind.answeredByTarget -> sent.to
             else -> null
         }
         dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = expectedSender)
-        rememberAdminRequest(packet)
+        rememberAdminRequest(sent)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
-        val outboundPacket = prepareOutboundAdminPacket(packet)
+        val outboundPacket = retargetRenumbered(prepareOutboundAdminPacket(packet))
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = outboundPacket
@@ -1997,7 +2003,9 @@ internal class MeshEngine(
      * encryption: PKI, or the legacy admin channel's PSK, the two paths firmware accepts remote admin on.
      */
     private fun isAuthenticatedAdminReply(packet: MeshPacket): Boolean {
-        if (packet.from == 0 || packet.from == myNodeNum || packet.pki_encrypted) return true
+        if (packet.from == 0 || packet.from == myNodeNum || packet.from == renumberedTo || packet.pki_encrypted) {
+            return true
+        }
         val adminIndex = adminChannelIndex()
         return adminIndex != null && packet.channel == adminIndex
     }
@@ -3000,6 +3008,7 @@ internal class MeshEngine(
         renumberedTo = null
         heldRenumberAck = null
         staleNumberWrite = null
+        regionWrite = null
         renumberRestartJob?.cancel()
         renumberRestartJob = null
         silentRenumberProbe?.cancel()
@@ -3018,6 +3027,9 @@ internal class MeshEngine(
             held.receipt.complete(QueueReceipt.Accepted)
             releaseQueueWrite(held)
         }
+        // The device ran the region write before its QueueStatus 0 and, having moved, never acks it.
+        regionWrite?.takeIf { pacedSends[it.id] === it }?.let { finishPaced(it, SendState.Acked) }
+        regionWrite = null
         // Queued writes, a batch commit among them, still go out, addressed to the new number.
         pumpPacedQueue()
         maybeRestartForRenumber()
@@ -3235,12 +3247,22 @@ internal class MeshEngine(
 
     private fun handlePacedQueueStatus(send: EngineMessage.PacedSend, result: Int) {
         // Router::send refuses a destination it holds no key for and NAKs from the device's current
-        // number (abortSendAndNak). For our own number that means it moved, so keep the queue held for it.
-        if (result == PKI_SEND_FAIL_PUBLIC_KEY && send.packet.to == myNodeNum && renumberedTo == null) {
-            staleNumberWrite = send
+        // number (abortSendAndNak). For our own number that means it moved: resend to the new number,
+        // or hold the queue until that NAK names it.
+        if (result == PKI_SEND_FAIL_PUBLIC_KEY && send.packet.to == myNodeNum) {
+            val moved = renumberedTo
+            if (moved != null) resendToRenumbered(send, moved) else staleNumberWrite = send
             return
         }
-        if (result == 0 && send.expectsRouting() && renumberedTo == null && isFirstRegionSet(send.packet)) {
+        if (result == 0 && send.expectsRouting() && isFirstRegionSet(send.packet)) {
+            if (renumberedTo != null) {
+                finishPaced(send, SendState.Acked)
+                send.receipt.complete(QueueReceipt.Accepted)
+                releaseQueueWrite(send)
+                pumpPacedQueue()
+                return
+            }
+            regionWrite = send
             silentRenumberProbe?.cancel()
             silentRenumberProbe = engineScope?.launch {
                 delay(SILENT_RENUMBER_MS)
@@ -3331,6 +3353,7 @@ internal class MeshEngine(
     // the write moved its number (ReliableRouter::sniffReceived checks isToUs). Without an ack or my_info the
     // write applied and the number moved silently.
     private fun handleSilentRenumberProbe(send: EngineMessage.PacedSend) {
+        if (regionWrite === send) regionWrite = null
         if (pacedSends[send.id] !== send || send.state.value != SendState.Sent || renumberedTo != null) return
         if (handshakeStage != HandshakeStage.Ready) return
         logger.info(TAG) { "First region set settled without an ack or my_info; restarting the handshake" }

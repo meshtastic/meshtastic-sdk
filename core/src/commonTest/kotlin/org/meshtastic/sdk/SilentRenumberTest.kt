@@ -20,6 +20,7 @@ import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.Routing
@@ -34,8 +35,8 @@ import kotlin.test.assertTrue
 
 /**
  * Firmware 2.8.0 moves `my_node_num` to `crc32(public_key)` inside the first region set
- * (`AdminModule::handleSetConfig`, `NodeDB::createNewIdentity`) and resends no `my_info`; that
- * landed in 2.8.1. The write gets QueueStatus 0 and no ack, because `ReliableRouter::sniffReceived`
+ * (`AdminModule::handleSetConfig`, `NodeDB::createNewIdentity`) and resends no `my_info`; 2.8.1
+ * resends it, but the edit's commit may already have left for the old number. The write gets QueueStatus 0 and no ack, because `ReliableRouter::sniffReceived`
  * then finds the packet no longer addressed to the node. A later write to the old number fails
  * `PKI_SEND_FAIL_PUBLIC_KEY`, as QueueStatus and as a NAK from the new number to itself
  * (`Router::send`, `abortSendAndNak`).
@@ -66,31 +67,13 @@ class SilentRenumberTest {
     fun aCommitRefusedForTheOldNumberIsResentToTheNumberItsNakNames() = runTest {
         val (transport, client, events) = connected(autoQueueStatus = false)
         val edit = async { client.admin.editSettings { setConfig(regionUs) } }
-        runCurrent()
-        val begin = lastAdminWrite(transport)
-        transport.queueStatus(begin.id, 0)
-        transport.injectRoutingAck(begin.id, fromNode = LOCAL)
-        runCurrent()
-        val set = lastAdminWrite(transport)
-        assertTrue(admin(set).set_config != null)
-        transport.queueStatus(set.id, 0)
-        runCurrent()
+        val commit = beginAndSetUnacked(transport)
 
-        val commit = lastAdminWrite(transport)
-        assertEquals(true, admin(commit).commit_edit_settings)
         transport.queueStatus(commit.id, PKI_SEND_FAIL_PUBLIC_KEY)
         transport.injectPacket(selfNak(commit.id))
         runCurrent()
 
-        val resend = lastAdminWrite(transport)
-        assertEquals(true, admin(resend).commit_edit_settings)
-        assertNotEquals(commit.id, resend.id, "firmware drops a phone packet id it has seen")
-        assertEquals(RENUMBERED, resend.to)
-        transport.nodeNum = RENUMBERED
-        transport.queueStatus(resend.id, 0)
-        transport.injectRoutingAck(resend.id, fromNode = RENUMBERED)
-        runCurrent()
-
+        ackResentCommit(transport, commit)
         assertIs<AdminResult.Success<Unit>>(edit.await())
         advanceTimeBy(5_000)
         runCurrent()
@@ -99,18 +82,108 @@ class SilentRenumberTest {
         client.disconnect()
     }
 
+    @Test
+    fun aReadBeforeTheRestartGoesToTheNewNumber() = runTest {
+        val (transport, client, _) = connected(autoQueueStatus = false)
+        val edit = async { client.admin.editSettings { setConfig(regionUs) } }
+        val commit = beginAndSetUnacked(transport)
+        transport.queueStatus(commit.id, PKI_SEND_FAIL_PUBLIC_KEY)
+        transport.injectPacket(selfNak(commit.id))
+        runCurrent()
+        ackResentCommit(transport, commit)
+        assertIs<AdminResult.Success<Unit>>(edit.await())
+
+        // A caller reading back its write inside the restart's settle window.
+        val read = async { client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG) }
+        runCurrent()
+        val get = lastAdminWrite(transport)
+        assertEquals(RENUMBERED, get.to, "the old number answers only PKI_SEND_FAIL_PUBLIC_KEY")
+        transport.injectAdminResponse(get.id, loraResponse(), fromNode = RENUMBERED, pkiEncrypted = false)
+        runCurrent()
+
+        assertIs<AdminResult.Success<Config>>(read.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun aCommitRefusedAfterMyInfoNamedTheNewNumberIsResentBeforeTheRestart() = runTest {
+        val (transport, client, events) = connected(autoQueueStatus = false)
+        // Bench, 2.8.3: the commit leaves for the old number before my_info names the new one.
+        val edit = async { client.admin.editSettings { setConfig(regionUs) } }
+        val commit = beginAndSetUnacked(transport)
+        advanceTimeBy(3_800)
+        transport.nodeNum = RENUMBERED
+        transport.injectFrame(myInfo(RENUMBERED))
+        runCurrent()
+        advanceTimeBy(86)
+        transport.queueStatus(commit.id, PKI_SEND_FAIL_PUBLIC_KEY)
+        transport.injectPacket(selfNak(commit.id))
+        runCurrent()
+        advanceTimeBy(1_500)
+        runCurrent()
+        assertEquals(1, stage1Requests(transport), "the restart did not wait for the resent commit")
+
+        ackResentCommit(transport, commit)
+        assertIs<AdminResult.Success<Unit>>(edit.await())
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertEquals(2, stage1Requests(transport), "a fresh Stage 1 on the same link")
+        assertEquals(RENUMBERED, events.filterIsInstance<RadioSessionEvent.Ready>().last().myInfo?.my_node_num)
+        client.disconnect()
+    }
+
+    // begin_edit acked from the old number, set_config run with no ack: returns the commit, sent to the old number.
+    private fun TestScope.beginAndSetUnacked(transport: FakeRadioTransport): MeshPacket {
+        runCurrent()
+        val begin = lastAdminWrite(transport)
+        assertEquals(true, admin(begin).begin_edit_settings)
+        transport.queueStatus(begin.id, 0)
+        transport.injectPacket(ack(begin.id, LOCAL))
+        runCurrent()
+        val set = lastAdminWrite(transport)
+        assertTrue(admin(set).set_config != null)
+        transport.queueStatus(set.id, 0)
+        runCurrent()
+        val commit = lastAdminWrite(transport)
+        assertEquals(true, admin(commit).commit_edit_settings)
+        assertEquals(LOCAL, commit.to)
+        return commit
+    }
+
+    private fun TestScope.ackResentCommit(transport: FakeRadioTransport, commit: MeshPacket) {
+        val resend = lastAdminWrite(transport)
+        assertEquals(true, admin(resend).commit_edit_settings)
+        assertNotEquals(commit.id, resend.id, "firmware drops a phone packet id it has seen")
+        assertEquals(RENUMBERED, resend.to)
+        transport.nodeNum = RENUMBERED
+        transport.queueStatus(resend.id, 0)
+        transport.injectPacket(ack(resend.id, RENUMBERED))
+        runCurrent()
+    }
+
+    private fun myInfo(num: Int) = FromRadio.Builder().also { wb ->
+        wb.my_info = MyNodeInfo.Builder().also { it.my_node_num = num }.build()
+    }.build().toFrame()
+
+    // RoutingModule::sendAckNak: an ack to the phone travels from and to the node's current number.
+    private fun ack(requestId: Int, node: Int): MeshPacket = routing(requestId, node, Routing.Error.NONE)
+
+    private fun loraResponse() = AdminMessage.Builder().also { wb -> wb.get_config_response = regionUs }.build()
+
     private fun admin(packet: MeshPacket): AdminMessage = AdminMessage.ADAPTER.decode(packet.decoded!!.payload)
 
     // abortSendAndNak: from and to are both the number the device now holds.
-    private fun selfNak(requestId: Int): MeshPacket = MeshPacket.Builder().also { wb ->
-        wb.from = RENUMBERED
-        wb.to = RENUMBERED
+    private fun selfNak(requestId: Int): MeshPacket =
+        routing(requestId, RENUMBERED, Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY)
+
+    private fun routing(requestId: Int, node: Int, error: Routing.Error): MeshPacket = MeshPacket.Builder().also { wb ->
+        wb.from = node
+        wb.to = node
         wb.decoded = Data.Builder().also { d ->
             d.portnum = PortNum.ROUTING_APP
             d.request_id = requestId
-            d.payload = Routing.ADAPTER.encode(
-                Routing.Builder().also { it.error_reason = Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY }.build(),
-            ).toByteString()
+            d.payload =
+                Routing.ADAPTER.encode(Routing.Builder().also { it.error_reason = error }.build()).toByteString()
         }.build()
     }.build()
 
