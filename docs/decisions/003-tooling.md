@@ -1,10 +1,10 @@
 # ADR 003 — Tooling stack
 
-**Status:** Accepted
+**Status:** Accepted; superseded in part by [ADR-017](017-web-targets.md) (web targets)
 **Date:** 2026-04-17
 **Deciders:** SDK leads
 **Supersedes:** none
-**Related:** [`../SPEC.md`](../SPEC.md) §5, ADR-000 (charter), ADR-001 (proto choice), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../versioning.md`](../versioning.md) (SemVer, ABI, release policy — authoritative source), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (sibling KMP library)
+**Related:** [`../ci-cd.md`](../ci-cd.md), ADR-000 (charter), ADR-001 (proto choice), [ADR-015](015-consume-published-protobufs-artifact.md) (proto sourcing), [`../versioning.md`](../versioning.md) (SemVer, ABI, release policy; the authoritative source), [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) (sibling KMP library)
 
 ---
 
@@ -21,6 +21,8 @@
 - Storage abstraction with at least one production-grade implementation.
 - Test, build, and release tooling that matches the rest of the org.
 
+> **Superseded by [ADR-017](017-web-targets.md):** `js` and `wasmJs` are shipped targets on `:core`, `:testing` and `:transport-websocket`, running the engine in-process rather than as an RPC client.
+
 The org already publishes a sibling KMP library — [`meshtastic/mqtt-client`](https://github.com/meshtastic/mqtt-client) — which establishes a working stack. Where that stack fits, we adopt it unchanged.
 
 ## Decision
@@ -36,6 +38,8 @@ The locked stack, recorded in `gradle/libs.versions.toml` from Phase 0:
 | **JDK toolchain** | 21 (`org.gradle.java.installations.fromEnv` accepted) | JVM target bytecode: 17 |
 | **Android Gradle Plugin** | latest stable | Android compileSdk = latest stable; minSdk = 26 |
 | **Convention plugins** | `build-logic/convention/` (precompiled script plugins) | Single source of truth for KMP target setup, publishing, Dokka, lint config |
+
+> **Note:** the wrapper is on Gradle 9 (`gradle/wrapper/gradle-wrapper.properties`), and the convention plugins are Kotlin classes in `build-logic/convention/src/main/kotlin/`, not precompiled script plugins.
 
 ### Codegen & wire format
 
@@ -79,12 +83,16 @@ These are designed-but-deferred; the table is informational so the MVP decisions
 | `transport-mqtt-proxy` | `org.meshtastic:mqtt-client` | all | *device-as-MQTT-proxy* mode (`protocol.md` §14); side-channel, NOT a `RadioTransport`. Phase 6. |
 | `transport-rpc` | Ktor client (WS) | all incl. wasmJs | The wasm client path: connects to a JVM `host-rpc-server` that owns the radio. |
 
+> **Superseded in part by [ADR-017](017-web-targets.md):** the web path is `transport-websocket` (Ktor client; android, jvm, ios, js, wasmJs) straight to the node's WebSocket phone API. `transport-rpc` stays on the roadmap for nodes a browser cannot reach.
+
 ### Storage
 
 | Module | Library | Targets |
 |---|---|---|
 | `storage-sqldelight` | **SQLDelight** | android, jvm, ios |
 | `:testing` | in-process `InMemoryStorage` | all |
+
+> **Note:** `InMemoryStorage` and `InMemoryStorageProvider` live in `:core`; the `:testing` names are deprecated aliases. Neither is a default: `Builder.storage(...)` stays required.
 
 > A future `storage-okio-files` module is sketched in the roadmap but not part of MVP — SQLDelight covers every supported target today.
 
@@ -103,6 +111,8 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 | **Dokka 2.x** | API docs. Coverage gate from Phase 5. |
 | **Compose previews / sample apps** | Manual smoke (`samples/cli`, `samples/parity-app`, `samples/parity-android-app`). |
 
+> **Note:** neither MockK nor `kotest-property` is a dependency; tests use the `:testing` fakes, Kotest assertions, Turbine and the power-assert plugin.
+
 ### Lint & format
 
 | Tool | Notes |
@@ -111,6 +121,8 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 | **ktfmt (Kotlinlang style)** | Single style across the org. Pre-commit and CI gate. |
 | **EditorConfig** | committed `.editorconfig`. |
 
+> **Note:** formatting is Spotless with ktlint and `config/spotless/license-header.txt`, matching MQTTastic, not ktfmt.
+
 ### Release
 
 | Tool | Notes |
@@ -118,6 +130,8 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 | **`pl.allegro.tech.build.axion-release`** | Git-tag-driven SemVer. Releases via `./gradlew release`. |
 | **Vanniktech `gradle-maven-publish-plugin`** | Publishes direct to **Sonatype Central Portal** (`publishAndReleaseToMavenCentral`); GPG-signed via in-memory key. Replaces the OSSRH staging-repo dance — no separate `gradle-nexus-publish-plugin` and no `closeAndReleaseSonatypeStagingRepository` step. Same plugin used by sibling `mqtt-client`. See [`../versioning.md`](../versioning.md) and [`../ci-cd.md`](../ci-cd.md) for credentials and workflow. |
 | **KMMBridge** | iOS XCFramework + sibling SPM repo (`meshtastic/meshtastic-sdk-spm`); see [ADR-007](./007-ios-distribution.md). |
+
+> **Note:** KMMBridge is pinned in `gradle/libs.versions.toml` but not wired; no XCFramework or SPM package is published (see the note in ADR-007).
 
 ### CI
 
@@ -146,3 +160,4 @@ Storage is **required** at `Builder.build()` time — no in-memory default in `:
 - **Two ByteString types in the codebase** (kotlinx-io public, Okio internal). Reviewers must keep public surface kotlinx-io. KGP `checkKotlinAbi` plus detekt's `ForbiddenImport` covers the `:core` public symbols.
   > **Superseded (0.2.0):** There is now **one** ByteString type — `okio.ByteString` everywhere, public and internal; `kotlinx-io` was removed entirely. The detekt `ForbiddenImport` rules now ban `kotlinx.io.*` imports instead (rule added in 0.2.0).
 - **`wasmJs` is post-1.0.** ADR-006 details the MVP per-target matrix and the future wasm posture.
+  > **Superseded by [ADR-017](017-web-targets.md):** `:core`, `:testing` and `:transport-websocket` publish `js` and `wasmJs` klibs, and a web host runs the engine in-process over `transport-websocket`.

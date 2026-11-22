@@ -51,7 +51,11 @@ public sealed class MeshtasticException(message: String, cause: Throwable?) : Ex
     public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null) :
         MeshtasticException(message, cause)
 
-    /** Device reports a firmware version incompatible with this SDK. */
+    /**
+     * Device firmware is below [DeviceVersion.ABS_MIN_SUPPORTED], which blocks the connect.
+     * `required` and `present` are [DeviceVersion.asInt] values. Firmware between
+     * [DeviceVersion.ABS_MIN_SUPPORTED] and [DeviceVersion.MIN_SUPPORTED] only warns.
+     */
     public class FirmwareTooOld(public val required: Int, public val present: Int) :
         MeshtasticException("Firmware requires newer client (need $required, have $present)", null)
 

@@ -1,27 +1,22 @@
 <!--
 === Sync Impact Report ===
-Version change: 0.0.0 (template) → 1.0.0 (initial ratification)
-Bump rationale: MAJOR — first ratification of project constitution;
-  no prior version existed.
+Version change: 1.0.0 → 2.0.0
+Bump rationale: MAJOR. Principle II redefines how protobuf types
+  are sourced (published artifact per ADR-015, not a vendored
+  submodule), which a change compliant with 1.0.0 would violate.
 
-Modified principles: N/A (initial creation)
+Modified principles:
+  - I: the canonical target set adds js and wasmJs for :core,
+    :testing and :transport-websocket (ADR-017).
+  - II: protobuf types come from org.meshtastic:protobufs; the
+    device, not the SDK, decrypts mesh traffic.
+  - IV: :core depends only on the protobufs artifact; transports
+    implement RadioTransport; WebSocket joins the transport list.
+  - V: breaking changes are recorded as changelog.d fragments.
 
-Added sections:
-  - Core Principles (5 principles derived from project charter,
-    versioning policy, and contributing guide)
-  - Technology Constraints
-  - Development Workflow
-  - Governance
-
-Removed sections: N/A
-
-Templates requiring updates:
-  - .specify/templates/plan-template.md ✅ no update needed
-    (Constitution Check section is generic; gates derive at plan time)
-  - .specify/templates/spec-template.md ✅ no update needed
-    (requirements/scenarios structure is principle-compatible)
-  - .specify/templates/tasks-template.md ✅ no update needed
-    (phase structure supports test-first and modular task types)
+Other changes: Technology Constraints and Development Workflow
+  match the above; documentation duty is KDoc plus the ABI dumps;
+  Spec Kit lifecycle references removed with its scaffolding.
 
 Follow-up TODOs: none
 ===========================
@@ -44,7 +39,9 @@ All published modules MUST compile for the canonical target set
 (`jvm`, `androidTarget`, `iosArm64`, `iosX64`,
 `iosSimulatorArm64`) unless a transport has no platform API on a
 given target (e.g., USB-serial on iOS), in which case an empty
-actual is acceptable.
+actual is acceptable. `:core`, `:testing` and
+`:transport-websocket` MUST also compile for `js` and `wasmJs`,
+where a web host runs the engine in-process (ADR-017).
 
 **Rationale**: A single canonical KMP implementation prevents
 protocol fragmentation across the Meshtastic ecosystem and allows
@@ -58,13 +55,15 @@ The SDK's wire-protocol implementation MUST match the behavior of
 (`Meshtastic-Android`) and Apple (`Meshtastic-Apple`) clients
 disagree, firmware behavior is authoritative.
 
-- Protobuf types MUST be generated from the vendored
-  `meshtastic/protobufs` submodule via Wire. No manual proto
-  modifications are permitted; bumping the submodule is the only
-  mechanism by which new fields or port numbers land.
+- Protobuf types MUST come from the published
+  `org.meshtastic:protobufs` artifact, pinned in
+  `gradle/libs.versions.toml` (ADR-015). There is no submodule and
+  no in-tree proto module; bumping the pin is the only mechanism
+  by which new fields or port numbers land.
 - Handshake state machines, channel encryption, NodeDB semantics,
-  ACK correlation, and deferred-decrypt logic MUST be documented
-  in `docs/protocol.md` and tested against device behavior.
+  ACK correlation, and the handling of packets the device could not
+  decrypt MUST be documented in `docs/protocol.md` and tested
+  against device behavior.
 
 **Rationale**: Protocol correctness is the SDK's entire value
 proposition. Divergence from firmware causes silent data corruption
@@ -97,15 +96,16 @@ versioned.
 
 The SDK MUST maintain a strict module boundary:
 
-- **`:core`** — pure protocol engine with zero platform
-  dependencies beyond `:proto`.
-- **`:transport-*`** — one module per transport (BLE, TCP,
-  serial). Each MUST implement the `Transport` interface and be
-  independently consumable.
-- **`:storage-*`** — pluggable persistence via the
+- **`:core`**: pure protocol engine with no project
+  dependency; its only proto dependency is the published
+  `org.meshtastic:protobufs` artifact.
+- **`:transport-*`**: one module per transport (BLE, TCP,
+  serial, WebSocket). Each MUST implement the `RadioTransport`
+  interface and be independently consumable.
+- **`:storage-*`**: pluggable persistence via the
   `StorageProvider` interface. The SDK ships
   `:storage-sqldelight` as a default but MUST NOT require it.
-- **`:testing`** — in-memory fakes and `TestClock` for consumer
+- **`:testing`**: in-memory fakes and `TestClock` for consumer
   test suites.
 
 Module boundaries are enforced by
@@ -124,8 +124,9 @@ The SDK follows strict SemVer (`MAJOR.MINOR.PATCH`) derived
 from annotated git tags (`vX.Y.Z`):
 
 - **Pre-1.0**: Breaking changes are allowed between MINOR
-  versions but MUST bump MINOR, regenerate `api/*.api`, add a
-  `### Breaking` section to `CHANGELOG.md`, and be flagged as
+  versions but MUST bump MINOR, regenerate the ABI dumps, add a
+  `changelog.d/<pr>.breaking.md` fragment (folded into
+  `### Breaking` by `scripts/changelog.sh`), and be flagged as
   `**BREAKING**` in release notes.
 - **Post-1.0**: No breaking change in any non-MAJOR release.
   Sealed-class additions and new `MeshtasticException` subtypes
@@ -142,10 +143,12 @@ breakage and communicates intent clearly.
 
 - **Language**: Kotlin (version aligned with `mqtt-client` house
   style); JDK 21 toolchain, JDK 17 bytecode target.
-- **Protobuf**: Wire 6 code generation from the vendored
-  `meshtastic/protobufs` submodule. No manual proto edits.
-- **Networking**: `ktor-network` (TCP), Kable (BLE),
-  jSerialComm / usb-serial-for-android (serial).
+- **Protobuf**: Wire-generated types from the published
+  `org.meshtastic:protobufs` artifact (ADR-015). No manual proto
+  edits.
+- **Networking**: `ktor-network` (TCP), Ktor client WebSockets
+  (WebSocket), Kable (BLE), jSerialComm / usb-serial-for-android
+  (serial).
 - **Storage**: SQLDelight (default adapter); interface-based so
   consumers may substitute.
 - **Build**: Gradle with convention plugins in `build-logic/`;
@@ -171,9 +174,10 @@ breakage and communicates intent clearly.
 - **Code review**: At least one maintainer approval required.
   Reviewers MUST verify constitution compliance — particularly
   module-boundary and breaking-change rules.
-- **Documentation**: Public API changes MUST update
-  `docs/api-reference.md` and relevant Dokka KDoc. Protocol
-  changes MUST update `docs/protocol.md`.
+- **Documentation**: Public API changes MUST carry KDoc and
+  commit the regenerated ABI dumps (`updateKotlinAbi`, checked by
+  `checkKotlinAbi`). Protocol changes MUST update
+  `docs/protocol.md`.
 - **Branching**: Feature branches off `main`; squash-merge
   preferred.
 
@@ -192,11 +196,9 @@ local conventions, and ad-hoc decisions.
   materially expanded guidance; PATCH for clarifications and
   typo fixes.
 - **Compliance review**: Every PR review MUST include a
-  constitution-compliance check. The plan template's
-  "Constitution Check" section operationalizes this for feature
-  work.
+  constitution-compliance check.
 - **Runtime guidance**: Consult `docs/` (especially
   `docs/decisions/` ADRs) for implementation-level guidance that
   supplements but does not override these principles.
 
-**Version**: 1.0.0 | **Ratified**: 2026-05-09 | **Last Amended**: 2026-05-09
+**Version**: 2.0.0 | **Ratified**: 2026-05-09 | **Last Amended**: 2026-11-20

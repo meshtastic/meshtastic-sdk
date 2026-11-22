@@ -50,6 +50,8 @@ include(":samples:parity-android-app")
 include(":transport-ble")
 // Phase 4: USB / native serial transport (jvm + android via jSerialComm).
 include(":transport-serial")
+// WebSocket transport for firmware's WebSocket phone API (Ktor client).
+include(":transport-websocket")
 // Bill-of-Materials: pins all radio-client-* artifacts to one version.
 include(":bom")
 

@@ -59,9 +59,9 @@ public value class TransportIdentity(public val raw: String) {
 /**
  * Specification of which radio to connect to and how.
  *
- * The SDK supports multiple transports (BLE, TCP, HTTP, serial) depending on the target platform.
- * Each transport implementation provides its own constructor; consumers pick the matching
- * [TransportSpec] for their platform and pass it to [RadioClient.Builder.transport].
+ * A [TransportSpec] only derives a [TransportIdentity]; it opens nothing. A host builds the
+ * [RadioTransport] with the transport module's own constructor and passes that instance to
+ * [RadioClient.Builder.transport]. No HTTP transport ships for [Http].
  *
  * @since 0.1.0
  */
@@ -179,6 +179,17 @@ public interface RadioTransport {
     public val identity: TransportIdentity
 
     /**
+     * True when firmware takes this link down inside the handler of a restart-class admin command,
+     * before it can answer. Firmware calls `disableBluetooth()` there, so only BLE links set this.
+     * The SDK then counts such a command to the connected node as applied once this transport has
+     * written it and the link drops.
+     *
+     * @since 0.3.0
+     */
+    public val linkDropsOnRestartCommands: Boolean
+        get() = false
+
+    /**
      * Initiate connection. May throw [MeshtasticException.Transport] on fatal errors.
      *
      * The transport should transition [state] to [TransportState.Connecting], then
@@ -224,7 +235,9 @@ public interface RadioTransport {
     /**
      * Observe inbound framed packets.
      *
-     * Returns a cold flow that the SDK collects exactly once (at engine startup).
+     * The SDK calls this and collects the result once per successful [connect], including each
+     * auto-reconnect, and cancels that collection before the next [connect]. Return a flow for
+     * the current link on every call; a single shared `consumeAsFlow()` fails on reconnect.
      * Each element is a complete frame as received from the device.
      *
      * The SDK handles frame buffering, overflow, and backpressure; transports should emit

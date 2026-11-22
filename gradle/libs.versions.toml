@@ -3,7 +3,7 @@
 [versions]
 # --- Kotlin & build ---
 kotlin                      = "2.4.10"
-agp                         = "9.5.1"
+agp                         = "9.5.2"
 javaVersion                 = "21"               # toolchain
 jvmTarget                   = "17"               # published bytecode and JDK API level
 androidMinSdk               = "26"
@@ -11,14 +11,15 @@ androidCompileSdk           = "37"
 androidTargetSdk            = "37"
 
 # --- Coroutines / IO / time ---
-coroutines                  = "1.11.0"            # compile floor: hosts whose runtime pins 1.8.x (ATAK plugins) load bytecode built against it; Gradle resolves consumers' newer pins
+coroutines                  = "1.8.1"            # compile floor so 1.8.x runtimes (ATAK plugins) load :core, :storage-sqldelight, :transport-serial; Ktor and Kable lift tcp/websocket/ble to 1.11; Renovate holds it
+coroutinesTest              = "1.11.0"           # test-only, so not under the floor; 1.8's wasm runTest needs an interop opt-in on Kotlin 2.4
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
 atomicfu                    = "0.33.0"
 okio                        = "3.18.2"
 
 # --- Protobuf / Wire ---
-wire                        = "7.2.1"            # wire-runtime version (transitive via protobufs SDK)
-meshtasticProtobufs         = "2.8.2"
+wire                        = "7.2.2"            # wire-runtime version (transitive via protobufs SDK)
+meshtasticProtobufs         = "2.8.3"
 
 # --- Storage ---
 sqldelight                  = "2.4.1"
@@ -28,11 +29,13 @@ sqliteWasm                  = "3.51.2-build9"
 kable                       = "0.45.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
 ktor                        = "3.6.1"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
+jmdns                       = "3.6.5"            # Apache-2.0; JVM mDNS discovery in transport-tcp, matches Meshtastic-Android
 usbSerialForAndroid         = "3.12.0"           # JitPack only; compileOnly in transport-serial, matches Meshtastic-Android
 
 # --- TUI (samples/cli) ---
 mosaic                      = "0.18.0"
-clikt                       = "5.1.0"
+clikt                       = "5.2.1"
+mcpKotlinSdk                = "0.16.0"           # samples/cli `mcp` subcommand only
 
 # --- Compose Multiplatform (samples/parity-app) ---
 composeMultiplatform        = "1.12.2"
@@ -61,13 +64,13 @@ ktlint                      = "1.8.0"
 spotless                    = "8.11.0"
 detekt                      = "2.0.0-alpha.6"
 detektComposeRules          = "0.6.8"
-axionRelease                = "1.21.4"
+axionRelease                = "1.21.5"
 kover                       = "0.9.11"
 
 [libraries]
 coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core",        version.ref = "coroutines" }
 coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android",     version.ref = "coroutines" }
-coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutines" }
+coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutinesTest" }
 kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
@@ -86,12 +89,21 @@ sqldelightGradlePlugin      = { module = "app.cash.sqldelight:gradle-plugin",   
 
 kable                       = { module = "com.juul.kable:kable-core",                            version.ref = "kable" }
 ktorNetwork                 = { module = "io.ktor:ktor-network",                                 version.ref = "ktor" }
+ktorClientCore              = { module = "io.ktor:ktor-client-core",                             version.ref = "ktor" }
+ktorClientWebsockets        = { module = "io.ktor:ktor-client-websockets",                       version.ref = "ktor" }
+ktorClientCio               = { module = "io.ktor:ktor-client-cio",                              version.ref = "ktor" }
+ktorClientJs                = { module = "io.ktor:ktor-client-js",                               version.ref = "ktor" }
+ktorClientDarwin            = { module = "io.ktor:ktor-client-darwin",                           version.ref = "ktor" }
+ktorServerCio               = { module = "io.ktor:ktor-server-cio",                              version.ref = "ktor" }
+ktorServerWebsockets        = { module = "io.ktor:ktor-server-websockets",                       version.ref = "ktor" }
 jSerialComm                 = { module = "com.fazecast:jSerialComm",                             version.ref = "jSerialComm" }
+jmdns                       = { module = "org.jmdns:jmdns",                                      version.ref = "jmdns" }
 usbSerialForAndroid         = { module = "com.github.mik3y:usb-serial-for-android",             version.ref = "usbSerialForAndroid" }
 
 mosaicRuntime               = { module = "com.jakewharton.mosaic:mosaic-runtime",                 version.ref = "mosaic" }
 mosaicTerminal              = { module = "com.jakewharton.mosaic:mosaic-terminal",                version.ref = "mosaic" }
 clikt                       = { module = "com.github.ajalt.clikt:clikt",                          version.ref = "clikt" }
+mcpKotlinSdkServer          = { module = "io.modelcontextprotocol:kotlin-sdk-server",             version.ref = "mcpKotlinSdk" }
 
 kermit                      = { module = "co.touchlab:kermit",                                   version.ref = "kermit" }
 

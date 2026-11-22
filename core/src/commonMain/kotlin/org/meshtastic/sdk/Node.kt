@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import okio.ByteString
 import org.meshtastic.proto.NodeInfo
 
 /**
@@ -118,7 +119,13 @@ public sealed interface NodeChange {
  */
 public sealed interface MeshEvent {
     /**
-     * Device's transmit queue status changed.
+     * The device reported its transmit queue status.
+     *
+     * Fires for every `FromRadio.queueStatus` received after the handshake completes: the
+     * per-send result for each packet the host writes, the reply to each heartbeat, and the
+     * update the device sends when a full queue frees a slot. Send handles are correlated from
+     * the same status independently of this event. A queue status received during the handshake
+     * surfaces as a [ProtocolWarning] instead.
      *
      * @param status the wire [QueueStatus] from the device
      */
@@ -138,14 +145,28 @@ public sealed interface MeshEvent {
     public data class CongestionWarning(val metrics: CongestionMetrics) : MeshEvent
 
     /**
-     * Emitted when the device's MQTT connection state changes to connected.
+     * A `DeviceConnectionStatus` from the local device shows its own MQTT broker connection up,
+     * where the previous one this connection saw did not.
+     *
+     * The device never pushes MQTT state: this event fires only from the responses to
+     * [AdminApi.getDeviceConnectionStatus] on the local device, so it is as current as the last
+     * call. The first response that reports connected emits it; a repeated connected response
+     * emits nothing. Responses from remote nodes ([AdminApi.forNode]) and responses from a device
+     * with no WiFi or Ethernet status are ignored. MQTT traffic proxied through the client
+     * (`proxy_to_client_enabled`) is not a broker connection of the device and reads as
+     * disconnected. Tracking restarts on every connection.
      */
     public data object MqttConnected : MeshEvent
 
     /**
-     * Emitted when the device's MQTT connection drops.
+     * A `DeviceConnectionStatus` from the local device shows its own MQTT broker connection down,
+     * after an earlier one on this connection showed it up.
      *
-     * @property reason human-readable disconnect reason, if available
+     * Fires under the same rules as [MqttConnected], from [AdminApi.getDeviceConnectionStatus]
+     * responses only. A first response that reports disconnected emits nothing, since there is
+     * no earlier connected state on this connection for it to end.
+     *
+     * @property reason always null: `DeviceConnectionStatus` carries no disconnect reason
      */
     public data class MqttDisconnected(val reason: String? = null) : MeshEvent
 
@@ -243,9 +264,14 @@ public sealed interface MeshEvent {
      * [NodeChange.Snapshot] lands on [RadioClient.nodes], so subscribers can snapshot any
      * in-memory state they care about between observing the event and the next snapshot.
      *
+     * [reason] is `"identity_mismatch"` when storage is cleared, and `"node_renumbered"` when the
+     * device reported the same validated `MyNodeInfo.device_id` as the previous session under a
+     * new NodeNum (firmware 2.8 derives the NodeNum from the public key). In that case storage
+     * is kept: only the row for [previousNodeNum] is removed.
+     *
      * @param previousNodeNum the previously persisted NodeNum
      * @param newNodeNum the NodeNum the device just reported
-     * @param reason human-readable explanation (defaults to factory-reset wording)
+     * @param reason `"identity_mismatch"`, `"node_renumbered"`, or (for a hand-built event) free text
      */
     public data class IdentityRebound(
         val previousNodeNum: NodeId,
@@ -301,6 +327,19 @@ public sealed interface MeshEvent {
          * Host SHOULD prompt the user to regenerate keys.
          */
         public data object LowEntropyKey : SecurityWarning
+
+        /**
+         * A `NODEINFO_APP` from [node] offered a public key different from the 32-byte key
+         * already stored for it. The engine drops that NODEINFO (as firmware does) and keeps the
+         * stored user and key. The node may have been reset, or the sender may be an impostor;
+         * the host decides whether to tell the user. Emitted once per distinct ([node],
+         * [offeredKey]) pair, so a node that keeps announcing does not repeat it.
+         *
+         * @param node the node whose announcement was dropped
+         * @param offeredKey the key the announcement carried; empty when it carried none
+         * @since 0.3.0
+         */
+        public data class PublicKeyMismatch(val node: NodeId, val offeredKey: ByteString) : SecurityWarning
     }
 
     /**
@@ -332,7 +371,7 @@ public sealed interface MeshEvent {
 
     /**
      * An external source (another admin client) pushed a configuration change to the connected
-     * device. The engine has already applied the update to local state ([RadioClient.config],
+     * device. The engine has already applied the update to local state ([RadioClient.configBundle],
      * [RadioClient.channels]). Subscribers should refresh any cached configuration.
      *
      * @param kind indicates which aspect of the device configuration changed
@@ -368,19 +407,66 @@ public enum class DroppedFlow {
 
     /** The [RadioClient.events] flow dropped messages. */
     Events,
+
+    /**
+     * The [RadioClient.nodes] flow dropped a node change.
+     *
+     * @since 0.3.0
+     */
+    Nodes,
 }
 
 /**
- * Key-verification prompt details surfaced via [MeshEvent.KeyVerification].
+ * Key-verification step surfaced via [MeshEvent.KeyVerification], one per
+ * `ClientNotification` key-verification payload the device sends.
  *
- * Marker interface; concrete verification methods will be added when PKI verification UI is
- * implemented. Until then, any non-null prompt means the host should show a generic
- * verification experience.
+ * Whole flow, with `admin.keyVerification(KeyVerificationAdmin(...))` as the outbound half:
+ * 1. Initiator: send `INITIATE_VERIFICATION` with the peer's `remote_nodenum`.
+ * 2. Responder device: [ShowSecurityNumber]; show the number, the user reads it to the initiator.
+ * 3. Initiator device: [EnterSecurityNumber]; send `PROVIDE_SECURITY_NUMBER` with the same
+ *    `nonce` and the number the user typed.
+ * 4. Both devices: [ConfirmVerification]; once the user compares the characters, send
+ *    `DO_VERIFY` (or `DO_NOT_VERIFY`) with the same `nonce`.
  *
- * The shape will be ratified in a follow-up ADR before 1.0; consumers wiring this today should
- * expect the interface to add abstract members (binary-incompatible for implementers, but a
- * pure marker for collectors who only `is`-check it).
- *
- * @since 0.1.0
+ * @since 0.3.0
  */
-public interface KeyVerificationPrompt
+public sealed interface KeyVerificationPrompt {
+    /** Session nonce; echo it in the `KeyVerificationAdmin` replies. */
+    public val nonce: Long
+
+    /** Long name of the other node, or the device's placeholder when it has none. */
+    public val remoteLongName: String
+
+    /**
+     * The device wants the security number the peer is displaying.
+     *
+     * @since 0.3.0
+     */
+    public data class EnterSecurityNumber(override val nonce: Long, override val remoteLongName: String) :
+        KeyVerificationPrompt
+
+    /**
+     * A peer started verification with this device; show [securityNumber] so it can be read out.
+     *
+     * @since 0.3.0
+     */
+    public data class ShowSecurityNumber(
+        override val nonce: Long,
+        override val remoteLongName: String,
+        val securityNumber: Int,
+    ) : KeyVerificationPrompt
+
+    /**
+     * The exchange reached its final confirmation. [isSender] is `true` on the initiating device.
+     * [verificationCharacters] is the device-supplied code to compare; firmware may leave it
+     * empty and carry the text only in the raw [MeshEvent.Notification] message.
+     *
+     * @since 0.3.0
+     */
+    public data class ConfirmVerification(
+        override val nonce: Long,
+        override val remoteLongName: String,
+        val isSender: Boolean,
+        val verificationCharacters: String,
+    ) : KeyVerificationPrompt
+}

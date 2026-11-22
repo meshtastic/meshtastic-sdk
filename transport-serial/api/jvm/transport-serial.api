@@ -1,9 +1,17 @@
 public final class org/meshtastic/sdk/transport/serial/JvmSerialPorts {
 	public static final field DEFAULT_BAUD I
 	public static final field INSTANCE Lorg/meshtastic/sdk/transport/serial/JvmSerialPorts;
+	public final fun byIdPath (Ljava/lang/String;)Ljava/lang/String;
+	public final fun findMeshtastic ()Ljava/util/List;
 	public final fun list ()Ljava/util/List;
 	public final fun open (Ljava/lang/String;I)Lorg/meshtastic/sdk/RadioTransport;
+	public final fun open (Ljava/lang/String;ILkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/RadioTransport;
 	public static synthetic fun open$default (Lorg/meshtastic/sdk/transport/serial/JvmSerialPorts;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/RadioTransport;
+}
+
+public final class org/meshtastic/sdk/transport/serial/MeshtasticUsbIdsKt {
+	public static final fun getMESHTASTIC_USB_VENDOR_IDS ()Ljava/util/Set;
+	public static final fun isLikelyMeshtastic (Lorg/meshtastic/sdk/transport/serial/SerialPortInfo;)Z
 }
 
 public final class org/meshtastic/sdk/transport/serial/SerialFrameAssembler {
@@ -11,6 +19,8 @@ public final class org/meshtastic/sdk/transport/serial/SerialFrameAssembler {
 	public final fun feed (B)V
 	public final fun feed ([BI)V
 	public static synthetic fun feed$default (Lorg/meshtastic/sdk/transport/serial/SerialFrameAssembler;[BIILjava/lang/Object;)V
+	public final fun getOnTextLine ()Lkotlin/jvm/functions/Function1;
+	public final fun setOnTextLine (Lkotlin/jvm/functions/Function1;)V
 }
 
 public final class org/meshtastic/sdk/transport/serial/SerialPortInfo {

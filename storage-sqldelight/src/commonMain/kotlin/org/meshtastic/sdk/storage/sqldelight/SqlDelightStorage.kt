@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Config
@@ -98,8 +99,8 @@ internal class SqlDelightStorage(
     /**
      * The schema version of a database that has tables but no `user_version`, read from its shape.
      * Earlier JDBC builds ran `Schema.create` without stamping, so their databases sit at 0 in
-     * whatever shape was current then: 3.sqm's `nodes.last_heartbeat_at` marks v3, and the
-     * `messages` table that 2.sqm drops marks v1.
+     * whatever shape was current then: `nodes.last_heartbeat_at`, added by 2.sqm, marks v3, and the
+     * `messages` table that 1.sqm drops marks v1.
      */
     private suspend fun unstampedVersion(): Long = when {
         scalarLong("SELECT count(*) FROM pragma_table_info('nodes') WHERE name = 'last_heartbeat_at'") > 0 -> 3L
@@ -269,16 +270,30 @@ internal class SqlDelightStorage(
 
     // ── Identity / factory-reset detection ───────────────────────────────────
 
-    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) = op {
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String) {
+        recordOwnNode(nodeNum, firmwareVersion, null)
+    }
+
+    override suspend fun loadOwnDeviceId(): ByteString? = op {
+        q.selectSession(SESSION_KEY_DEVICE_ID).awaitAsOneOrNull()?.value_?.toByteString()
+    }
+
+    override suspend fun recordOwnNode(nodeNum: NodeId, firmwareVersion: String, deviceId: ByteString?) = op {
         db.transaction {
             val storedNumBytes = q.selectSession(SESSION_KEY_NODE_NUM).awaitAsOneOrNull()?.value_
             if (storedNumBytes != null) {
                 val stored = storedNumBytes.decodeToString().toIntOrNull()
                 if (stored != null && stored != nodeNum.raw) {
-                    q.clearAll().await() // grouped statement: returns a lazy AsyncValue under generateAsync
+                    val storedId = q.selectSession(SESSION_KEY_DEVICE_ID).awaitAsOneOrNull()?.value_
+                    if (deviceId != null && storedId != null && deviceId == storedId.toByteString()) {
+                        q.deleteNode(stored.toLong())
+                    } else {
+                        q.clearAll().await() // grouped statement: returns a lazy AsyncValue under generateAsync
+                    }
                 }
             }
             q.upsertSession(SESSION_KEY_NODE_NUM, nodeNum.raw.toString().encodeToByteArray())
+            if (deviceId != null) q.upsertSession(SESSION_KEY_DEVICE_ID, deviceId.toByteArray())
             q.upsertSession(SESSION_KEY_FIRMWARE, firmwareVersion.encodeToByteArray())
             q.selectNode(nodeNum.raw.toLong()).awaitAsOneOrNull()?.let {
                 q.upsertNode(
@@ -357,6 +372,7 @@ internal class SqlDelightStorage(
         const val SESSION_KEY_MY_INFO = "my_info"
         const val SESSION_KEY_METADATA = "metadata"
         const val SESSION_KEY_NODE_NUM = "identity_node_num"
+        const val SESSION_KEY_DEVICE_ID = "identity_device_id"
         const val SESSION_KEY_FIRMWARE = "firmware_version"
         const val SESSION_KEY_PASSKEY = "session_passkey"
         const val SESSION_KEY_PASSKEY_EXPIRES_MS = "session_passkey_expires_ms"
@@ -366,9 +382,7 @@ internal class SqlDelightStorage(
 /**
  * Dispatcher for blocking SQLite work: a fixed pool of [STORAGE_PARALLELISM] threads, sized to
  * the small per-driver connection pool, so storage cannot starve transports or file writes.
- * A pool rather than `Dispatchers.IO.limitedParallelism(n)`: the SDK compiles against
- * coroutines 1.8.1, where that overload does not exist. Declared `expect` because the pool
- * constructors are per platform.
+ * Declared `expect` because the pool constructors are per platform.
  */
 internal expect val defaultStorageDispatcher: CoroutineDispatcher
 

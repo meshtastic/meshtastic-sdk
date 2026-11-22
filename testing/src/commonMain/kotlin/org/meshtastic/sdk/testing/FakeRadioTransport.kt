@@ -21,7 +21,9 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
+import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
@@ -33,6 +35,7 @@ import org.meshtastic.sdk.TransportState
 private const val NONCE_STAGE1 = 69420
 private const val NONCE_STAGE2 = 69421
 private const val DEFAULT_FAKE_NODE_NUM = 1
+private const val FAKE_QUEUE_SIZE = 16
 
 /**
  * In-memory, script-driven [RadioTransport] for testing.
@@ -56,7 +59,22 @@ public class FakeRadioTransport(
     public val autoHandshake: Boolean = false,
     /** `MyNodeInfo.my_node_num` to report during the auto-handshake. */
     public val nodeNum: Int = DEFAULT_FAKE_NODE_NUM,
+    /**
+     * When `true`, answers every outbound `MeshPacket` with an accepting `QueueStatus`, as firmware
+     * does, so paced sends release without the caller injecting queue evidence.
+     */
+    public val autoQueueStatus: Boolean = false,
+    /** Reported as [RadioTransport.linkDropsOnRestartCommands]; `true` models a BLE link. */
+    override val linkDropsOnRestartCommands: Boolean = false,
 ) : RadioTransport {
+
+    /**
+     * `MyNodeInfo.device_id` to report during the auto-handshake; empty by default, as firmware
+     * reports on platforms without a unique id.
+     *
+     * @since 0.3.0
+     */
+    public var deviceId: ByteString = ByteString.EMPTY
 
     private val _state = MutableStateFlow<TransportState>(TransportState.Disconnected)
     private val outboundFramesList = mutableListOf<Frame>()
@@ -100,11 +118,20 @@ public class FakeRadioTransport(
      * `decoded.request_id = requestId` so the engine's [CommandDispatcher] / `processRoutingAck`
      * can match it against an outstanding request.
      */
-    public fun injectAdminResponse(requestId: Int, response: AdminMessage, fromNode: Int = nodeNum) {
+    public fun injectAdminResponse(
+        requestId: Int,
+        response: AdminMessage,
+        fromNode: Int = nodeNum,
+        /** A reply from another node is PKI-encrypted by default, as firmware sends it when both sides have keys. */
+        pkiEncrypted: Boolean = fromNode != nodeNum,
+        channel: Int = 0,
+    ) {
         val payload = okio.ByteString.of(*AdminMessage.ADAPTER.encode(response))
         val packet = MeshPacket.Builder().also { wb ->
             wb.from = fromNode
             wb.to = 0
+            wb.pki_encrypted = pkiEncrypted
+            wb.channel = channel
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.ADMIN_APP
                 wb.payload = payload
@@ -248,7 +275,7 @@ public class FakeRadioTransport(
 
     override suspend fun send(frame: Frame) {
         outboundFramesList.add(frame)
-        if (autoHandshake) handleOutboundFrame(frame)
+        if (autoHandshake || autoQueueStatus) handleOutboundFrame(frame)
     }
 
     override fun frames(): Flow<Frame> {
@@ -272,12 +299,25 @@ public class FakeRadioTransport(
         } catch (_: Exception) {
             return
         }
-        when (toRadio.want_config_id) {
-            NONCE_STAGE1 -> injectStage1Frames()
-            NONCE_STAGE2 -> injectStage2Frames()
+        if (autoHandshake) {
+            when (toRadio.want_config_id) {
+                NONCE_STAGE1 -> injectStage1Frames()
+                NONCE_STAGE2 -> injectStage2Frames()
+            }
         }
-        val packet = toRadio.packet
-        if (packet != null) handleAdminPacket(packet)
+        val packet = toRadio.packet ?: return
+        if (autoHandshake) handleAdminPacket(packet)
+        if (autoQueueStatus) {
+            injectFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.queueStatus = QueueStatus.Builder().also { wb ->
+                        wb.free = FAKE_QUEUE_SIZE
+                        wb.maxlen = FAKE_QUEUE_SIZE
+                        wb.mesh_packet_id = packet.id
+                    }.build()
+                }.build(),
+            )
+        }
     }
 
     private fun injectStage1Frames() {
@@ -285,6 +325,7 @@ public class FakeRadioTransport(
             FromRadio.Builder().also { wb ->
                 wb.my_info = MyNodeInfo.Builder().also { wb ->
                     wb.my_node_num = nodeNum
+                    wb.device_id = deviceId
                 }.build()
             }.build(),
         )
@@ -296,6 +337,12 @@ public class FakeRadioTransport(
     }
 
     private fun injectStage2Frames() {
+        // Firmware starts a nodes-only dump at its own node_info.
+        injectFromRadio(
+            FromRadio.Builder().also { wb ->
+                wb.node_info = NodeInfo.Builder().also { it.num = nodeNum }.build()
+            }.build(),
+        )
         injectFromRadio(
             FromRadio.Builder().also { wb ->
                 wb.config_complete_id = NONCE_STAGE2

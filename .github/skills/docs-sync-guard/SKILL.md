@@ -14,7 +14,7 @@ Use this skill when code changes may alter expected behavior, API semantics, pro
 
 ## Required Context
 - AGENTS.md
-- docs/SPEC.md
+- docs/architecture/engine-actor.md
 - docs/protocol.md
 - docs/api-reference.md
 - docs/error-taxonomy.md

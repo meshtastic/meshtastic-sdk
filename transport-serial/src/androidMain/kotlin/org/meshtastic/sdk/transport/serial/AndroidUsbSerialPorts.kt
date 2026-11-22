@@ -19,7 +19,6 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportSpec
 import org.meshtastic.sdk.transport.serial.internal.UsbSerialForAndroidTransport
-import java.io.IOException
 
 /**
  * Android USB serial over [usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android),
@@ -81,6 +80,29 @@ public object AndroidUsbSerialPorts {
         device: UsbDevice,
         baudRate: Int = DEFAULT_BAUD,
         logger: LogSink = LogSink.Silent,
+    ): RadioTransport = openTransport(context, device, baudRate, logger, onTextLine = null)
+
+    /**
+     * Like [open], and [onTextLine] receives each line of text the device prints between frames,
+     * which carries the firmware's serial debug log. It runs on the reader thread, so it must not
+     * block; an exception it throws is swallowed.
+     *
+     * @since 0.3.0
+     */
+    public fun open(
+        context: Context,
+        device: UsbDevice,
+        baudRate: Int,
+        logger: LogSink,
+        onTextLine: (String) -> Unit,
+    ): RadioTransport = openTransport(context, device, baudRate, logger, onTextLine)
+
+    private fun openTransport(
+        context: Context,
+        device: UsbDevice,
+        baudRate: Int,
+        logger: LogSink,
+        onTextLine: ((String) -> Unit)?,
     ): RadioTransport {
         val manager = context.usbManager()
         val driver = prober.probeDevice(device) ?: throw MeshtasticException.Transport(
@@ -88,14 +110,14 @@ public object AndroidUsbSerialPorts {
                 "(VID ${device.vendorId.hex()} PID ${device.productId.hex()})",
         )
         val openPort: () -> UsbSerialPort = {
+            val port = driver.ports.first()
             val connection = manager.openDevice(device) ?: throw MeshtasticException.Transport(
                 "USB permission not granted for ${device.deviceName}",
             )
-            val port = driver.ports.first()
             try {
                 port.open(connection)
-            } catch (e: IOException) {
-                connection.close()
+            } catch (e: Exception) {
+                runCatching { connection.close() }
                 throw e
             }
             port
@@ -105,6 +127,7 @@ public object AndroidUsbSerialPorts {
             identity = TransportIdentity.of(TransportSpec.SerialAndroid(device.deviceName)),
             baudRate = baudRate,
             logger = logger,
+            onTextLine = onTextLine,
         )
     }
 

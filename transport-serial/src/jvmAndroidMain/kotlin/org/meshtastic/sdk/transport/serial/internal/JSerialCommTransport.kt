@@ -8,6 +8,7 @@
 package org.meshtastic.sdk.transport.serial.internal
 
 import com.fazecast.jSerialComm.SerialPort
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,19 +31,18 @@ import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireFraming
-import org.meshtastic.sdk.transport.serial.SerialFrameAssembler
+import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * jSerialComm-backed [RadioTransport] for JVM and Android. Configures 115200 8N1
- * blocking reads and wires the InputStream into [SerialFrameAssembler].
+ * blocking reads and wires the port into [SerialFrameReader].
  *
- * [frames] is buffered to [FRAME_CHANNEL_CAPACITY]; overflow increments [droppedFrameCount].
+ * [frames] uses a bounded handoff. The reader forwards one read's frames before reading again.
  * [disconnect] is idempotent and joins the reader before closing the port.
  */
 internal class JSerialCommTransport(
@@ -51,6 +51,7 @@ internal class JSerialCommTransport(
     private val baudRate: Int,
     private val logger: LogSink = LogSink.Silent,
     private val parentContext: CoroutineContext = EmptyCoroutineContext,
+    private val onTextLine: ((String) -> Unit)? = null,
 ) : RadioTransport {
 
     private val _state: MutableStateFlow<TransportState> =
@@ -66,27 +67,6 @@ internal class JSerialCommTransport(
 
     /** Idempotent cleanup guard. */
     private val cleanedUp = AtomicBoolean(false)
-
-    private val publisher = FrameChannelPublisher(
-        target = frameChannel,
-        onDrop = { total ->
-            if (total == 1L || total % DROP_LOG_EVERY == 0L) {
-                logger.log(
-                    LogLevel.WARN,
-                    TAG,
-                    "Frame channel full; dropped frame " +
-                        "(total dropped=$total, capacity=$FRAME_CHANNEL_CAPACITY). " +
-                        "Slow consumer on frames()?",
-                    null,
-                )
-            }
-        },
-    )
-
-    /**
-     * Total frames dropped because [frameChannel] was full.
-     */
-    internal val droppedFrameCount: AtomicLong get() = publisher.dropCount
 
     override suspend fun connect() {
         check(!cleanedUp.get()) { "JSerialCommTransport has been disconnected; construct a new instance" }
@@ -125,9 +105,8 @@ internal class JSerialCommTransport(
 
             val scope = CoroutineScope(parentContext + SupervisorJob() + Dispatchers.IO)
             readerScope = scope
-            readerJob = scope.launch { runReader() }
-
             _state.value = TransportState.Connected
+            readerJob = scope.launch { runReader() }
             logger.log(LogLevel.INFO, TAG, "Connected to ${port.systemPortName}", null)
         } catch (e: MeshtasticException) {
             _state.value = TransportState.Error(e, recoverable = true)
@@ -167,22 +146,22 @@ internal class JSerialCommTransport(
      * Blocking reader loop on [Dispatchers.IO]. Reads chunks and pushes bytes through
      * the framing FSM. Read timeouts return 0; cancellation is observed promptly.
      */
-    private fun runReader() {
-        val assembler = SerialFrameAssembler { frame ->
-            publisher.publish(frame)
-        }
+    private suspend fun runReader() {
+        val reader = SerialFrameReader(frameChannel, onTextLine)
         val buf = ByteArray(READ_CHUNK_BYTES)
         try {
             while (!cleanedUp.get()) {
                 // Use port.readBytes() not InputStream: in SEMI_BLOCKING mode the
                 // InputStream wrapper throws on timeout; readBytes() returns 0.
-                val read = port.readBytes(buf, buf.size.toLong().toInt())
+                val read = port.readBytes(buf, buf.size)
                 when {
-                    read < 0 -> break
+                    read < 0 -> throw IOException("Serial port read ended")
                     read == 0 -> continue
-                    else -> assembler.feed(buf, read)
+                    else -> reader.publish(buf, read)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             // Close channel with cause so engine's frames() collector sees the real error.
             runCatching { frameChannel.close(e) }
@@ -199,10 +178,8 @@ internal class JSerialCommTransport(
         val scope = readerScope
         readerScope = null
         try {
-            if (job != null) {
-                val joined = withTimeoutOrNull(READER_JOIN_TIMEOUT_MS) { job.join() }
-                if (joined == null) job.cancel()
-            }
+            job?.cancel()
+            if (job != null) withTimeoutOrNull(READER_JOIN_TIMEOUT_MS) { job.join() }
         } finally {
             scope?.cancel()
             runCatching { input?.close() }
@@ -224,9 +201,6 @@ internal class JSerialCommTransport(
         const val READER_JOIN_TIMEOUT_MS = 200L
 
         const val FRAME_CHANNEL_CAPACITY = Channel.BUFFERED
-
-        /** Log every Nth drop to avoid flooding. First drop always logged. */
-        const val DROP_LOG_EVERY = 100L
 
         val WAKE_BYTES = byteArrayOf(
             WireFraming.MAGIC_0,

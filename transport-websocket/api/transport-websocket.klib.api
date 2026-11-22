@@ -1,0 +1,21 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, iosX64, js, wasmJs]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <org.meshtastic:transport-websocket>
+final class org.meshtastic.sdk.transport.websocket/WebSocketTransport : org.meshtastic.sdk/RadioTransport { // org.meshtastic.sdk.transport.websocket/WebSocketTransport|null[0]
+    constructor <init>(kotlin/String, io.ktor.client/HttpClient? = ...) // org.meshtastic.sdk.transport.websocket/WebSocketTransport.<init>|<init>(kotlin.String;io.ktor.client.HttpClient?){}[0]
+
+    final val identity // org.meshtastic.sdk.transport.websocket/WebSocketTransport.identity|{}identity[0]
+        final fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk.transport.websocket/WebSocketTransport.identity.<get-identity>|<get-identity>(){}[0]
+    final val state // org.meshtastic.sdk.transport.websocket/WebSocketTransport.state|{}state[0]
+        final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk.transport.websocket/WebSocketTransport.state.<get-state>|<get-state>(){}[0]
+
+    final fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk.transport.websocket/WebSocketTransport.frames|frames(){}[0]
+    final suspend fun connect() // org.meshtastic.sdk.transport.websocket/WebSocketTransport.connect|connect(){}[0]
+    final suspend fun disconnect() // org.meshtastic.sdk.transport.websocket/WebSocketTransport.disconnect|disconnect(){}[0]
+    final suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.transport.websocket/WebSocketTransport.send|send(org.meshtastic.sdk.Frame){}[0]
+}

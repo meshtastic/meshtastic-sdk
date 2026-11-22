@@ -1,20 +1,16 @@
-# Threading Model
+# Threading model
 
-This document is the contributor-facing summary of *who runs on what
-thread* in `meshtastic-sdk`. The architectural decisions live in ADRs:
+This page summarizes which code runs where in `meshtastic-sdk`, for contributors and for consumers. The decisions live in ADRs:
 
-- [ADR-002](decisions/002-architecture.md) — engine is a single-writer
-  actor.
-- [ADR-008](decisions/008-architecture-enforcement.md) — how the actor
-  invariant is enforced (detekt `ForbiddenImport` + Gradle).
-- [ADR-012](decisions/012-transport-threading.md) — transport-side
-  threading contract.
+- [ADR-002](decisions/002-architecture.md): the engine is a single-writer actor.
+- [ADR-008](decisions/008-architecture-enforcement.md): how the actor invariant is enforced (detekt `ForbiddenImport` and Gradle).
+- [ADR-012](decisions/012-transport-threading.md): the transport threading contract.
 
-Read those for *why*. This document is the *what*.
+The ADRs give the reasons; this page gives the rules.
 
 ## Three layers
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │ Consumer code (your app)                                        │
 │   Calls suspend functions on RadioClient from any dispatcher.   │
@@ -26,15 +22,17 @@ Read those for *why*. This document is the *what*.
 │ :core engine — single-writer actor                              │
 │   ▸ All state mutations go through one Channel.                 │
 │   ▸ No Mutex / Semaphore / ReentrantLock anywhere on the path.  │
-│   ▸ Engine dispatcher is single-threaded by construction.       │
-│   ▸ Two atomicfu sites (supervisorJobRef, nextIdCounter) are    │
-│     boundary handles, not state — see inline comments.          │
+│   ▸ One coroutine processes messages, one at a time.            │
+│   ▸ Four atomicfu sites (supervisorJobRef, nextWireId,          │
+│     connectionGeneration, activeConnectDeferred) are boundary   │
+│     handles, not state.                                         │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │ Transport modules — bridge native callbacks/threads to flows    │
 │   ▸ TCP : Ktor sockets, fully suspending.                       │
+│   ▸ WebSocket : Ktor client session, fully suspending.          │
 │   ▸ BLE : Kable/CoreBluetooth callbacks → MutableSharedFlow.    │
 │   ▸ Serial-Android : usb-serial-for-android callbacks → flow.   │
 │   ▸ Serial-JVM : jSerialComm blocking reads on a dedicated      │
@@ -49,182 +47,123 @@ Read those for *why*. This document is the *what*.
 │   ▸ Every suspend method wraps its body in                      │
 │     withContext(dispatcher) so blocking JDBC / Android SQLite / │
 │     native sqlite3 calls run off the engine actor.              │
-│   ▸ Default dispatcher is Dispatchers.IO.limitedParallelism(4)  │
-│     on JVM/Android; Dispatchers.Default.limitedParallelism(4)   │
-│     on Apple (Dispatchers.IO on K/N is shadowed by an internal  │
-│     member, unreachable from outside kotlinx.coroutines).       │
-│   ▸ See docs/architecture/storage.md § Thread-safety.           │
+│   ▸ Default dispatcher is a fixed pool of 4 threads             │
+│     (StorageDispatcher.*.kt): daemon threads on JVM/Android,    │
+│     newFixedThreadPoolContext on iOS.                           │
+│   ▸ See docs/architecture/storage.md, thread-safety section.    │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ## The actor invariant
 
-The engine owns its state. Consumers and transports talk to it by sending
-messages (suspend calls or flow emissions). Internally, the engine
-processes messages serially from a single coroutine. That gives us:
+The engine owns its state. Consumers and transports reach it by posting messages (suspend calls or flow emissions), and one coroutine processes them in order. That gives:
 
-- **No race conditions on engine state** — no two coroutines ever observe
-  partially-applied mutations.
-- **Deterministic test semantics** — `runTest { … }` advances the engine
-  one message at a time.
-- **No reentrancy hazards** — the engine never calls back into a
-  transport while holding state locks, because there are no state locks.
+- No races on engine state: no coroutine ever sees a half-applied mutation.
+- Deterministic tests: `runTest { … }` advances the engine one message at a time.
+- No reentrancy hazards: the engine never calls a transport while holding a state lock, because there are none.
 
-The invariant is enforced by detekt (`config/detekt/detekt.yml`
-`ForbiddenImport` rules ban `kotlinx.coroutines.sync.{Mutex,Semaphore}`
-and `java.util.concurrent.locks.ReentrantLock`) and by the
-[`docs/architecture/enforcement.md`](architecture/enforcement.md) matrix.
+detekt enforces it (`ForbiddenImport` rules in `config/detekt/detekt.yml` ban `kotlinx.coroutines.sync.{Mutex,Semaphore}` and `java.util.concurrent.locks.ReentrantLock`), along with the [`docs/architecture/enforcement.md`](architecture/enforcement.md) matrix.
 
 ## What you may write
 
 | You're writing… | You may use | You must avoid |
 |---|---|---|
 | Engine code (`:core`, on the engine dispatcher) | `Channel`, `Flow`, suspend functions, plain `var`s owned by the actor | `Mutex`, `Semaphore`, `ReentrantLock`, `synchronized {}`, `AtomicReference` for state, `Thread.sleep` |
-| Transport code (`:transport-*`) | Whatever the native API forces (callbacks, blocking reads on a dedicated thread, atomics for handle ownership) | Blocking the engine dispatcher; calling engine internals; sharing mutable state across the transport ↔ engine boundary other than through the documented `Flow` + `suspend send` interface |
-| Consumer code (your app) | Any dispatcher you like | Assuming the engine runs on `Main`; assuming flows are hot |
+| Transport code (`:transport-*`) | Whatever the native API forces (callbacks, blocking reads on a dedicated thread, atomics for handle ownership) | Blocking the engine dispatcher; calling engine internals; sharing mutable state with the engine other than through the documented `Flow` and `suspend send` interface |
+| Consumer code (your app) | Any dispatcher | Assuming the engine runs on `Main` |
 
 ## How to add a new transport
 
-See the `transport-module-authoring` skill in
-[`.github/skills/`](../.github/skills/) and the existing implementations
-under `transport-tcp/`, `transport-ble/`, `transport-serial/`. The
-contract you implement is small: emit a `Flow<ByteString>`, accept a
-`suspend fun send(ByteString)`, and respect the [ADR-012](decisions/012-transport-threading.md)
-threading rules.
+See the `transport-module-authoring` skill in [`.github/skills/`](../.github/skills/) and the existing modules (`transport-tcp/`, `transport-ble/`, `transport-serial/`, `transport-websocket/`). The contract is small: return a `Flow<Frame>` from `frames()`, implement `suspend fun send(frame: Frame)`, expose `state` and `identity`, and follow the [ADR-012](decisions/012-transport-threading.md) threading rules.
 
 ## Verifying
 
-```bash
+```shell
 ./gradlew detekt :core:verifyModuleBoundary
 ```
 
-Both run as part of `./gradlew check`. The engine-dispatcher
-non-blocking property is exercised by the engine test suite running on
-a single-thread dispatcher under `runTest`.
-
----
+Both run as part of `./gradlew check`. The engine test suite runs the engine under `runTest`, which exercises the non-blocking property.
 
 ## Consumer-side threading guide
 
-The contract above (engine = single-writer actor, transports = bridge
-adapters) is binding on contributors. *This* section documents the
-consumer-facing surface — what guarantees the SDK gives your app, and
-which footguns to avoid.
+The rules in the previous sections bind contributors. This section covers what the SDK guarantees your app and which mistakes to avoid.
 
-### Hot vs cold flows
+### Hot flows
 
-`RadioClient` exposes three reactive surfaces. All are **hot**: they run
-whether or not anyone is collecting.
+`RadioClient` exposes these reactive surfaces. All are hot: they run whether or not anyone collects.
 
-| Property | Type | Replay | Buffer | Overflow policy |
+| Property | Type | Replay | Buffer | When the buffer is full |
 |---|---|---|---|---|
-| `connection` | `StateFlow<ConnectionState>` | Always current value | n/a | n/a (conflated) |
-| `ownNode` | `StateFlow<NodeInfo?>` | Always current value | n/a | n/a (conflated) |
-| `nodes` | `Flow<NodeChange>` (SharedFlow internally) | 1 | 256 | drop-oldest → `MeshEvent.PacketsDropped(Nodes)` |
-| `packets` | `Flow<MeshPacket>` | 0 | 128 | drop-oldest → `MeshEvent.PacketsDropped(Packets)` |
-| `events` | `Flow<MeshEvent>` | 0 | 64 | drop-oldest → log only (no recursive `Dropped`) |
+| `connection` | `StateFlow<ConnectionState>` | current value | n/a | newest wins |
+| `ownNode` | `StateFlow<NodeInfo?>` | current value | n/a | newest wins |
+| `nodes` | `Flow<NodeChange>` | a fresh `Snapshot` per subscription | 256 | the change is dropped and `MeshEvent.PacketsDropped` is emitted |
+| `packets` | `Flow<MeshPacket>` | none | 128 | the packet is dropped and `MeshEvent.PacketsDropped(Packets, n)` is emitted |
+| `events` | `Flow<MeshEvent>` | none | 64 | the oldest event is dropped |
+| `fromRadio` | `Flow<FromRadio>` | none | 256 | the oldest envelope is dropped |
 
-Late subscribers to `packets` and `events` see only emissions made
-**after** they start collecting; for `nodes`, late subscribers receive
-the most recent change but not the full history (use
-`RadioClient.snapshot()` to bootstrap, then collect to follow).
+The shared flows behind `nodes`, `packets`, `events` and `fromRadio` have `replay = 0`. A late subscriber to `packets`, `events` or `fromRadio` sees only what is emitted after it starts collecting. A subscriber to `nodes` first receives a `Snapshot` of the current node map, then deltas; `nodeSnapshot()` returns the map once.
 
 ### Dispatcher choice (consumer side)
 
-You may collect on any dispatcher. Common patterns:
+You can collect on any dispatcher. Common patterns:
 
-- **Android UI**: collect on `viewModelScope` with `repeatOnLifecycle`
-  — see [`reactive-lifecycle-management.md`](consumer-guides/reactive-lifecycle-management.md).
-  Internally the SDK does not pin to `Dispatchers.Main`; you choose.
-- **iOS / SwiftUI**: collect on `Dispatchers.Main` (Kotlin/Native maps
-  to the main queue). Do not block in the collector — long work belongs
-  on `Dispatchers.Default`.
-- **JVM headless / CLI / server**: any dispatcher. Recommended pattern
-  is one `CoroutineScope` per `RadioClient`, cancelled in lockstep.
+- Android UI: collect in `viewModelScope` with `repeatOnLifecycle`. The SDK never pins to `Dispatchers.Main`.
+- iOS and SwiftUI: collect on `Dispatchers.Main` (the main queue). Don't block in the collector; long work belongs on `Dispatchers.Default`.
+- JVM headless, CLI or server: any dispatcher. One `CoroutineScope` per `RadioClient`, cancelled together, works well.
 
-The engine's internal dispatcher is **single-thread `Default`-backed**
-on every platform (no `Main` assumption). Your collector dispatcher
-does not have to match.
+The engine runs on `SupervisorJob() + Dispatchers.Default` unless you pass `Builder.coroutineContext(...)`. `Dispatchers.Default` is a thread pool on JVM, Android and iOS; the actor stays single-writer regardless, because its channel serializes the work. Your collector's dispatcher does not have to match.
 
-### Lifecycle and cancellation footguns
+### Lifecycle and cancellation
 
-- `RadioClient.connect()` suspends until the engine reaches
-  `ConnectionState.Connected`. **Cancelling the caller scope after
-  connect returns does not disconnect the radio** — call
-  `client.disconnect()` for that. `disconnect()` is idempotent and
-  suspends until cleanup completes. There is deliberately no blocking
-  `close()`/`AutoCloseable` — a blocking bridge invites ANR on
-  Android's main thread; tear down from a coroutine, e.g.
-  `try { … } finally { client.disconnect() }`.
-- A disconnected `RadioClient` is **not reusable**. Build a new one via
-  the `Builder`.
-- Heartbeats are owned by the engine, not by your collector. Cancelling
-  a flow collection does not stop heartbeats; only `disconnect()` does.
-- `connect()` itself is cancellable; cancellation during connect is
-  fully unwound (including any in-flight transport handshake).
+- `RadioClient.connect()` suspends until `ConnectionState.Connected`. Cancelling the caller's scope after `connect` returns does not disconnect; call `client.disconnect()`, which is idempotent and suspends until cleanup completes. There is deliberately no blocking `close()` or `AutoCloseable`, because a blocking bridge invites an ANR on Android's main thread; tear down from a coroutine, for example `try { … } finally { client.disconnect() }`.
+- A disconnected `RadioClient` can be connected again with `connect()`.
+- The engine owns the heartbeat. Cancelling a flow collection does not stop it; only `disconnect()` does.
+- `connect()` is cancellable, and a cancelled connect is fully unwound, including any transport handshake in flight. The client is then `Disconnected`.
 
 ### Backpressure and dropped events
 
-The engine never blocks on consumer collection. If your collector is
-slow, the SharedFlow buffers fill and **drop-oldest** semantics kick
-in. You will receive a `MeshEvent.PacketsDropped(flow, droppedCount)`
-on `events` whenever this happens for `packets` or `nodes`.
+The engine never blocks on consumer collection. When a collector is slow its buffer fills, and new `packets` or `nodes` items are dropped with a `MeshEvent.PacketsDropped(flow, count)` on `events`.
 
 Rules of thumb:
 
-- **Don't block in collectors.** No `Thread.sleep`, no blocking I/O,
-  no synchronous network calls. Hand off to a worker scope.
-- **Use `collectLatest` for UI mapping** when only the latest value
-  matters (e.g. a "connection status" indicator).
-- **If you need every packet, batch-process off-collector**:
-  `client.packets.buffer(Channel.UNLIMITED).collect { … launch …  }`.
-- **Watch `events` for `PacketsDropped`** in production telemetry —
-  recurring drops mean your consumer is too slow.
+- Don't block in collectors: no `Thread.sleep`, blocking I/O or synchronous network calls. Hand work to another scope.
+- Use `collectLatest` for UI mapping when only the latest value matters, such as a connection indicator.
+- If you need every packet, move processing out of the collector: `client.packets.buffer(Channel.UNLIMITED).collect { … }`.
+- Watch `events` for `PacketsDropped` in production telemetry; recurring drops mean the consumer is too slow.
 
 ### Single-collection flows
 
-Some internal/transport flows are **single-collection**: a second
-collector throws `IllegalStateException`. These are not exposed
-directly through `RadioClient` (the engine wraps them), but if you
-work below the engine — for example, writing a custom transport
-driver or instrumenting `BleTransport.frames()` directly in a test —
-respect the contract.
+Some transport flows are single-collection: a second collector throws `IllegalStateException`. `RadioClient` does not expose them (the engine wraps them), but code below the engine, such as a custom transport or a test that collects `BleTransport.frames()` directly, has to respect that.
 
-`RadioClient.packets`, `nodes`, `events`, `connection`, and `ownNode`
-are all **multi-collectable** (SharedFlow / StateFlow). Collect from
-as many places as you like.
+`RadioClient.packets`, `nodes`, `events`, `fromRadio`, `connection` and `ownNode` are all multi-collectable. Collect from as many places as you like.
 
 ### Avoiding feedback loops
 
-When collecting `events`, **do not synchronously call back into
-`RadioClient` for an action that itself emits an event of the type
-you are collecting.** For example, reacting to `MeshEvent.IdentityRebound`
-by sending a packet is fine; reacting to `MeshEvent.PacketsDropped`
-by sending another packet that may also drop creates a tight loop.
-Either gate with backoff or hand off to a separate scope.
+When collecting `events`, don't synchronously call back into `RadioClient` for an action that emits the event you are collecting. Reacting to `MeshEvent.IdentityRebound` by sending a packet is fine; reacting to `MeshEvent.PacketsDropped` by sending a packet that may also drop creates a tight loop. Gate it with backoff or hand it to a separate scope.
 
 ### Deterministic tests
 
-The `:testing` module ships:
+The `:testing` module provides:
 
-- **`FakeRadioTransport`** — a scriptable transport for end-to-end
-  engine tests; pair with `runTest`.
-- **`TestClock`** — a controllable `kotlinx.datetime.Clock` for tests
-  that exercise timeouts, heartbeats, or session-passkey TTL.
-- **`runTest { advanceTimeBy(…) }`** drives the engine's tick-based
-  watchdogs (handshake timeout, sliding Stage 2 progress timer,
-  per-send ACK timeout). Choose `tickMs` smaller than the timeout you
-  are exercising — see `P1EngineHardeningTest` for examples.
+- `FakeRadioTransport`, a scriptable transport for end-to-end engine tests; with `autoHandshake = true` it answers the handshake itself.
+- `TestClock`, a controllable `kotlin.time.Clock` for tests of timeouts, heartbeats and admin session expiry.
 
-A typical pattern:
+`runTest { advanceTimeBy(…) }` drives the engine's timers (handshake timeouts, the sliding Stage 2 timer, the per-send ACK timeout) once the engine runs on the test scheduler through `Builder.coroutineContext(backgroundScope.coroutineContext)`. `P1EngineHardeningTest` has examples.
+
+A typical pattern, where `packet` is a unicast `want_ack` packet:
 
 ```kotlin
 @Test
 fun mySendTimesOut() = runTest {
-    val transport = FakeRadioTransport(nodeNum = 0x1234)
+    val transport = FakeRadioTransport(
+        identity = TransportIdentity("fake:send-timeout"),
+        autoHandshake = true,
+    )
     val client = RadioClient.Builder()
         .transport(transport)
-        .clock(TestClock(this))
+        .storage(InMemoryStorageProvider())
+        .coroutineContext(backgroundScope.coroutineContext)
+        .clock(TestClock())
         .sendTimeout(5.seconds)
         .build()
 
@@ -239,20 +178,11 @@ fun mySendTimesOut() = runTest {
 
 ### Cross-platform notes
 
-- **JVM / Android**: `Dispatchers.Main` requires `kotlinx-coroutines-android`
-  in your app (transitively pulled in by the SDK). The engine itself
-  does not depend on it.
-- **iOS** (`iosArm64`, `iosX64`, `iosSimulatorArm64`): the engine runs
-  on `Dispatchers.Default.limitedParallelism(1)`. Kotlin/Native's
-  `freeze` rules do not apply — the SDK targets the new memory model.
-- **JS / Wasm**: not currently supported. See [`roadmap.md`](roadmap.md).
+- JVM and Android: `Dispatchers.Main` needs `kotlinx-coroutines-android` in your app (the SDK pulls it in transitively). The engine itself does not use it.
+- iOS (`iosArm64`, `iosX64`, `iosSimulatorArm64`): the engine runs on `Dispatchers.Default`. Kotlin/Native's old `freeze` rules do not apply; the SDK targets the new memory model.
+- JS and Wasm (`js`, `wasmJs`): one thread. `Dispatchers.Default` is the host's event loop, so the engine and the host's UI share it.
 
 ### See also
 
-- [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md)
-  — how to interpret `SendFailure` and `MeshEvent` failure variants
-- [`consumer-guides/reactive-lifecycle-management.md`](consumer-guides/reactive-lifecycle-management.md)
-  — Android lifecycle integration patterns
-- [`consumer-guides/mvvm-integration.md`](consumer-guides/mvvm-integration.md)
-  — ViewModel + StateFlow mapping
-- [`error-taxonomy.md`](error-taxonomy.md) — canonical error catalog
+- [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md): how to read `SendFailure` and the `MeshEvent` failure variants
+- [`error-taxonomy.md`](error-taxonomy.md): the error catalog

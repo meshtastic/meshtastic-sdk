@@ -1,293 +1,216 @@
 # Testing strategy
 
-> Companion to [`SPEC.md`](./SPEC.md), [`protocol.md`](./protocol.md),
-> [`error-taxonomy.md`](./error-taxonomy.md), and the gates documented
-> in [`ci-cd.md`](./ci-cd.md).
+What `meshtastic-sdk` tests, where, and why: the contract between a behavior change and the tests that prove it. The CI gates are in [`ci-cd.md`](./ci-cd.md); the failure contracts tests assert are in [`error-taxonomy.md`](./error-taxonomy.md).
 
-This document describes **what we test, where, and why** — the test
-pyramid for `meshtastic-sdk`. It is the contract between a behavioral
-change and the test suite that proves it.
-
-## Pyramid
+## Tiers
 
 Three tiers, narrow at the top:
 
-```
+```text
               ┌─────────────────────────┐
               │  Manual hardware tests  │   docs/manual-tests.md
-              │   (real radios, DUTs)   │   ── pre-release only
+              │      (real nodes)       │   pre-release
               └────────────┬────────────┘
                            │
           ┌────────────────┴────────────────┐
-          │      Integration tests          │   :samples:cli + jvmTest
-          │  (FakeRadioTransport-backed,    │      end-to-end engine
-          │     full handshake + frames)    │      flows
+          │      Integration tests          │   :core commonTest,
+          │  (FakeRadioTransport-backed,    │   :samples:cli conformance
+          │     full handshake + frames)    │
           └────────────────┬────────────────┘
                            │
    ┌───────────────────────┴───────────────────────┐
    │                  Unit tests                   │   commonTest in
-   │ codec golden-bytes ▪ FSM tables ▪ NodeDB ops  │   each module;
+   │ codec bytes ▪ FSM tables ▪ NodeDB ops         │   each module;
    │  ▪ frame assembly ▪ pure-function helpers     │   fast, hermetic
    └───────────────────────────────────────────────┘
 ```
 
-The pyramid is intentionally **wide at the bottom**. Anything that can
-be proven against a pure function or a deterministic fake belongs in
-the unit tier; integration tests exist only for behavior that depends
-on the engine actor + transport seam.
+Anything provable against a pure function or a deterministic fake belongs in the unit tier. Integration tests are for behavior that depends on the engine actor and the transport seam.
 
-Below the pyramid, the convention plugins in `build-logic/` have Gradle
-TestKit tests (`build-logic/convention/src/test/`) that `./gradlew check`
-runs with the rest of the gate.
+The convention plugins in `build-logic/` also have Gradle TestKit tests (`build-logic/convention/src/test/`), which `./gradlew check` runs with the rest of the gate.
 
-## Tier 1 — unit tests (`*/commonTest`, fast, hermetic)
+## Unit tests
 
-Coverage targets per module:
+Unit tests live in each module's `commonTest`, with platform source sets (`jvmTest`, `jvmAndroidTest`, `androidHostTest`) where a platform API is involved. Examples:
 
-| Area | Module | Test class(es) | Style |
+| Area | Module | Test class | Style |
 |---|---|---|---|
-| Wire codec round-trip | `:core` | [`WireCodecTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/WireCodecTest.kt) | golden-byte vectors |
-| Engine actor contract | `:core` | [`EngineTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/EngineTest.kt) | Turbine on `events` flow |
-| BLE frame stripping | `:transport-ble` | [`FrameStripTest`](../transport-ble/src/commonTest/kotlin/org/meshtastic/sdk/transport/ble/FrameStripTest.kt) | property-style edge cases |
-| BLE drain coordinator | `:transport-ble` | [`DrainCoordinatorTest`](../transport-ble/src/commonTest/kotlin/org/meshtastic/sdk/transport/ble/internal/DrainCoordinatorTest.kt) | virtual-time `runTest` |
-| Serial frame assembly | `:transport-serial` | [`SerialFrameAssemblerTest`](../transport-serial/src/commonTest/kotlin/org/meshtastic/sdk/transport/serial/SerialFrameAssemblerTest.kt) | byte-stream fuzz vectors |
+| Wire codec round trip | `:core` | [`WireCodecTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/WireCodecTest.kt) | byte vectors |
+| Handshake state machine | `:core` | [`HandshakeFsmTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/HandshakeFsmTest.kt) | transitions from [`architecture/handshake-fsm.md`](./architecture/handshake-fsm.md) |
+| Engine actor contract | `:core` | [`EngineTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/EngineTest.kt) | `FakeRadioTransport`, virtual time |
+| Live NodeDB merge | `:core` | [`LiveNodeDbMergeTest`](../core/src/commonTest/kotlin/org/meshtastic/sdk/LiveNodeDbMergeTest.kt) | `FakeRadioTransport` |
+| Bluetooth frame stripping | `:transport-ble` | [`FrameStripTest`](../transport-ble/src/commonTest/kotlin/org/meshtastic/sdk/transport/ble/FrameStripTest.kt) | edge cases |
+| Bluetooth drain coordinator | `:transport-ble` | [`DrainCoordinatorTest`](../transport-ble/src/commonTest/kotlin/org/meshtastic/sdk/transport/ble/internal/DrainCoordinatorTest.kt) | virtual-time `runTest` |
+| Serial frame assembly | `:transport-serial` | [`SerialFrameAssemblerTest`](../transport-serial/src/commonTest/kotlin/org/meshtastic/sdk/transport/serial/SerialFrameAssemblerTest.kt) | byte-stream vectors |
 
-### Required additions (open work — see Track D)
+A handshake failure test asserts the exact `MeshtasticException` subclass from [`error-taxonomy.md`](./error-taxonomy.md).
 
-- **`HandshakeFsmTest`** — table-driven coverage of every documented
-  state transition in [`architecture/handshake-fsm.md`](./architecture/handshake-fsm.md).
-  Each row is `(state, event) → next_state, side_effects`. Failure rows
-  must assert the exact `MeshtasticException` subclass per
-  [`error-taxonomy.md`](./error-taxonomy.md).
-- **`CodecGoldenTest` expansion** — currently round-trips a small set;
-  needs a fixture per `FromRadio` and `ToRadio` variant, encoded once
-  by a known-good implementation (Python `meshtastic`) and committed
-  as hex strings under `core/src/commonTest/resources/golden/`.
-- **`NodeDbTest`** — `:core`'s in-memory NodeDB updates: insert,
-  upsert-on-NodeInfo, position update, telemetry merge, expiry. Pure-
-  function tier, no engine, no flows.
+## Libraries
 
-### Conventions
-
-- Use [`runTest`](https://kotlinlang.org/api/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html)
-  with the implicit virtual scheduler — no `Dispatchers.IO` references
-  in `commonTest`.
-- Use [Turbine](https://github.com/cashapp/turbine) for any `Flow`
-  assertion. No `flow.first()` polling loops.
-- Golden vectors live under `src/commonTest/resources/`. The companion
-  Python generator (when present) lives under `tools/golden/` with the
-  exact `meshtastic` library version pinned in a `requirements.txt`.
-
-## Test framework & libraries
-
-All tests in `commonTest` use the same toolchain — pulled in by the
-`meshtastic.kmp.library` convention plugin
-([`KmpLibraryConventionPlugin.kt`](../build-logic/convention/src/main/kotlin/KmpLibraryConventionPlugin.kt))
-so individual modules don't need to declare them:
+The `meshtastic.kmp.library` convention plugin ([`KmpLibraryConventionPlugin.kt`](../build-logic/convention/src/main/kotlin/KmpLibraryConventionPlugin.kt)) adds these to every module's `commonTest`:
 
 | Library | Purpose |
 |---|---|
-| `kotlin.test` (`kotlin-test`) | Assertions (`assertEquals`, `assertFailsWith`, …) and the `@Test` annotation. Dispatches to JUnit on JVM, XCTest on iOS, no extra config needed. |
-| `kotlinx.coroutines.test` | `runTest { … }` virtual-time scheduler, `TestScope`, `advanceTimeBy`, `runCurrent`. |
-| [Turbine](https://github.com/cashapp/turbine) | `flow.test { awaitItem(); expectNoEvents() }` — the only sanctioned way to assert against a `Flow`. |
-| Kotest assertions | Fluent matchers (`shouldBe`, `shouldThrow`) used alongside `kotlin.test` when they read better. |
-| Power-Assert (compiler plugin) | Expands `assert(...)` / `require(...)` failure messages with a full expression tree. Already applied by the convention plugin. |
+| `kotlin.test` | Assertions (`assertEquals`, `assertFailsWith`) and `@Test`. Runs on JUnit on the JVM, XCTest on iOS and Node.js on JS and Wasm. |
+| `kotlinx-coroutines-test` | `runTest { }` with its virtual-time scheduler, `TestScope`, `advanceTimeBy` and `runCurrent`. |
+| [Turbine](https://github.com/cashapp/turbine) | `flow.test { awaitItem(); expectNoEvents() }` for asserting on a `Flow`. |
+| Kotest assertions | Matchers such as `shouldBe` and `shouldThrow`, used alongside `kotlin.test` where they read better. |
+| Power-Assert (compiler plugin) | Expands `assert`, `require` and the `kotlin.test` assertion messages into the full expression tree. |
 
-Patterns we follow:
+Conventions:
 
-- One test class per behavioral unit; descriptive `@Test` names in
-  back-tick prose: `` `handshake timeout in stage 1 surfaces HandshakeTimeout`. ``
-- `runTest { … }` for anything touching coroutines. Never wrap a test
-  body in `runBlocking`.
-- Turbine for flows; never `.first()` or polling loops.
-- `assertFailsWith<MeshtasticException.NotConnected>` for failure
-  contracts — the exception subclass IS the contract per
-  [`error-taxonomy.md`](./error-taxonomy.md).
+- One test class per behavior, with descriptive names.
+- `runTest { }` for anything touching coroutines, never `runBlocking`, and no `Dispatchers.IO` in `commonTest`.
+- Turbine, `runCurrent()` or a collected list for flows, never polling loops.
+- `assertFailsWith<MeshtasticException.NotConnected>` for failure contracts; the exception subclass is the contract.
 
-## Tier 2 — integration tests (engine + transport seam)
+## Integration tests
 
-These tests exercise the **public contract** of `RadioClient` against a
-deterministic `FakeRadioTransport` — the same fake we ship in the
-`:testing` module so consumers can write their own integration tests.
-
-Required flows under `:core`'s `commonTest`:
+These exercise the public contract of `RadioClient` against `FakeRadioTransport`, the same fake the `:testing` module publishes for consumers. `:core`'s `commonTest` covers:
 
 | Scenario | Validates |
 |---|---|
-| Cold start → Connected | Handshake gating: `ConnectionState` only reaches `Connected` after matching `config_complete_id` |
-| Pre-handshake bytes discarded | Bytes that arrive before handshake completion never reach `events` |
-| Send before connect | `MeshtasticException.NotConnected` thrown by `sendText` |
-| Disconnect during handshake | State reverts to `Disconnected`; partial state cleared |
-| Reconnect with same client | Engine actor survives; idempotent `connect()` |
+| Cold start to connected | `ConnectionState` reaches `Connected` only after the matching `config_complete_id` |
+| Bytes before the handshake | Frames that arrive before the handshake completes never reach `events` |
+| Send before connect | `sendText` throws `MeshtasticException.NotConnected` |
+| Disconnect during the handshake | The state returns to `Disconnected` and partial state is cleared |
+| Reconnect with the same client | The engine actor survives and `connect()` can be called again |
 
-`FakeRadioTransport` is not a mock — it's a programmable transport
-that exposes `incoming.send(bytes)` and records every outbound frame.
-Tests assert against the recorded frames, not against engine internals.
+`FakeRadioTransport` isn't a mock. It is a scripted transport: `injectFrame` and `injectPacket` deliver inbound traffic, `outboundFrames()` and `outboundPackets()` return what the engine sent, and `simulateError` drops the link. Tests assert on the recorded traffic, not on engine internals.
 
-### Writing tests with the `:testing` module fakes
+### Using the fixtures
 
-The `:testing` module is published so downstream consumers can use the
-same fixtures we use internally. Add it to `commonTest`:
+`:testing` is published so consumers can use the same fixtures. Inside this repository, add it as a project dependency:
 
 ```kotlin
 // build.gradle.kts
 kotlin.sourceSets.commonTest.dependencies {
-    implementation(project(":testing"))   // FakeRadioTransport, TestClock; InMemoryStorageProvider comes with :core
-    implementation(libs.turbine)
-    implementation(libs.coroutinesTest)
+    implementation(project(":testing"))   // brings :core, Turbine and kotlinx-coroutines-test
 }
 ```
 
-Two fixtures ship today:
-
-| Fixture | Purpose | Source |
+| Fixture | Purpose | Module |
 |---|---|---|
-| [`FakeRadioTransport`](../testing/src/commonMain/kotlin/org/meshtastic/sdk/testing/FakeRadioTransport.kt) | Script-driven `RadioTransport`. Pre-load frames, inject at runtime, record outbound frames, optionally `autoHandshake = true` to short-circuit Stage 1/2 + admin `getOwner` so `RadioClient.connect()` resolves to `Connected` without a real radio. | `:testing` |
-| [`InMemoryStorage`](../core/src/commonMain/kotlin/org/meshtastic/sdk/InMemoryStorage.kt) / `InMemoryStorageProvider` | RAM-backed `DeviceStorage` + `StorageProvider`. Mirrors the SQLDelight backend's contract (including identity-rebind clearing in `recordOwnNode`), with no JDBC / JNI. Lives in `:core` (`org.meshtastic.sdk`) since 0.3.0 so production hosts can use it too; `:testing` keeps deprecated aliases. | `:core` |
+| [`FakeRadioTransport`](../testing/src/commonMain/kotlin/org/meshtastic/sdk/testing/FakeRadioTransport.kt) | A scripted `RadioTransport`: pre-load frames, inject frames, packets and canned admin, telemetry, routing and store-and-forward responses, and record outbound frames. With `autoHandshake = true` it answers the two-stage handshake and the owner request, so `RadioClient.connect()` reaches `Connected` without a node; `nodeNum` sets the reported NodeNum. | `:testing` |
+| [`TestClock`](../testing/src/commonMain/kotlin/org/meshtastic/sdk/testing/TestClock.kt) | A `kotlin.time.Clock` the test moves with `advance` or `set`, for `RadioClient.Builder.clock(...)`. | `:testing` |
+| [`InMemoryStorage`](../core/src/commonMain/kotlin/org/meshtastic/sdk/InMemoryStorage.kt) and `InMemoryStorageProvider` | RAM-backed `DeviceStorage` and `StorageProvider` that honor the SQLDelight backend's contract, including identity-rebind clearing in `recordOwnNode`, with no JDBC or JNI. `:testing` keeps deprecated aliases. | `:core` |
 
-#### Engine logic example — `FakeRadioTransport`
+#### Engine example
 
 ```kotlin
-class HandshakeIntegrationTest {
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import org.meshtastic.sdk.ConnectionState
+import org.meshtastic.sdk.InMemoryStorageProvider
+import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.TransportIdentity
+import org.meshtastic.sdk.testing.FakeRadioTransport
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class ConnectTest {
     @Test
-    fun `connect completes after handshake`() = runTest {
-        val transport = FakeRadioTransport(
-            identity = TransportIdentity("test"),
-            autoHandshake = true,
-        )
+    fun connectCompletesAgainstTheFake() = runTest {
+        val transport = FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true)
         val client = RadioClient.Builder()
             .transport(transport)
             .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
             .build()
 
-        client.connection.test {
-            assertEquals(ConnectionState.Disconnected, awaitItem())
-            client.connect()
-            // Configuring → Connected after auto-handshake replies
-            skipWhile { it is ConnectionState.Configuring }
-            assertEquals(ConnectionState.Connected, awaitItem())
-        }
-
-        // Assert what the engine actually sent on the wire
-        val sent = transport.outboundFrames()
-        assertTrue(sent.any { it.containsWantConfigId(NONCE_STAGE1) })
-        assertTrue(sent.any { it.containsWantConfigId(NONCE_STAGE2) })
-    }
-
-    @Test
-    fun `transport error surfaces as Reconnecting`() = runTest {
-        val transport = FakeRadioTransport(TransportIdentity("test"), autoHandshake = true)
-        val client = buildClient(transport)
         client.connect()
 
-        transport.simulateError(IOException("link dropped"), recoverable = true)
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        assertTrue(transport.outboundFrames().isNotEmpty())   // the handshake went out on the wire
+    }
 
-        client.connection.test {
-            // Engine maps recoverable transport errors to Reconnecting
-            assertIs<ConnectionState.Reconnecting>(awaitItem())
-        }
+    @Test
+    fun recoverableTransportErrorReconnects() = runTest {
+        val transport = FakeRadioTransport(identity = TransportIdentity("fake:test"), autoHandshake = true)
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoReconnect()
+            .build()
+        client.connect()
+
+        transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+        runCurrent()
+
+        assertIs<ConnectionState.Reconnecting>(client.connection.value)
     }
 }
 ```
 
-Real examples live alongside the engine in
-[`core/src/commonTest/kotlin/org/meshtastic/sdk/`](../core/src/commonTest/kotlin/org/meshtastic/sdk/) —
-notably `EngineTest`, `HandshakeFsmTest`, and the cold-connect
-scenarios.
+More examples sit beside the engine in [`core/src/commonTest/kotlin/org/meshtastic/sdk/`](../core/src/commonTest/kotlin/org/meshtastic/sdk/), notably `EngineTest`, `HandshakeFsmTest`, `HandshakeAndReconnectTest` and `MeshEngineEdgeCasesTest`.
 
-#### Storage example — `InMemoryStorage`
+#### Storage example
 
-For storage tests that don't need to verify SQL behavior (anything
-above the `DeviceStorage` interface), prefer `InMemoryStorage` over
-spinning up an in-memory SQLite driver — it's faster, has no native
-deps, and runs identically on every KMP target:
+For storage behavior above the `DeviceStorage` interface, `InMemoryStorage` is faster than an in-memory SQLite driver, needs no native code and behaves the same on every target:
 
 ```kotlin
-class IdentityRebindTest {
+import kotlinx.coroutines.test.runTest
+import org.meshtastic.proto.NodeInfo
+import org.meshtastic.sdk.InMemoryStorage
+import org.meshtastic.sdk.NodeId
+import kotlin.test.Test
+import kotlin.test.assertTrue
+
+class IdentityRebindExampleTest {
     @Test
-    fun `recording a different node num clears prior data`() = runTest {
+    fun recordingADifferentNodeNumClearsPriorData() = runTest {
         val storage = InMemoryStorage()
-        storage.saveNode(NodeInfo(num = 0xAABBCC, ...))
-        storage.recordOwnNode(NodeId(0xAABBCC), firmwareVersion = "2.5.0")
+        storage.recordOwnNode(NodeId(0xAABBCC), "2.7.0")
+        storage.saveNode(NodeInfo.Builder().also { it.num = 0xAABBCC }.build())
 
-        // Plug in a different radio: same identity slot, different NodeNum
-        storage.recordOwnNode(NodeId(0x112233), firmwareVersion = "2.5.0")
+        // A different node behind the same transport identity
+        storage.recordOwnNode(NodeId(0x112233), "2.7.0")
 
-        assertTrue(storage.loadNodes().isEmpty())  // factory-rebind cleared
+        assertTrue(storage.loadNodes().isEmpty())
     }
 }
 ```
 
-When you DO need to exercise SQL behavior — migrations, PRAGMA
-selection, transaction isolation — use the actual SQLDelight driver
-with an in-memory database (`:memory:`) under `:storage-sqldelight`'s
-`jvmTest`. That tier validates the `verifyMigrations = true`
-SQLDelight check (see [`Mesh.sq`](../storage-sqldelight/src/commonMain/sqldelight/org/meshtastic/kmp/storage/sqldelight/Mesh.sq))
-and the platform-specific `createDriver()` factories.
+To exercise SQL itself (migrations, PRAGMA selection, transaction isolation), use the real SQLDelight driver with an in-memory database in `:storage-sqldelight`'s `jvmTest`, as `StorageDriverTest` does. That tier covers the platform `createDriver()` factories and the schema in [`Mesh.sq`](../storage-sqldelight/src/commonMain/sqldelight/org/meshtastic/sdk/storage/sqldelight/internal/Mesh.sq); `verifyMigrations = true` checks the migrations at build time.
 
-## Tier 3 — manual hardware
+## Manual hardware tests
 
-See [`manual-tests.md`](./manual-tests.md) for the full matrix. These
-are run **pre-release** by a maintainer with real hardware (or, post-1.0,
-the `hw-loop.yml` self-hosted runner described in [`ci-cd.md`](./ci-cd.md)).
+[`manual-tests.md`](./manual-tests.md) has the matrix. A maintainer runs it before a release with real hardware, partly scripted through `cli conformance`. A self-hosted `hw-loop.yml` runner is planned for after 1.0 ([`ci-cd.md`](./ci-cd.md#roadmap)).
 
-Anything in this tier must have a documented reason it cannot be
-expressed against `FakeRadioTransport` (real timing, real BLE GATT
-quirks, real serial USB enumeration, etc.).
+A manual test needs a documented reason it can't run against `FakeRadioTransport`: real timing, real Bluetooth GATT behavior, real USB serial enumeration.
 
-## Coverage targets
+## Coverage
 
-We do not enforce a numeric percentage gate (no JaCoCo, no Kover) —
-attempting to do so on KMP across native + JVM + Android targets has
-historically been more pain than signal. The contract is **behavioral**:
+Kover measures JVM coverage, and the `coverage` CI job uploads it to Codecov. Codecov's project status fails when overall coverage drops by more than 1%, and its patch status is advisory; neither is a required check. iOS and other Native execution isn't counted.
 
-- **Every public type in `:core`** must have at least one test exercising
-  its happy path.
-- **Every documented `MeshtasticException` subclass** must have a test
-  proving the engine throws it under the documented condition.
-- **Every state transition in the handshake FSM** must have a unit test
-  row.
-- **Every wire-format change** (new `oneof` arm, new PortNum) must ship
-  with an updated golden-byte vector in the same PR.
+Behavior is the contract, not a percentage:
 
-### Aspirational thresholds (informational, not gated)
+- Every public type in `:core` has at least one test of its main path.
+- Every documented `MeshtasticException` subclass has a test showing the engine throws it under the documented condition.
+- Every handshake state transition has a unit test.
+- A wire-format change (a new `oneof` case, a new `PortNum`) ships with an updated byte vector in the same PR.
 
-If/when we wire Kover, the targets we'd start from:
-
-| Module | Line coverage aim | Notes |
-|---|---|---|
-| `:core` | ≥ 85 % | Pure logic; the engine + codec live here. Hot reconnect paths still under-covered today. |
-| `:storage-sqldelight` | ≥ 70 % | SQL is exercised but identity-rebind & migration paths are thin. |
-| `:transport-tcp` | ≥ 70 % | Reader loop + heartbeat. |
-| `:transport-ble` | ≥ 60 % | Bonded by Kable mocking limits; weighted toward `commonMain` helpers. |
-| `:transport-serial` | ≥ 60 % | Frame assembler is well-covered; jSerialComm side-effects are not. |
-| `:testing` | n/a | Fixtures are exercised transitively by every other module's tests. |
-
-Treat these as guidance, not enforcement. A behavioral gap (e.g., a
-`MeshtasticException` subclass without a test) is a real regression;
-a coverage-percentage drop on a refactor is not.
+A `MeshtasticException` subclass without a test is a real gap; a coverage dip from a refactor isn't.
 
 ## Local commands
 
-```bash
-./gradlew jvmTest                           # everything fast (default)
-./gradlew :core:jvmTest                     # one module
+```shell
+./gradlew jvmTest                                        # every module on the JVM
+./gradlew :core:jvmTest                                  # one module
 ./gradlew :transport-ble:jvmTest --tests "*FrameStrip*"  # one class
-./gradlew iosSimulatorArm64Test             # macOS only — KMP iOS unit tests
-./gradlew jsNodeTest                        # Kotlin/JS unit tests under the Node.js on PATH
-./gradlew jsBrowserTest                     # browser storage tests in headless Chrome (CHROME_BIN or installed Chrome)
-./gradlew check                             # full gate (test + lint + checkKotlinAbi + arch)
+./gradlew iosSimulatorArm64Test                          # iOS (macOS)
+./gradlew jsNodeTest wasmJsNodeTest                      # JS and Wasm under the Node.js on PATH
+./gradlew jsBrowserTest                                  # browser storage tests in headless Chrome (CHROME_BIN or installed Chrome)
+./gradlew koverXmlReport                                 # JVM coverage report
+./gradlew check                                          # full gate
 ```
 
 ## Anti-patterns
 
-- **No real `Dispatchers.Default` in tests.** Use `runTest` and let it
-  control the scheduler. Tests that hang for 5+ seconds are almost
-  always making this mistake.
-- **No `Thread.sleep` / `delay` polling in `commonTest`.** Use Turbine's
-  `awaitItem()` or `runTest`'s virtual time.
-- **No mocks for transports.** `FakeRadioTransport` is the seam; if it
-  can't express what you need, fix the fake, don't reach for MockK.
-- **No "test the implementation" tests.** If a test breaks on a non-
-  behavioral refactor, it was the wrong test. Assert against the public
-  contract.
+- Real `Dispatchers.Default` in tests. Let `runTest` control the scheduler; a test that hangs for seconds usually broke this rule.
+- `Thread.sleep` or `delay` polling in `commonTest`. Use Turbine's `awaitItem()` or `runTest`'s virtual time.
+- Mocked transports. `FakeRadioTransport` is the seam; if it can't express a case, extend the fake rather than reaching for MockK.
+- Tests of the implementation. A test that breaks on a refactor that changes no behavior is the wrong test; assert on the public contract.

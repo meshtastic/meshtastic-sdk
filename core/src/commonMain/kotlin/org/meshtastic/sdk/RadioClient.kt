@@ -14,20 +14,28 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onSubscription
 import kotlinx.coroutines.launch
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LockdownAuth
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.internal.AdminApiImpl
+import org.meshtastic.sdk.internal.FileTransferApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.RoutingApiImpl
 import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
+import org.meshtastic.sdk.internal.summarizeFromRadio
+import org.meshtastic.sdk.internal.summarizeToRadio
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
@@ -124,6 +132,30 @@ public class RadioClient internal constructor(
     public val channels: StateFlow<List<org.meshtastic.proto.Channel>?> = engine.channelsState.asStateFlow()
 
     /**
+     * Admin session state per node, keyed by the node that issued the session passkey.
+     *
+     * A node appears once an admin response from it carries a passkey and disappears when the
+     * key expires, the node rejects it with `ADMIN_BAD_SESSION_KEY`, the connection ends or the
+     * local identity changes. A node that is absent has [AdminSessionStatus.NoSession]. The local
+     * node's session is seeded during the handshake. Expiry is evaluated on the engine's
+     * 30 s heartbeat tick against the injected [Builder.clock], so a transition can surface up to
+     * 30 s late; the passkey bytes are never exposed.
+     *
+     * @since 0.3.0
+     */
+    public val adminSessions: StateFlow<Map<NodeId, AdminSessionStatus>> = engine.adminSessions.asStateFlow()
+
+    /**
+     * Admin session state of one [node]: [adminSessions] projected to a single node, with
+     * [AdminSessionStatus.NoSession] standing in for an absent entry. Emits the current status
+     * on collection, then only changes.
+     *
+     * @since 0.3.0
+     */
+    public fun adminSessionStatus(node: NodeId): Flow<AdminSessionStatus> =
+        adminSessions.map { it[node] ?: AdminSessionStatus.NoSession }.distinctUntilChanged()
+
+    /**
      * Node-change deltas. **Every** subscriber — early or late — first receives a
      * [NodeChange.Snapshot] of the engine's current node map (seeded per-subscription via
      * `onSubscription`), then live [NodeChange.Added] / [NodeChange.Updated] /
@@ -134,11 +166,11 @@ public class RadioClient internal constructor(
      * replacement. Under [Builder.skipNodeDb] that snapshot holds only the local node — peers
      * arrive as [NodeChange.Added] once they are heard.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 256` with `BufferOverflow.SUSPEND` (per ADR-005). Slow collectors
-     * apply backpressure to the engine actor; deltas are **never silently dropped** on this
-     * flow. If the engine inbox itself fills as a result, drops surface as
-     * [MeshEvent.PacketsDropped] on [events] — see ADR-005 §"Backpressure policy".
+     * **Buffering:** the underlying `MutableSharedFlow` has `extraBufferCapacity = 256` and the
+     * engine emits with `tryEmit`, so it never suspends on a collector. When a slow collector
+     * leaves the buffer full, the new change is dropped and [MeshEvent.PacketsDropped] with
+     * `flow = DroppedFlow.Nodes` is emitted on [events]; a new subscription's
+     * [NodeChange.Snapshot] restores a complete map.
      */
     public val nodes: Flow<NodeChange> = engine.nodes
         .onSubscription { emit(NodeChange.Snapshot(engine.nodeMapSnapshot())) }
@@ -146,20 +178,37 @@ public class RadioClient internal constructor(
     /**
      * Inbound decoded packets.
      *
-     * The engine decrypts channel payloads transparently; `MeshPacket.decoded` is always
-     * non-null on emission. Filter by `decoded.portnum` to match specific app payloads.
+     * The device decrypts mesh traffic, and the engine drops a packet that arrives without a
+     * decoded payload, so `MeshPacket.decoded` is always non-null on emission. Filter by
+     * `decoded.portnum` to match specific app payloads.
      *
-     * **Buffering and backpressure:** the underlying `MutableSharedFlow` uses
-     * `extraBufferCapacity = 128` with `BufferOverflow.SUSPEND` (per ADR-005 / SPEC §4.4).
-     * Slow collectors apply backpressure to the engine. If the engine inbox itself fills, the
-     * engine drops the **oldest queued frame** and emits
+     * **Buffering:** the underlying `MutableSharedFlow` has `extraBufferCapacity = 128` and the
+     * engine emits with `tryEmit`, so it never suspends on a collector. When a slow collector
+     * leaves the buffer full, the new packet is dropped and
      * [MeshEvent.PacketsDropped][org.meshtastic.sdk.MeshEvent.PacketsDropped] with
-     * `flow = DroppedFlow.Packets` on [events]. Silent loss is forbidden in the public surface
-     * — every drop is observable.
+     * `flow = DroppedFlow.Packets` is emitted on [events].
      *
-     * Populated by the HandshakeMachine after entering [ConnectionState.Connected].
+     * Packets that arrive during the handshake are held and emitted once the session reaches
+     * [ConnectionState.Connected].
      */
     public val packets: Flow<MeshPacket> = engine.packets.hide()
+
+    /**
+     * Ordered handshake snapshots, packets and session boundaries for one consumer.
+     *
+     * Enable this stream with [Builder.sessionReceive] and start collecting before [connect].
+     * A protected radio may report [RadioSessionEvent.Lockdown] before [RadioSessionEvent.Ready].
+     * Ready precedes retained handshake packets and live packets. The stream spans automatic reconnects and completes when the client
+     * shuts down. Collect it directly for ordered delivery.
+     *
+     * If the SDK loses receive coverage, the stream drains accepted events and then throws
+     * [RadioSessionOverflowException]. The radio continues processing frames. Create a new
+     * client to restart this stream after overflow or collector cancellation. Delivery
+     * sequences measure SDK coverage. The radio or transport may lose packets upstream.
+     *
+     * `null` if session receive was left disabled.
+     */
+    public val sessionEvents: Flow<RadioSessionEvent>? = engine.sessionEvents
 
     /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
@@ -168,6 +217,61 @@ public class RadioClient internal constructor(
      * device reports a different NodeNum than the one previously persisted).
      */
     public val events: Flow<MeshEvent> = engine.events.hide()
+
+    /**
+     * Every [FromRadio] envelope the device sends, decoded and unfiltered: handshake frames,
+     * config, channels, log records and packets alike. [packets] carries mesh packets only, so a
+     * recorder or protocol analyzer subscribes here instead.
+     *
+     * Hot, no replay, and lossy: a collector that falls more than 256 envelopes behind loses the
+     * oldest, so the engine is never stalled by a slow tap. Envelopes can carry channel PSKs and
+     * node positions; the SDK does not redact or persist them.
+     *
+     * @since 0.3.0
+     */
+    public val fromRadio: Flow<FromRadio> = engine.rawFromRadio.hide()
+
+    /**
+     * Log lines the device sends over the phone API, in arrival order, handshake included.
+     *
+     * Firmware only sends them on stream transports (serial and TCP) while
+     * `security.debug_log_api_enabled` is set; turn it on with [AdminApi.setConfig] and a
+     * `Config.SecurityConfig`. The SDK never changes that setting. The BLE LogRadio
+     * characteristic is a separate transport-level path that the SDK does not read.
+     *
+     * Hot, no replay. Volume is unbounded, so a collector that falls more than 64 records
+     * behind loses the oldest ones; the engine and the other flows never wait for it, and no
+     * [MeshEvent.PacketsDropped] is emitted for logs.
+     *
+     * @since 0.3.0
+     */
+    public val deviceLogs: Flow<LogRecord> = engine.deviceLogs.hide()
+
+    /**
+     * Complete frames of the device display, emitted while mirroring is on
+     * ([AdminApi.setDisplayMirror]) or after [AdminApi.requestDisplayFrame].
+     *
+     * The engine reassembles the firmware's chunks; a frame with a gap, an interrupted chunk
+     * sequence or an oversize `total_size` (over 1 MiB) is dropped and logged, never delivered
+     * partially. **Buffering:** no replay, and a buffer of 2 that drops the **oldest** frame when a
+     * collector falls behind, so a slow renderer skips to recent frames and never stalls the
+     * engine. Frames emitted while nothing collects are discarded. Dropped frames are not
+     * reported on [events].
+     *
+     * @since 0.3.0
+     */
+    public val displayFrames: Flow<DisplayMirrorFrame> = engine.displayFrames.hide()
+
+    /**
+     * The most recent complete display palette, or `null` until the device sends one this
+     * session. Match [DisplayMirrorFrame.paletteSignature] against
+     * [org.meshtastic.proto.DisplayPalette.signature]; a frame whose palette has not arrived yet
+     * should be drawn monochrome. Reset to `null` on disconnect.
+     *
+     * @since 0.3.0
+     */
+    public val displayPalette: StateFlow<org.meshtastic.proto.DisplayPalette?> =
+        engine.displayPalette.asStateFlow()
 
     // ── On-demand query ─────────────────────────────────────────────────────
 
@@ -190,6 +294,16 @@ public class RadioClient internal constructor(
         if (connection.value !is ConnectionState.Connected) throw MeshtasticException.NotConnected()
         return engine.nodeSnapshot()
     }
+
+    /**
+     * Queue a nodes-only download on the current connection. Requires the optional [sessionEvents] stream.
+     * A completed download emits [RadioSessionEvent.NodeDbRefreshed]. Requests received during a download
+     * coalesce into one follow-up. A stalled download ends the session so a late completion cannot be
+     * mistaken for a subsequent download.
+     *
+     * Returns whether the request entered the engine queue while the client was connected.
+     */
+    public fun requestNodeDbRefresh(): Boolean = engine.requestNodeDbRefresh()
 
     /**
      * Request a remote node to send its [NodeInfo] (user identity + position).
@@ -246,22 +360,6 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class, CancellationException::class)
     public suspend fun connect() {
         engine.connect()
-        if (autoSyncTimeOnConnect) {
-            // Best-effort and fire-and-forget: a slow / silent device must not delay connect()'s
-            // return. Launches under the same parent context as the engine so cancellation /
-            // shutdown propagates cleanly.
-            kotlinx.coroutines.CoroutineScope(parentContext).launch(
-                kotlinx.coroutines.CoroutineName("meshtastic-auto-time-sync"),
-            ) {
-                try {
-                    admin.setTime()
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // Swallow — clock sync is auxiliary, the session is otherwise live.
-                }
-            }
-        }
     }
 
     /**
@@ -304,6 +402,38 @@ public class RadioClient internal constructor(
      */
     @Throws(MeshtasticException::class)
     public fun send(packet: MeshPacket): MessageHandle {
+        checkSendable(packet)
+        val id = engine.nextMessageId()
+        val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
+        val handle = MessageHandle(
+            id = id,
+            _state = stateFlow,
+            cancelFn = { cancelId -> engine.tryCancelSend(cancelId, stateFlow) },
+            packet = packet,
+            resendFn = { pkt -> send(pkt) },
+        )
+        engine.trySend(packet, id, stateFlow)
+        return handle
+    }
+
+    /**
+     * Queues one packet behind the current radio queue write. A matching firmware receipt or
+     * routing result releases the slot. If neither arrives within five seconds, the slot
+     * is released and its receipt is [QueueReceipt.Unconfirmed].
+     *
+     * Delivery can still complete after the queue slot is released. A nonzero [MeshPacket.id]
+     * is retained for durable callers and becomes the ID on the returned [MessageHandle].
+     */
+    @Throws(MeshtasticException::class)
+    public fun sendPaced(packet: MeshPacket): PacedMessageHandle {
+        checkSendable(packet)
+        return engine.enqueuePaced(
+            packet,
+            resend = { original -> sendPaced(original.newBuilder().also { it.id = 0 }.build()).message },
+        )
+    }
+
+    private fun checkSendable(packet: MeshPacket) {
         val payloadSize = packet.decoded?.payload?.size ?: 0
         if (payloadSize > DATA_PAYLOAD_LEN) {
             throw MeshtasticException.PayloadTooLarge(DATA_PAYLOAD_LEN)
@@ -311,18 +441,6 @@ public class RadioClient internal constructor(
         if (connection.value !is ConnectionState.Connected) {
             throw MeshtasticException.NotConnected()
         }
-
-        val id = engine.nextMessageId()
-        val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
-        val handle = MessageHandle(
-            id = id,
-            _state = stateFlow,
-            cancelFn = { cancelId -> engine.tryCancelSend(cancelId) },
-            packet = packet,
-            resendFn = { pkt -> send(pkt) },
-        )
-        engine.trySend(packet, id, stateFlow)
-        return handle
     }
 
     /**
@@ -542,6 +660,13 @@ public class RadioClient internal constructor(
     }
 
     /**
+     * File transfer API for reading and writing files on the device. Available while connected.
+     */
+    public val files: FileTransferApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        FileTransferApiImpl(client = this)
+    }
+
+    /**
      * Store-and-Forward API for requesting stored messages. Available while connected.
      */
     public val storeForward: StoreForwardApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
@@ -576,6 +701,22 @@ public class RadioClient internal constructor(
         }
         engine.sendToRadio(frame)
     }
+
+    /**
+     * Attempts to enqueue local lockdown authentication, including before [ConnectionState.Connected].
+     * The device reports the outcome through [MeshEvent.LockdownStatusChanged] and [sessionEvents].
+     */
+    public fun tryLockdown(auth: LockdownAuth): Boolean =
+        engine.enqueueLockdown(auth, target = null) is AdminResult.Success
+
+    /**
+     * Attempts to enqueue a raw [ToRadio] frame while connected.
+     *
+     * @return true once the transport send queue accepts the encoded frame. Firmware acceptance and delivery
+     *     must be observed separately, just as with [sendRaw].
+     */
+    public fun trySendRaw(frame: ToRadio): Boolean =
+        connection.value is ConnectionState.Connected && engine.trySendToRadio(frame)
 
     /**
      * The hop limit a convenience send uses when the caller passes `null`: the device's
@@ -633,6 +774,8 @@ public class RadioClient internal constructor(
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
         private var skipNodeDb: Boolean = false
+        private var sessionReceiveCapacity: Int? = null
+        private var sessionReceiveEnvelopes: Boolean = false
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -688,7 +831,7 @@ public class RadioClient internal constructor(
          * Default: [kotlin.time.Clock.System].
          *
          * Wired through to [AdminApi.setTime] (when called with `at = null`) and to the
-         * post-handshake auto-sync trigger when [autoSyncTimeOnConnect] is enabled.
+         * clock sync the handshake sends when [autoSyncTimeOnConnect] is enabled.
          */
         public fun clock(clock: kotlin.time.Clock): Builder = apply { this.clock = clock }
 
@@ -721,12 +864,10 @@ public class RadioClient internal constructor(
         /**
          * Enable or disable automatic time sync on connect.
          *
-         * When enabled (default), [RadioClient.connect] fires a single [AdminApi.setTime] call
-         * after the handshake reaches [ConnectionState.Connected]. The supplied [clock] sources
-         * the value. Useful for GPS-less radios that lose wall-clock time across reboots.
-         *
-         * The current implementation syncs unconditionally on each Connected transition; a future
-         * iteration will gate on observed device skew (> 60 s drift).
+         * When enabled (default), the handshake sends one `set_time_only` from [clock] as soon as
+         * the Stage 1 `my_info` arrives, so firmware can re-date packets it queued without a clock
+         * while they are still queued. Best effort: a fast stream link can flush them first. Useful for
+         * GPS-less radios that lose time across reboots.
          */
         public fun autoSyncTimeOnConnect(enabled: Boolean): Builder = apply { autoSyncTimeOnConnect = enabled }
 
@@ -734,7 +875,7 @@ public class RadioClient internal constructor(
          * Disable BLE heartbeats.
          *
          * By default, the engine sends a heartbeat every 30 seconds on all transports including
-         * BLE. Power-sensitive BLE apps can opt out. TCP and serial send heartbeats
+         * BLE. Power-sensitive BLE apps can opt out. TCP, serial and WebSocket send heartbeats
          * unconditionally (see `protocol.md` §16).
          */
         public fun disableBleHeartbeat(): Builder = apply { bleHeartbeatEnabled = false }
@@ -835,6 +976,25 @@ public class RadioClient internal constructor(
         public fun skipNodeDb(skip: Boolean = true): Builder = apply { skipNodeDb = skip }
 
         /**
+         * Enable [RadioClient.sessionEvents] with a bounded buffer for one collector.
+         *
+         * @param capacity Maximum number of queued events, including session boundaries.
+         * @throws IllegalArgumentException if capacity is nonpositive or unlimited.
+         */
+        public fun sessionReceive(capacity: Int = 256): Builder = apply {
+            require(capacity in 1 until Int.MAX_VALUE) { "Session receive capacity must be positive and finite" }
+            sessionReceiveCapacity = capacity
+        }
+
+        /**
+         * Include non-packet [FromRadio] envelopes received after the handshake in the ordered session stream.
+         *
+         * Enable [sessionReceive] as well. [RadioSessionEvent.Envelope] shares the same sequence and bounded queue
+         * as packets. Use this for protocol events such as queue status that a host must reconcile with its own state.
+         */
+        public fun sessionReceiveEnvelopes(): Builder = apply { sessionReceiveEnvelopes = true }
+
+        /**
          * Build and return a [RadioClient].
          *
          * @throws IllegalArgumentException if [transport] or [storage] was not set
@@ -855,6 +1015,11 @@ public class RadioClient internal constructor(
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
+                syncTimeDuringHandshake = autoSyncTimeOnConnect,
+                protocolLogLevel = protocolLogLevel,
+                payloadRedactor = payloadRedactor,
+                sessionReceiveCapacity = sessionReceiveCapacity,
+                sessionReceiveEnvelopes = sessionReceiveEnvelopes,
             )
 
             return RadioClient(
@@ -884,14 +1049,21 @@ private fun <T> SharedFlow<T>.hide(): Flow<T> = flow { emitAll(this@hide) }
 /**
  * Strategy for redacting sensitive payload data in protocol logs.
  *
- * Applied when [RadioClient.Builder.protocolLogging] is active. The default implementation masks
- * positions, text payloads, and PSKs.
+ * Applied when [RadioClient.Builder.protocolLogging] is active: every envelope is rendered through
+ * [describe] before it reaches the [LogSink]. [Default] logs the envelope variant and routing
+ * metadata only, so payload bytes, text, positions, PSKs and passkeys never appear.
  *
  * @since 0.1.0
  */
 public interface PayloadRedactor {
+    /** Renders an inbound [fromRadio] envelope for the protocol log. */
+    public fun describe(fromRadio: FromRadio): String = summarizeFromRadio(fromRadio)
+
+    /** Renders an outbound [toRadio] envelope for the protocol log. */
+    public fun describe(toRadio: ToRadio): String = summarizeToRadio(toRadio)
+
     public companion object {
-        /** The default redaction strategy — masks position, text, and key fields. */
+        /** The default redaction strategy: envelope variant and routing metadata, never payload content. */
         public val Default: PayloadRedactor = object : PayloadRedactor {}
     }
 }

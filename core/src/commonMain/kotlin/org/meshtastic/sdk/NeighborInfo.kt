@@ -7,6 +7,8 @@
  */
 package org.meshtastic.sdk
 
+import org.meshtastic.sdk.internal.toDecimalString
+
 /**
  * Parsed neighbor information for a node, representing its directly-reachable peers.
  *

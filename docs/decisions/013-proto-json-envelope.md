@@ -16,6 +16,9 @@ event (`TransportState` change, handshake progress, error), or a CLI
 control message (command start/end, exit code). Agents and eval harnesses
 consume this stream to assert outcomes deterministically.
 
+> **Note:** the flag is the root-level `--json` ([ADR-009](009-cli-architecture.md)); there is no
+> `--format` option. The proto-JSON comes from Wire's Moshi adapter (`ProtoJson.kt`).
+
 We needed an encoding scheme that:
 - Preserves protobuf field semantics exactly (oneofs, unknown fields,
   bytes-vs-string).

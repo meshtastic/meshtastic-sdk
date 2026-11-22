@@ -1,57 +1,46 @@
 # Module transport-tcp
 
-TCP/IP transport for the Meshtastic KMP SDK. Implements the `RadioTransport` interface
-from `:core` using [Ktor Network](https://ktor.io/docs/client-sockets.html)
-(`io.ktor:ktor-network`) for KMP socket access. This is the simplest transport — no
-permissions, no platform plumbing — and is the recommended starting point for development,
-testing, and the JVM `samples/cli` runner.
+TCP transport for the Meshtastic KMP SDK. It implements `RadioTransport` from `:core` with [Ktor Network](https://ktor.io/docs/client-sockets.html) (`io.ktor:ktor-network`). It needs no permissions beyond network access, which makes it the usual starting point for development, tests and the `samples/cli` runner.
 
-## Supported targets and OS versions
+## Supported targets
 
-| Target | Backend | Minimum OS |
+| Target | Backend | Requirement |
 |---|---|---|
-| Android | Ktor `aSocket().tcp()` | Android 8.0 (API 26 — repo `androidMinSdk`); requires `INTERNET` permission |
-| JVM (macOS, Linux, Windows) | Ktor `aSocket().tcp()` over NIO | JDK 21 (repo baseline) |
-| iOS (arm64, Simulator arm64) | Ktor `aSocket().tcp()` over POSIX sockets | iOS 13+ |
-| Linux x64 (native) | Ktor `aSocket().tcp()` over POSIX sockets | glibc 2.17+ |
+| Android | Ktor `aSocket().tcp()` | API 26 (`androidMinSdk`) and the `INTERNET` permission |
+| JVM (macOS, Linux, Windows) | Ktor `aSocket().tcp()` over NIO | JDK 17 runtime |
+| iOS (arm64, x64, Simulator arm64) | Ktor `aSocket().tcp()` over POSIX sockets | none |
 
 ## Connection behavior
 
-- **Default port:** `4403` (Meshtastic PhoneAPI; see `docs/protocol.md` §1).
-- **Framing:** stream framing per `protocol.md` §2 — `0x94 0xC3 LEN_HI LEN_LO PAYLOAD`,
-  big-endian uint16 length, max payload 512 bytes. The transport implements the
-  `SCAN_FOR_START1 → EXPECT_START2 → READ_LEN_HI → READ_LEN_LO → READ_PAYLOAD` resync FSM
-  required to recover from mid-frame garbage.
-- **Wake bytes:** on connect the transport writes `4 × 0x94` before any application
-  traffic (matches Meshtastic-Android's `StreamTransport.connect()`); these are valid
-  no-ops for a healthy framer and corrective for a framer left mid-frame by an unclean
-  prior session. See `protocol.md` §2 "Wake bytes".
+- **Default port:** `4403` (the PhoneAPI port; see `docs/protocol.md` §1).
+- **Framing:** stream framing per `protocol.md` §2: `0x94 0xC3 LEN_HI LEN_LO PAYLOAD`, big-endian 16-bit length, payload up to 512 bytes. The reader resynchronizes after mid-frame garbage (`SCAN_FOR_START1 → EXPECT_START2 → READ_LEN_HI → READ_LEN_LO → READ_PAYLOAD`).
+- **Wake bytes:** on connect the transport writes `4 × 0x94` before any other traffic, as Meshtastic-Android's `StreamTransport.connect()` does. A healthy framer ignores them; a framer left mid-frame by an unclean session resets. See `protocol.md` §2 "Wake bytes".
 
 ## Idle timeout
 
-The Meshtastic firmware closes any TCP connection that is idle in both directions for
-**15 minutes** (`900_000 ms`). This is a device-side, non-configurable setting documented
-in [`docs/protocol.md` §1A](../docs/protocol.md#-1a-tcp-idle-timeout-behavior). The
-transport does not generate keep-alive frames on its own — heartbeats from the firmware
-or normal mesh traffic reset the timer. When the timeout fires, Ktor surfaces the FIN as
-EOF, the transport publishes `TransportState.Error(recoverable = true)`, and the engine's
-liveness timeout (§6) trips shortly after.
+Firmware closes a TCP connection after 15 minutes (`900_000 ms`) with no `ToRadio` from the client; traffic from the node does not reset the timer, and the timeout is fixed in firmware ([`docs/protocol.md` §1A](../docs/protocol.md#-1a-tcp-idle-timeout-behavior)). Once connected, the engine sends a `ToRadio` heartbeat every 30 seconds, so a live session never reaches it. If the node closes the socket anyway, Ktor reports EOF and the transport publishes `TransportState.Error(recoverable = true)`.
 
-## Reconnection strategy
+## Reconnection
 
-`TcpTransport` itself is **stateless across connects** — `connect()` is idempotent and
-can be called repeatedly after `disconnect()` or after a recoverable error. It does **not**
-implement automatic reconnect or backoff; that decision belongs to the host so it can be
-coordinated with UI state, network availability, and battery policy.
+`TcpTransport` holds no state across connects: `connect()` can be called again after `disconnect()` or a recoverable error. The transport never reconnects on its own. The engine's supervisor does, when `RadioClient.Builder.autoReconnect(...)` enables it (off by default): exponential backoff from 1 s, doubling, capped at 60 s, with jitter. A host that keeps reconnect policy itself should retry only `recoverable = true` errors.
 
-The recommended host policy (mirrors `protocol.md` §1A) is exponential backoff on
-recoverable errors: `1s, 2s, 4s, 8s, … capped at 60s`, reset to `1s` on any successful
-`Connected` transition. Errors with `recoverable = false` (currently unused on this
-transport) should not be retried.
+## Discovery
+
+Nodes with Wi-Fi or Ethernet advertise `_meshtastic._tcp` on port `4403` over mDNS, with the TXT records `shortname`, `id` and `pio_env` (firmware `WiFiAPClient.cpp`). `TcpDiscovery.discover()` is a cold `Flow<TcpDiscoveryEvent>`: `Found(DiscoveredTcpRadio)` when a service resolves, again when its address or TXT records change, and `Lost(serviceName)` when it disappears. Collecting starts browsing and cancelling stops it. The events are deltas, not a snapshot list, so a picker handles each node once.
+
+```kotlin
+val radio = (JvmTcpDiscovery().discover().first() as TcpDiscoveryEvent.Found).radio
+val transport = radio.toTransport() // TcpTransport(host, port)
+```
+
+| Target | Class | Host requirements |
+|---|---|---|
+| JVM | `JvmTcpDiscovery(bindAddress = null)` | a multicast-capable LAN interface; pass `bindAddress` on multi-NIC hosts |
+| Android | `AndroidTcpDiscovery(context)` (`NsdManager`) | `INTERNET`; `NsdManager` needs no multicast lock; `ACCESS_LOCAL_NETWORK` where enforced |
+| iOS | `IosTcpDiscovery()` (`NSNetServiceBrowser`) | `Info.plist` keys `NSLocalNetworkUsageDescription` and `NSBonjourServices` = `_meshtastic._tcp` |
+
+The JVM backend uses JmDNS (`org.jmdns:jmdns`, Apache-2.0), a JVM-only dependency that pulls in `slf4j-api`; without an SLF4J binding it logs one warning and discards JmDNS logs. Link-local IPv6 addresses are dropped, since dialing one needs a scope ID. The iOS backend is compile-checked only; see `docs/manual-tests.md` A7.
 
 ## Key packages
 
-- `org.meshtastic.sdk.transport.tcp` — `TcpTransport(host: String, port: Int = 4403)`. The single
-  public type; observes `state: StateFlow<TransportState>`, exposes
-  `frames(): Flow<Frame>` (single-collector, drained by the engine), and accepts outbound
-  frames via `suspend fun send(frame: Frame)`.
+- `org.meshtastic.sdk.transport.tcp`: `TcpTransport(host: String, port: Int = 4403)`. It publishes `state: StateFlow<TransportState>`, emits inbound frames from `frames(): Flow<Frame>` (single collector, drained by the engine) and takes outbound frames through `suspend fun send(frame: Frame)`. Discovery shares the package: `TcpDiscovery`, `TcpDiscoveryEvent`, `DiscoveredTcpRadio` (with `toTransport()` and `toTransportSpec()`), and the platform classes `JvmTcpDiscovery`, `AndroidTcpDiscovery` and `IosTcpDiscovery`.

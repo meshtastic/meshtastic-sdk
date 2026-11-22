@@ -1,48 +1,43 @@
 # Error handling
 
-> A consumer-side guide to the SDK's failure model: what to retry, what
-> to surface to the user, and how to write an exhaustive `when` against
-> each sealed type. The canonical catalog of every failure carrier is
-> [`docs/error-taxonomy.md`](../error-taxonomy.md) — read that first
-> for the design rationale; this guide is the practical companion.
+What to retry, what to surface to the user, and how to write an exhaustive `when` over each failure type. [error-taxonomy.md](../error-taxonomy.md) is the full catalog and wire mapping; this guide is the practical companion.
 
-## The three failure carriers
+## The failure carriers
 
-Per [ADR-005](../decisions/005-api-shape.md), the SDK uses **exactly
-three response shapes**, picked by the kind of failure being signalled:
+Per [ADR-005](../decisions/005-api-shape.md), the kind of failure decides its shape:
 
-| Carrier                                | Used for                                                        | Where you handle it |
-|----------------------------------------|-----------------------------------------------------------------|---------------------|
-| `throw MeshtasticException`            | Programmer errors, transport setup failure, handshake failure   | `try { client.connect() }` at call sites |
-| `MessageHandle.state -> SendState.Failed(SendFailure)` | Per-send delivery outcomes (NAK, no route, ACK timeout, …) | `handle.await()` or `handle.state.collect { … }` |
-| `MeshEvent` (collected from `RadioClient.events`) | Asynchronous, session-scoped warnings (storage degraded, packets dropped, identity rebound, …) | a `launch { events.collect { … } }` per session |
+| Carrier | Used for | Where you handle it |
+|---|---|---|
+| `throw MeshtasticException` | Programmer errors, transport setup, handshake failure | `try { client.connect() }` and around the send calls |
+| `SendState.Failed(SendFailure)` on a `MessageHandle` | Per-send delivery outcomes | `handle.await()` or `handle.state.collect { … }` |
+| `AdminResult` | Admin, telemetry, routing, and store-and-forward calls | `when` over the returned value |
+| `MeshEvent` on `RadioClient.events` | Session-level warnings: storage degraded, items dropped, identity rebound | One `events.collect { … }` per session |
 
-There is **no `kotlin.Result<T>`** in the public API; that prohibition
-is enforced by the API-shape ADR and an architectural test.
+The public API has no `kotlin.Result<T>`.
 
-## `SendFailure` — per-send outcomes
+## `SendFailure`
 
-`MessageHandle.state` is a `StateFlow<SendState>` that walks
-`Queued → Sent → Acked|Delivered|Failed(SendFailure)`. Every variant
-below is a terminal `Failed` reason. Source of truth:
-[`core/src/commonMain/kotlin/org/meshtastic/sdk/Result.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Result.kt).
+`MessageHandle.state` walks `Queued → Sent → Acked | Delivered | Failed(SendFailure)`. Source: [`Result.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Result.kt).
 
-| `SendFailure` variant           | Cause                                                                                         | Retry? |
-|---------------------------------|-----------------------------------------------------------------------------------------------|--------|
-| `NoRoute`                       | Mesh has no path to the destination (`Routing.Error.NO_ROUTE`).                               | Maybe — try later; topology may change. |
-| `MaxRetransmit`                 | Device exhausted retransmit budget (`Routing.Error.MAX_RETRANSMIT`).                          | Yes — wait, then resend; the mesh was busy. |
-| `Timeout`                       | Admin RPC timed out waiting for a response.                                                   | Yes — usually a transient device hiccup. |
-| `DutyCycleLimit`                | Region's duty-cycle ceiling blocked transmission.                                             | Yes, after backoff (seconds–minutes). |
-| `RateLimited`                   | The device refused a send that followed the last one on its port too closely (`Routing.Error.RATE_LIMIT_EXCEEDED`); firmware allows one text every two seconds. | Yes, after a few seconds. |
-| `Disconnected`                  | Transport went away mid-send.                                                                 | Reconnect, then resend. |
-| `HandshakeFailed`               | Sends queued before `Connected` are failed with this when the handshake itself fails.         | Reconnect, then resend. |
-| `Cancelled`                     | `MessageHandle.cancel()` was called before the packet left the host queue.                    | No — caller asked. |
-| `IdCollision`                   | Caller submitted a packet whose `id` matches an in-flight send (R-P0-1 guard).                | No — fix the caller; the existing handle is preserved. |
-| `AckTimeout`                    | Per-send ACK timer expired (default 30 s, see `Builder.sendTimeout`); broadcast packets are exempt. | Yes — but verify connectivity first. |
-| `Other(routingError)`           | Any other `Routing.Error` the device reports.                                                 | Inspect `routingError`. |
-| `Unknown(message)`              | Should not occur in normal operation.                                                         | Treat as a bug; capture diagnostics. |
+| Variant | Cause | Retry |
+|---|---|---|
+| `NoRoute` | No path to the destination, or a neighbor refused it (`NO_ROUTE`, `GOT_NAK`). | Later; the topology may change. |
+| `MaxRetransmit` | The device used up its retransmissions. | Yes, after a wait. |
+| `Timeout` | The device reported a routing timeout. | Yes. |
+| `DutyCycleLimit` | The region's duty-cycle limit blocked transmission. | Yes, after seconds to minutes. |
+| `RateLimited` | The device refused a send that followed the previous one on its port too closely; firmware allows one text message every two seconds. | Yes, after a few seconds. |
+| `QueueRejected(res)` | The device's transmit queue rejected the packet, usually because it's full. | Yes, after backing off; pace bulk sends. |
+| `AckTimeout` | No routing ACK within `Builder.sendTimeout` (default 30 s). Broadcasts are exempt. | Yes, after checking connectivity. |
+| `Disconnected` | The transport dropped before the send completed. | Reconnect, then resend. |
+| `HandshakeFailed` | The send was queued before `Connected` and the handshake failed. | Reconnect, then resend. |
+| `Cancelled` | `MessageHandle.cancel()` before the packet left the host. | No; the caller asked. |
+| `IdCollision` | The packet's `id` matches an in-flight send. | No; fix the caller. |
+| `Other(routingError)` | Another `Routing.Error`. | Inspect `routingError`. |
+| `Unknown(message)` | An engine anomaly. | Treat as a bug and capture diagnostics. |
 
-### Example: handling a single send
+`SendFailure.humanMessage()` returns display text for any variant.
+
+### Example: one send with retries
 
 ```kotlin
 import kotlin.time.Duration.Companion.seconds
@@ -55,30 +50,30 @@ suspend fun sendWithRetry(client: RadioClient, text: String, maxAttempts: Int = 
     var attempt = 0
     while (true) {
         attempt++
-        val handle = client.sendText(text)
-        when (val outcome = handle.await()) {
+        when (val outcome = client.sendText(text).await()) {
             SendOutcome.Success -> return
             is SendOutcome.Failure -> when (val reason = outcome.reason) {
-                // Transient — back off and retry.
                 SendFailure.MaxRetransmit,
                 SendFailure.Timeout,
                 SendFailure.AckTimeout,
                 SendFailure.DutyCycleLimit,
-                SendFailure.RateLimited -> {
-                    if (attempt >= maxAttempts) error("gave up after $attempt: $reason")
-                    delay((1L shl attempt).seconds) // 2s, 4s, 8s …
+                SendFailure.RateLimited,
+                is SendFailure.QueueRejected,
+                -> {
+                    if (attempt >= maxAttempts) error("gave up after $attempt attempts: $reason")
+                    delay((1L shl attempt).seconds) // 2 s, 4 s, 8 s
                 }
 
-                // Topology may change later — caller decides.
                 SendFailure.NoRoute -> error("no route to destination")
 
-                // Connection is gone — caller must reconnect first.
                 SendFailure.Disconnected,
-                SendFailure.HandshakeFailed -> error("not connected: $reason")
+                SendFailure.HandshakeFailed,
+                -> error("not connected: $reason")
 
-                // Programmer / app bugs — never retry.
                 SendFailure.Cancelled,
-                SendFailure.IdCollision -> return
+                SendFailure.IdCollision,
+                -> return
+
                 is SendFailure.Other -> error("device reported ${reason.routingError}")
                 is SendFailure.Unknown -> error("unknown failure: ${reason.message}")
             }
@@ -87,183 +82,118 @@ suspend fun sendWithRetry(client: RadioClient, text: String, maxAttempts: Int = 
 }
 ```
 
-> The `when (val reason = …)` is **exhaustive**; adding a new
-> `SendFailure` subtype is a SemVer-major change post-1.0. Any new
-> branch the SDK adds will surface as a compile error in your code,
-> which is the point.
+The inner `when` is exhaustive, so a `SendFailure` variant added in a later release is a compile error at this site. Adding one is a SemVer-major change after 1.0. For a fixed policy without your own loop, `handle.retryWith(RetryPolicy.ExponentialBackoff())` resends and returns the final `SendOutcome`.
 
-## `MeshEvent` — async warnings and observability
-
-`RadioClient.events` is a `Flow<MeshEvent>`. These are non-fatal,
-session-scoped signals — your session is still alive when they arrive.
-Source: [`Node.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt).
-
-| `MeshEvent` variant                        | Meaning                                                                                                  | Suggested handling |
-|--------------------------------------------|----------------------------------------------------------------------------------------------------------|--------------------|
-| `QueueStatusChanged(status)`               | Device's TX queue depth/state changed.                                                                   | Optional UI hint. |
-| `Notification(notification)`               | Device emitted a `ClientNotification` (firmware-side toast/log).                                         | Surface to user if relevant. |
-| `TransportError(error)`                    | Transport-layer error during an active session (BLE GATT, socket, …).                                   | The state flow will move to `Reconnecting`; show a banner. |
-| `ProtocolWarning(message, details)`        | Malformed data, unexpected state, or a recoverable storage retry. May indicate firmware/SDK skew.        | Log; surface only if persistent. |
-| `IdentityRebound(prev, new, reason)`       | The connected device reports a different `NodeNum` than what was persisted (factory reset / radio swap). Emitted **before** storage is wiped and the next `NodeChange.Snapshot`. | Snapshot any in-memory state you care about; warn the user that this transport identity now points at a different physical radio. |
-| `StorageDegraded(reason)`                  | Persistent storage failed (disk full, locked DB, etc.); engine has dropped to in-memory mode for the rest of the session. Emitted **at most once per session**. | Show "session is not being persisted" banner; reconnect to retry. |
-| `KeyVerification(prompt)`                  | Encryption setup wants user confirmation (Phase 1 placeholder).                                          | Show a generic confirm-key UI. |
-| `PacketsDropped(flow, count)`              | A consumer-facing flow (`packets` or `events`) overflowed its buffer; oldest items dropped.              | You're collecting too slowly — move work off the collector. |
-
-### Example: collecting events safely
+## `AdminResult`
 
 ```kotlin
-import kotlinx.coroutines.flow.collect
+when (val result = client.admin.getOwner()) {
+    is AdminResult.Success -> showOwner(result.value)
+    AdminResult.Timeout, AdminResult.NodeUnreachable -> offerRetry()
+    AdminResult.RateLimited -> retryLater()
+    AdminResult.Unauthorized -> showError("This node doesn't accept admin from this client.")
+    AdminResult.SessionKeyExpired -> offerRetry()   // the engine already retried once
+    is AdminResult.Failed -> showError("Not delivered: ${result.routingError}") // NO_ROUTE, MAX_RETRANSMIT, ...
+}
+```
+
+`getOrNull()`, `getOrThrow()`, `onSuccess {}`, and `onFailure {}` shorten the common cases. `batch { … }` throws `AdminResultException` instead of returning a result.
+
+## `MeshEvent`
+
+`RadioClient.events` carries signals that arrive while the session is alive. Source: [`Node.kt`](../../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt). The full table, including the variants not shown here, is in [error-taxonomy.md](../error-taxonomy.md#meshevent-reference).
+
+| Variant | Meaning | Handling |
+|---|---|---|
+| `TransportError(error)` | The session dropped; `error` is the typed cause. | With auto-reconnect on, show a banner while `connection` is `Reconnecting`; otherwise offer to reconnect. |
+| `DeviceRebooted(reason)` | The radio restarted; the session ended. | Connect again, or let auto-reconnect do it. |
+| `IdentityRebound(previousNodeNum, newNodeNum, reason)` | The device reports a different NodeNum than the stored one. Fires before storage changes and before the next `NodeChange.Snapshot`. | Snapshot in-memory state if needed; tell the user the radio changed when `reason` is `"identity_mismatch"`. |
+| `StorageDegraded(reason)` | A storage write failed; nothing more is saved this session. At most once per session. | Show "session isn't being saved"; the next `connect()` retries storage. |
+| `PacketsDropped(flow, count)` | A collector of `packets` or `nodes` fell behind and new items were discarded. | Move work off the collector. |
+| `ProtocolWarning(message, details)` | A non-fatal anomaly, such as an undecodable envelope. | Log it. |
+| `SecurityWarning.DuplicatedPublicKey`, `SecurityWarning.LowEntropyKey` | Suspect key material. | Surface prominently. |
+| `SecurityWarning.PublicKeyMismatch` | A contact offered a different key; the stored key still applies. | Warn that the key changed. |
+| `KeyVerification` | One step of the device's key-verification exchange. | Show the number or confirm UI; reply with `AdminApi.keyVerification`. |
+| `Notification(notification)` | A `ClientNotification` from the device. | Show it if relevant. |
+
+### Example: collecting events
+
+```kotlin
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.RadioClient
 
-fun observe(client: RadioClient, scope: kotlinx.coroutines.CoroutineScope) {
+fun observe(client: RadioClient, scope: CoroutineScope) {
     scope.launch {
         client.events.collect { event ->
             when (event) {
-                is MeshEvent.IdentityRebound -> {
-                    // Persisted state for previousNodeNum is about to be cleared.
-                    // Snapshot anything you care about *now* — the next NodeChange.Snapshot
-                    // will reflect the new device.
-                    log("radio swap: ${event.previousNodeNum} -> ${event.newNodeNum}")
-                    showUserBanner("This transport now points at a different radio.")
+                is MeshEvent.IdentityRebound ->
+                    log("radio changed: ${event.previousNodeNum} -> ${event.newNodeNum} (${event.reason})")
+                is MeshEvent.StorageDegraded ->
+                    showBanner("Storage error, this session isn't being saved: ${event.reason}")
+                is MeshEvent.PacketsDropped -> when (event.flow) {
+                    DroppedFlow.Packets -> metrics.increment("packets.dropped", event.count)
+                    DroppedFlow.Events -> metrics.increment("events.dropped", event.count)
+                    DroppedFlow.Nodes -> metrics.increment("nodes.dropped", event.count)
                 }
-                is MeshEvent.StorageDegraded -> {
-                    // Engine has stopped writing to disk for the rest of this session.
-                    showUserBanner("Storage error — session not being saved (${event.reason}).")
-                }
-                is MeshEvent.PacketsDropped -> {
-                    // The collector for `packets` or `events` is too slow.
-                    when (event.flow) {
-                        DroppedFlow.Packets -> metrics.increment("packets.dropped", event.count)
-                        DroppedFlow.Events  -> metrics.increment("events.dropped",  event.count)
-                    }
-                }
-                is MeshEvent.ProtocolWarning -> log.warn("protocol: ${event.message} ${event.details}")
-                is MeshEvent.TransportError  -> log.warn("transport: ${event.error.message}")
-                is MeshEvent.QueueStatusChanged,
-                is MeshEvent.Notification,
-                is MeshEvent.KeyVerification -> { /* optional UI */ }
+                is MeshEvent.SecurityWarning -> showBanner("Security warning: $event")
+                is MeshEvent.TransportError -> log("transport: ${event.error.message}")
+                is MeshEvent.ProtocolWarning -> log("protocol: ${event.message} ${event.details}")
+                else -> Unit
             }
         }
     }
 }
 ```
 
-> Like `SendFailure`, `MeshEvent` is a sealed interface and consumers
-> `when`-ing on it exhaustively will see new variants as compile errors.
-> See the [migration section of `CHANGELOG.md`](../../CHANGELOG.md) when
-> upgrading.
+`log`, `showBanner`, and `metrics` stand for your app's own functions. Drop the `else` branch to have new `MeshEvent` variants surface as compile errors when you upgrade; [CHANGELOG.md](../../CHANGELOG.md) lists them.
 
-## `MeshtasticException` — what `connect()` and `send()` throw
+## `MeshtasticException`
 
-Throws are reserved for things you can't recover from without changing
-inputs (per ADR-005). Catch them at the call site:
+Throws are for failures you can't fix without changing the input or the environment. Catch them around `connect()`:
 
 ```kotlin
 import org.meshtastic.sdk.MeshtasticException
+import org.meshtastic.sdk.RadioClient
 
-suspend fun connectOrFail(client: RadioClient) {
+suspend fun connectOrReport(client: RadioClient) {
     try {
         client.connect()
     } catch (e: MeshtasticException.Transport) {
-        // Transport setup failed (BLE GATT, socket open, USB enumeration).
-        // `e.cause` carries the underlying Kable / Ktor / jSerialComm error.
-        showUserError("Couldn't reach the radio: ${e.message}")
+        // Bluetooth, socket, USB, or WebSocket setup failed; e.cause has the underlying error.
+        showError("Couldn't reach the radio: ${e.message}")
     } catch (e: MeshtasticException.HandshakeTimeout) {
-        // Stage1/Settling/Stage2 didn't complete in time.
-        showUserError("Radio handshake timed out at ${e.stage}; try again.")
-    } catch (e: MeshtasticException.FirmwareTooOld) {
-        // Device firmware is older than this SDK supports.
-        showUserError("Firmware ${e.present} is too old (need ≥ ${e.required}).")
+        showError("The radio didn't finish the handshake (${e.stage}). Try again.")
     } catch (e: MeshtasticException.StorageUnavailable) {
-        // Storage is unusable from `connect()`. (Mid-session storage failures
-        // surface as MeshEvent.StorageDegraded instead.)
-        showUserError("Local storage isn't writable.")
+        // Mid-session storage failures arrive as MeshEvent.StorageDegraded instead.
+        showError("Local storage isn't available.")
     } catch (e: MeshtasticException.AlreadyConnected) {
-        // You called connect() twice. Programmer error — fix the caller.
-        throw e
+        throw e   // a programmer error: fix the caller
     }
 }
 ```
 
-The full hierarchy and "when each is thrown" tables live in
-[`docs/error-taxonomy.md`](../error-taxonomy.md).
+The send calls throw `NotConnected` when the client isn't connected and `PayloadTooLarge` for a payload over 233 bytes. [error-taxonomy.md](../error-taxonomy.md#meshtasticexception-hierarchy) lists every subclass and where it comes from.
 
-## Reconnect supervisor (consumer-side)
+## Reconnecting
 
-The engine does not auto-reconnect today (R-8 in [`docs/roadmap.md`](../roadmap.md)). Consumers who need long-lived sessions should observe `RadioClient.connection` and re-issue `connect()` themselves. A minimal, leak-free pattern using exponential backoff:
-
-```kotlin
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import org.meshtastic.sdk.ConnectionState
-import org.meshtastic.sdk.MeshtasticException
-import org.meshtastic.sdk.RadioClient
-import kotlin.math.min
-import kotlin.random.Random
-import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.seconds
-
-fun CoroutineScope.superviseConnection(client: RadioClient) = launch {
-    var backoff = 1.seconds
-    val maxBackoff = 60.seconds
-    client.connection
-        .filterIsInstance<ConnectionState.Disconnected>()
-        .collect {
-            try {
-                client.connect()
-                backoff = 1.seconds                                      // reset on success
-            } catch (_: MeshtasticException.AlreadyConnected) {
-                backoff = 1.seconds                                      // already healed; ignore
-            } catch (e: MeshtasticException) {
-                // Surface fatal/programmer errors; only retry transients.
-                if (e is MeshtasticException.FirmwareTooOld) throw e
-                val jittered = backoff + Random.nextLong(0, 250).milliseconds
-                delay(jittered)
-                backoff = min(backoff.inWholeMilliseconds * 2, maxBackoff.inWholeMilliseconds).milliseconds
-            }
-        }
-}
-```
-
-The supervisor only acts on `Disconnected`; intermediate `Reconnecting`/`Connecting`/`Configuring` states are emitted by the engine itself during a connect attempt and must be left alone. See [`protocol.md` §1A](../protocol.md#1a-reconnection-and-backoff) for why the SDK keeps this policy in consumer hands until R-8 lands.
+The engine reconnects for you when built with `Builder.autoReconnect(AutoReconnectConfig())`: after a drop it backs off exponentially with jitter and reports each attempt as `ConnectionState.Reconnecting(cause, attempt)`. Cap the attempts with `maxAttempts`, and use `recoveryStep` for work between attempts, such as requesting a USB permission again. Without it, the client goes to `Disconnected` and calling `connect()` again is up to you. [api-reference.md, AutoReconnectConfig](../api-reference.md#autoreconnectconfig) has the parameters.
 
 ## Decision rules
 
-A short cheat sheet for "do I retry, surface, or both?":
-
-- **Programmer errors** (`AlreadyConnected`, `NotConnected`,
-  `PayloadTooLarge`, `IdCollision`) — never retry; fix the caller.
-- **Setup failures** (`Transport`, `HandshakeTimeout`, `FirmwareTooOld`,
-  `StorageUnavailable` from `connect()`) — surface to user; offer a
-  retry button rather than auto-retrying.
-- **In-flight transients** (`MaxRetransmit`, `Timeout`, `AckTimeout`,
-  `DutyCycleLimit`, `RateLimited`) — auto-retry with exponential backoff (cap the
-  attempt count); only surface after the budget is exhausted.
-- **Connectivity loss** (`Disconnected`, `HandshakeFailed` on a send,
-  `TransportError` event, `ConnectionState.Reconnecting`) — wait for
-  the engine's reconnect, then resend.
-- **Mesh routing** (`NoRoute`) — usually a topology issue; surface so
-  the user can try a different destination, retry later, or change
-  channels.
-- **Persistence degradation** (`StorageDegraded`,
-  `ProtocolWarning(...)` mentioning storage) — keep running, but warn
-  the user that nothing is being saved.
-- **Backpressure** (`PacketsDropped`) — fix the collector (move work
-  off the flow, or buffer in your own structure).
+- Programmer errors (`AlreadyConnected`, `NotConnected`, `PayloadTooLarge`, `IdCollision`): don't retry; fix the caller.
+- Setup failures from `connect()` (`Transport`, `HandshakeTimeout`, `StorageUnavailable`): show them and offer a retry rather than retrying silently, unless auto-reconnect is handling a drop.
+- Transient send failures (`MaxRetransmit`, `Timeout`, `AckTimeout`, `DutyCycleLimit`, `RateLimited`, `QueueRejected`): retry with backoff and a capped attempt count, and surface only when the budget runs out.
+- Connectivity loss (`Disconnected` or `HandshakeFailed` on a send, `TransportError`, `Reconnecting`): wait for the connection, then resend.
+- Routing (`NoRoute`, or `AdminResult.Failed` with `NO_ROUTE` / `MAX_RETRANSMIT`): usually topology; let the user retry later or pick another destination. `AdminResult.NodeUnreachable` means the link was lost.
+- Persistence (`StorageDegraded`): keep running and warn that nothing is being saved.
+- Backpressure (`PacketsDropped`): fix the collector.
 
 ## Related
 
-- [`docs/error-taxonomy.md`](../error-taxonomy.md) — canonical catalog
-  and decision matrix; this guide is its consumer-facing companion.
-- [`docs/api-reference.md`](../api-reference.md) — full type
-  signatures.
-- [`reactive-lifecycle-management.md`](./reactive-lifecycle-management.md)
-  — collecting `events` / `nodes` / `connection` without leaks.
-- [`docs/architecture/storage.md`](../architecture/storage.md) — what
-  triggers `MeshEvent.StorageDegraded` and the identity-rebind contract
-  behind `MeshEvent.IdentityRebound`.
-- [`CHANGELOG.md`](../../CHANGELOG.md) — migration notes when new
-  `SendFailure` / `MeshEvent` variants land.
+- [error-taxonomy.md](../error-taxonomy.md): the catalog and wire mapping
+- [api-reference.md](../api-reference.md): signatures
+- [storage.md](../architecture/storage.md): what triggers `StorageDegraded` and `IdentityRebound`
+- [CHANGELOG.md](../../CHANGELOG.md): new variants in each release

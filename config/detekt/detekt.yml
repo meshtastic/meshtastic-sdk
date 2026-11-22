@@ -52,8 +52,9 @@ style:
     # Architecture invariants enforced per ADR-008.
     #
     # 1. ADR-002 forbids shared-state synchronization primitives in engine
-    #    paths — the engine is a single-writer actor. The two existing
-    #    atomicfu sites are documented boundary handles, not engine state.
+    #    paths, because the engine is a single-writer actor. MeshEngine's four
+    #    atomicfu sites (supervisorJobRef, activeConnectDeferred,
+    #    connectionGeneration, nextWireId) are boundary handles, not engine state.
     # 2. ADR-005 forbids kotlin.Result in public API; engine code shouldn't
     #    import it either, to keep us honest at the boundary.
     active: true

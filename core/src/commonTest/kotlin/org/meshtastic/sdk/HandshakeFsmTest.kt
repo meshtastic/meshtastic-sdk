@@ -97,7 +97,7 @@ class HandshakeFsmTest {
     @Test
     fun preHandshakeFramesAreDiscarded() = runTest {
         // Pre-load a bogus FromRadio with a my_info from a "stale" prior session.
-        // Per the FSM spec, the engine MUST drop these frames; if it routed them,
+        // Per docs/architecture/handshake-fsm.md, the engine MUST drop these frames; if it routed them,
         // they'd corrupt early state. We assert that connect() still completes
         // through the normal autoHandshake flow (i.e. the bogus frames did not
         // break the FSM).
@@ -260,26 +260,33 @@ class HandshakeFsmTest {
     // ── Audit: critical regressions ─────────────────────────────────
 
     /**
-     * Audit P1-2 / F-3.1: firmware (PhoneAPI.cpp:202-209) interprets `Heartbeat(nonce=1)` as
-     * "broadcast our nodeinfo over LoRa". Keep-alive heartbeats — both inter-stage and the
-     * periodic 30 s tick — MUST use nonce=0 so the SDK never silently spams a NodeInfo
-     * broadcast onto the mesh.
+     * Firmware drops a byte-identical consecutive ToRadio write and treats `Heartbeat(nonce=1)` as
+     * "broadcast our nodeinfo". Keep-alive heartbeats (inter-stage and periodic) must count up
+     * strictly from 2.
      */
     @Test
-    fun keepaliveHeartbeatsUseNonceZero() = runTest {
+    fun keepaliveHeartbeatNoncesIncreaseFromTwo() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:heartbeat-nonce"), autoHandshake = true)
         val client = buildClient(transport)
         client.connect()
+        // One periodic tick; an idle link trips the liveness watchdog at 60 s.
+        advanceTimeBy(31_000L)
+        runCurrent()
 
         val heartbeatNonces = transport.outboundFrames()
             .mapNotNull { decodeToRadioOrNull(it) }
             .mapNotNull { it.heartbeat }
             .map { it.nonce }
+        val expected = (2..<2 + heartbeatNonces.size).toList()
 
-        assertTrue(heartbeatNonces.isNotEmpty(), "Expected at least one heartbeat to be sent")
         assertTrue(
-            heartbeatNonces.all { it == 0 },
-            "Every keep-alive heartbeat nonce must be 0 (firmware overloads non-zero values; nonce=1 triggers a LoRa NodeInfo broadcast); got: $heartbeatNonces",
+            heartbeatNonces.size >= 2,
+            "Expected the inter-stage and one periodic heartbeat; got: $heartbeatNonces",
+        )
+        assertEquals(
+            expected,
+            heartbeatNonces,
+            "Heartbeat nonces must start at 2 and increase by one per send",
         )
     }
 
@@ -352,10 +359,10 @@ class HandshakeFsmTest {
 
     /**
      * Audit §1.6: `FromRadio.rebooted = true` mid-handshake must fail the pending connect with
-     * Protocol, emit `MeshEvent.DeviceRebooted`, and tear the session down to Disconnected.
+     * a transport error, emit `MeshEvent.DeviceRebooted`, and tear the session down to Disconnected.
      */
     @Test
-    fun deviceRebootMidHandshakeFailsProtocolAndEmitsEvent() = runTest {
+    fun deviceRebootMidHandshakeFailsTransportAndEmitsEvent() = runTest {
         val transport = RebootingTransport()
         val client = buildClient(transport)
 
@@ -369,7 +376,7 @@ class HandshakeFsmTest {
         runCurrent()
 
         val ex = connectResult.await().exceptionOrNull()
-        assertIs<MeshtasticException.Protocol>(ex)
+        assertIs<MeshtasticException.Transport>(ex)
         assertTrue(
             ex.message?.contains("rebooted") == true,
             "Expected reboot diagnostic, got: ${ex.message}",
@@ -403,6 +410,14 @@ class HandshakeFsmTest {
         override suspend fun send(frame: Frame) {
             val to = decodeToRadioOrNull(frame) ?: return
             if (to.want_config_id == STAGE1_NONCE) {
+                // The dump has begun (my_info) when the radio restarts.
+                inbound.trySend(
+                    encodeFromRadio(
+                        FromRadio.Builder().also { wb ->
+                            wb.my_info = org.meshtastic.proto.MyNodeInfo.Builder().also { it.my_node_num = 1 }.build()
+                        }.build(),
+                    ),
+                )
                 inbound.trySend(
                     encodeFromRadio(
                         FromRadio.Builder().also { wb ->

@@ -88,7 +88,7 @@ class P2RoutingRpcTest {
         runCurrent()
 
         val result = deferred.await()
-        assertEquals(AdminResult.NodeUnreachable, result)
+        assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), result)
         client.disconnect()
     }
 

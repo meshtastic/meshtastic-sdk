@@ -1,0 +1,1 @@
+- Use the SDK BLE transport from JavaScript and Wasm browsers with Kable Web Bluetooth.

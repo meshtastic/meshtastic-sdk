@@ -22,22 +22,29 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioTransport
@@ -69,13 +76,15 @@ import kotlin.coroutines.EmptyCoroutineContext
  * @param address stable platform-specific address for storage identity keying.
  */
 public class BleTransport(
-    private val peripheral: Peripheral,
+    internal val peripheral: Peripheral,
     address: String,
     parentContext: CoroutineContext = EmptyCoroutineContext,
 ) : RadioTransport {
 
     override val identity: TransportIdentity =
         TransportIdentity.of(TransportSpec.Ble(address))
+
+    override val linkDropsOnRestartCommands: Boolean = true
 
     private val _state: MutableStateFlow<TransportState> =
         MutableStateFlow(TransportState.Disconnected)
@@ -132,8 +141,16 @@ public class BleTransport(
      */
     internal var postConnectHook: suspend CoroutineScope.(Peripheral) -> Unit = {}
 
+    // Opt-in recovery seams (see BleResilience); all null unless the factory wired them.
+    internal var bondControl: BondControl? = null
+    internal var autoConnectSwitch: AutoConnectSwitch? = null
+    internal var gattCacheRefresher: GattCacheRefresher? = null
+    internal var shouldRefreshGattCache: (discoveryIncomplete: Boolean) -> Boolean = { it }
+    internal var ownsPeripheral: Boolean = false
+
     override suspend fun connect() {
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
+        autoConnectSwitch?.reset()
         // Reset per-connect lifecycle flags so reuse-after-disconnect works.
         warmupComplete.value = false
         lastDrainFailure.value = null
@@ -145,7 +162,12 @@ public class BleTransport(
         frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
         try {
+            bondControl?.let { control ->
+                control.ensureBonded(onBonding = { _state.value = TransportState.Bonding })
+                _state.value = TransportState.Connecting
+            }
             connectWithRetry()
+            refreshGattCacheIfNeeded()
 
             // Child of the transport scope (dies with it on shutdown), but independently
             // cancellable per connect cycle via cancelJobs()/disconnect().
@@ -359,7 +381,52 @@ public class BleTransport(
         emitAll(frameChannel.consumeAsFlow())
     }.onCompletion { framesCollected.value = false }
 
-    /** Release internal coroutines and frame channel. Idempotent; does not close [Peripheral]. */
+    /**
+     * Device log records from the `logradio` characteristic, while the returned flow is collected.
+     *
+     * Cold and opt-in: nothing subscribes until a collector starts, and cancelling the collector
+     * unsubscribes. Call it on a connected transport; the subscription does not survive a
+     * disconnect, so collect again after reconnecting. This is the BLE-native log path, separate
+     * from the `FromRadio.log_record` path of the phone API and independent of it: use whichever
+     * your link offers, not both.
+     *
+     * Firmware streams only while `security.debug_log_api_enabled` is set on the device; with it
+     * off the flow stays silent. The host enables it through admin config, not this transport.
+     * A notification carries one protobuf `LogRecord` and is limited to the negotiated ATT payload,
+     * so a record longer than that arrives truncated and is skipped, as is any payload that does
+     * not decode. The legacy plain-text log characteristic is not read; current firmware does not
+     * expose it.
+     *
+     * Records are buffered (64) and the oldest is dropped when the collector falls behind, so
+     * logs never slow the GATT link. The flow completes empty when discovery shows the radio has no
+     * `logradio` characteristic, and fails with [MeshtasticException.Transport] when the
+     * subscription cannot start or the link drops.
+     *
+     * @since 0.3.0
+     */
+    public fun deviceLogs(): Flow<LogRecord> = flow {
+        val discovered = peripheral.services.value
+        val hasCharacteristic = discovered == null || discovered.any { service ->
+            service.serviceUuid == BleConstants.MESH_SERVICE_UUID &&
+                service.characteristics.any { it.characteristicUuid == BleConstants.LOGRADIO_UUID }
+        }
+        if (hasCharacteristic) emitAll(peripheral.observe(BleConstants.LOGRADIO))
+    }
+        .mapNotNull { payload -> decodeLogRecord(payload) }
+        .buffer(LOG_BUFFER_CAPACITY, BufferOverflow.DROP_OLDEST)
+        .catch { cause ->
+            if (cause is CancellationException || cause is MeshtasticException) throw cause
+            throw MeshtasticException.Transport(
+                "BLE log subscription to ${identity.raw} failed: ${cause.message}",
+                cause,
+            )
+        }
+
+    /**
+     * Releases internal coroutines and the frame channel. Closes a peripheral created by a
+     * factory. A peripheral supplied to the constructor remains the caller's responsibility.
+     * Call [disconnect] first for graceful teardown. Idempotent.
+     */
     public fun shutdown() {
         if (!shuttingDown.compareAndSet(expect = false, update = true)) return
         drainJob = null
@@ -370,6 +437,7 @@ public class BleTransport(
         coordinator = null
         scope.cancel()
         frameChannel.close()
+        if (ownsPeripheral) peripheral.close()
     }
 
     /** Cancel tracked jobs. Used by [disconnect]. */
@@ -398,7 +466,55 @@ public class BleTransport(
             },
         ) {
             if (shuttingDown.value) throw CancellationException("BleTransport shut down")
+            connectOnce()
+        }
+    }
+
+    private suspend fun connectOnce() {
+        val switch = autoConnectSwitch
+        if (switch == null) {
             peripheral.connect()
+            return
+        }
+        if (!switch.isOn) {
+            try {
+                withTimeout(DIRECT_CONNECT_TIMEOUT_MS) { peripheral.connect() }
+                return
+            } catch (_: TimeoutCancellationException) {
+                currentCoroutineContext().ensureActive()
+                // A stalled direct connect leaves Android's GATT slot busy; release it, then let the
+                // OS wait for the bonded radio itself.
+                try {
+                    peripheral.disconnect()
+                } catch (_: Exception) { /* idempotent */ }
+                switch.turnOn()
+                delay(AUTO_CONNECT_SETTLE_MS)
+            }
+        }
+        try {
+            withTimeout(AUTO_CONNECT_TIMEOUT_MS) { peripheral.connect() }
+        } catch (e: TimeoutCancellationException) {
+            currentCoroutineContext().ensureActive()
+            throw MeshtasticException.Transport("BLE autoConnect to ${identity.raw} did not complete", e)
+        }
+    }
+
+    /** At most one cache refresh and rediscovery before exposing this link to the engine. */
+    private suspend fun refreshGattCacheIfNeeded() {
+        val refresher = gattCacheRefresher ?: return
+        if (!shouldRefreshGattCache(peripheral.services.value.isMissingMeshtasticGatt())) return
+        if (!refresher.refresh()) return
+        try {
+            peripheral.disconnect()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) { /* idempotent */ }
+        delay(GATT_REFRESH_SETTLE_MS)
+        connectWithRetry()
+        if (peripheral.services.value.isMissingMeshtasticGatt()) {
+            throw MeshtasticException.Transport(
+                "Meshtastic GATT service not found on ${identity.raw} after a GATT cache refresh",
+            )
         }
     }
 
@@ -468,6 +584,19 @@ public class BleTransport(
         private const val BOND_WARMUP_TIMEOUT_MS: Long = 120_000L
         private const val BOND_RETRY_LIMIT: Int = 1
         private const val BOND_RETRY_BACKOFF_MS: Long = 2_000L
+
+        private const val LOG_BUFFER_CAPACITY: Int = 64
+
+        internal fun decodeLogRecord(payload: ByteArray): LogRecord? = try {
+            LogRecord.ADAPTER.decode(payload)
+        } catch (_: okio.IOException) {
+            null
+        }
+
+        internal const val DIRECT_CONNECT_TIMEOUT_MS: Long = 15_000L
+        internal const val AUTO_CONNECT_TIMEOUT_MS: Long = 60_000L
+        private const val AUTO_CONNECT_SETTLE_MS: Long = 1_000L
+        private const val GATT_REFRESH_SETTLE_MS: Long = 1_000L
 
         /** Total connect attempts (1 initial + N-1 retries) for transient GATT errors. */
         internal const val GATT_RETRY_ATTEMPTS: Int = 3

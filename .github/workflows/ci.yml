@@ -92,9 +92,9 @@ jobs:
             echo "cache_read_only=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6.2.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 26.13.1
 
       - uses: ./.github/actions/gradle-setup
         with:
@@ -102,8 +102,8 @@ jobs:
           gradle_encryption_key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
           develocity_access_key: ${{ secrets.DEVELOCITY_ACCESS_KEY }}
 
-      - name: Build and test (Kotlin/JS, Node.js)
-        run: ./gradlew jsNodeTest
+      - name: Build and test (Kotlin/JS and Kotlin/Wasm, Node.js)
+        run: ./gradlew jsNodeTest wasmJsNodeTest
 
       - name: Test browser storage (Kotlin/JS, headless Chrome)
         run: ./gradlew jsBrowserTest

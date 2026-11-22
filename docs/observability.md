@@ -1,169 +1,116 @@
 # Observability
 
-How to see what `meshtastic-sdk` is doing in production and in tests.
-This document covers logging, frame-level diagnostics, metrics, and the
-event surface that the engine exposes.
-
-The architectural decisions behind the logging surface live in
-[ADR-011](decisions/011-logsink.md). This document is the user-facing
-guide.
+How to see what `meshtastic-sdk` and the radio are doing: SDK logging, frame-level protocol logging, the raw `FromRadio` tap, device logs, and the event stream. [ADR-011](decisions/011-logsink.md) records the logging design.
 
 ## Logging
 
-The SDK ships **one** logging hook: `LogSink`. It's a `fun interface` in
-[`org.meshtastic.sdk.Logging`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Logging.kt).
+The SDK has one logging hook, `LogSink`, a `fun interface` in [`Logging.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Logging.kt).
 
 ```kotlin
 val client = RadioClient.Builder()
     .transport(tcp)
-    .logger { level, tag, message, throwable ->
-        myAppLogger.log(level.toMyLevel(), "$tag/$message", throwable)
+    .storage(InMemoryStorageProvider())
+    .logger { level, tag, message, cause ->
+        myAppLogger.log(level.toMyLevel(), "$tag/$message", cause)
     }
     .build()
 ```
 
-If you don't supply a `LogSink`, the SDK is silent. This is deliberate —
-a credential-bearing library should not write to stderr by default.
+Without a `LogSink` the SDK is silent: a library that handles keys doesn't write to stderr by default.
 
 ### Levels
 
-`LogLevel` has six values: `NONE`, `VERBOSE`, `DEBUG`, `INFO`, `WARN`, `ERROR`.
-`NONE` is reserved as the off-switch for the protocol logger
-(see below). The SDK emits at `DEBUG` for connection lifecycle and
-handshake stage transitions; `INFO` for terminal state changes; `WARN`
-for recoverable protocol anomalies; `ERROR` for unrecoverable conditions
-reported to the caller via `MeshtasticException`.
+`LogLevel` has six values. `NONE` is only the off switch for protocol logging.
 
 | Level | Used for |
-|-------|----------|
-| `VERBOSE` | Per-packet traces (inbound Rx, heartbeat ticks) — hot path, high volume |
+|---|---|
+| `VERBOSE` | Per-packet traces and heartbeat ticks; high volume |
 | `DEBUG` | Lifecycle transitions, RPC dispatch, send queueing, ACK timers |
-| `INFO` | Session Ready, handshake stage starts/completes, connect/disconnect |
-| `WARN` | Recoverable anomalies — decode failures, transport errors, drops, identity rebinds |
-| `ERROR` | Handshake timeout, protocol violations that terminate the session |
+| `INFO` | Handshake stage starts and completions, session ready, connect and disconnect |
+| `WARN` | Recoverable anomalies: decode failures, transport errors, drops, identity rebinds |
+| `ERROR` | Handshake timeouts and protocol violations that end the session |
 
 ### Tags
 
-Each internal component emits a consistent `tag` string:
-
 | Tag | Source |
-|-----|--------|
-| `MeshEngine` | Engine actor — lifecycle, handshake, routing, sends |
-| `CommandDispatcher` | Phase 2 RPC registry — register/complete/timeout |
-| `SerialTransport` | jSerialComm transport — connect/disconnect, frame drops |
+|---|---|
+| `MeshEngine` | The engine: lifecycle, handshake, routing, sends |
+| `CommandDispatcher` | RPC registration, completion, and timeout |
+| `Protocol` | Protocol logging, when enabled |
+| `UsbSerialTransport` | `AndroidUsbSerialPorts` transports, when `open` gets a `logger` |
 
-Transport modules that don't yet carry a `LogSink` parameter (BLE, TCP)
-surface diagnostics through exceptions only. Future phases will thread
-the logger.
+The builder's `LogSink` reaches the engine only. Transports don't receive it; `AndroidUsbSerialPorts.open(…, logger)` is the one transport that takes its own. Other transports report problems through exceptions and `TransportState.Error`.
 
-### Performance
+The engine builds log messages lazily, so with `LogSink.Silent` no message string is ever constructed.
 
-Internally the SDK uses `@PublishedApi internal inline` extension
-functions on `LogSink` (`verbose`, `debug`, `info`, `warn`, `error`).
-These take a lambda for the message parameter:
+## Protocol logging
 
-```kotlin
-logger.info(TAG) { "Session Ready — myNodeNum=0x${myNodeNum.toString(16)}" }
-```
-
-When the sink is `LogSink.Silent` (the default), the lambda is **never
-invoked** — no string concatenation, no `toString()`, no allocation.
-This means the SDK has zero observable overhead from logging in the
-common case. Only when a host supplies a real `LogSink` does the message
-construction run.
-
-### Sample bindings
-
-`samples/cli` ships a Kermit-backed `LogSink` you can copy. See
-[`samples/cli/src/main/kotlin/org/meshtastic/cli/internal/`](../samples/cli/src/main/kotlin/org/meshtastic/cli/internal/).
-
-## Protocol-level logging
-
-Wire-byte / frame-level dumps are a **separate**, opt-in hook
-controlled by `Builder.protocolLogging(level, redactor)`. `LogLevel.NONE`
-is the default. Enabling this hook emits every encoded `FromRadio` /
-`ToRadio` envelope at the specified level — including pre-shared keys,
-session passkeys, and node positions unless a redactor strips them.
+`Builder.protocolLogging(level, redactor)` logs every `FromRadio` and `ToRadio` envelope under the `Protocol` tag, prefixed `rx` or `tx`, at `level`, rendered by `redactor`. It's off by default (`LogLevel.NONE`) and also needs a `LogSink`: with `LogSink.Silent` nothing is logged.
 
 ```kotlin
 val client = RadioClient.Builder()
     .transport(tcp)
+    .storage(InMemoryStorageProvider())
     .logger(myLogSink)
-    .protocolLogging(
-        level = LogLevel.DEBUG,            // ⚠ raw bytes — dev only
-        redactor = PayloadRedactor.Default // masks PSKs/passkeys/positions
-    )
+    .protocolLogging(LogLevel.DEBUG, PayloadRedactor.Default)
     .build()
 ```
 
-`PayloadRedactor.Default` is on unless explicitly overridden; pass
-`PayloadRedactor.None` to disable redaction. Even with redaction,
-**do not enable protocol logging in a production build** — the
-encoded envelopes still reveal mesh structure and timing.
+`PayloadRedactor.Default` logs the envelope variant and routing metadata (`from`, `to`, packet ID, port, payload size), the section name of a `config` or `moduleConfig`, the `queueStatus` counters (`free`, `maxlen`, `res`, `mesh_packet_id`), the `heartbeat` nonce, and the `xmodemPacket` `control`, `seq`, and buffer length. It never logs payload bytes, text, positions, PSKs, passkeys, config values, or file contents. A frame that doesn't decode as `ToRadio` is logged by size only.
+
+A custom `PayloadRedactor` overrides `describe(FromRadio)` and `describe(ToRadio)`; what it includes is its owner's responsibility under [security.md](./security.md). Don't enable protocol logging in a production build, even with the default redactor: the envelopes still reveal mesh structure and timing.
+
+## Raw `FromRadio` tap
+
+`RadioClient.fromRadio: Flow<FromRadio>` carries every decoded inbound envelope, unfiltered and unredacted: handshake frames, config, channels, log records, and packets. Use it for recorders and protocol analyzers that need more than `packets`.
+
+The tap is hot, has no replay, and never slows the engine: a collector more than 256 envelopes behind loses the oldest, unreported. Envelopes can carry channel PSKs and node positions, and the SDK neither redacts nor persists them, so treat a recording as secret.
+
+## Device logs
+
+The SDK doesn't turn device logging on; the host sets it in device config. Each link carries the firmware's log differently:
+
+| Link | Where the log arrives | Device setting |
+|---|---|---|
+| Phone API (TCP, serial, BLE, WebSocket) | `FromRadio.log_record` envelopes, visible on `fromRadio` only; the engine doesn't surface them elsewhere | `security.debug_log_api_enabled` |
+| BLE `logradio` characteristic | `BleTransport.deviceLogs(): Flow<LogRecord>` | `security.debug_log_api_enabled` |
+| Serial text between frames | The `onTextLine: (String) -> Unit` callback of `JvmSerialPorts.open`, `AndroidSerialPorts.open`, or `AndroidUsbSerialPorts.open` | None. Firmware prints its log as text until the phone API starts on the port, then sends `log_record` instead when `debug_log_api_enabled` is set |
+
+`deviceLogs()` is cold and opt-in: it subscribes when collected, unsubscribes on cancel, and doesn't survive a disconnect, so collect again after reconnecting. It buffers 64 records and drops the oldest; it skips a record truncated by the ATT payload size or one that doesn't decode. It completes empty on a radio without the characteristic and fails with `MeshtasticException.Transport` when the subscription can't start or the link drops. Use the phone API path or `deviceLogs()`, not both.
+
+`onTextLine` runs on the serial reader thread, so it must not block; an exception it throws is swallowed.
 
 ## Engine event surface
 
-`RadioClient.events: Flow<MeshEvent>` is the canonical place to observe
-state changes — connection lifecycle, handshake progress, identity
-rebinds, and protocol warnings. Consumers building dashboards, metrics,
-or status indicators should subscribe to this flow rather than parse log
-lines.
-
-`MeshEvent` is a sealed interface. Current variants:
-
-- `QueueStatusChanged(status)` — firmware queue update.
-- `Notification(notification)` — `ClientNotification` from device.
-- `TransportError(error)` — recoverable transport failure mid-session.
-- `ProtocolWarning(message)` — protocol-level anomaly (e.g. identity rebind).
-- `KeyVerification(prompt)` — peer key-verification prompt.
-- `PacketsDropped(flow, count)` — backpressure on a subscriber-bound flow.
-
-See [`core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt`](../core/src/commonMain/kotlin/org/meshtastic/sdk/Node.kt)
-for current variants — adding a new variant is a SemVer-major change post-1.0.
+`RadioClient.events: Flow<MeshEvent>` is where to observe session-level changes: transport errors, identity rebinds, storage degradation, protocol warnings, notifications, congestion, and dropped items. Dashboards and status indicators should subscribe to it rather than parse log lines. [error-taxonomy.md](./error-taxonomy.md#meshevent-reference) lists every variant, when it fires, and what to do. Adding a variant is a SemVer-major change after 1.0.
 
 ## Metrics
 
-The SDK does not bundle a metrics library. The recommended pattern is
-to subscribe to `events` and convert each variant into a metric
-emission in your own observability stack (Micrometer, OpenTelemetry,
-Prometheus, etc.). A reference adapter is on the post-1.0 roadmap.
-
-For ad-hoc performance checks, see [`docs/performance-expectations.md`](performance-expectations.md).
+The SDK doesn't bundle a metrics library. Subscribe to `events`, `connection`, and `MessageHandle.state`, and convert them into emissions for your own stack, such as Micrometer, OpenTelemetry, or Prometheus. [performance-expectations.md](performance-expectations.md) covers ad hoc performance checks.
 
 ## Diagnostics CLI
 
-`samples/cli` is the SDK's reference test harness. Useful commands when
-diagnosing field issues:
+`samples/cli` is the SDK's reference test harness. Each connecting command takes `--transport ble:NEEDLE | tcp:HOST[:PORT] | serial:PORT[:BAUD]`, parsed by `TransportTarget.parse`, and the root option `--json` switches output to NDJSON envelopes ([ADR-013](decisions/013-proto-json-envelope.md)).
 
-| Command | Purpose |
+| Command | Does |
 |---|---|
-| `cli connect <transport> <addr>` | One-shot handshake; prints terminal state. |
-| `cli probe <runs> <transport> <addr>` | Stress-test connect/handshake/disconnect. Outputs per-run timing. |
-| `cli events <transport> <addr>` | Stream `MeshEvent` flow as NDJSON ([ADR-013](decisions/013-proto-json-envelope.md)). |
-| `cli health <transport> <addr>` | Snapshot of last-seen, RSSI, SNR for every known node. |
+| `cli scan ble`, `cli scan serial`, `cli scan tcp` | Find radios on one transport family |
+| `cli info` | Connect once; print the own node and node count |
+| `cli nodes` | Snapshot or stream the node table |
+| `cli packets` | Stream `MeshPacket`s |
+| `cli events` | Stream `MeshEvent`s |
+| `cli health` | Exit 0 when the handshake completes and the own node is known |
+| `cli send text` | Send a text message and wait for `Acked`, `Delivered`, or `Failed` |
+| `cli probe ble`, `tcp`, `serial`, `all` | Connect-disconnect loops with per-run timing |
 
-All commands accept `--format=json` for agent-consumable output.
+## What the SDK doesn't do
 
-## What the SDK does *not* do
-
-- It does not write to stderr or any platform logger by default.
-- It does not phone home or emit telemetry of its own.
-- It does not persist diagnostic data between sessions (storage is
-  consumer-driven via `:storage-sqldelight`, optional).
-
-## Privacy expectations
-
-`meshtastic-sdk` is part of an off-grid mesh-radio ecosystem;
-operational privacy matters. The defaults reflect that:
-
-- Silence by default (no `LogSink` → no logs).
-- Frame logger off by default; explicit opt-in with a documented
-  warning.
-- CLI redacts PSKs and passkeys when frame logging is enabled.
-- No network telemetry to the SDK author.
+- Write to stderr or a platform logger by default.
+- Send telemetry of its own anywhere.
+- Persist diagnostic data. Storage holds radio state only.
 
 ## References
 
-- [ADR-011](decisions/011-logsink.md) — `LogSink` design.
-- Audit finding B6 — separated frame logging from general logging.
-- [`docs/performance-expectations.md`](performance-expectations.md)
+- [ADR-011](decisions/011-logsink.md): the `LogSink` design
+- [security.md](./security.md): what may be logged
+- [performance-expectations.md](performance-expectations.md)

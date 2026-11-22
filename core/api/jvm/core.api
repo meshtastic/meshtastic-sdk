@@ -1,3 +1,14 @@
+public final class org/meshtastic/sdk/AckProof : java/lang/Enum {
+	public static final field Absent Lorg/meshtastic/sdk/AckProof;
+	public static final field Invalid Lorg/meshtastic/sdk/AckProof;
+	public static final field NoKey Lorg/meshtastic/sdk/AckProof;
+	public static final field Unrecognized Lorg/meshtastic/sdk/AckProof;
+	public static final field Valid Lorg/meshtastic/sdk/AckProof;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/AckProof;
+	public static fun values ()[Lorg/meshtastic/sdk/AckProof;
+}
+
 public abstract interface class org/meshtastic/sdk/AdminApi {
 	public abstract fun addContact (Lorg/meshtastic/proto/SharedContact;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun backupPreferences (Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -23,7 +34,8 @@ public abstract interface class org/meshtastic/sdk/AdminApi {
 	public abstract fun keyVerification (Lorg/meshtastic/proto/KeyVerificationAdmin;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun listChannels (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun lockdown (Lorg/meshtastic/proto/LockdownAuth;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public abstract fun nodeDbReset (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun nodeDbReset (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun nodeDbReset$default (Lorg/meshtastic/sdk/AdminApi;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun otaRequest (Lorg/meshtastic/proto/AdminMessage$OTAEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun reboot-VtjQ1oo (JLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun reboot-VtjQ1oo$default (Lorg/meshtastic/sdk/AdminApi;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
@@ -33,12 +45,14 @@ public abstract interface class org/meshtastic/sdk/AdminApi {
 	public static synthetic fun removeBackupPreferences$default (Lorg/meshtastic/sdk/AdminApi;Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun removeFixedPosition (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun requestDisplayFrame (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun restorePreferences (Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun restorePreferences$default (Lorg/meshtastic/sdk/AdminApi;Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun sendInputEvent (Lorg/meshtastic/proto/AdminMessage$InputEvent;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setCannedMessages (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setChannel (Lorg/meshtastic/proto/Channel;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setConfig (Lorg/meshtastic/proto/Config;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setDisplayMirror (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setFavorite-TEw7vI0 (IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setFixedPosition (Lorg/meshtastic/proto/Position;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setHamMode (Lorg/meshtastic/proto/HamParameters;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -55,11 +69,13 @@ public abstract interface class org/meshtastic/sdk/AdminApi {
 	public static synthetic fun shutdown-VtjQ1oo$default (Lorg/meshtastic/sdk/AdminApi;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun storeUIConfig (Lorg/meshtastic/proto/DeviceUIConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun toggleMuted-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun withRpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/AdminApi;
 }
 
 public final class org/meshtastic/sdk/AdminApi$DefaultImpls {
 	public static synthetic fun backupPreferences$default (Lorg/meshtastic/sdk/AdminApi;Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun factoryReset$default (Lorg/meshtastic/sdk/AdminApi;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun nodeDbReset$default (Lorg/meshtastic/sdk/AdminApi;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun reboot-VtjQ1oo$default (Lorg/meshtastic/sdk/AdminApi;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun rebootOta-VtjQ1oo$default (Lorg/meshtastic/sdk/AdminApi;JLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun removeBackupPreferences$default (Lorg/meshtastic/sdk/AdminApi;Lorg/meshtastic/proto/AdminMessage$BackupLocation;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
@@ -75,9 +91,11 @@ public abstract interface class org/meshtastic/sdk/AdminBatchScope : org/meshtas
 }
 
 public abstract interface class org/meshtastic/sdk/AdminEdit {
+	public abstract fun removeFixedPosition (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setChannel (Lorg/meshtastic/proto/Channel;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setConfig (Lorg/meshtastic/proto/Config;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setFavorite-TEw7vI0 (IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setFixedPosition (Lorg/meshtastic/proto/Position;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setIgnored-TEw7vI0 (IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setModuleConfig (Lorg/meshtastic/proto/ModuleConfig;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun setOwner (Lorg/meshtastic/proto/User;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -170,6 +188,42 @@ public final class org/meshtastic/sdk/AdminResultException$Timeout : org/meshtas
 
 public final class org/meshtastic/sdk/AdminResultException$Unauthorized : org/meshtastic/sdk/AdminResultException {
 	public fun <init> ()V
+}
+
+public abstract interface class org/meshtastic/sdk/AdminSessionStatus {
+}
+
+public final class org/meshtastic/sdk/AdminSessionStatus$Active : org/meshtastic/sdk/AdminSessionStatus {
+	public fun <init> (Lkotlin/time/Instant;Lkotlin/time/Instant;)V
+	public final fun component1 ()Lkotlin/time/Instant;
+	public final fun component2 ()Lkotlin/time/Instant;
+	public final fun copy (Lkotlin/time/Instant;Lkotlin/time/Instant;)Lorg/meshtastic/sdk/AdminSessionStatus$Active;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/AdminSessionStatus$Active;Lkotlin/time/Instant;Lkotlin/time/Instant;ILjava/lang/Object;)Lorg/meshtastic/sdk/AdminSessionStatus$Active;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRefreshedAt ()Lkotlin/time/Instant;
+	public final fun getStaleAt ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/AdminSessionStatus$NoSession : org/meshtastic/sdk/AdminSessionStatus {
+	public static final field INSTANCE Lorg/meshtastic/sdk/AdminSessionStatus$NoSession;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/AdminSessionStatus$Stale : org/meshtastic/sdk/AdminSessionStatus {
+	public fun <init> (Lkotlin/time/Instant;Lkotlin/time/Instant;)V
+	public final fun component1 ()Lkotlin/time/Instant;
+	public final fun component2 ()Lkotlin/time/Instant;
+	public final fun copy (Lkotlin/time/Instant;Lkotlin/time/Instant;)Lorg/meshtastic/sdk/AdminSessionStatus$Stale;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/AdminSessionStatus$Stale;Lkotlin/time/Instant;Lkotlin/time/Instant;ILjava/lang/Object;)Lorg/meshtastic/sdk/AdminSessionStatus$Stale;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpiresAt ()Lkotlin/time/Instant;
+	public final fun getRefreshedAt ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/AutoReconnectConfig {
@@ -317,21 +371,24 @@ public final class org/meshtastic/sdk/ConfigBuildersKt {
 }
 
 public final class org/meshtastic/sdk/ConfigBundle {
-	public fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;)V
-	public synthetic fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;)V
+	public synthetic fun <init> (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lorg/meshtastic/proto/MyNodeInfo;
 	public final fun component2 ()Lorg/meshtastic/proto/DeviceMetadata;
 	public final fun component3 ()Ljava/util/List;
 	public final fun component4 ()Ljava/util/List;
 	public final fun component5 ()Lorg/meshtastic/proto/DeviceUIConfig;
-	public final fun copy (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;)Lorg/meshtastic/sdk/ConfigBundle;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConfigBundle;Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;ILjava/lang/Object;)Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun component6 ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
+	public final fun copy (Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;)Lorg/meshtastic/sdk/ConfigBundle;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConfigBundle;Lorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/proto/DeviceMetadata;Ljava/util/List;Ljava/util/List;Lorg/meshtastic/proto/DeviceUIConfig;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILjava/lang/Object;)Lorg/meshtastic/sdk/ConfigBundle;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCapabilities ()Lorg/meshtastic/sdk/DeviceCapabilities;
 	public final fun getConfigs ()Ljava/util/List;
 	public final fun getDeviceUIConfig ()Lorg/meshtastic/proto/DeviceUIConfig;
 	public final fun getMetadata ()Lorg/meshtastic/proto/DeviceMetadata;
 	public final fun getModuleConfigs ()Ljava/util/List;
 	public final fun getMyInfo ()Lorg/meshtastic/proto/MyNodeInfo;
+	public final fun getRegionPresets ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -451,15 +508,18 @@ public final class org/meshtastic/sdk/ConnectionState$Reconnecting : org/meshtas
 }
 
 public final class org/meshtastic/sdk/DeviceCapabilities {
-	public fun <init> (Ljava/lang/String;)V
+	public fun <init> (Ljava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;)Lorg/meshtastic/sdk/DeviceCapabilities;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/DeviceCapabilities;Ljava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/DeviceCapabilities;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lorg/meshtastic/sdk/DeviceCapabilities;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/DeviceCapabilities;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/DeviceCapabilities;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getCanMuteNode ()Z
 	public final fun getCanSendVerifiedContacts ()Z
 	public final fun getCanToggleTelemetryEnabled ()Z
 	public final fun getCanToggleUnmessageable ()Z
+	public final fun getExcludedModules ()I
 	public final fun getFirmwareVersion ()Ljava/lang/String;
 	public final fun getSupportsEsp32Ota ()Z
 	public final fun getSupportsQrCodeSharing ()Z
@@ -467,8 +527,16 @@ public final class org/meshtastic/sdk/DeviceCapabilities {
 	public final fun getSupportsStatusMessage ()Z
 	public final fun getSupportsTakConfig ()Z
 	public final fun getSupportsTrafficManagementConfig ()Z
+	public final fun hasModule (Lorg/meshtastic/proto/ExcludedModules;)Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/DeviceProfilesKt {
+	public static final fun exportDeviceProfile (Lorg/meshtastic/sdk/RadioClient;ZZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun exportDeviceProfile$default (Lorg/meshtastic/sdk/RadioClient;ZZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun installDeviceProfile (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/DeviceProfile;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun installDeviceProfile$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/DeviceProfile;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public abstract interface class org/meshtastic/sdk/DeviceStorage : java/lang/AutoCloseable {
@@ -478,7 +546,9 @@ public abstract interface class org/meshtastic/sdk/DeviceStorage : java/lang/Aut
 	public abstract fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadOwnDeviceId (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recordOwnNode-HXU1dws (ILjava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -486,6 +556,11 @@ public abstract interface class org/meshtastic/sdk/DeviceStorage : java/lang/Aut
 	public abstract fun saveHeartbeat-TEw7vI0 (IJLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun saveNode (Lorg/meshtastic/proto/NodeInfo;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun saveSessionPasskey (Lorg/meshtastic/sdk/SessionPasskey;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/DeviceStorage$DefaultImpls {
+	public static fun loadOwnDeviceId (Lorg/meshtastic/sdk/DeviceStorage;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static fun recordOwnNode-HXU1dws (Lorg/meshtastic/sdk/DeviceStorage;ILjava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/DeviceVersion : java/lang/Comparable {
@@ -508,8 +583,39 @@ public final class org/meshtastic/sdk/DeviceVersion$Companion {
 	public final fun getMIN_SUPPORTED ()Lorg/meshtastic/sdk/DeviceVersion;
 }
 
+public final class org/meshtastic/sdk/DisplayMirrorFrame {
+	public fun <init> (IILorg/meshtastic/proto/DisplayFrame$Format;ILokio/ByteString;IIIII)V
+	public synthetic fun <init> (IILorg/meshtastic/proto/DisplayFrame$Format;ILokio/ByteString;IIIIIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component10 ()I
+	public final fun component2 ()I
+	public final fun component3 ()Lorg/meshtastic/proto/DisplayFrame$Format;
+	public final fun component4 ()I
+	public final fun component5 ()Lokio/ByteString;
+	public final fun component6 ()I
+	public final fun component7 ()I
+	public final fun component8 ()I
+	public final fun component9 ()I
+	public final fun copy (IILorg/meshtastic/proto/DisplayFrame$Format;ILokio/ByteString;IIIII)Lorg/meshtastic/sdk/DisplayMirrorFrame;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/DisplayMirrorFrame;IILorg/meshtastic/proto/DisplayFrame$Format;ILokio/ByteString;IIIIIILjava/lang/Object;)Lorg/meshtastic/sdk/DisplayMirrorFrame;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getData ()Lokio/ByteString;
+	public final fun getFormat ()Lorg/meshtastic/proto/DisplayFrame$Format;
+	public final fun getFrameId ()I
+	public final fun getHeight ()I
+	public final fun getPaletteSignature ()I
+	public final fun getRectHeight ()I
+	public final fun getRectWidth ()I
+	public final fun getRectX ()I
+	public final fun getRectY ()I
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/DroppedFlow : java/lang/Enum {
 	public static final field Events Lorg/meshtastic/sdk/DroppedFlow;
+	public static final field Nodes Lorg/meshtastic/sdk/DroppedFlow;
 	public static final field Packets Lorg/meshtastic/sdk/DroppedFlow;
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/DroppedFlow;
@@ -523,6 +629,129 @@ public final class org/meshtastic/sdk/ExternalChangeKind : java/lang/Enum {
 	public static fun getEntries ()Lkotlin/enums/EnumEntries;
 	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/ExternalChangeKind;
 	public static fun values ()[Lorg/meshtastic/sdk/ExternalChangeKind;
+}
+
+public abstract interface class org/meshtastic/sdk/FileTransferApi {
+	public static final field Companion Lorg/meshtastic/sdk/FileTransferApi$Companion;
+	public static final field MAX_FILE_BYTES I
+	public static final field MAX_PATH_BYTES I
+	public abstract fun download (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun getProgress ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun upload (Ljava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/FileTransferApi$Companion {
+	public static final field MAX_FILE_BYTES I
+	public static final field MAX_PATH_BYTES I
+}
+
+public final class org/meshtastic/sdk/FileTransferDirection : java/lang/Enum {
+	public static final field Download Lorg/meshtastic/sdk/FileTransferDirection;
+	public static final field Upload Lorg/meshtastic/sdk/FileTransferDirection;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/FileTransferDirection;
+	public static fun values ()[Lorg/meshtastic/sdk/FileTransferDirection;
+}
+
+public abstract interface class org/meshtastic/sdk/FileTransferFailure {
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$Busy : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$Busy;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$DeviceCancelled : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$DeviceCancelled;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$InvalidPath : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$InvalidPath;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$NotConnected : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$NotConnected;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$Refused : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$Refused;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$RetriesExhausted : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$RetriesExhausted;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$Timeout : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$Timeout;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferFailure$TooLarge : org/meshtastic/sdk/FileTransferFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/FileTransferFailure$TooLarge;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferProgress {
+	public fun <init> (Ljava/lang/String;Lorg/meshtastic/sdk/FileTransferDirection;ILjava/lang/Integer;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lorg/meshtastic/sdk/FileTransferDirection;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/String;Lorg/meshtastic/sdk/FileTransferDirection;ILjava/lang/Integer;)Lorg/meshtastic/sdk/FileTransferProgress;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/FileTransferProgress;Ljava/lang/String;Lorg/meshtastic/sdk/FileTransferDirection;ILjava/lang/Integer;ILjava/lang/Object;)Lorg/meshtastic/sdk/FileTransferProgress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBytesTransferred ()I
+	public final fun getDirection ()Lorg/meshtastic/sdk/FileTransferDirection;
+	public final fun getPath ()Ljava/lang/String;
+	public final fun getTotalBytes ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class org/meshtastic/sdk/FileTransferResult {
+}
+
+public final class org/meshtastic/sdk/FileTransferResult$Failure : org/meshtastic/sdk/FileTransferResult {
+	public fun <init> (Lorg/meshtastic/sdk/FileTransferFailure;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/FileTransferFailure;
+	public final fun copy (Lorg/meshtastic/sdk/FileTransferFailure;)Lorg/meshtastic/sdk/FileTransferResult$Failure;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/FileTransferResult$Failure;Lorg/meshtastic/sdk/FileTransferFailure;ILjava/lang/Object;)Lorg/meshtastic/sdk/FileTransferResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Lorg/meshtastic/sdk/FileTransferFailure;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/FileTransferResult$Success : org/meshtastic/sdk/FileTransferResult {
+	public fun <init> (Ljava/lang/Object;)V
+	public final fun component1 ()Ljava/lang/Object;
+	public final fun copy (Ljava/lang/Object;)Lorg/meshtastic/sdk/FileTransferResult$Success;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/FileTransferResult$Success;Ljava/lang/Object;ILjava/lang/Object;)Lorg/meshtastic/sdk/FileTransferResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/FirmwareTimeKt {
@@ -545,6 +774,11 @@ public final class org/meshtastic/sdk/Frame {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/HamModeKt {
+	public static final fun enableHamMode (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Float;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun enableHamMode$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ljava/lang/Float;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+
 public final class org/meshtastic/sdk/HandshakeAwaitKt {
 	public static final fun awaitInitialNodeDb (Lorg/meshtastic/sdk/RadioClient;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
@@ -557,7 +791,9 @@ public final class org/meshtastic/sdk/InMemoryStorage : org/meshtastic/sdk/Devic
 	public fun loadConfig (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun loadHeartbeats (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun loadNodes (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun loadOwnDeviceId (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun loadSessionPasskey (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun recordOwnNode-HXU1dws (ILjava/lang/String;Lokio/ByteString;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun recordOwnNode-TEw7vI0 (ILjava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun removeNode-UyS-FeY (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun saveChannels (Ljava/util/List;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -573,6 +809,53 @@ public final class org/meshtastic/sdk/InMemoryStorageProvider : org/meshtastic/s
 }
 
 public abstract interface class org/meshtastic/sdk/KeyVerificationPrompt {
+	public abstract fun getNonce ()J
+	public abstract fun getRemoteLongName ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification : org/meshtastic/sdk/KeyVerificationPrompt {
+	public fun <init> (JLjava/lang/String;ZLjava/lang/String;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (JLjava/lang/String;ZLjava/lang/String;)Lorg/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification;JLjava/lang/String;ZLjava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/KeyVerificationPrompt$ConfirmVerification;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNonce ()J
+	public fun getRemoteLongName ()Ljava/lang/String;
+	public final fun getVerificationCharacters ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isSender ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber : org/meshtastic/sdk/KeyVerificationPrompt {
+	public fun <init> (JLjava/lang/String;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (JLjava/lang/String;)Lorg/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber;JLjava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/KeyVerificationPrompt$EnterSecurityNumber;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNonce ()J
+	public fun getRemoteLongName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber : org/meshtastic/sdk/KeyVerificationPrompt {
+	public fun <init> (JLjava/lang/String;I)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun copy (JLjava/lang/String;I)Lorg/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber;JLjava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/KeyVerificationPrompt$ShowSecurityNumber;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNonce ()J
+	public fun getRemoteLongName ()Ljava/lang/String;
+	public final fun getSecurityNumber ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/LatLng {
@@ -593,6 +876,84 @@ public final class org/meshtastic/sdk/LatLng {
 
 public final class org/meshtastic/sdk/LatLngKt {
 	public static final fun toLatLng (Lorg/meshtastic/proto/Position;)Lorg/meshtastic/sdk/LatLng;
+}
+
+public final class org/meshtastic/sdk/LoRaFrequency {
+	public static final field INSTANCE Lorg/meshtastic/sdk/LoRaFrequency;
+	public final fun bandwidthKHzForCode (I)F
+	public final fun centerFrequencyMHz (Lorg/meshtastic/sdk/LoRaRegionInfo;FIF)F
+	public static synthetic fun centerFrequencyMHz$default (Lorg/meshtastic/sdk/LoRaFrequency;Lorg/meshtastic/sdk/LoRaRegionInfo;FIFILjava/lang/Object;)F
+	public final fun hashedChannelName (Ljava/lang/String;ZLorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;)Ljava/lang/String;
+	public final fun numChannels (Lorg/meshtastic/sdk/LoRaRegionInfo;F)I
+	public final fun plan (Lorg/meshtastic/proto/Config$LoRaConfig;Ljava/lang/String;)Lorg/meshtastic/sdk/LoRaFrequencyPlan;
+	public final fun resolveSlot (Lorg/meshtastic/sdk/LoRaRegionInfo;ILjava/lang/String;I)Ljava/lang/Integer;
+	public static synthetic fun resolveSlot$default (Lorg/meshtastic/sdk/LoRaFrequency;Lorg/meshtastic/sdk/LoRaRegionInfo;ILjava/lang/String;IILjava/lang/Object;)Ljava/lang/Integer;
+	public final fun slotWidthMHz (Lorg/meshtastic/sdk/LoRaRegionInfo;F)F
+}
+
+public final class org/meshtastic/sdk/LoRaFrequencyKt {
+	public static final fun modemParams (Lorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;Z)Lorg/meshtastic/sdk/ModemParams;
+	public static synthetic fun modemParams$default (Lorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;ZILjava/lang/Object;)Lorg/meshtastic/sdk/ModemParams;
+}
+
+public final class org/meshtastic/sdk/LoRaFrequencyPlan {
+	public fun <init> (Lorg/meshtastic/sdk/LoRaRegionInfo;FILjava/lang/Integer;Ljava/lang/Float;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/LoRaRegionInfo;
+	public final fun component2 ()F
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ljava/lang/Float;
+	public final fun copy (Lorg/meshtastic/sdk/LoRaRegionInfo;FILjava/lang/Integer;Ljava/lang/Float;)Lorg/meshtastic/sdk/LoRaFrequencyPlan;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/LoRaFrequencyPlan;Lorg/meshtastic/sdk/LoRaRegionInfo;FILjava/lang/Integer;Ljava/lang/Float;ILjava/lang/Object;)Lorg/meshtastic/sdk/LoRaFrequencyPlan;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBandwidthKHz ()F
+	public final fun getFrequencyMHz ()Ljava/lang/Float;
+	public final fun getNumChannels ()I
+	public final fun getRegion ()Lorg/meshtastic/sdk/LoRaRegionInfo;
+	public final fun getSlot ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/LoRaRegionInfo {
+	public static final field Companion Lorg/meshtastic/sdk/LoRaRegionInfo$Companion;
+	public fun <init> (Lorg/meshtastic/proto/Config$LoRaConfig$RegionCode;FFFIZZFFZZLorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;I)V
+	public final fun component1 ()Lorg/meshtastic/proto/Config$LoRaConfig$RegionCode;
+	public final fun component10 ()Z
+	public final fun component11 ()Z
+	public final fun component12 ()Lorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;
+	public final fun component13 ()I
+	public final fun component2 ()F
+	public final fun component3 ()F
+	public final fun component4 ()F
+	public final fun component5 ()I
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()F
+	public final fun component9 ()F
+	public final fun copy (Lorg/meshtastic/proto/Config$LoRaConfig$RegionCode;FFFIZZFFZZLorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;I)Lorg/meshtastic/sdk/LoRaRegionInfo;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/LoRaRegionInfo;Lorg/meshtastic/proto/Config$LoRaConfig$RegionCode;FFFIZZFFZZLorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;IILjava/lang/Object;)Lorg/meshtastic/sdk/LoRaRegionInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAudioPermitted ()Z
+	public final fun getDefaultPreset ()Lorg/meshtastic/proto/Config$LoRaConfig$ModemPreset;
+	public final fun getDutyCyclePercent ()F
+	public final fun getFreqEndMHz ()F
+	public final fun getFreqStartMHz ()F
+	public final fun getFreqSwitching ()Z
+	public final fun getLicensedOnly ()Z
+	public final fun getOverrideSlot ()I
+	public final fun getPaddingMHz ()F
+	public final fun getPowerLimitDbm ()I
+	public final fun getRegion ()Lorg/meshtastic/proto/Config$LoRaConfig$RegionCode;
+	public final fun getSpacingMHz ()F
+	public final fun getWideLora ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/LoRaRegionInfo$Companion {
+	public final fun forRegion (Lorg/meshtastic/proto/Config$LoRaConfig$RegionCode;)Lorg/meshtastic/sdk/LoRaRegionInfo;
+	public final fun getAll ()Ljava/util/List;
 }
 
 public final class org/meshtastic/sdk/LogLevel : java/lang/Enum {
@@ -819,6 +1180,23 @@ public final class org/meshtastic/sdk/MeshEvent$SecurityWarning$LowEntropyKey : 
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch : org/meshtastic/sdk/MeshEvent$SecurityWarning {
+	public synthetic fun <init> (ILokio/ByteString;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/sdk/NodeId;Lokio/ByteString;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
+	public final fun component1-Unx0hic ()I
+	public final fun component2 ()Lokio/ByteString;
+	public final fun copy (Lorg/meshtastic/sdk/NodeId;Lokio/ByteString;)Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;
+	public final fun copy-UyS-FeY (ILokio/ByteString;)Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;
+	public static synthetic fun copy-UyS-FeY$default (Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;ILokio/ByteString;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNode ()Lorg/meshtastic/sdk/NodeId;
+	public final fun getNode-Unx0hic ()I
+	public final fun getOfferedKey ()Lokio/ByteString;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/MeshEvent$StorageDegraded : org/meshtastic/sdk/MeshEvent {
 	public fun <init> (Ljava/lang/String;)V
 	public final fun component1 ()Ljava/lang/String;
@@ -1013,14 +1391,17 @@ public final class org/meshtastic/sdk/MessageHandleRetryKt {
 }
 
 public final class org/meshtastic/sdk/MessageHelpersKt {
+	public static final fun channelFor-ynvfgPs (Lorg/meshtastic/sdk/RadioClient;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun requestPosition (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;)Lorg/meshtastic/sdk/MessageHandle;
 	public static final fun requestPosition-RB-pko4 (Lorg/meshtastic/sdk/RadioClient;II)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun requestPosition-RB-pko4$default (Lorg/meshtastic/sdk/RadioClient;IIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public static final fun requestPositionOnHeardChannel-ynvfgPs (Lorg/meshtastic/sdk/RadioClient;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static final fun sendDirectMessage-BniPyuc (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;IZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendDirectMessage-BniPyuc$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;IZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static final fun sendDirectMessageEncrypted (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/NodeId;Ljava/lang/String;Z)Lorg/meshtastic/sdk/MessageHandle;
-	public static final fun sendDirectMessageEncrypted-UH2hNCI (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;Z)Lorg/meshtastic/sdk/MessageHandle;
-	public static synthetic fun sendDirectMessageEncrypted-UH2hNCI$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public static final fun sendDirectMessageEncrypted-GrvDmtA (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendDirectMessageEncrypted-GrvDmtA$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun sendDirectMessageOnHeardChannel-GrvDmtA (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendDirectMessageOnHeardChannel-GrvDmtA$default (Lorg/meshtastic/sdk/RadioClient;ILjava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static final fun sendPosition-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/LatLng;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun sendPosition-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/sdk/LatLng;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
@@ -1038,6 +1419,21 @@ public final class org/meshtastic/sdk/MessageId {
 	public fun toString ()Ljava/lang/String;
 	public static fun toString-impl (I)Ljava/lang/String;
 	public final synthetic fun unbox-impl ()I
+}
+
+public final class org/meshtastic/sdk/ModemParams {
+	public fun <init> (FII)V
+	public final fun component1 ()F
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun copy (FII)Lorg/meshtastic/sdk/ModemParams;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ModemParams;FIIILjava/lang/Object;)Lorg/meshtastic/sdk/ModemParams;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBandwidthKHz ()F
+	public final fun getCodingRate ()I
+	public final fun getSpreadFactor ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/NeighborInfo {
@@ -1236,6 +1632,18 @@ public final class org/meshtastic/sdk/NodeInfosKt {
 	public static final fun getShortName (Lorg/meshtastic/proto/NodeInfo;)Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/NodeLastByte {
+	public fun <init> (I)V
+	public final fun candidates (Ljava/util/Collection;)Ljava/util/List;
+	public final fun component1 ()I
+	public final fun copy (I)Lorg/meshtastic/sdk/NodeLastByte;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/NodeLastByte;IILjava/lang/Object;)Lorg/meshtastic/sdk/NodeLastByte;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getValue ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/NodeStatusKt {
 	public static final fun getConnectionQuality (Lorg/meshtastic/proto/NodeInfo;)Lorg/meshtastic/sdk/ConnectionQuality;
 	public static final fun getDEFAULT_ONLINE_THRESHOLD ()J
@@ -1245,8 +1653,54 @@ public final class org/meshtastic/sdk/NodeStatusKt {
 	public static synthetic fun isOnline-SxA4cEA$default (Lorg/meshtastic/proto/NodeInfo;IJILjava/lang/Object;)Z
 }
 
+public final class org/meshtastic/sdk/PacedMessageHandle {
+	public final fun awaitAdmission (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun awaitDispatch (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun awaitQueueReceipt (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun getMessage ()Lorg/meshtastic/sdk/MessageHandle;
+}
+
 public final class org/meshtastic/sdk/PacketDecodeKt {
 	public static final fun decodeAs (Lorg/meshtastic/proto/MeshPacket;Lcom/squareup/wire/ProtoAdapter;)Lcom/squareup/wire/Message;
+}
+
+public final class org/meshtastic/sdk/PacketProvenanceKt {
+	public static final fun getAckProof (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/AckProof;
+	public static final fun getHeardOnCurrentLora (Lorg/meshtastic/proto/NodeInfo;)Z
+	public static final fun getNextHop (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/NodeLastByte;
+	public static final fun getRelayNode (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/NodeLastByte;
+	public static final fun getSignature (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/PacketSignature;
+	public static final fun getSignsPackets (Lorg/meshtastic/proto/NodeInfo;)Z
+	public static final fun getTransport (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/PacketTransport;
+	public static final fun getXeddsaSignature (Lorg/meshtastic/proto/MeshPacket;)Lokio/ByteString;
+	public static final fun lastByte (Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/NodeLastByte;
+	public static final fun lastByte-LO_6HKw (I)Lorg/meshtastic/sdk/NodeLastByte;
+}
+
+public final class org/meshtastic/sdk/PacketSignature : java/lang/Enum {
+	public static final field CarriedUnchecked Lorg/meshtastic/sdk/PacketSignature;
+	public static final field CheckedByDevice Lorg/meshtastic/sdk/PacketSignature;
+	public static final field Malformed Lorg/meshtastic/sdk/PacketSignature;
+	public static final field None Lorg/meshtastic/sdk/PacketSignature;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/PacketSignature;
+	public static fun values ()[Lorg/meshtastic/sdk/PacketSignature;
+}
+
+public final class org/meshtastic/sdk/PacketTransport : java/lang/Enum {
+	public static final field Api Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Internal Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Lora Lorg/meshtastic/sdk/PacketTransport;
+	public static final field LoraAlt1 Lorg/meshtastic/sdk/PacketTransport;
+	public static final field LoraAlt2 Lorg/meshtastic/sdk/PacketTransport;
+	public static final field LoraAlt3 Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Mqtt Lorg/meshtastic/sdk/PacketTransport;
+	public static final field MulticastUdp Lorg/meshtastic/sdk/PacketTransport;
+	public static final field UnicastUdp Lorg/meshtastic/sdk/PacketTransport;
+	public static final field Unrecognized Lorg/meshtastic/sdk/PacketTransport;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/PacketTransport;
+	public static fun values ()[Lorg/meshtastic/sdk/PacketTransport;
 }
 
 public final class org/meshtastic/sdk/PayloadAccessorsKt {
@@ -1267,10 +1721,32 @@ public final class org/meshtastic/sdk/PayloadAccessorsKt {
 
 public abstract interface class org/meshtastic/sdk/PayloadRedactor {
 	public static final field Companion Lorg/meshtastic/sdk/PayloadRedactor$Companion;
+	public fun describe (Lorg/meshtastic/proto/FromRadio;)Ljava/lang/String;
+	public fun describe (Lorg/meshtastic/proto/ToRadio;)Ljava/lang/String;
 }
 
 public final class org/meshtastic/sdk/PayloadRedactor$Companion {
 	public final fun getDefault ()Lorg/meshtastic/sdk/PayloadRedactor;
+}
+
+public final class org/meshtastic/sdk/PayloadRedactor$DefaultImpls {
+	public static fun describe (Lorg/meshtastic/sdk/PayloadRedactor;Lorg/meshtastic/proto/FromRadio;)Ljava/lang/String;
+	public static fun describe (Lorg/meshtastic/sdk/PayloadRedactor;Lorg/meshtastic/proto/ToRadio;)Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/PortPayloadAccessorsKt {
+	public static final fun asAlertText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
+	public static final fun asAtakPacket (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/TAKPacket;
+	public static final fun asDetectionSensorText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
+	public static final fun asKeyVerification (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/KeyVerification;
+	public static final fun asMapReport (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/MapReport;
+	public static final fun asMeshBeacon (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/MeshBeacon;
+	public static final fun asNodeStatus (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/StatusMessage;
+	public static final fun asPaxcount (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/Paxcount;
+	public static final fun asPowerStress (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/PowerStressMessage;
+	public static final fun asRangeTestText (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/String;
+	public static final fun asRemoteHardware (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/HardwareMessage;
+	public static final fun asRemoteShell (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/RemoteShell;
 }
 
 public final class org/meshtastic/sdk/PositionUtils {
@@ -1292,23 +1768,44 @@ public final class org/meshtastic/sdk/ProtoBytesKt {
 	public static final fun toToRadio ([B)Lorg/meshtastic/proto/ToRadio;
 }
 
+public final class org/meshtastic/sdk/QueueReceipt : java/lang/Enum {
+	public static final field Accepted Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field LocalDelivery Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field NotDispatched Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field Rejected Lorg/meshtastic/sdk/QueueReceipt;
+	public static final field Unconfirmed Lorg/meshtastic/sdk/QueueReceipt;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Lorg/meshtastic/sdk/QueueReceipt;
+	public static fun values ()[Lorg/meshtastic/sdk/QueueReceipt;
+}
+
 public final class org/meshtastic/sdk/RadioClient {
 	public static final field Companion Lorg/meshtastic/sdk/RadioClient$Companion;
 	public fun <init> (Lorg/meshtastic/sdk/internal/MeshEngine;Lkotlin/time/Clock;Lkotlin/time/Duration;ZLkotlin/coroutines/CoroutineContext;)V
+	public final fun adminSessionStatus (Lorg/meshtastic/sdk/NodeId;)Lkotlinx/coroutines/flow/Flow;
+	public final fun adminSessionStatus-LO_6HKw (I)Lkotlinx/coroutines/flow/Flow;
 	public final fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun getAdmin ()Lorg/meshtastic/sdk/AdminApi;
+	public final fun getAdminSessions ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getChannels ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConfigBundle ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getConnection ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun getDeviceLogs ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getDisplayFrames ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getDisplayPalette ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getEvents ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getFiles ()Lorg/meshtastic/sdk/FileTransferApi;
+	public final fun getFromRadio ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getNodes ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getOwnNode ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getPackets ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getRouting ()Lorg/meshtastic/sdk/RoutingApi;
+	public final fun getSessionEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getStoreForward ()Lorg/meshtastic/sdk/StoreForwardApi;
 	public final fun getTelemetry ()Lorg/meshtastic/sdk/TelemetryApi;
 	public final fun nodeSnapshot (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun requestNodeDbRefresh ()Z
 	public final fun requestNodeInfo (Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun requestNodeInfo-LO_6HKw (I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun send (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/MessageHandle;
@@ -1316,6 +1813,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;Lokio/ByteString;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun send-IJD_lpo$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public final fun sendPaced (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/PacedMessageHandle;
 	public final fun sendRaw (Lorg/meshtastic/proto/ToRadio;)V
 	public final fun sendReaction (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendReaction-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
@@ -1323,6 +1821,8 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun sendText (Ljava/lang/String;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/ChannelIndex;I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun sendText-soBxvt8 (Ljava/lang/String;III)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun sendText-soBxvt8$default (Lorg/meshtastic/sdk/RadioClient;Ljava/lang/String;IIIILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun tryLockdown (Lorg/meshtastic/proto/LockdownAuth;)Z
+	public final fun trySendRaw (Lorg/meshtastic/proto/ToRadio;)Z
 }
 
 public final class org/meshtastic/sdk/RadioClient$Builder {
@@ -1345,6 +1845,9 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public final fun rpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sendTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun sessionReceive (I)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public static synthetic fun sessionReceive$default (Lorg/meshtastic/sdk/RadioClient$Builder;IILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun sessionReceiveEnvelopes ()Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun skipNodeDb (Z)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public static synthetic fun skipNodeDb$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun storage (Lorg/meshtastic/sdk/StorageProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
@@ -1382,13 +1885,125 @@ public final class org/meshtastic/sdk/RadioMetricsKt {
 	public static final fun toRadioMetrics (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/RadioMetrics;
 }
 
+public abstract interface class org/meshtastic/sdk/RadioSessionEvent {
+	public abstract fun getSessionId ()J
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Ended : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Lorg/meshtastic/sdk/RadioSessionEvent$Ended;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ended;JILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ended;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Envelope : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JJLorg/meshtastic/proto/FromRadio;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()Lorg/meshtastic/proto/FromRadio;
+	public final fun copy (JJLorg/meshtastic/proto/FromRadio;)Lorg/meshtastic/sdk/RadioSessionEvent$Envelope;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Envelope;JJLorg/meshtastic/proto/FromRadio;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Envelope;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnvelope ()Lorg/meshtastic/proto/FromRadio;
+	public final fun getSequence ()J
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Lockdown : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JJLorg/meshtastic/proto/LockdownStatus;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()Lorg/meshtastic/proto/LockdownStatus;
+	public final fun copy (JJLorg/meshtastic/proto/LockdownStatus;)Lorg/meshtastic/sdk/RadioSessionEvent$Lockdown;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Lockdown;JJLorg/meshtastic/proto/LockdownStatus;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Lockdown;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSequence ()J
+	public fun getSessionId ()J
+	public final fun getStatus ()Lorg/meshtastic/proto/LockdownStatus;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$NodeDbRefreshed : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JJLjava/util/Map;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()Ljava/util/Map;
+	public final fun copy (JJLjava/util/Map;)Lorg/meshtastic/sdk/RadioSessionEvent$NodeDbRefreshed;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$NodeDbRefreshed;JJLjava/util/Map;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$NodeDbRefreshed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNodes ()Ljava/util/Map;
+	public final fun getSequence ()J
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Packet : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JJLorg/meshtastic/proto/MeshPacket;Z)V
+	public synthetic fun <init> (JJLorg/meshtastic/proto/MeshPacket;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()Lorg/meshtastic/proto/MeshPacket;
+	public final fun component4 ()Z
+	public final fun copy (JJLorg/meshtastic/proto/MeshPacket;Z)Lorg/meshtastic/sdk/RadioSessionEvent$Packet;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Packet;JJLorg/meshtastic/proto/MeshPacket;ZILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Packet;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCorrelatedAdminResponse ()Z
+	public final fun getPacket ()Lorg/meshtastic/proto/MeshPacket;
+	public final fun getSequence ()J
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionEvent$Ready : org/meshtastic/sdk/RadioSessionEvent {
+	public fun <init> (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;)V
+	public synthetic fun <init> (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()Lorg/meshtastic/proto/MyNodeInfo;
+	public final fun component3 ()Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun component4 ()Ljava/util/List;
+	public final fun component5 ()Ljava/util/Map;
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
+	public final fun copy (JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/RadioSessionEvent$Ready;JLorg/meshtastic/proto/MyNodeInfo;Lorg/meshtastic/sdk/ConfigBundle;Ljava/util/List;Ljava/util/Map;Ljava/util/List;Lorg/meshtastic/proto/LoRaRegionPresetMap;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioSessionEvent$Ready;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChannels ()Ljava/util/List;
+	public final fun getConfigBundle ()Lorg/meshtastic/sdk/ConfigBundle;
+	public final fun getFiles ()Ljava/util/List;
+	public final fun getMyInfo ()Lorg/meshtastic/proto/MyNodeInfo;
+	public final fun getNodes ()Ljava/util/Map;
+	public final fun getRegionPresets ()Lorg/meshtastic/proto/LoRaRegionPresetMap;
+	public fun getSessionId ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/RadioSessionOverflowException : java/lang/Exception {
+	public final fun getFirstMissedSequence ()Ljava/lang/Long;
+	public final fun getSessionId ()J
+}
+
 public abstract interface class org/meshtastic/sdk/RadioTransport {
 	public abstract fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun frames ()Lkotlinx/coroutines/flow/Flow;
 	public abstract fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getLinkDropsOnRestartCommands ()Z
 	public abstract fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class org/meshtastic/sdk/RadioTransport$DefaultImpls {
+	public static fun getLinkDropsOnRestartCommands (Lorg/meshtastic/sdk/RadioTransport;)Z
 }
 
 public abstract interface class org/meshtastic/sdk/ReconnectRecoveryStep {
@@ -1604,6 +2219,13 @@ public final class org/meshtastic/sdk/SendFailure$Other : org/meshtastic/sdk/Sen
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SendFailure$Other;Lorg/meshtastic/proto/Routing$Error;ILjava/lang/Object;)Lorg/meshtastic/sdk/SendFailure$Other;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getRoutingError ()Lorg/meshtastic/proto/Routing$Error;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/SendFailure$QueueFull : org/meshtastic/sdk/SendFailure {
+	public static final field INSTANCE Lorg/meshtastic/sdk/SendFailure$QueueFull;
+	public fun equals (Ljava/lang/Object;)Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1878,6 +2500,12 @@ public final class org/meshtastic/sdk/StoreForwardEvent$SfppLinkProvided : org/m
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/StoreForwardReplaysKt {
+	public static final fun dropDuplicateStoreForwardReplays (Lkotlinx/coroutines/flow/Flow;I)Lkotlinx/coroutines/flow/Flow;
+	public static synthetic fun dropDuplicateStoreForwardReplays$default (Lkotlinx/coroutines/flow/Flow;IILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;
+	public static final fun storeForwardOriginalId (Lorg/meshtastic/proto/MeshPacket;)Ljava/lang/Integer;
+}
+
 public final class org/meshtastic/sdk/StoreForwardStats {
 	public fun <init> ()V
 	public fun <init> (IIIIIZ)V
@@ -2115,6 +2743,78 @@ public final class org/meshtastic/sdk/TransportState$Error : org/meshtastic/sdk/
 	public final fun getRecoverable ()Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class org/meshtastic/sdk/TransportTarget {
+	public static final field Companion Lorg/meshtastic/sdk/TransportTarget$Companion;
+	public static final field DEFAULT_BLE_SCAN_SECONDS I
+	public static final field DEFAULT_SERIAL_BAUD I
+	public static final field DEFAULT_TCP_PORT I
+	public abstract fun getLabel ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/TransportTarget$Ble : org/meshtastic/sdk/TransportTarget {
+	public fun <init> (Ljava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lorg/meshtastic/sdk/TransportTarget$Ble;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/TransportTarget$Ble;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/TransportTarget$Ble;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getLabel ()Ljava/lang/String;
+	public final fun getNeedle ()Ljava/lang/String;
+	public final fun getScanSeconds ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/TransportTarget$Companion {
+	public static final field DEFAULT_BLE_SCAN_SECONDS I
+	public static final field DEFAULT_SERIAL_BAUD I
+	public static final field DEFAULT_TCP_PORT I
+	public final fun parse (Ljava/lang/String;)Lorg/meshtastic/sdk/TransportTarget;
+}
+
+public final class org/meshtastic/sdk/TransportTarget$Serial : org/meshtastic/sdk/TransportTarget {
+	public fun <init> (Ljava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lorg/meshtastic/sdk/TransportTarget$Serial;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/TransportTarget$Serial;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/TransportTarget$Serial;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBaud ()I
+	public fun getLabel ()Ljava/lang/String;
+	public final fun getPort ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/TransportTarget$Tcp : org/meshtastic/sdk/TransportTarget {
+	public fun <init> (Ljava/lang/String;I)V
+	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Lorg/meshtastic/sdk/TransportTarget$Tcp;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/TransportTarget$Tcp;Ljava/lang/String;IILjava/lang/Object;)Lorg/meshtastic/sdk/TransportTarget$Tcp;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHost ()Ljava/lang/String;
+	public fun getLabel ()Ljava/lang/String;
+	public final fun getPort ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/WaypointsKt {
+	public static final fun canBeEditedBy (Lorg/meshtastic/proto/Waypoint;Lorg/meshtastic/sdk/NodeId;)Z
+	public static final fun canBeEditedBy-dMC3jmg (Lorg/meshtastic/proto/Waypoint;I)Z
+	public static final fun deleteWaypoint-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun deleteWaypoint-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static final fun isExpired (Lorg/meshtastic/proto/Waypoint;Lkotlin/time/Instant;)Z
+	public static final fun newWaypointId (Lkotlin/random/Random;)I
+	public static synthetic fun newWaypointId$default (Lkotlin/random/Random;ILjava/lang/Object;)I
+	public static final fun sendWaypoint-Ygp1IWw (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun sendWaypoint-Ygp1IWw$default (Lorg/meshtastic/sdk/RadioClient;Lorg/meshtastic/proto/Waypoint;IIZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class org/meshtastic/sdk/WireCodec {

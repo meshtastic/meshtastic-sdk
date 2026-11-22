@@ -32,11 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Kotlin/JS target for `:core` and `:testing`: `org.meshtastic:sdk-core-js` and
-  `org.meshtastic:sdk-testing-js` klibs, added through the `meshtastic.js.library` convention
-  plugin. The common engine, codecs and fakes compile unchanged; `commonTest` runs under
-  Node.js (`./gradlew jsNodeTest`). No transport ships for JS yet, so a consumer supplies its
-  own `RadioTransport`. Existing targets' API dumps are unchanged apart from the klib target list.
+- mDNS discovery in `:transport-tcp`: `TcpDiscovery.discover()` is a cold `Flow<TcpDiscoveryEvent>`
+  (`Found` / `Lost`) of radios advertising `_meshtastic._tcp`, each a `DiscoveredTcpRadio` with
+  its addresses, port and TXT attributes and `toTransport()` / `toTransportSpec()` for
+  connecting. Implementations are `JvmTcpDiscovery` (JmDNS 3.6.5, Apache-2.0, a new JVM-only
+  dependency of `:transport-tcp`), `AndroidTcpDiscovery(context)` (`NsdManager`) and
+  `IosTcpDiscovery` (`NSNetServiceBrowser`). The iOS implementation compiles on every iOS
+  target but has not been run on a device or simulator.
 - Browser target for `:storage-sqldelight`: `SqlDelightStorageProvider(baseDir, createWorker)` keeps
   each radio's database in SQLite on the Origin Private File System, through a worker shipped
   in the klib (`sqlite-opfs.worker.mjs`). Storage calls are now serialized on every target.
@@ -49,8 +51,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   published on JitPack, so a host adds it and the repository itself.
 - `SerialFrameAssembler` is public (`org.meshtastic.sdk.transport.serial`) so a host with its
   own byte stream can build a `RadioTransport` on the same framing.
+- `SerialFrameAssembler.onTextLine` and `open(..., onTextLine)` overloads on `JvmSerialPorts`,
+  `AndroidSerialPorts` and `AndroidUsbSerialPorts` deliver each line of text a radio prints
+  between frames, which carries the firmware's serial debug log.
 - `InMemoryStorageProvider` in `:core`, usable in production without `:testing`'s turbine and
   coroutines-test dependencies.
+- Typed `MeshPacket` payload accessors for more portnums: `asAlertText`, `asRangeTestText`,
+  `asDetectionSensorText`, `asPaxcount`, `asRemoteHardware`, `asNodeStatus`, `asMapReport`,
+  `asMeshBeacon`, `asRemoteShell`, `asPowerStress`, `asKeyVerification` and `asAtakPacket`.
+  Each returns `null` for another portnum or a payload that fails to decode.
 
 ### Changed
 
@@ -60,6 +69,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   statics that 1.8.x does not have, so on a 1.8.1 runtime `:core` failed at 351 call sites;
   the SDK's own suite now compiles and passes against 1.8.1. Consumers on a newer pin keep
   it: Gradle resolves the highest version.
+- Editing another node with `forNode` preserves the connected radio's cached channels,
+  config and module config for `setChannel`, `editSettings` and `batch`.
 - `:storage-sqldelight` runs its SQLite work on a fixed four-thread pool instead of
   `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
@@ -67,6 +78,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Live mesh traffic now updates the node DB. Every decoded packet creates or refreshes its
+  sender (`last_heard`, `snr`, `hops_away`, `via_mqtt`), `NODEINFO_APP` merges the sender's
+  `user` and `POSITION_APP` its `position`, each emitting one `NodeChange.Added` or
+  `NodeChange.Updated`. Before, peers only changed through `FromRadio.node_info` and device
+  metrics from already-known nodes.
 - A `null` hop limit on `send(portnum, …)` and the `send { }` DSL sends the device's
   `lora.hop_limit` (or the firmware default, 3) instead of `0`. The firmware only substitutes
   its default for `0` when `want_ack` is set, so with `want_ack` off those packets went out

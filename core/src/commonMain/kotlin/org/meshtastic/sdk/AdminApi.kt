@@ -62,13 +62,23 @@ public interface AdminApi {
      */
     public fun forNode(dest: NodeId): AdminApi
 
+    /**
+     * Return an [AdminApi] with the same target whose calls wait up to [timeout] for the device's
+     * answer, instead of the client's `rpcTimeout`. Use it for a multi-hop remote read whose reply
+     * can legitimately take longer than a local round-trip.
+     *
+     * @param timeout how long each call waits for its response or ACK
+     * @since 0.3.0
+     */
+    public fun withRpcTimeout(timeout: Duration): AdminApi
+
     // ── Device info ─────────────────────────────────────────────────────────
 
     /**
      * Request [DeviceMetadata] from the device (firmware version, hardware model, etc.).
      *
-     * For the local node, this is cached during handshake and available via
-     * [RadioClient.deviceConfig]. For remote nodes, use [forNode] to target the desired node:
+     * For the local node, this is cached during handshake and available as `metadata` on
+     * [RadioClient.configBundle]. For remote nodes, use [forNode] to target the desired node:
      *
      * ```kotlin
      * val metadata = client.admin.forNode(remoteNodeId).getDeviceMetadata()
@@ -175,7 +185,13 @@ public interface AdminApi {
 
     // ── Ham radio ───────────────────────────────────────────────────────────
 
-    /** Configure the device for amateur radio use (sets call sign, disables encryption). */
+    /**
+     * Configure the device for amateur radio use (sets call sign, disables encryption).
+     *
+     * [params] is sent verbatim. Firmware writes `tx_power` and `frequency` into the LoRa config
+     * unconditionally, so 0 resets TX power to the regional maximum and clears
+     * `override_frequency`. Use [RadioClient.enableHamMode] to keep the current values.
+     */
     public suspend fun setHamMode(params: HamParameters): AdminResult<Unit>
 
     // ── DFU / file management ───────────────────────────────────────────────
@@ -221,6 +237,29 @@ public interface AdminApi {
     /** Send a synthetic input event to the device (button press, touch, etc.). */
     public suspend fun sendInputEvent(event: AdminMessage.InputEvent): AdminResult<Unit>
 
+    /**
+     * Start or stop continuous mirroring of the device display.
+     *
+     * While enabled, the device streams a frame after every redraw that changed the screen;
+     * collect them from [RadioClient.displayFrames]. Mirroring is not persisted across reboot.
+     * Local device only: firmware refuses it over the mesh, so a [forNode]-scoped instance returns
+     * [AdminResult.Unauthorized] without sending. Success means the device acknowledged the
+     * request; the first frame follows immediately.
+     *
+     * @param enabled `true` to start mirroring, `false` to stop
+     * @since 0.3.0
+     */
+    public suspend fun setDisplayMirror(enabled: Boolean): AdminResult<Unit>
+
+    /**
+     * Ask the device for a single frame of its display, delivered on [RadioClient.displayFrames].
+     * Prefer this over [setDisplayMirror] for e-ink panels. Local device only; a
+     * [forNode]-scoped instance returns [AdminResult.Unauthorized] without sending.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun requestDisplayFrame(): AdminResult<Unit>
+
     // ── Contacts ────────────────────────────────────────────────────────────
 
     /** Add a shared contact to the device's contact list. */
@@ -228,7 +267,13 @@ public interface AdminApi {
 
     // ── Key verification ────────────────────────────────────────────────────
 
-    /** Initiate or respond to a key verification exchange. */
+    /**
+     * Initiate or answer a key verification exchange. The device's steps arrive as
+     * [MeshEvent.KeyVerification]: send `INITIATE_VERIFICATION` with the peer's node number, wait
+     * for `EnterSecurityNumber` and send `PROVIDE_SECURITY_NUMBER`, then on `ConfirmVerification`
+     * send `DO_VERIFY` or `DO_NOT_VERIFY`; each reply echoes the prompt's `nonce`. The responding
+     * side only receives `ShowSecurityNumber` and then `ConfirmVerification`.
+     */
     public suspend fun keyVerification(verification: KeyVerificationAdmin): AdminResult<Unit>
 
     // ── Lockdown (hardened builds) ──────────────────────────────────────────
@@ -237,6 +282,7 @@ public interface AdminApi {
      * Provision, unlock, or lock the device's storage lockdown
      * (`MESHTASTIC_LOCKDOWN` hardened firmware builds only).
      *
+     * A protected radio can request authentication before the client reaches Connected.
      * The device reports its current state via [MeshEvent.LockdownStatusChanged] — observe that to
      * decide which [LockdownAuth] to send and to learn the outcome:
      * - **Provision / unlock:** set [LockdownAuth.passphrase] (1–32 bytes). On success the device
@@ -305,14 +351,14 @@ public interface AdminApi {
     /**
      * Wipe the device's NodeDB, forcing a fresh discovery cycle on the mesh.
      *
-     * The firmware always preserves favorite-marked entries during the wipe (this is
-     * firmware-enforced behavior). The `nodedb_reset` proto field uses proto3 semantics where
-     * only `true` can be encoded — a "wipe everything including favorites" mode is not
-     * available through this command.
+     * `nodedb_reset` is a oneof member, so `false` is sent and means favorites are wiped too.
+     * Firmware keeps favorites regardless on the `CLIENT_BASE`, `ROUTER` and `ROUTER_LATE` roles.
      *
      * The device will reboot after the reset completes.
+     *
+     * @param preserveFavorites keep favorite-marked entries through the wipe
      */
-    public suspend fun nodeDbReset(): AdminResult<Unit>
+    public suspend fun nodeDbReset(preserveFavorites: Boolean = true): AdminResult<Unit>
 
     // ── Time ────────────────────────────────────────────────────────────────
 
@@ -327,8 +373,8 @@ public interface AdminApi {
     /**
      * Set the device's wall clock to [at] (default: `Clock.System.now()`).
      *
-     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, the engine calls this once after
-     * handshake when the device clock skew exceeds 60 s.
+     * If [RadioClient.Builder.autoSyncTimeOnConnect] is enabled, the handshake sends the same
+     * `set_time_only` once, when the Stage 1 `my_info` arrives, without checking the device's clock skew.
      */
     public suspend fun setTime(at: Instant? = null): AdminResult<Unit>
 
@@ -347,7 +393,8 @@ public interface AdminApi {
      * Exception-based counterpart to [editSettings] that also exposes batched getter helpers.
      *
      * Getter failures throw [AdminResultException] via [getOrThrow]. If [block] throws, the SDK
-     * does not send `commit_edit_settings`; firmware eventually discards the buffered edits.
+     * still sends `commit_edit_settings` while the session is connected, so the writes made before
+     * the throw are applied, and then rethrows.
      */
     public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
 }
@@ -368,6 +415,20 @@ public interface AdminEdit {
     public suspend fun setChannel(channel: Channel)
     public suspend fun setFavorite(node: NodeId, favorite: Boolean)
     public suspend fun setIgnored(node: NodeId, ignored: Boolean)
+
+    /**
+     * Pin the node's position to [position] and turn on `fixed_position`, applied at commit.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun setFixedPosition(position: Position)
+
+    /**
+     * Clear the node's fixed position and turn off `fixed_position`, applied at commit.
+     *
+     * @since 0.3.0
+     */
+    public suspend fun removeFixedPosition()
 }
 
 /**

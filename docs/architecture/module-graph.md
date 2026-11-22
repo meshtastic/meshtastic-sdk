@@ -1,10 +1,10 @@
 # Module dependency graph
 
-> Visual companion to [`../decisions/006-multi-module-rationale.md`](../decisions/006-multi-module-rationale.md). The graph is enforced by the Gradle build (`:core:verifyModuleBoundary`) and detekt.
->
-> **`RadioTransport`, `Frame`, and `TransportIdentity` live in `:core`** (per `SPEC.md` §3.4) — there is no `:transport-api` module. There is also **no `:proto` module**: protobuf types come from the published `org.meshtastic:protobufs` artifact, which `:core` re-exports via `api(...)`. Transport implementation modules depend only on `:core` for both the interface and the wire types (the latter transitively).
+This page shows the module dependency graph that [ADR-006](../decisions/006-multi-module-rationale.md) decides. The Gradle build (`:core:verifyModuleBoundary`) and detekt enforce it.
 
-## MVP library modules
+`RadioTransport`, `Frame` and `TransportIdentity` live in `:core`; there is no `:transport-api` module. There is no `:proto` module either: protobuf types come from the published `org.meshtastic:protobufs` artifact, which `:core` re-exports through `api(...)`. Transport modules depend only on `:core`, for the interface and, transitively, the wire types.
+
+## Library modules
 
 ```mermaid
 flowchart TB
@@ -15,7 +15,8 @@ flowchart TB
 
     ble[":transport-ble<br/>(Kable)"]:::pub
     tcp[":transport-tcp<br/>(Ktor sockets)"]:::pub
-    serial[":transport-serial<br/>(jSerialComm; Android via SerialPort.fromAndroidPort)"]:::pub
+    serial[":transport-serial<br/>(jSerialComm; usb-serial-for-android)"]:::pub
+    ws[":transport-websocket<br/>(Ktor client)"]:::pub
 
     storageSql[":storage-sqldelight"]:::pub
 
@@ -29,37 +30,39 @@ flowchart TB
     core --> ble
     core --> tcp
     core --> serial
+    core --> ws
     core --> storageSql
     core --> testing
 ```
 
-**Read the arrows as `produces input for`** (i.e., `:core → :transport-ble` means `:transport-ble` depends on `:core`). The wire (proto) types reach every module transitively through `:core`'s `api(org.meshtastic:protobufs)` declaration — only `:core` names the artifact directly.
+Read an arrow as "is a dependency of": `:core → :transport-ble` means `:transport-ble` depends on `:core`. The wire types reach every module through `:core`'s `api(org.meshtastic:protobufs)` declaration; only `:core` names the artifact.
 
 ### Hard rules (Gradle + detekt enforced)
 
-1. `:core` depends only on the published `org.meshtastic:protobufs` artifact — **no in-tree project dependencies** (enforced by `:core:verifyModuleBoundary`). It defines the `RadioTransport` interface itself and re-exports proto types via `api`.
-2. Transport modules depend on `:core` (for `RadioTransport` + `Frame` + `TransportIdentity`, plus the wire types transitively). They are wired into a `RadioClient` via `Builder.transport(...)` at construction time.
-3. Storage modules depend on `:core` (for `StorageProvider` + `DeviceStorage`, plus the wire types transitively).
-4. `:testing` may depend on anything published.
-5. `:samples/*` may depend on anything; **nothing depends on `:samples/*`**; samples are not published.
-6. `:bom` is a leaf — it lists every published artifact's coordinate but compiles to a Maven BOM only.
+1. `:core` has no in-tree project dependencies (`:core:verifyModuleBoundary`). It defines the `RadioTransport` interface and re-exports the `org.meshtastic:protobufs` types through `api`.
+2. Transport modules depend on `:core` for `RadioTransport`, `Frame` and `TransportIdentity`, and the wire types transitively. A transport is wired into a `RadioClient` with `Builder.transport(...)`.
+3. Storage modules depend on `:core` for `StorageProvider` and `DeviceStorage`, and the wire types transitively.
+4. `:testing` can depend on anything published.
+5. `:samples/*` can depend on anything, nothing depends on them, and they are not published.
+6. `:bom` is a leaf: it lists every published artifact's coordinate and compiles to a Maven BOM only.
 
-## MVP per-target compile matrix
+## Per-target compile matrix
 
-| Module | android | jvm | iosArm64 | iosX64 | iosSimulatorArm64 | js |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| `:core` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `:transport-ble` | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `:transport-tcp` | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `:transport-serial` | ✓ | ✓ | stub | stub | stub | — |
-| `:storage-sqldelight` | ✓ | ✓ | ✓ | ✓ | ✓ | — |
-| `:testing` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `:bom` | n/a (Maven BOM only) | | | | | |
+| Module | android | jvm | iosArm64 | iosX64 | iosSimulatorArm64 | js | wasmJs |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| `:core` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `:transport-ble` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:transport-tcp` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:transport-websocket` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `:transport-serial` | ✓ | ✓ | common only | common only | common only | — | — |
+| `:storage-sqldelight` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:testing` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `:bom` | n/a (Maven BOM only) | | | | | | |
 
-**iOS posture:** the iOS targets of `:transport-serial` ship as headers/empty actuals only — iOS does not expose USB-serial without an MFi accessory + bespoke framing, so consumers should not attempt `JvmSerialPorts` / `AndroidSerialPorts` on Apple targets. All other transports (BLE, TCP) work on iOS. `:transport-ble` ships a JVM artifact in addition to Android/iOS — Kable's JVM backend powers macOS/Linux/Windows hosts; treat it as best-effort across desktop OSes.
-**JS posture:** `:core` and `:testing` publish a Kotlin/JS klib (`sdk-core-js`, `sdk-testing-js`) via the `meshtastic.js.library` convention plugin. It is a library for Kotlin/JS consumers (a browser facade compiles it into its own bundle); no transport ships for `js` yet, so a consumer supplies its own `RadioTransport` (Web Bluetooth, Web Serial or the device HTTP API).
-**JVM posture:** BLE is available via `Kable`'s JVM backend (macOS/Linux/Windows); treat as best-effort on desktop OSes (same as line above). Serial uses jSerialComm.
-**Android posture:** `:transport-serial` offers two Android backends from one artifact: `AndroidSerialPorts` on jSerialComm (bundled, [ADR-010](../decisions/010-jserialcomm-jvm-serial.md)) and `AndroidUsbSerialPorts` on usb-serial-for-android (`compileOnly`, the host adds the library and the JitPack repository, [ADR-016](../decisions/016-usb-serial-for-android-backend.md)).
+- iOS: the iOS targets of `:transport-serial` carry only the common code (`SerialFrameAssembler` and the port types), with no port access, because iOS exposes no USB serial without an MFi accessory and its own framing. BLE, TCP and WebSocket work on iOS.
+- Web: `:core`, `:testing` and `:transport-websocket` publish Kotlin/JS and Kotlin/Wasm klibs (`js`, `wasmJs`) through the `meshtastic.js.library` convention plugin; the WebSocket module's one platform file is shared between them in `webMain`. Web consumers compile them into their own bundle. `:transport-websocket` reaches a node over its WebSocket phone API, or the consumer supplies its own `RadioTransport` (Web Bluetooth, Web Serial). Both targets run their tests on Node.js only.
+- JVM: BLE runs on Kable's JVM backend on macOS, Linux and Windows; treat it as best-effort on desktop OSes. Serial uses jSerialComm.
+- Android: `:transport-serial` offers two backends from one artifact: `AndroidSerialPorts` on jSerialComm (bundled, [ADR-010](../decisions/010-jserialcomm-jvm-serial.md)) and `AndroidUsbSerialPorts` on usb-serial-for-android (`compileOnly`; the host adds the library and the JitPack repository, [ADR-016](../decisions/016-usb-serial-for-android-backend.md)).
 
 ## Sample apps (out of band, not published)
 
@@ -77,24 +80,15 @@ flowchart LR
     parityAndroid --> sqlstore
 ```
 
-`:samples/cli` is a JVM-only sample exercising all three transports
-plus persistent storage from a single JVM entry point with a Mosaic-rendered
-TUI dashboard and headless probe sub-commands (`tcpprobe`, `bleprobe`,
-`serialprobe`) used as connection-robustness regression harnesses.
+`:samples/cli` is a JVM sample that exercises the TCP, BLE and serial transports and persistent storage from one entry point: a Mosaic-rendered TUI dashboard (`tui`), `scan` and `probe` subcommands per transport that serve as connection-robustness regression harnesses, and `conformance` ([`../manual-tests.md`](../manual-tests.md)).
 
-`:samples/parity-app` is a Compose Multiplatform reference app targeting
-Android and Desktop (JVM). `:samples/parity-android-app` is a minimal
-Android-only companion for validating the Android integration path
-(permissions, foreground service, lifecycle).
+`:samples/parity-app` is a Compose Multiplatform reference app for Android and desktop (JVM). `:samples/parity-android-app` is a minimal Android-only companion for the Android integration path (permissions, foreground service, lifecycle). There is no iOS sample.
 
-A minimal SwiftUI sample for iOS distribution validation will return in
-Phase 5.
+Sample scope and acceptance criteria live in [`../samples.md`](../samples.md).
 
-Sample-specific scope and acceptance criteria live in [`../samples.md`](../samples.md).
+## Roadmap (post-1.0)
 
-## Roadmap (post-1.0, not in MVP)
-
-The following modules and the `wasmJs` target are tracked separately in [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) and are NOT part of the MVP graph above:
+These modules do not exist yet. The remote-RPC ones are designed in [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md); `:transport-mqtt-proxy` has no design ([`../roadmap.md`](../roadmap.md) R-11).
 
 ```mermaid
 flowchart TB
@@ -104,10 +98,8 @@ flowchart TB
     transportRpc[":transport-rpc<br/>(Ktor WS client)"]:::future
     hostRpc[":host-rpc-server<br/>(JVM/Android)"]:::future
     transportMqttProxy[":transport-mqtt-proxy<br/>(MqttClientProxyMessage)"]:::future
-    wasmApp[":samples/wasm-app<br/>(wasmJs)"]:::future
 
     transportRpc -. WS .-> hostRpc
-    wasmApp --> transportRpc
 ```
 
 | Module | Targets (planned) | Depends on | Roadmap link |
@@ -115,17 +107,14 @@ flowchart TB
 | `:rpc` | all incl. `wasmJs` | `org.meshtastic:protobufs` | wasm-rpc-roadmap |
 | `:transport-rpc` | all incl. `wasmJs` | `:rpc`, `org.meshtastic:protobufs` (NOT `:core`) | wasm-rpc-roadmap |
 | `:host-rpc-server` | jvm, android | `:core`, `:rpc` | wasm-rpc-roadmap |
-| `:transport-mqtt-proxy` | android, jvm, ios | `:core`, `org.meshtastic:mqtt-client` | SPEC §6 Phase 6 |
-| `wasmJs` source set on `:core` | — | — | wasm-rpc-roadmap |
-
-These do not exist in the MVP graph; they are a destination, not a current state.
+| `:transport-mqtt-proxy` | android, jvm, ios | `:core`, `org.meshtastic:mqtt-client-core` | roadmap R-11 |
 
 ## Related
 
-- ADR-006 — module rationale.
-- ADR-015 — proto sourcing (the external `org.meshtastic:protobufs` artifact replaces the former in-tree `:proto` module).
-- ADR-002 — engine architecture (justifies the `:core` ↔ transport boundary).
-- ADR-003 — tooling (justifies which library each transport module wraps).
-- `transport-isolation.md` — deep dive on why transports are separate modules, error handling differences, and how to add a new transport.
-- `transport-comparison.md` — feature × transport matrix (TCP / BLE / serial), OS support, and selection guidance.
-- [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md) — post-1.0 wasm + RPC architecture.
+- ADR-006: module rationale.
+- ADR-015: proto sourcing from the published `org.meshtastic:protobufs` artifact.
+- ADR-002: engine architecture, which justifies the `:core` to transport boundary.
+- ADR-003: tooling, which justifies the library each transport module wraps.
+- [ADR-017](../decisions/017-web-targets.md): the `js` and `wasmJs` targets running the engine in-process.
+- `transport-comparison.md`: feature × transport matrix (TCP, BLE, serial, WebSocket), OS support, and selection guidance.
+- [`../future/wasm-rpc-roadmap.md`](../future/wasm-rpc-roadmap.md): the post-1.0 remote-RPC architecture.

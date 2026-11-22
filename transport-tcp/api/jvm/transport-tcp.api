@@ -1,3 +1,70 @@
+public final class org/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;ILjava/util/Map;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;ILjava/util/Map;)Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;Ljava/lang/String;Ljava/util/List;ILjava/util/Map;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddresses ()Ljava/util/List;
+	public final fun getAttributes ()Ljava/util/Map;
+	public final fun getHost ()Ljava/lang/String;
+	public final fun getNodeId ()Ljava/lang/String;
+	public final fun getPioEnv ()Ljava/lang/String;
+	public final fun getPort ()I
+	public final fun getServiceName ()Ljava/lang/String;
+	public final fun getShortName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+	public final fun toTransport ()Lorg/meshtastic/sdk/transport/tcp/TcpTransport;
+	public final fun toTransportSpec ()Lorg/meshtastic/sdk/TransportSpec$Tcp;
+}
+
+public final class org/meshtastic/sdk/transport/tcp/JvmTcpDiscovery : org/meshtastic/sdk/transport/tcp/TcpDiscovery {
+	public fun <init> ()V
+	public fun <init> (Ljava/net/InetAddress;)V
+	public synthetic fun <init> (Ljava/net/InetAddress;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun discover ()Lkotlinx/coroutines/flow/Flow;
+}
+
+public abstract interface class org/meshtastic/sdk/transport/tcp/TcpDiscovery {
+	public static final field Companion Lorg/meshtastic/sdk/transport/tcp/TcpDiscovery$Companion;
+	public static final field DEFAULT_PORT I
+	public static final field SERVICE_TYPE Ljava/lang/String;
+	public abstract fun discover ()Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class org/meshtastic/sdk/transport/tcp/TcpDiscovery$Companion {
+	public static final field DEFAULT_PORT I
+	public static final field SERVICE_TYPE Ljava/lang/String;
+}
+
+public abstract interface class org/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent {
+}
+
+public final class org/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Found : org/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent {
+	public fun <init> (Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;
+	public final fun copy (Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;)Lorg/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Found;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Found;Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Found;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRadio ()Lorg/meshtastic/sdk/transport/tcp/DiscoveredTcpRadio;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Lost : org/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Lorg/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Lost;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Lost;Ljava/lang/String;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/tcp/TcpDiscoveryEvent$Lost;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getServiceName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/transport/tcp/TcpTransport : org/meshtastic/sdk/RadioTransport {
 	public fun <init> (Ljava/lang/String;I)V
 	public synthetic fun <init> (Ljava/lang/String;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -6,6 +73,7 @@ public final class org/meshtastic/sdk/transport/tcp/TcpTransport : org/meshtasti
 	public fun frames ()Lkotlinx/coroutines/flow/Flow;
 	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
 	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getLinkDropsOnRestartCommands ()Z
 	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }

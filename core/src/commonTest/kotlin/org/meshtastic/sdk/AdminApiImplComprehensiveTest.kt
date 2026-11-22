@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -218,12 +219,18 @@ class AdminApiImplComprehensiveTest {
 
     @Test
     fun setDeviceConfigBuilderSendsDeviceSection() = runTest {
+        val current = Config.DeviceConfig.Builder().also { wb ->
+            wb.role = Config.DeviceConfig.Role.ROUTER
+            wb.button_gpio = 7
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.device = Config.DeviceConfig.Builder().also { wb ->
+            wb.device = current.newBuilder().also { wb ->
                 wb.role = Config.DeviceConfig.Role.CLIENT
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.DEVICE_CONFIG,
+            current = Config.Builder().also { wb -> wb.device = current }.build(),
             call = {
                 it.setDeviceConfig {
                     this.newBuilder().also { wb ->
@@ -231,20 +238,25 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setLoraConfigBuilderSendsLoraSection() = runTest {
+        val current = Config.LoRaConfig.Builder().also { wb ->
+            wb.region = Config.LoRaConfig.RegionCode.US
+            wb.tx_enabled = true
+            wb.hop_limit = 3
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.lora = Config.LoRaConfig.Builder().also { wb ->
+            wb.lora = current.newBuilder().also { wb ->
                 wb.use_preset = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.LORA_CONFIG,
+            current = Config.Builder().also { wb -> wb.lora = current }.build(),
             call = {
                 it.setLoraConfig {
                     this.newBuilder().also { wb ->
@@ -252,20 +264,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setBluetoothConfigBuilderSendsBluetoothSection() = runTest {
+        val current = Config.BluetoothConfig.Builder().also { wb ->
+            wb.fixed_pin = 123456
+            wb.mode = Config.BluetoothConfig.PairingMode.FIXED_PIN
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.bluetooth = Config.BluetoothConfig.Builder().also { wb ->
+            wb.bluetooth = current.newBuilder().also { wb ->
                 wb.enabled = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.BLUETOOTH_CONFIG,
+            current = Config.Builder().also { wb -> wb.bluetooth = current }.build(),
             call = {
                 it.setBluetoothConfig {
                     this.newBuilder().also { wb ->
@@ -273,20 +289,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setDisplayConfigBuilderSendsDisplaySection() = runTest {
+        val current = Config.DisplayConfig.Builder().also { wb ->
+            wb.flip_screen = true
+            wb.units = Config.DisplayConfig.DisplayUnits.IMPERIAL
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.display = Config.DisplayConfig.Builder().also { wb ->
+            wb.display = current.newBuilder().also { wb ->
                 wb.screen_on_secs = 45
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.DISPLAY_CONFIG,
+            current = Config.Builder().also { wb -> wb.display = current }.build(),
             call = {
                 it.setDisplayConfig {
                     this.newBuilder().also { wb ->
@@ -294,21 +314,25 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setNetworkConfigBuilderSendsNetworkSection() = runTest {
+        val current = Config.NetworkConfig.Builder().also { wb ->
+            wb.wifi_psk = "sekrit"
+            wb.eth_enabled = true
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.network = Config.NetworkConfig.Builder().also { wb ->
+            wb.network = current.newBuilder().also { wb ->
                 wb.wifi_enabled = true
                 wb.wifi_ssid = "mesh"
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.NETWORK_CONFIG,
+            current = Config.Builder().also { wb -> wb.network = current }.build(),
             call = {
                 it.setNetworkConfig {
                     this.newBuilder().also { wb ->
@@ -317,20 +341,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setPositionConfigBuilderSendsPositionSection() = runTest {
+        val current = Config.PositionConfig.Builder().also { wb ->
+            wb.fixed_position = true
+            wb.gps_mode = Config.PositionConfig.GpsMode.ENABLED
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.position = Config.PositionConfig.Builder().also { wb ->
+            wb.position = current.newBuilder().also { wb ->
                 wb.position_broadcast_secs = 300
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.POSITION_CONFIG,
+            current = Config.Builder().also { wb -> wb.position = current }.build(),
             call = {
                 it.setPositionConfig {
                     this.newBuilder().also { wb ->
@@ -338,20 +366,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setPowerConfigBuilderSendsPowerSection() = runTest {
+        val current = Config.PowerConfig.Builder().also { wb ->
+            wb.on_battery_shutdown_after_secs = 90
+            wb.wait_bluetooth_secs = 15
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.power = Config.PowerConfig.Builder().also { wb ->
+            wb.power = current.newBuilder().also { wb ->
                 wb.is_power_saving = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.POWER_CONFIG,
+            current = Config.Builder().also { wb -> wb.power = current }.build(),
             call = {
                 it.setPowerConfig {
                     this.newBuilder().also { wb ->
@@ -359,20 +391,24 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
     fun setSecurityConfigBuilderSendsSecuritySection() = runTest {
+        val current = Config.SecurityConfig.Builder().also { wb ->
+            wb.serial_enabled = true
+            wb.admin_key = listOf(byteArrayOf(7, 8, 9).toByteString())
+        }.build()
         val expected = Config.Builder().also { wb ->
-            wb.security = Config.SecurityConfig.Builder().also { wb ->
+            wb.security = current.newBuilder().also { wb ->
                 wb.is_managed = true
             }.build()
         }.build()
-        assertAckedOperation(
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.SECURITY_CONFIG,
+            current = Config.Builder().also { wb -> wb.security = current }.build(),
             call = {
                 it.setSecurityConfig {
                     this.newBuilder().also { wb ->
@@ -380,10 +416,8 @@ class AdminApiImplComprehensiveTest {
                     }.build()
                 }
             },
-            requestMatches = { it.set_config == expected },
-        ) { transport, packet ->
-            transport.injectRoutingAck(packet.id)
-        }
+            expected = expected,
+        )
     }
 
     @Test
@@ -625,7 +659,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun setChannelRoutingErrorMapsToNodeUnreachable() = runTest {
+    fun setChannelNoRouteMapsToFailed() = runTest {
         val channel = Channel.Builder().also { wb ->
             wb.index = 1
             wb.role = Channel.Role.SECONDARY
@@ -633,7 +667,7 @@ class AdminApiImplComprehensiveTest {
         assertAckedOperation(
             call = { it.setChannel(channel) },
             requestMatches = { it.set_channel == channel },
-            expected = AdminResult.NodeUnreachable,
+            expected = AdminResult.Failed(Routing.Error.NO_ROUTE),
         ) { transport, packet ->
             transport.injectFrame(buildRoutingErrorFrame(packet.id, Routing.Error.NO_ROUTE))
         }
@@ -985,6 +1019,16 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun nodeDbResetCanWipeFavorites() = runTest {
+        assertAckedOperation(
+            call = { it.nodeDbReset(preserveFavorites = false) },
+            requestMatches = { it.nodedb_reset == false },
+        ) { transport, packet ->
+            transport.injectRoutingAck(packet.id)
+        }
+    }
+
+    @Test
     fun setOwnerTimeoutReturnsTimeout() = runTest {
         val user = User.Builder().also { wb ->
             wb.id = "!00000001"
@@ -1127,6 +1171,149 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
+    fun aRemoteAdminReplyWithoutPkiOrTheAdminChannelIsIgnored() = runTest {
+        val remote = NodeId(0x12345678)
+        val genuine = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "genuine" }.build()
+        val forged = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "forged" }.build()
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).getDeviceMetadata() }
+            runCurrent()
+            val packet = latestAdminPacket(transport, outboundBefore) { it.get_device_metadata_request == true }
+
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = forged }.build(),
+                fromNode = remote.raw,
+                pkiEncrypted = false,
+            )
+            runCurrent()
+            assertFalse(deferred.isCompleted)
+
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = genuine }.build(),
+                fromNode = remote.raw,
+            )
+            runCurrent()
+            assertEquals(AdminResult.Success(genuine), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun withRpcTimeoutLetsARemoteReadOutliveTheClientTimeout() = runTest {
+        val remote = NodeId(0x12345678)
+        val expected = DeviceMetadata.Builder().also { wb -> wb.firmware_version = "late" }.build()
+        val (transport, client) = connectedClient(rpcTimeout = 5.seconds)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).withRpcTimeout(60.seconds).getDeviceMetadata() }
+            runCurrent()
+            val packet = latestAdminPacket(transport, outboundBefore) { it.get_device_metadata_request == true }
+
+            advanceTimeBy(30.seconds)
+            transport.injectAdminResponse(
+                packet.id,
+                AdminMessage.Builder().also { wb -> wb.get_device_metadata_response = expected }.build(),
+                fromNode = remote.raw,
+            )
+            runCurrent()
+
+            assertEquals(AdminResult.Success(expected), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun forNodeLoraBuilderReadsAndWritesTheRemoteNode() = runTest {
+        val remote = NodeId(0x12345678)
+        val current = Config.LoRaConfig.Builder().also { wb ->
+            wb.region = Config.LoRaConfig.RegionCode.EU_868
+            wb.tx_enabled = true
+            wb.hop_limit = 3
+        }.build()
+        assertReadModifyWrite(
+            type = AdminMessage.ConfigType.LORA_CONFIG,
+            current = Config.Builder().also { wb -> wb.lora = current }.build(),
+            call = { it.setLoraConfig { newBuilder().also { wb -> wb.hop_limit = 5 }.build() } },
+            expected = Config.Builder().also { wb ->
+                wb.lora = current.newBuilder().also { wb -> wb.hop_limit = 5 }.build()
+            }.build(),
+            dest = remote,
+        )
+    }
+
+    @Test
+    fun moduleConfigBuilderReadsBeforeWriting() = runTest {
+        val current = ModuleConfig.MQTTConfig.Builder().also { wb ->
+            wb.address = "mqtt.example.org"
+            wb.username = "mesh"
+        }.build()
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred =
+                async { client.admin.setMqttConfig { newBuilder().also { wb -> wb.enabled = true }.build() } }
+            runCurrent()
+
+            val read = latestAdminPacket(transport, outboundBefore) {
+                it.get_module_config_request == AdminMessage.ModuleConfigType.MQTT_CONFIG
+            }
+            transport.injectAdminResponse(
+                read.id,
+                AdminMessage.Builder().also { wb ->
+                    wb.get_module_config_response = ModuleConfig.Builder().also { wb -> wb.mqtt = current }.build()
+                }.build(),
+            )
+            runCurrent()
+
+            val write = latestAdminPacket(transport, outboundBefore) { it.set_module_config != null }
+            assertEquals(
+                current.newBuilder().also { wb -> wb.enabled = true }.build(),
+                adminOf(write)!!.set_module_config?.mqtt,
+            )
+            transport.injectRoutingAck(write.id)
+            runCurrent()
+            assertEquals(AdminResult.Success(Unit), deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun configBuilderSendsNoSetConfigWhenTheReadTimesOut() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.setLoraConfig { newBuilder().also { wb -> wb.hop_limit = 5 }.build() } }
+            runCurrent()
+            latestAdminPacket(transport, outboundBefore) {
+                it.get_config_request == AdminMessage.ConfigType.LORA_CONFIG
+            }
+
+            advanceTimeBy(70.seconds)
+            runCurrent()
+
+            assertEquals(AdminResult.Timeout, deferred.await())
+            assertTrue(transport.outboundPackets().drop(outboundBefore).none { adminOf(it)?.set_config != null })
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
     fun editSettingsSuccessfulWritesUpdateConfigBundle() = runTest {
         val updatedConfig = Config.Builder().also { wb ->
             wb.device = Config.DeviceConfig.Builder().also { wb ->
@@ -1258,7 +1445,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun batchBlockExceptionSkipsCommit() = runTest {
+    fun batchBlockExceptionStillCommitsAndPreservesFailure() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -1280,8 +1467,9 @@ class AdminApiImplComprehensiveTest {
             val result = deferred.await()
             assertEquals("boom", result.exceptionOrNull()?.message)
             assertTrue(
-                transport.outboundPackets().drop(outboundBefore)
-                    .none { adminOf(it)?.commit_edit_settings == true },
+                transport.outboundPackets().drop(outboundBefore).any {
+                    adminOf(it)?.commit_edit_settings == true
+                },
             )
         } finally {
             runCatching { client.disconnect() }
@@ -1289,7 +1477,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun batchBeginFailureThrowsNodeUnreachable() = runTest {
+    fun batchBeginNoRouteThrowsRoutingFailed() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -1302,7 +1490,10 @@ class AdminApiImplComprehensiveTest {
             transport.injectFrame(buildRoutingErrorFrame(begin.id, Routing.Error.NO_ROUTE))
             runCurrent()
 
-            assertIs<AdminResultException.NodeUnreachable>(deferred.await().exceptionOrNull())
+            assertEquals(
+                Routing.Error.NO_ROUTE,
+                assertIs<AdminResultException.RoutingFailed>(deferred.await().exceptionOrNull()).error,
+            )
         } finally {
             runCatching { client.disconnect() }
         }
@@ -1367,7 +1558,7 @@ class AdminApiImplComprehensiveTest {
     }
 
     @Test
-    fun editSettingsBeginFailureReturnsNodeUnreachable() = runTest {
+    fun editSettingsBeginNoRouteReturnsFailed() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -1380,7 +1571,7 @@ class AdminApiImplComprehensiveTest {
             transport.injectFrame(buildRoutingErrorFrame(begin.id, Routing.Error.NO_ROUTE))
             runCurrent()
 
-            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+            assertEquals(AdminResult.Failed(Routing.Error.NO_ROUTE), deferred.await())
         } finally {
             runCatching { client.disconnect() }
         }
@@ -1405,6 +1596,187 @@ class AdminApiImplComprehensiveTest {
             runCurrent()
 
             assertEquals(AdminResult.Unauthorized, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsLocalCommitThatDropsTheLinkIsApplied() = runTest {
+        assertEquals(AdminResult.Success("edited"), localCommitThenLinkDrop(bluetoothLink = true))
+    }
+
+    @Test
+    fun editSettingsLocalCommitThatDropsANonBluetoothLinkIsUnreachable() = runTest {
+        assertEquals(AdminResult.NodeUnreachable, localCommitThenLinkDrop(bluetoothLink = false))
+    }
+
+    private suspend fun TestScope.localCommitThenLinkDrop(bluetoothLink: Boolean): AdminResult<String> {
+        val (transport, client) = connectedClient(bluetoothLink = bluetoothLink)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.editSettings { "edited" } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.simulateError(IllegalStateException("BLE dropped by commit"), recoverable = true)
+            runCurrent()
+            return deferred.await()
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun aRestartClassWriteThatDropsABluetoothLinkIsAppliedButOtherWritesAreNot() = runTest {
+        val rebootingConfig = Config.Builder().also { wb ->
+            wb.bluetooth = Config.BluetoothConfig.Builder().also { it.enabled = true }.build()
+        }.build()
+        assertEquals(
+            AdminResult.Success(Unit),
+            localWriteThenLinkDrop({ setConfig(rebootingConfig) }) { it.set_config != null },
+        )
+        assertEquals(
+            AdminResult.NodeUnreachable,
+            localWriteThenLinkDrop({ setFavorite(NodeId(0x20202020), favorite = true) }) {
+                it.set_favorite_node != 0
+            },
+        )
+    }
+
+    private suspend fun TestScope.localWriteThenLinkDrop(
+        write: suspend AdminApi.() -> AdminResult<Unit>,
+        matches: (AdminMessage) -> Boolean,
+    ): AdminResult<Unit> {
+        val (transport, client) = connectedClient(bluetoothLink = true)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.write() }
+            runCurrent()
+            latestAdminPacket(transport, outboundBefore, matches)
+            transport.simulateError(IllegalStateException("BLE dropped"), recoverable = true)
+            runCurrent()
+            return deferred.await()
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsCommitStillQueuedWhenTheLinkDropsIsUnreachable() = runTest {
+        val (transport, client) = connectedClient(autoQueueStatus = false)
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.editSettings { setFavorite(NodeId(0x20202020), favorite = true) } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            // The device never reports queue evidence for the edit, so the commit waits behind it unwritten.
+            val admin = transport.outboundPackets().drop(outboundBefore).mapNotNull(::adminOf)
+            assertTrue(admin.none { it.commit_edit_settings == true })
+            transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsRemoteCommitThatLosesTheLinkIsUnreachable() = runTest {
+        val remote = NodeId(0x20202020)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { client.admin.forNode(remote).editSettings { Unit } }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id, fromNode = remote.raw)
+            runCurrent()
+
+            latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.simulateError(IllegalStateException("link lost"), recoverable = true)
+            runCurrent()
+
+            assertEquals(AdminResult.NodeUnreachable, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsBlockFailureStillCommitsAndPreservesFailure() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val gate = CompletableDeferred<Unit>()
+            val deferred = async {
+                runCatching {
+                    client.admin.editSettings {
+                        gate.await()
+                        error("block failed")
+                    }
+                }
+            }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+            gate.complete(Unit)
+            runCurrent()
+
+            val commit = latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.injectRoutingAck(commit.id)
+            runCurrent()
+
+            assertEquals("block failed", deferred.await().exceptionOrNull()?.message)
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    @Test
+    fun editSettingsCancellationStillCommitsAndRethrowsCancellation() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            val gate = CompletableDeferred<Unit>()
+            val deferred = async {
+                client.admin.editSettings {
+                    gate.await()
+                }
+            }
+            runCurrent()
+            val begin = latestAdminPacket(transport, outboundBefore) { it.begin_edit_settings == true }
+            transport.injectRoutingAck(begin.id)
+            runCurrent()
+
+            val cancellation = CancellationException("cancel edit")
+            deferred.cancel(cancellation)
+            runCurrent()
+            val commit = latestAdminPacket(transport, outboundBefore) { it.commit_edit_settings == true }
+            transport.injectRoutingAck(commit.id)
+            runCurrent()
+
+            assertTrue(runCatching { deferred.await() }.exceptionOrNull() is CancellationException)
         } finally {
             runCatching { client.disconnect() }
         }
@@ -1447,12 +1819,16 @@ class AdminApiImplComprehensiveTest {
         rpcTimeout: Duration = 60.seconds,
         sendTimeout: Duration = 60.seconds,
         frames: List<Frame> = emptyList(),
+        autoQueueStatus: Boolean = true,
+        bluetoothLink: Boolean = false,
     ): Pair<FakeRadioTransport, RadioClient> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:admin-comprehensive:$nodeNum:${hashCode()}"),
             frames = frames,
             autoHandshake = true,
+            autoQueueStatus = autoQueueStatus,
             nodeNum = nodeNum,
+            linkDropsOnRestartCommands = bluetoothLink,
         )
         val client = RadioClient.Builder()
             .transport(transport)
@@ -1496,6 +1872,46 @@ class AdminApiImplComprehensiveTest {
             runCurrent()
 
             assertEquals(expected, deferred.await())
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    /** Drives a config builder: answers its get_config with [current], then checks and acks its set_config. */
+    private suspend fun TestScope.assertReadModifyWrite(
+        type: AdminMessage.ConfigType,
+        current: Config,
+        call: suspend (AdminApi) -> AdminResult<Unit>,
+        expected: Config,
+        dest: NodeId? = null,
+    ) {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            val responder = dest?.raw ?: 1
+            val outboundBefore = transport.outboundPackets().size
+            val deferred = async { call(dest?.let(client.admin::forNode) ?: client.admin) }
+            runCurrent()
+
+            val read = latestAdminPacket(transport, outboundBefore) { it.get_config_request == type }
+            if (dest != null) assertEquals(dest.raw, read.to)
+            assertTrue(transport.outboundPackets().drop(outboundBefore).none { adminOf(it)?.set_config != null })
+            transport.injectAdminResponse(
+                read.id,
+                AdminMessage.Builder().also { wb -> wb.get_config_response = current }.build(),
+                fromNode = responder,
+            )
+            runCurrent()
+
+            val write = latestAdminPacket(transport, outboundBefore) { it.set_config != null }
+            if (dest != null) assertEquals(dest.raw, write.to)
+            assertTrue(write.want_ack)
+            assertEquals(expected, adminOf(write)!!.set_config)
+            transport.injectRoutingAck(write.id, fromNode = responder)
+            runCurrent()
+
+            assertEquals(AdminResult.Success(Unit), deferred.await())
         } finally {
             runCatching { client.disconnect() }
         }

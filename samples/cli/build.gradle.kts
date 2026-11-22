@@ -23,6 +23,7 @@ dependencies {
     implementation(libs.mosaicTerminal)
     implementation(libs.wireMoshiAdapter)
     implementation(libs.clikt)
+    implementation(libs.mcpKotlinSdkServer)
 }
 
 application {

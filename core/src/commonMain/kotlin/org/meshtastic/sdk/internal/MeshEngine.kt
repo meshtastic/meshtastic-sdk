@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -23,22 +24,35 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.yield
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.DeviceConnectionStatus
+import org.meshtastic.proto.DisplayPalette
+import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
+import org.meshtastic.proto.LoRaRegionPresetMap
+import org.meshtastic.proto.LockdownAuth
+import org.meshtastic.proto.LockdownStatus
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.ToRadio
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminResult
+import org.meshtastic.sdk.AdminSessionStatus
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.ConfigBundle
@@ -47,16 +61,25 @@ import org.meshtastic.sdk.CongestionLevel
 import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
+import org.meshtastic.sdk.DeviceVersion
+import org.meshtastic.sdk.DisplayMirrorFrame
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.KeyVerificationPrompt
+import org.meshtastic.sdk.LogLevel
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.MeshEvent
 import org.meshtastic.sdk.MeshtasticException
+import org.meshtastic.sdk.MessageHandle
 import org.meshtastic.sdk.MessageId
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
+import org.meshtastic.sdk.PacedMessageHandle
+import org.meshtastic.sdk.PayloadRedactor
+import org.meshtastic.sdk.QueueReceipt
+import org.meshtastic.sdk.RadioSessionEvent
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
@@ -77,8 +100,8 @@ import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.milliseconds
-import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Instant
 
 /**
  * Single-writer actor that owns all mutable SDK state.
@@ -97,6 +120,11 @@ internal class MeshEngine(
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
+    private val syncTimeDuringHandshake: Boolean = false,
+    private val protocolLogLevel: LogLevel = LogLevel.NONE,
+    private val payloadRedactor: PayloadRedactor = PayloadRedactor.Default,
+    sessionReceiveCapacity: Int? = null,
+    sessionReceiveEnvelopes: Boolean = false,
 ) {
 
     val connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
@@ -129,15 +157,52 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
+    private val sessionReceive = sessionReceiveCapacity?.let { SessionReceive(it, sessionReceiveEnvelopes) }
+    val sessionEvents = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
+    // Device logs can arrive at any rate, so a slow collector loses the oldest records instead of
+    // slowing the engine, and nothing is replayed.
+    val deviceLogs = MutableSharedFlow<LogRecord>(
+        extraBufferCapacity = DEVICE_LOG_BUFFER,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    // Live mirror: no replay, and a slow collector loses the oldest undelivered frame rather than
+    // stalling the engine. With no collector a frame is dropped on emit, so none is retained.
+    val displayFrames = MutableSharedFlow<DisplayMirrorFrame>(
+        extraBufferCapacity = 2,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
+    /** Latest complete display palette for the session, `null` until the device sends one. */
+    val displayPalette = MutableStateFlow<DisplayPalette?>(null)
+
+    private val displayFrameReassembler = DisplayFrameReassembler()
+    private val displayPaletteReassembler = DisplayPaletteReassembler()
+
+    /** Every decoded inbound envelope, unfiltered. Lossy by design so a slow tap never stalls the engine. */
+    val rawFromRadio = MutableSharedFlow<FromRadio>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     private val inbox = Channel<EngineMessage>(Channel.UNLIMITED)
 
-    private val outbound = Channel<Frame>(Channel.UNLIMITED)
+    private data class OutboundFrame(
+        val frame: Frame,
+        val lockdownLink: LockdownLink? = null,
+        val pacedSend: EngineMessage.PacedSend? = null,
+        // The link that enqueued the frame, so a failed write cannot tear down its replacement.
+        val generation: Long = 0L,
+    )
+
+    private val outbound = Channel<OutboundFrame>(Channel.UNLIMITED)
+    private val lockdownWriteMutex = Mutex()
 
     /**
      * Supervisor job hosting the engine and its sibling coroutines.
@@ -156,34 +221,72 @@ internal class MeshEngine(
      */
     private val activeConnectDeferred = atomic<CompletableDeferred<Unit>?>(null)
 
+    private val connectionGeneration = atomic(0L)
+
     private val pendingSends = mutableMapOf<MessageId, MutableStateFlow<SendState>>()
+    private val readySendGeneration = atomic<Long?>(null)
+
+    // Bounds reservations from caller admission through terminal completion, including the actor inbox.
+    private val pacedReservations = atomic(0)
+    private val pacedSends = mutableMapOf<MessageId, EngineMessage.PacedSend>()
+    private val pacedQueue = ArrayDeque<EngineMessage.PacedSend>()
+    private var queueWrite: EngineMessage.PacedSend? = null
+    private var queueWriteTimeout: Job? = null
     private var storage: DeviceStorage? = null
     private var meshState = MeshState()
 
     private var handshakeStage = HandshakeStage.Idle
     private var engineScope: CoroutineScope? = null
+    private var frameReaderJob: Job? = null
+    private var receiveGeneration = 0L
 
-    // Inter-stage and periodic keep-alive heartbeats are sent with nonce = 0. Firmware
-    // (PhoneAPI.cpp:202-209) interprets nonce == 1 as "broadcast our nodeinfo over LoRa";
-    // nonces > 0 are reserved for explicit "ping our nodeinfo" semantics that we don't
-    // expose today. Sending 0 is the safe keep-alive value and matches Android's reference
-    // client.
-    private val keepaliveHeartbeat = Heartbeat.Builder().also { wb -> wb.nonce = 0 }.build()
+    // receiveGeneration, readable by the outbound writer.
+    private val writeGeneration = atomic(0L)
+    private var stage1DumpStarted = false
+    private var nodeDbRefreshDumpStarted = false
+
+    // Command admission captures the exact physical link and node id before posting to the actor.
+    private data class LockdownLink(val generation: Long, val nodeNum: Int)
+
+    private val lockdownLink = atomic<LockdownLink?>(null)
+    private var handshakeAttempt = 0L
+    private var nodeDbRefresh: MutableMap<NodeId, NodeInfo>? = null
+    private var nodeDbRefreshQueued = false
+    private var nodeDbRefreshRequest = 0L
+    private var nodeDbRefreshWatchdog: Job? = null
+
+    // Firmware drops a ToRadio write byte-identical to the previous one and reads heartbeat
+    // nonce 1 as "broadcast NodeInfo", so keep-alive nonces count up from 2 and never reach 0 or 1.
+    private var heartbeatNonce = FIRST_HEARTBEAT_NONCE
     private var myNodeNum = 0
 
     // R-9: snapshot of the previously-persisted my_node_num, captured at connect time so
     // we can synchronously detect identity rebinds on Stage 2 commit (before storage is cleared).
     private var previousMyNodeNum: Int? = null
 
+    // Hardware id persisted with previousMyNodeNum; null when storage holds none (never logged).
+    private var previousDeviceId: okio.ByteString? = null
+
     /**
      * Per-node admin session passkeys, keyed by the node num that issued them. Each node
      * (local device and every remote admin target) hands out its **own** passkey in its admin
      * responses; remote admin writes must echo the *target's* passkey back, so a single shared
      * slot would cross-contaminate concurrent admin sessions against different nodes.
-     * Entries expire after [SESSION_PASSKEY_TTL]; only the local node's seed passkey is
-     * persisted to storage.
+     * Entries expire after [SESSION_PASSKEY_TTL], the firmware's validity window; they are
+     * never persisted.
      */
     private val sessionPasskeys = mutableMapOf<Int, SessionPasskeyEntry>()
+    private var nextPasskeyGeneration = 0
+
+    /** Wire id of an outbound admin request to the key generation it was stamped with; bounded. */
+    private data class ExpectedAdminReply(val sender: Int, val kind: ResponseKind<*>)
+
+    private val adminReplyTargets = linkedMapOf<Int, ExpectedAdminReply>()
+
+    private val requestPasskeyGenerations = mutableMapOf<Int, Int>()
+
+    /** Public view of [sessionPasskeys] (no key bytes); recomputed by [publishAdminSessions]. */
+    val adminSessions = MutableStateFlow<Map<NodeId, AdminSessionStatus>>(emptyMap())
 
     // Node accumulator during Stage 2 draining.
     private val pendingNodes = mutableMapOf<NodeId, NodeInfo>()
@@ -195,6 +298,8 @@ internal class MeshEngine(
     private var pendingMyInfo: org.meshtastic.proto.MyNodeInfo? = null
     private var pendingMetadata: org.meshtastic.proto.DeviceMetadata? = null
     private var pendingDeviceUIConfig: org.meshtastic.proto.DeviceUIConfig? = null
+    private val pendingFiles = linkedMapOf<String, FileInfo>()
+    private var pendingRegionPresets: LoRaRegionPresetMap? = null
 
     // Sends that arrived while still handshaking — dispatched in flushQueuedSends().
     private val preSendQueue = mutableListOf<EngineMessage.Send>()
@@ -210,6 +315,9 @@ internal class MeshEngine(
     private val dirtyHeartbeats = mutableSetOf<NodeId>()
     private val offlineNodes = mutableSetOf<NodeId>()
     private val lastCongestionLevel = mutableMapOf<NodeId, CongestionLevel>()
+
+    /** MQTT state from the last local `DeviceConnectionStatus`; null until one reports it. */
+    private var lastMqttConnected: Boolean? = null
 
     /**
      * once a storage write fails we flip this flag, emit a single
@@ -235,6 +343,7 @@ internal class MeshEngine(
      * [SETTLE_BUFFER_CAP].
      */
     private val settleBuffer = ArrayDeque<FromRadio>(SETTLE_BUFFER_CAP)
+    private var firmwareUpdateAdvised = false
 
     /**
      * `FromRadio.packet` frames (text messages, telemetry, waypoints, …) that arrive while the
@@ -243,7 +352,7 @@ internal class MeshEngine(
      * [HANDSHAKE_PACKET_BUFFER_CAP] (with a [MeshEvent.PacketsDropped] signal) and flushed
      * through the normal Ready packet pipeline in [transitionToReady].
      */
-    private val handshakePacketBuffer = ArrayDeque<MeshPacket>(HANDSHAKE_PACKET_BUFFER_CAP)
+    private val handshakePacketBuffer = ArrayDeque<BufferedPacket>(HANDSHAKE_PACKET_BUFFER_CAP)
 
     /**
      * Per-send ACK timeout jobs. Keyed by the wire packet `id`. Touched only by the
@@ -312,49 +421,41 @@ internal class MeshEngine(
             runEngine()
         }
 
-        // frames(), then forwards each inbound transport frame as a FrameRx message.
-        // Gating on TransportState avoids racing with handleConnect() (the transport's
-        // readChannel is null until connect() completes, and TcpTransport.frames() throws
-        // if collected before then). Failures are surfaced as Disconnect messages so the
-        // coroutine doesn't die silently.
-        scope.launch(CoroutineName("meshtastic-frame-reader")) {
-            try {
-                transport.state.first { it is org.meshtastic.sdk.TransportState.Connected }
-                transport.frames().collect { frame ->
-                    inbox.send(EngineMessage.FrameRx(frame))
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
-                inbox.trySend(
-                    EngineMessage.Disconnect(
-                        MeshtasticException.Transport(e.message ?: "frame reader failed", e),
-                    ),
-                )
-            }
-        }
-
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
-            for (frame in outbound) {
+            for ((frame, link, paced, generation) in outbound) {
+                if (paced != null && paced.generation != readySendGeneration.value) continue
+                // A frame queued for a replaced link must not go out on its successor.
+                if (generation != writeGeneration.value) continue
                 try {
-                    transport.send(frame)
+                    if (link == null) {
+                        logProtocolTx(frame)
+                        // A stalled write would hold the paced queue while inbound frames keep the watchdog quiet.
+                        withTimeoutOrNull(TRANSPORT_WRITE_TIMEOUT) { transport.send(frame) }
+                            ?: throw MeshtasticException.Transport(
+                                "Transport write timed out after $TRANSPORT_WRITE_TIMEOUT",
+                            )
+                    } else {
+                        writeLockdownFrame(frame, link)
+                    }
+                    // Completed here, not on the actor, so the evidence exists before a link drop is processed.
+                    paced?.written?.complete(Unit)
+                    if (paced != null) inbox.trySend(EngineMessage.PacedWriteCompleted(paced))
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     logger.warn(TAG, e) { "Transport send failed: ${e.message}" }
-                    inbox.trySend(
-                        EngineMessage.Disconnect(
-                            MeshtasticException.Transport(e.message ?: "send failed", e),
-                        ),
-                    )
+                    val cause =
+                        e as? MeshtasticException.Transport
+                            ?: MeshtasticException.Transport(e.message ?: "send failed", e)
+                    inbox.trySend(EngineMessage.LinkFailed(cause, generation))
                 }
             }
         }
 
         scope.launch(CoroutineName("meshtastic-transport-observer")) {
             transport.state.collect { state ->
-                inbox.send(EngineMessage.TransportStateChanged(state))
+                // A state update already in flight can reach the observer after the actor closes its inbox.
+                inbox.trySend(EngineMessage.TransportStateChanged(state))
             }
         }
 
@@ -397,8 +498,50 @@ internal class MeshEngine(
         }
     }
 
-    fun tryCancelSend(id: MessageId) {
-        inbox.trySend(EngineMessage.CancelHandle(id))
+    fun enqueuePaced(
+        packet: MeshPacket,
+        resend: ((MeshPacket) -> MessageHandle)?,
+        written: CompletableDeferred<Unit>? = null,
+    ): PacedMessageHandle {
+        val id = if (packet.id == 0) nextMessageId() else MessageId(packet.id)
+        val state = MutableStateFlow<SendState>(SendState.Queued)
+        val receipt = CompletableDeferred<QueueReceipt>()
+        val admission = CompletableDeferred<Boolean>()
+        val dispatch = CompletableDeferred<Boolean>()
+        val generation = readySendGeneration.value
+        val submission = EngineMessage.PacedSend(packet, id, generation, state, admission, dispatch, receipt, written)
+        when {
+            generation == null -> completeNotDispatched(submission, SendFailure.Disconnected)
+            !reservePacedSend() -> completeNotDispatched(submission, SendFailure.QueueFull)
+            !inbox.trySend(submission).isSuccess -> rejectPaced(submission, SendFailure.Disconnected)
+        }
+        val message = MessageHandle(
+            id,
+            state,
+            { inbox.trySend(EngineMessage.CancelHandle(it, state)) },
+            packet,
+            resend,
+        )
+        return PacedMessageHandle(message, admission, dispatch, receipt)
+    }
+
+    private fun reservePacedSend(): Boolean {
+        while (true) {
+            val reservations = pacedReservations.value
+            if (reservations >= MAX_PACED_SENDS) return false
+            if (pacedReservations.compareAndSet(reservations, reservations + 1)) return true
+        }
+    }
+
+    // [expected] binds the cancel to this handle, so a later send that reuses the id is untouched.
+    fun tryCancelSend(id: MessageId, expected: MutableStateFlow<SendState>) {
+        inbox.trySend(EngineMessage.CancelHandle(id, expected))
+    }
+
+    fun requestNodeDbRefresh(): Boolean {
+        // The link at admission: a request must not start a download on a link that replaced it.
+        val link = readySendGeneration.value ?: return false
+        return sessionReceive != null && inbox.trySend(EngineMessage.RefreshNodeDb(link)).isSuccess
     }
 
     /**
@@ -427,7 +570,7 @@ internal class MeshEngine(
      *     by this path — those flow through [trySend]/[MessageHandle]).
      *
      * Returns [AdminResult.Timeout] / [AdminResult.SessionKeyExpired] / etc. as classified by
-     * [CommandDispatcher]. Throws [MeshtasticException.NotConnected] if the engine is closed
+     * [CommandDispatcher]. Returns [AdminResult.Timeout] without waiting if the engine is closed
      * before the request reaches the actor.
      */
     @Suppress("UNCHECKED_CAST")
@@ -462,6 +605,14 @@ internal class MeshEngine(
      */
     fun myNodeNumOrNull(): Int? = if (myNodeNum != 0) myNodeNum else null
 
+    fun connectionGeneration(): Long = connectionGeneration.value
+
+    val linkDropsOnRestartCommands: Boolean
+        get() = transport.linkDropsOnRestartCommands
+
+    fun isConnectedAtGeneration(generation: Long): Boolean =
+        connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
+
     private suspend fun runEngine() {
         try {
             for (msg in inbox) {
@@ -492,6 +643,8 @@ internal class MeshEngine(
      * 9. Emit [ConnectionState.Disconnected] — unblocks `disconnect()` callers.
      */
     private suspend fun cleanup() {
+        clearNodeDbRefresh()
+        sessionReceive?.finish()
         // stop the liveness watchdog before any other work so it cannot race with the
         // already disconnecting).
         disconnecting = true
@@ -507,11 +660,15 @@ internal class MeshEngine(
             CancellationException("Engine cancelled before connection completed"),
         )
 
+        readySendGeneration.value = null
+        inbox.close()
         var drained = inbox.tryReceive()
         while (drained.isSuccess) {
             val msg = drained.getOrNull()
-            if (msg is EngineMessage.Send) {
-                msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+            when (msg) {
+                is EngineMessage.Send -> msg.stateFlow.value = SendState.Failed(SendFailure.Disconnected)
+                is EngineMessage.PacedSend -> rejectPaced(msg, SendFailure.Disconnected)
+                else -> Unit
             }
             drained = inbox.tryReceive()
         }
@@ -520,12 +677,12 @@ internal class MeshEngine(
         //         to the pendingSends sweep below, but explicit so the intent is documented).
         failPreSendQueueWith(SendFailure.Disconnected)
 
+        clearPacedSends()
         for ((_, stateFlow) in pendingSends) {
             stateFlow.value = SendState.Failed(SendFailure.Disconnected)
         }
         pendingSends.clear()
 
-        inbox.close()
         outbound.close()
 
         // Final flush of any dirty heartbeats so presence data survives a clean disconnect.
@@ -563,7 +720,9 @@ internal class MeshEngine(
                             wb.disconnect = true
                         }.build(),
                     )
-                    transport.send(Frame(encoded.toByteString()))
+                    val goodbye = Frame(encoded.toByteString())
+                    logProtocolTx(goodbye)
+                    transport.send(goodbye)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -580,17 +739,12 @@ internal class MeshEngine(
         supervisorJobRef.value = null
         engineScope = null
         handshakeStage = HandshakeStage.Idle
+        lockdownLink.value = null
         myNodeNum = 0
         previousMyNodeNum = null
-        sessionPasskeys.clear()
-        handshakePacketBuffer.clear()
-        pendingNodes.clear()
-        pendingConfigs = emptyList()
-        pendingModuleConfigs = emptyList()
-        pendingChannels.clear()
-        pendingMyInfo = null
-        pendingMetadata = null
-        pendingDeviceUIConfig = null
+        previousDeviceId = null
+        clearSessionPasskeys()
+        clearPendingHandshake()
         preSendQueue.clear()
         // reset the degraded flag so the next connect attempt gets a fresh storage shot.
         storageDegraded = false
@@ -599,8 +753,8 @@ internal class MeshEngine(
         dirtyHeartbeats.clear()
         offlineNodes.clear()
         lastCongestionLevel.clear()
-        // clear any leftover settle-buffer entries so a reconnect starts clean.
-        settleBuffer.clear()
+        lastMqttConnected = null
+        firmwareUpdateAdvised = false
         // cancel any in-flight per-send ACK timers so they don't post stale messages.
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
@@ -611,6 +765,7 @@ internal class MeshEngine(
         lastEncryptedSkipWarningAtMs = 0L
         recentInboundPacketKeys.clear()
         recentInboundPacketKeySet.clear()
+        resetDisplayMirror()
 
         reconnectJob?.cancel()
         reconnectJob = null
@@ -628,36 +783,99 @@ internal class MeshEngine(
     private suspend fun processMessage(msg: EngineMessage) {
         when (msg) {
             is EngineMessage.Connect -> handleConnect(msg)
+
             is EngineMessage.Disconnect -> handleDisconnect(msg)
-            is EngineMessage.FrameRx -> handleFrameRx(msg)
+
+            is EngineMessage.RefreshNodeDb -> {
+                if (handshakeStage == HandshakeStage.Ready &&
+                    msg.generation == readySendGeneration.value
+                ) {
+                    startNodeDbRefresh()
+                }
+            }
+
+            is EngineMessage.NodeDbRefreshTimeout -> {
+                if (nodeDbRefresh != null && msg.request == nodeDbRefreshRequest) {
+                    handleDisconnect(
+                        EngineMessage.Disconnect(MeshtasticException.Transport("Node database refresh timed out")),
+                    )
+                }
+            }
+
+            is EngineMessage.FrameRx -> {
+                if (acceptsFramesFrom(msg.generation)) handleFrameRx(msg)
+            }
+
+            is EngineMessage.LinkFailed -> {
+                if (acceptsFramesFrom(msg.generation)) handleLinkFailure(msg.cause)
+            }
+
             is EngineMessage.TransportStateChanged -> handleTransportStateChanged(msg)
+
             is EngineMessage.Send -> handleSend(msg)
+
+            is EngineMessage.PacedSend -> handlePacedSend(msg)
+
+            is EngineMessage.PacedWriteCompleted -> handlePacedWriteCompleted(msg.send)
+
+            is EngineMessage.PacedQueueTimeout -> handlePacedQueueTimeout(msg.send)
+
             is EngineMessage.CancelHandle -> handleCancelHandle(msg)
+
             is EngineMessage.AdminFireAndForget -> sendAdminPacket(msg.adminMsg, msg.wantResponse, msg.to)
+
+            is EngineMessage.Lockdown -> handleLockdownCommand(msg)
+
             EngineMessage.HeartbeatTick -> handleHeartbeatTick()
+
             EngineMessage.LivenessTick -> handleLivenessTick()
+
             EngineMessage.PresenceCheckTick -> handlePresenceCheckTick()
+
             is EngineMessage.HandshakeTimeout -> handleHandshakeTimeout(msg)
-            EngineMessage.HandshakeStage1SettleComplete -> handleStage1SettleComplete()
-            EngineMessage.HandshakeHeartbeatSettleComplete -> handleHeartbeatSettleComplete()
-            EngineMessage.Stage1RetryWantConfig -> handleStage1RetryWantConfig()
+
+            is EngineMessage.HandshakeStage1SettleComplete -> if (msg.attempt ==
+                handshakeAttempt
+            ) {
+                handleStage1SettleComplete()
+            }
+
+            is EngineMessage.HandshakeHeartbeatSettleComplete -> if (msg.attempt ==
+                handshakeAttempt
+            ) {
+                handleHeartbeatSettleComplete()
+            }
+
+            is EngineMessage.Stage1RetryWantConfig -> if (msg.attempt == handshakeAttempt) handleStage1RetryWantConfig()
+
             is EngineMessage.AdminTimeout -> { /* legacy slot, superseded by PendingResponseTimeout */ }
+
             is EngineMessage.PostRpc -> handlePostRpc(msg)
+
             is EngineMessage.PendingResponseTimeout -> handlePendingResponseTimeout(msg)
+
             is EngineMessage.SendAckTimeout -> handleSendAckTimeout(msg)
+
             is EngineMessage.ReconnectTick -> handleReconnectTick(msg)
+
             is EngineMessage.ReconnectAttemptResult -> handleReconnectAttemptResult(msg)
         }
     }
 
     private fun handlePostRpc(msg: EngineMessage.PostRpc) {
         // Engine must be Ready: RPCs require an established session passkey + nodenum.
-        if (handshakeStage != HandshakeStage.Ready) {
+        if (handshakeStage != HandshakeStage.Ready || pacedSends.containsKey(MessageId(msg.requestId))) {
             msg.deferred.complete(AdminResult.NodeUnreachable)
             return
         }
         // Register before sending so a fast device reply can never race the registration.
-        dispatcher.register(msg.requestId, msg.kind, msg.deferred)
+        val adminTarget = if (msg.packet.decoded?.portnum == PortNum.ADMIN_APP) {
+            msg.packet.to.takeIf { it != 0 } ?: myNodeNum
+        } else {
+            null
+        }
+        dispatcher.register(msg.requestId, msg.kind, msg.deferred, expectedSender = adminTarget)
+        rememberAdminRequest(msg.packet)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(msg.packet)
         val encoded = WireCodec.encodeToRadio(
@@ -665,7 +883,7 @@ internal class MeshEngine(
                 wb.packet = outboundPacket
             }.build(),
         )
-        outbound.trySend(Frame(encoded.toByteString()))
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
         val job = scope.launch {
@@ -705,7 +923,14 @@ internal class MeshEngine(
 
         // 1. Session passkey re-stamp (skip when the caller already provided one).
         var outDecoded = decoded
-        val passkey = validSessionPasskeyFor(packet.to)
+        val keyEntry = validSessionEntryFor(packet.to)
+        val passkey = keyEntry?.bytes
+        if (keyEntry != null && packet.id != 0) {
+            if (requestPasskeyGenerations.size >= REQUEST_GENERATION_CAP) {
+                requestPasskeyGenerations.remove(requestPasskeyGenerations.keys.first())
+            }
+            requestPasskeyGenerations[packet.id] = keyEntry.generation
+        }
         if (passkey != null) {
             val originalAdmin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()
             if (originalAdmin != null && originalAdmin.session_passkey.size == 0) {
@@ -751,9 +976,7 @@ internal class MeshEngine(
                 wb.priority = priority
             }.build()
         } else {
-            val adminIndex = channelsState.value
-                ?.indexOfFirst { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
-                ?.takeIf { it >= 0 } ?: 0
+            val adminIndex = adminChannelIndex() ?: 0
             packet.newBuilder().also { wb ->
                 wb.decoded = outDecoded
                 wb.channel = adminIndex
@@ -763,6 +986,7 @@ internal class MeshEngine(
     }
 
     private suspend fun handleConnect(msg: EngineMessage.Connect) {
+        connectionGeneration.incrementAndGet()
         pendingConnectDeferred = msg.deferred
         connectionState.value = ConnectionState.Connecting(1)
         // reset watchdog gate so a prior session's `disconnecting = true` doesn't stick.
@@ -794,6 +1018,14 @@ internal class MeshEngine(
             throw e
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to load previous identity for rebind detection" }
+            null
+        }
+        previousDeviceId = try {
+            trustedDeviceIdOrNull(storage?.loadOwnDeviceId())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG, e) { "Failed to load previous device id for rebind detection" }
             null
         }
 
@@ -837,29 +1069,82 @@ internal class MeshEngine(
      * supervisor can re-enter the handshake without re-running storage activation.
      */
     private fun startStage1Handshake() {
-        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+        val generation = ++receiveGeneration
+        // Each session, a reconnect included, warns once about firmware below the recommended version.
+        firmwareUpdateAdvised = false
+        writeGeneration.value = generation
+        sessionReceive?.begin(generation)
+        startFrameReader(generation)
 
         // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
         // want_config_id to resync the firmware's frame decoder after an unclean disconnect.
         // BLE doesn't need this since each GATT write is self-framing.
         if (!transport.identity.raw.startsWith("ble:")) {
             val wakeBytes = byteArrayOf(0x94.toByte(), 0x94.toByte(), 0x94.toByte(), 0x94.toByte())
-            outbound.trySend(Frame(wakeBytes.toByteString()))
+            outbound.trySend(OutboundFrame(Frame(wakeBytes.toByteString()), generation = generation))
         }
 
-        sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
-        handshakeStage = HandshakeStage.Stage1Draining
+        requestStage1Config()
+    }
 
+    private fun requestStage1Config() {
+        val attempt = ++handshakeAttempt
+        stage1DumpStarted = false
+        lockdownLink.value = null
+        handshakeStage = HandshakeStage.Stage1Draining
+        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+        sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
         engineScope?.launch {
             delay(STAGE1_RETRY_MS)
-            inbox.trySend(EngineMessage.Stage1RetryWantConfig)
+            inbox.trySend(EngineMessage.Stage1RetryWantConfig(attempt))
         }
         engineScope?.launch {
             delay(STAGE1_TIMEOUT_MS)
-            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining))
+            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining, attempt))
         }
 
         logger.info(TAG) { "Handshake Stage 1 started (want_config_id=$NONCE_STAGE1)" }
+    }
+
+    private fun acceptsFramesFrom(generation: Long): Boolean =
+        generation == receiveGeneration && handshakeStage != HandshakeStage.Idle
+
+    private fun startFrameReader(generation: Long) {
+        // Subscribe before sending Stage 1 so transports with a hot flow can deliver an
+        // immediate response. Yield after the first frame so a preloaded transport returns
+        // control to the actor even while it still has frames to read.
+        frameReaderJob =
+            engineScope?.launch(CoroutineName("meshtastic-frame-reader"), start = CoroutineStart.UNDISPATCHED) {
+                var firstFrame = true
+                try {
+                    transport.frames().collect { frame ->
+                        inbox.send(EngineMessage.FrameRx(frame, generation))
+                        if (firstFrame) {
+                            firstFrame = false
+                            yield()
+                        }
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    logger.warn(TAG, e) { "Frame reader failed: ${e.message}" }
+                    val cause = e as? MeshtasticException.Transport
+                        ?: MeshtasticException.Transport(e.message ?: "frame reader failed", e)
+                    inbox.trySend(EngineMessage.LinkFailed(cause, generation))
+                }
+            }
+    }
+
+    // A transport that throws from frames() or send() never publishes TransportState.Error, so
+    // this is the only place its failure meets the reconnect policy.
+    private fun handleLinkFailure(cause: MeshtasticException) {
+        if (!autoReconnectConfig.enabled || disconnecting) {
+            handleDisconnect(EngineMessage.Disconnect(cause))
+            return
+        }
+        val tagged = MeshtasticException.tag(cause, transportIdentity = transport.identity, operation = "engine.link")
+        events.tryEmit(MeshEvent.TransportError(tagged))
+        scheduleReconnect(tagged)
     }
 
     private fun handleDisconnect(msg: EngineMessage.Disconnect) {
@@ -967,10 +1252,26 @@ internal class MeshEngine(
             return
         }
 
+        logProtocol { "rx ${payloadRedactor.describe(fromRadio)}" }
+
+        rawFromRadio.tryEmit(fromRadio)
+
         // liveness watchdog only resets on successfully decoded envelopes,
         // not raw-byte arrivals. A stuck framer on a half-open socket could still deliver
         // resync garbage; that must not look like "the link is healthy" to the watchdog.
         livenessBudgetMs = LIVENESS_TIMEOUT_MS
+
+        // Firmware answers a 69420 want_config with my_info first (PhoneAPI handleStartConfig). A reboot
+        // or completion seen before it in Stage 1 was queued before the request and would end the new
+        // handshake, so it is dropped.
+        if (handshakeStage == HandshakeStage.Stage1Draining && !stage1DumpStarted) {
+            if (fromRadio.my_info != null) {
+                stage1DumpStarted = true
+            } else if (fromRadio.rebooted == true || fromRadio.config_complete_id != null) {
+                logger.debug(TAG) { "Dropping a reboot or completion from before the Stage 1 dump" }
+                return
+            }
+        }
 
         // `FromRadio.rebooted = true` is a forced-disconnect signal — the
         // radio has restarted and all prior session state (session passkey, node DB, pending
@@ -979,28 +1280,46 @@ internal class MeshEngine(
         //   1. Reset handshake stage so any stale settle/stage timers become no-ops.
         //   2. Emit `MeshEvent.DeviceRebooted` so subscribers can distinguish this from a
         //      transport-level drop.
-        //   3. Fail the pending-connect deferred (if any) with Protocol so mid-handshake
-        //      reboots surface a clear error.
+        //   3. Fail the pending-connect deferred (if any) with Transport so the host can retry
+        //      after the device comes back.
         //   4. Cancel the supervisor → cleanup() runs, polite-goodbye is sent, transport
         //      disconnects, and `ConnectionState.Disconnected` is emitted.
         if (fromRadio.rebooted == true) {
             logger.warn(TAG) { "Device rebooted — forcing disconnect" }
             events.tryEmit(MeshEvent.DeviceRebooted())
             handshakeStage = HandshakeStage.Idle
+            lockdownLink.value = null
+            readySendGeneration.value = null
             stage2WatchdogJob?.cancel()
             stage2WatchdogJob = null
             val deferred = pendingConnectDeferred
             if (deferred != null) {
                 pendingConnectDeferred = null
                 failPreSendQueueWith(SendFailure.HandshakeFailed)
-                deferred.completeExceptionally(MeshtasticException.Protocol("Device rebooted mid-handshake"))
+                deferred.completeExceptionally(MeshtasticException.Transport("Device rebooted mid-handshake"))
             }
             supervisorJobRef.value?.cancel()
             return
         }
 
+        val lockdownStatus = fromRadio.lockdown_status
+        if (lockdownStatus != null) {
+            if (handshakeStage != HandshakeStage.Ready) handleHandshakeLockdown(lockdownStatus)
+            events.tryEmit(MeshEvent.LockdownStatusChanged(lockdownStatus))
+            sessionReceive?.lockdown(lockdownStatus)
+            return
+        }
+
+        // Log records bypass the settle and handshake buffers, so a log burst cannot evict a held frame.
+        fromRadio.log_record?.let { record ->
+            deviceLogs.tryEmit(record)
+            return
+        }
+
         when (handshakeStage) {
-            HandshakeStage.Idle -> {
+            HandshakeStage.AwaitingLockdown,
+            HandshakeStage.Idle,
+            -> {
             }
 
             HandshakeStage.Stage1Settling -> {
@@ -1009,6 +1328,7 @@ internal class MeshEngine(
                 // spot pathological backlogs — silent loss is forbidden per
                 // ADR-005 public-surface rules).
                 if (settleBuffer.size >= SETTLE_BUFFER_CAP) {
+                    sessionReceive?.handshakeOverflow()
                     val dropped = settleBuffer.removeFirst()
                     logger.warn(TAG) {
                         "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropping oldest frame ($dropped)"
@@ -1025,8 +1345,51 @@ internal class MeshEngine(
 
             HandshakeStage.SeedingSession -> processSeedingEnvelope(fromRadio)
 
-            HandshakeStage.Ready -> routeNormalEnvelope(fromRadio)
+            HandshakeStage.Ready -> {
+                val refreshFrame = handleNodeDbRefreshFrame(fromRadio)
+                routeNormalEnvelope(fromRadio)
+                if (fromRadio.packet == null && !refreshFrame) sessionReceive?.envelope(fromRadio)
+            }
         }
+    }
+
+    private fun handleHandshakeLockdown(status: LockdownStatus) {
+        when (status.state) {
+            LockdownStatus.State.LOCKED, LockdownStatus.State.NEEDS_PROVISION -> {
+                handshakeStage = HandshakeStage.AwaitingLockdown
+                lockdownLink.value = pendingMyInfo?.my_node_num?.takeIf { it != 0 }?.let {
+                    LockdownLink(receiveGeneration, it)
+                }
+                stage2WatchdogJob?.cancel()
+                stage2WatchdogJob = null
+            }
+
+            LockdownStatus.State.UNLOCKED, LockdownStatus.State.DISABLED -> if (
+                handshakeStage == HandshakeStage.AwaitingLockdown
+            ) {
+                // Firmware authorizes this link only once the unlocked configuration is loaded.
+                // Discard the redacted snapshot and keep the reader on the authorized link. Mesh packets
+                // held for Ready are real traffic on this same link, so they stay.
+                clearPendingHandshake(keepHeldPackets = true)
+                requestStage1Config()
+            }
+
+            else -> Unit
+        }
+    }
+
+    private fun clearPendingHandshake(keepHeldPackets: Boolean = false) {
+        pendingNodes.clear()
+        pendingConfigs = emptyList()
+        pendingModuleConfigs = emptyList()
+        pendingChannels.clear()
+        pendingMyInfo = null
+        pendingMetadata = null
+        pendingDeviceUIConfig = null
+        pendingFiles.clear()
+        pendingRegionPresets = null
+        settleBuffer.clear()
+        if (!keepHeldPackets) handshakePacketBuffer.clear()
     }
 
     private fun processStage1Envelope(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -1044,9 +1407,15 @@ internal class MeshEngine(
         // handleStartConfig resets its read index), so the same channels/config sections can
         // stream twice. Replace-by-key instead of append so the committed bundle has no dupes.
         when {
-            myInfo != null -> pendingMyInfo = myInfo
+            myInfo != null -> {
+                if (syncTimeDuringHandshake && pendingMyInfo == null) sendHandshakeTimeSync(myInfo.my_node_num)
+                pendingMyInfo = myInfo
+            }
 
-            metadata != null -> pendingMetadata = metadata
+            metadata != null -> {
+                pendingMetadata = metadata
+                enforceFirmwareFloor(metadata.firmware_version)
+            }
 
             channel != null -> {
                 pendingChannels.removeAll { it.index == channel.index }
@@ -1058,6 +1427,8 @@ internal class MeshEngine(
             modConfig != null -> pendingModuleConfigs = mergeModuleConfigs(pendingModuleConfigs, listOf(modConfig))
 
             deviceUIConf != null -> pendingDeviceUIConfig = deviceUIConf
+
+            fromRadio.region_presets != null -> pendingRegionPresets = fromRadio.region_presets
 
             nodeInfo != null -> {
                 val nodeId = NodeId(nodeInfo.num)
@@ -1079,9 +1450,10 @@ internal class MeshEngine(
                 logger.info(TAG) { "Stage 1 complete; entering 100 ms settle" }
                 handshakeStage = HandshakeStage.Stage1Settling
                 connectionState.value = ConnectionState.Configuring(ConfigPhase.Settling, 0.5f)
+                val attempt = handshakeAttempt
                 engineScope?.launch {
                     delay(INTER_STAGE_SETTLE_MS)
-                    inbox.trySend(EngineMessage.HandshakeStage1SettleComplete)
+                    inbox.trySend(EngineMessage.HandshakeStage1SettleComplete(attempt))
                 }
             }
 
@@ -1100,6 +1472,54 @@ internal class MeshEngine(
             // Python client, which skips bytes it can't frame/parse.
             else -> logger.debug(TAG) { "Stage 1: ignoring unrecognized FromRadio" }
         }
+    }
+
+    /**
+     * Ends the connect with [MeshtasticException.FirmwareTooOld] when [reported] parses below
+     * [DeviceVersion.ABS_MIN_SUPPORTED]. Below [DeviceVersion.MIN_SUPPORTED] it connects and emits
+     * one [MeshEvent.ProtocolWarning] per session. A blank or unparseable version only warns: a
+     * missing version is not an old one.
+     */
+    private fun enforceFirmwareFloor(reported: String) {
+        val present = DeviceVersion(reported).asInt
+        if (present == 0) {
+            logger.warn(TAG) { "Device reported no parseable firmware version ('$reported'); skipping the floor check" }
+            return
+        }
+        val required = DeviceVersion.ABS_MIN_SUPPORTED.asInt
+        if (present >= required) {
+            val recommended = DeviceVersion.MIN_SUPPORTED
+            if (present < recommended.asInt && !firmwareUpdateAdvised) {
+                firmwareUpdateAdvised = true
+                logger.warn(TAG) { "Firmware $reported is below the recommended ${recommended.versionString}" }
+                events.tryEmit(
+                    MeshEvent.ProtocolWarning(
+                        "firmware should be updated",
+                        details = mapOf(
+                            "present" to reported,
+                            "recommended" to recommended.versionString,
+                        ),
+                    ),
+                )
+            }
+            return
+        }
+
+        logger.error(TAG) {
+            "Firmware $reported is below the supported floor ${DeviceVersion.ABS_MIN_SUPPORTED.versionString}"
+        }
+        val cause = MeshtasticException.tag(
+            MeshtasticException.FirmwareTooOld(required = required, present = present),
+            transportIdentity = transport.identity,
+            operation = "handshake",
+        )
+        events.tryEmit(MeshEvent.TransportError(cause))
+        handshakeStage = HandshakeStage.Idle
+        failPreSendQueueWith(SendFailure.HandshakeFailed)
+        val deferred = pendingConnectDeferred
+        pendingConnectDeferred = null
+        deferred?.completeExceptionally(cause)
+        supervisorJobRef.value?.cancel()
     }
 
     private fun handleStage1SettleComplete() {
@@ -1129,16 +1549,18 @@ internal class MeshEngine(
             handshakeStage = HandshakeStage.Stage1Settling
         }
 
-        // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
-        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
-        logger.debug(TAG) { "Sent inter-stage heartbeat nonce=0" }
+        val nonce = sendKeepaliveHeartbeat()
+        logger.debug(TAG) { "Sent inter-stage heartbeat nonce=$nonce" }
+        val attempt = handshakeAttempt
         engineScope?.launch {
             delay(INTER_STAGE_SETTLE_MS)
-            inbox.trySend(EngineMessage.HandshakeHeartbeatSettleComplete)
+            inbox.trySend(EngineMessage.HandshakeHeartbeatSettleComplete(attempt))
         }
     }
 
     private fun handleHeartbeatSettleComplete() {
+        if (handshakeStage != HandshakeStage.Stage1Settling) return
+        val attempt = handshakeAttempt
         // Config-only: finish after Stage 1 via a synthetic Stage-2 completion; no NodeDB request (§6).
         if (skipNodeDb) {
             handshakeStage = HandshakeStage.Stage2Draining
@@ -1168,13 +1590,13 @@ internal class MeshEngine(
                 elapsedMs += STAGE2_PROGRESS_TICK_MS
                 val current = stage2ProgressCounter
                 if (current == lastCounter) {
-                    inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining))
+                    inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining, attempt))
                     return@launch
                 }
                 lastCounter = current
             }
             // Hard cap exceeded — even if frames are still trickling, abort.
-            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining))
+            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage2Draining, attempt))
         }
 
         logger.info(TAG) { "Handshake Stage 2 started (want_config_id=$NONCE_STAGE2)" }
@@ -1218,39 +1640,41 @@ internal class MeshEngine(
                     // any consumer-observable state (NodeChange.Snapshot below) and BEFORE the
                     // async storage.recordOwnNode → clear() runs.
                     val prev = previousMyNodeNum
+                    val incomingDeviceId = trustedDeviceIdOrNull(myInfo.device_id)
                     if (prev != null && prev != myInfo.my_node_num) {
+                        val renumbered = incomingDeviceId != null && incomingDeviceId == previousDeviceId
                         logger.warn(TAG) {
                             "Identity rebind detected — previous=0x${prev.toString(
                                 16,
-                            )} new=0x${myInfo.my_node_num.toString(16)}"
+                            )} new=0x${myInfo.my_node_num.toString(16)} renumbered=$renumbered"
                         }
                         // passkeys issued under the previous identity are meaningless now.
-                        sessionPasskeys.clear()
+                        clearSessionPasskeys()
                         events.tryEmit(
                             MeshEvent.IdentityRebound(
                                 previousNodeNum = NodeId(prev),
                                 newNodeNum = NodeId(myInfo.my_node_num),
-                                // populate reason so host UX can choose
-                                // copy. Without the firmware specifically signalling "factory
-                                // reset", we report "identity_mismatch" — the NodeNum changed
-                                // under an identity that the host persisted.
-                                reason = "identity_mismatch",
+                                reason = if (renumbered) REASON_NODE_RENUMBERED else REASON_IDENTITY_MISMATCH,
                             ),
                         )
                     }
                     previousMyNodeNum = myInfo.my_node_num.takeIf { it != 0 }
+                    previousDeviceId = incomingDeviceId ?: previousDeviceId.takeIf { prev == myInfo.my_node_num }
 
                     myNodeNum = myInfo.my_node_num
                     meshState = meshState.withMyInfo(myInfo)
                     ownNode.value = pendingNodes[NodeId(myNodeNum)]
                 }
-                if (pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty()) {
+                if (pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty() ||
+                    pendingDeviceUIConfig != null
+                ) {
                     val bundle = ConfigBundle(
                         myInfo = myInfo ?: org.meshtastic.proto.MyNodeInfo.Builder().build(),
                         metadata = pendingMetadata ?: org.meshtastic.proto.DeviceMetadata.Builder().build(),
                         configs = pendingConfigs,
                         moduleConfigs = pendingModuleConfigs,
                         deviceUIConfig = pendingDeviceUIConfig,
+                        regionPresets = pendingRegionPresets,
                     )
                     meshState = meshState.withConfig(bundle)
                 }
@@ -1288,7 +1712,11 @@ internal class MeshEngine(
                         val s = storage ?: return@launch
                         try {
                             if (myInfo != null) {
-                                s.recordOwnNode(NodeId(myInfo.my_node_num), firmwareVersion)
+                                s.recordOwnNode(
+                                    NodeId(myInfo.my_node_num),
+                                    firmwareVersion,
+                                    trustedDeviceIdOrNull(myInfo.device_id),
+                                )
                             }
                             for ((nodeId, node) in nodesSnapshot) {
                                 s.saveNode(node)
@@ -1332,9 +1760,10 @@ internal class MeshEngine(
                         }.build(),
                         wantResponse = true,
                     )
+                    val attempt = handshakeAttempt
                     engineScope?.launch {
                         delay(SEED_TIMEOUT_MS)
-                        inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession))
+                        inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession, attempt))
                     }
                 } else {
                     // No myInfo: skip seeding and go Ready.
@@ -1360,6 +1789,7 @@ internal class MeshEngine(
             // shared auxiliary handler.
             fromRadio.node_info?.let {
                 processInboundNodeInfo(it)
+                if (sessionReceive != null) pendingNodes[NodeId(it.num)] = it
                 return
             }
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.SeedingSession)
@@ -1378,7 +1808,7 @@ internal class MeshEngine(
             return
         }
 
-        if (adminMsg.get_owner_response != null) {
+        if (adminMsg.get_owner_response != null && (packet.from == 0 || packet.from == myNodeNum)) {
             latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg)
             transitionToReady()
         } else {
@@ -1391,57 +1821,133 @@ internal class MeshEngine(
      * Cache the session passkey carried in [adminMsg], keyed by the node that issued it.
      * Firmware refreshes the passkey in **every** admin response, so any admin packet from
      * [fromNum] keeps that node's admin session alive. Only the local node's seed passkey is
-     * persisted — remote passkeys are ephemeral by design (4-minute TTL).
+     * persisted — remote passkeys are ephemeral by design (firmware validity window).
      */
-    private fun latchSessionPasskey(fromNum: Int, adminMsg: AdminMessage) {
+    private fun latchSessionPasskey(fromNum: Int, adminMsg: AdminMessage, receivedAt: Instant = clock.now()) {
         if (adminMsg.session_passkey.size <= 0) return
         if (fromNum == 0) return
         val bytes = adminMsg.session_passkey.toByteArray()
-        val expiresAtMs = clock.now().toEpochMilliseconds() + SESSION_PASSKEY_TTL.inWholeMilliseconds
-        sessionPasskeys[fromNum] = SessionPasskeyEntry(bytes, expiresAtMs)
+        val previous = sessionPasskeys[fromNum]
+        if (previous != null && receivedAt < previous.refreshedAt) return
+        val generation = if (previous != null && previous.bytes.contentEquals(bytes)) {
+            previous.generation
+        } else {
+            nextPasskeyGeneration++
+        }
+        sessionPasskeys[fromNum] = SessionPasskeyEntry(bytes, receivedAt, generation)
+        publishAdminSessions()
         logger.debug(TAG) { "Session passkey latched for 0x${fromNum.toString(16)} (${bytes.size} bytes)" }
     }
 
+    private fun clearSessionPasskeys() {
+        sessionPasskeys.clear()
+        requestPasskeyGenerations.clear()
+        adminReplyTargets.clear()
+        adminSessions.value = emptyMap()
+    }
+
+    /** Drop expired entries and republish [adminSessions]; the StateFlow ignores unchanged maps. */
+    private fun publishAdminSessions() {
+        val now = clock.now()
+        sessionPasskeys.entries.removeAll { now - it.value.refreshedAt >= SESSION_PASSKEY_TTL }
+        adminSessions.value = sessionPasskeys.entries.associate { (num, entry) ->
+            val refreshedAt = entry.refreshedAt
+            NodeId(num) to if (now - refreshedAt < SESSION_PASSKEY_ACTIVE_FOR) {
+                AdminSessionStatus.Active(refreshedAt, refreshedAt + SESSION_PASSKEY_ACTIVE_FOR)
+            } else {
+                AdminSessionStatus.Stale(refreshedAt, refreshedAt + SESSION_PASSKEY_TTL)
+            }
+        }
+    }
+
+    private fun AdminMessage.adminRequestKind(): ResponseKind<*>? = when {
+        get_channel_request != null -> ResponseKind.AdminChannel
+        get_owner_request != null -> ResponseKind.AdminOwner
+        get_config_request != null -> ResponseKind.AdminConfig
+        get_module_config_request != null -> ResponseKind.AdminModuleConfig
+        get_canned_message_module_messages_request != null -> ResponseKind.AdminCannedMessages
+        get_device_metadata_request != null -> ResponseKind.AdminDeviceMetadata
+        get_ringtone_request != null -> ResponseKind.AdminRingtone
+        get_device_connection_status_request != null -> ResponseKind.AdminDeviceConnectionStatus
+        get_node_remote_hardware_pins_request != null -> ResponseKind.AdminRemoteHardwarePins
+        get_ui_config_request != null -> ResponseKind.AdminDeviceUIConfig
+        else -> null
+    }
+
+    private fun AdminMessage.adminResponseKind(): ResponseKind<*>? = when {
+        get_channel_response != null -> ResponseKind.AdminChannel
+        get_owner_response != null -> ResponseKind.AdminOwner
+        get_config_response != null -> ResponseKind.AdminConfig
+        get_module_config_response != null -> ResponseKind.AdminModuleConfig
+        get_canned_message_module_messages_response != null -> ResponseKind.AdminCannedMessages
+        get_device_metadata_response != null -> ResponseKind.AdminDeviceMetadata
+        get_ringtone_response != null -> ResponseKind.AdminRingtone
+        get_device_connection_status_response != null -> ResponseKind.AdminDeviceConnectionStatus
+        get_node_remote_hardware_pins_response != null -> ResponseKind.AdminRemoteHardwarePins
+        get_ui_config_response != null -> ResponseKind.AdminDeviceUIConfig
+        else -> null
+    }
+
+    private fun rememberAdminRequest(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (packet.id == 0 || packet.to == BROADCAST_ADDR || decoded.portnum != PortNum.ADMIN_APP) return
+        val admin = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
+        val kind = admin.adminRequestKind() ?: return
+        adminReplyTargets.remove(packet.id)
+        if (adminReplyTargets.size >= ADMIN_REPLY_CAP) adminReplyTargets.remove(adminReplyTargets.keys.first())
+        adminReplyTargets[packet.id] = ExpectedAdminReply(packet.to.takeIf { it != 0 } ?: myNodeNum, kind)
+    }
+
     /**
-     * Whether this admin message is response-shaped (one of the `get_*_response` oneof arms is
-     * set). Mirrors the firmware's `messageIsResponse` classification — only responses carry a
-     * passkey that the *sender* issued.
+     * `from` and `request_id` travel in the clear, so an admin reply from another node is only as trustworthy as its
+     * encryption: PKI, or the legacy admin channel's PSK, the two paths firmware accepts remote admin on.
      */
-    private fun AdminMessage.isAdminResponse(): Boolean = get_channel_response != null ||
-        get_owner_response != null ||
-        get_config_response != null ||
-        get_module_config_response != null ||
-        get_canned_message_module_messages_response != null ||
-        get_device_metadata_response != null ||
-        get_ringtone_response != null ||
-        get_device_connection_status_response != null ||
-        get_node_remote_hardware_pins_response != null ||
-        get_ui_config_response != null
+    private fun isAuthenticatedAdminReply(packet: MeshPacket): Boolean {
+        if (packet.from == 0 || packet.from == myNodeNum || packet.pki_encrypted) return true
+        val adminIndex = adminChannelIndex()
+        return adminIndex != null && packet.channel == adminIndex
+    }
+
+    // The wire index, not the list position: the handshake list is in arrival order and may be sparse.
+    private fun adminChannelIndex(): Int? = channelsState.value
+        ?.firstOrNull { it.settings?.name?.equals(ADMIN_CHANNEL_NAME, ignoreCase = true) == true }
+        ?.index
+
+    private fun recognizesAdminReply(packet: MeshPacket, requestId: Int, admin: AdminMessage): Boolean {
+        val kind = admin.adminResponseKind() ?: return false
+        // A live RPC is recognized by its registration; the bounded cache covers other sends and late replies.
+        if (dispatcher.expects(requestId, kind, packet.from, myNodeNum)) return true
+        val expected = adminReplyTargets[requestId] ?: return false
+        return expected.kind == kind &&
+            (packet.from == expected.sender || (packet.from == 0 && expected.sender == myNodeNum))
+    }
 
     /** Returns the unexpired session passkey for [nodeNum], pruning a stale entry if present. */
-    private fun validSessionPasskeyFor(nodeNum: Int): ByteArray? {
+    private fun validSessionEntryFor(nodeNum: Int): SessionPasskeyEntry? {
         val entry = sessionPasskeys[nodeNum] ?: return null
-        if (clock.now().toEpochMilliseconds() >= entry.expiresAtMs) {
-            sessionPasskeys.remove(nodeNum)
+        if (clock.now() - entry.refreshedAt >= SESSION_PASSKEY_TTL) {
+            publishAdminSessions()
             return null
         }
-        return entry.bytes
+        return entry
     }
 
     /** Buffer a mid-handshake `FromRadio.packet` for delivery once the session reaches Ready. */
     private fun bufferHandshakePacket(packet: MeshPacket) {
         if (handshakePacketBuffer.size >= HANDSHAKE_PACKET_BUFFER_CAP) {
+            sessionReceive?.handshakeOverflow()
             handshakePacketBuffer.removeFirst()
             logger.warn(TAG) {
                 "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — dropping oldest"
             }
             events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
         }
-        handshakePacketBuffer.addLast(packet)
+        handshakePacketBuffer.addLast(BufferedPacket(packet, clock.now()))
     }
 
     private fun transitionToReady() {
         handshakeStage = HandshakeStage.Ready
+        lockdownLink.value = myNodeNum.takeIf { it != 0 }?.let { LockdownLink(receiveGeneration, it) }
 
         // failure starts a fresh backoff schedule.
         reconnectAttempt = 0
@@ -1458,7 +1964,24 @@ internal class MeshEngine(
         val snapshot = preSendQueue.toList()
         preSendQueue.clear()
 
+        readySendGeneration.value = receiveGeneration
         connectionState.value = ConnectionState.Connected
+        sessionReceive?.let { receive ->
+            receive.ready(
+                RadioSessionEvent.Ready(
+                    sessionId = receive.sessionId,
+                    myInfo = pendingMyInfo,
+                    configBundle = configBundleState.value.takeIf {
+                        pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty() ||
+                            pendingDeviceUIConfig != null
+                    },
+                    channels = pendingChannels.takeIf { it.isNotEmpty() }?.toList(),
+                    nodes = pendingNodes.toMap(),
+                    files = pendingFiles.values.toList(),
+                    regionPresets = pendingRegionPresets,
+                ),
+            )
+        }
 
         // Start the 30 s periodic heartbeat scheduler.
         engineScope?.launch {
@@ -1498,7 +2021,8 @@ internal class MeshEngine(
         if (handshakePacketBuffer.isNotEmpty()) {
             logger.info(TAG) { "Flushing ${handshakePacketBuffer.size} packets received during handshake" }
             while (handshakePacketBuffer.isNotEmpty()) {
-                processInboundMeshPacket(handshakePacketBuffer.removeFirst())
+                val buffered = handshakePacketBuffer.removeFirst()
+                processInboundMeshPacket(buffered.packet, buffered.receivedAt)
             }
         }
 
@@ -1516,6 +2040,66 @@ internal class MeshEngine(
         logger.info(TAG) { "Session Ready — myNodeNum=0x${myNodeNum.toString(16)}" }
     }
 
+    private fun startNodeDbRefresh() {
+        if (nodeDbRefresh != null) {
+            nodeDbRefreshQueued = true
+            return
+        }
+        // The radio ignores byte-identical consecutive writes. A heartbeat separates the fixed
+        // nodes-only nonces even when the follow-up starts immediately after completion.
+        sendKeepaliveHeartbeat()
+        val sent = trySendToRadio(ToRadio.Builder().also { it.want_config_id = NONCE_STAGE2 }.build())
+        if (!sent) {
+            handleDisconnect(
+                EngineMessage.Disconnect(MeshtasticException.Transport("Could not queue node database refresh")),
+            )
+            return
+        }
+        nodeDbRefreshDumpStarted = false
+        nodeDbRefresh = linkedMapOf()
+        val request = ++nodeDbRefreshRequest
+        nodeDbRefreshWatchdog = engineScope?.launch {
+            delay(STAGE2_HARD_CAP_MS)
+            inbox.trySend(EngineMessage.NodeDbRefreshTimeout(request))
+        }
+    }
+
+    private fun handleNodeDbRefreshFrame(fromRadio: org.meshtastic.proto.FromRadio): Boolean {
+        val refresh = nodeDbRefresh ?: return false
+        val node = fromRadio.node_info
+        // A nodes-only dump opens with the node's own node_info (PhoneAPI handleStartConfig starts 69421 at
+        // STATE_SEND_OWN_NODEINFO). Earlier frames were queued before the request reached the radio, so a
+        // node_info is live traffic and a completion belongs to an earlier dump.
+        if (!nodeDbRefreshDumpStarted) {
+            if (node == null || !isOwnNodeInfo(node)) return fromRadio.config_complete_id != null
+            nodeDbRefreshDumpStarted = true
+        }
+        if (node != null) {
+            refresh[NodeId(node.num)] = node
+            return true
+        }
+        if (fromRadio.config_complete_id != NONCE_STAGE2) {
+            return fromRadio.deviceuiConfig != null || fromRadio.config_complete_id != null
+        }
+        // The collector sees the completed dump at its position in the receive stream.
+        // The actor still processes mesh packets and routes ACKs while collecting the dump.
+        val followUp = nodeDbRefreshQueued
+        clearNodeDbRefresh()
+        sessionReceive?.nodeDbRefreshed(refresh)
+        if (followUp) startNodeDbRefresh()
+        return true
+    }
+
+    private fun isOwnNodeInfo(node: NodeInfo): Boolean = node.num == myNodeNum
+
+    private fun clearNodeDbRefresh() {
+        nodeDbRefreshDumpStarted = false
+        nodeDbRefreshWatchdog?.cancel()
+        nodeDbRefreshWatchdog = null
+        nodeDbRefresh = null
+        nodeDbRefreshQueued = false
+    }
+
     private fun routeNormalEnvelope(fromRadio: org.meshtastic.proto.FromRadio) {
         val packet = fromRadio.packet
         val nodeInfo = fromRadio.node_info
@@ -1527,12 +2111,16 @@ internal class MeshEngine(
             nodeInfo != null -> processInboundNodeInfo(nodeInfo)
 
             queueStatus != null -> {
-                // firmware emits QueueStatus with mesh_packet_id == 0 as a
-                // "queue is empty / no tracked packet" heartbeat-ish signal. Looking that up in
-                // [pendingSends] is harmless but meaningless, and incorrectly treating it as a
-                // successful send for a dropped packet would corrupt user-visible state. Guard.
+                events.tryEmit(MeshEvent.QueueStatusChanged(queueStatus))
+                // Heartbeat replies also use ID zero. They report available capacity, so
+                // they cannot prove that the outstanding paced write was admitted.
                 if (queueStatus.mesh_packet_id == 0) return
                 val packetId = MessageId(queueStatus.mesh_packet_id)
+                val paced = pacedSends[packetId]
+                if (paced != null) {
+                    if (paced.state.value == SendState.Sent) handlePacedQueueStatus(paced, queueStatus.res)
+                    return
+                }
                 // `res` is the firmware's enqueue result in the ERRNO namespace
                 // (MeshTypes.h), NOT Routing.Error: 0 = OK, 32 = queue full / unknown,
                 // 33 = no radio interface, 34 = radio disabled, and 35
@@ -1604,12 +2192,102 @@ internal class MeshEngine(
     }
 
     /**
+     * Fold a decoded mesh packet into the sender's node entry, creating it when unknown, and
+     * emit one [NodeChange.Added] or [NodeChange.Updated]. Mirrors firmware `NodeDB::updateFrom`,
+     * `updateUser` and `updatePosition`; own-node packets skip the link metrics.
+     */
+    private fun mergeLivePacketIntoNodeDb(packet: MeshPacket, decoded: Data) {
+        if (packet.from == 0) return
+        val nodeId = NodeId(packet.from)
+        val isOwn = packet.from == myNodeNum
+        val existing = meshState.nodes[nodeId]
+        val wb = (existing ?: NodeInfo.Builder().also { b -> b.num = packet.from }.build()).newBuilder()
+
+        wb.last_heard = packet.rx_time.takeIf { it != 0 } ?: clock.now().epochSeconds.toInt()
+        if (!isOwn) {
+            // An SNR is ours only when heard over our own radio; firmware replays carry no rx_rssi.
+            if (packet.transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && packet.rx_rssi != null) {
+                wb.snr = packet.rx_snr
+            }
+            wb.via_mqtt = packet.via_mqtt
+            if (packet.hop_start != 0 && packet.hop_start >= packet.hop_limit) {
+                wb.hops_away = packet.hop_start - packet.hop_limit
+            }
+        }
+
+        when (decoded.portnum) {
+            PortNum.NODEINFO_APP -> {
+                val user = runCatching { User.ADAPTER.decode(decoded.payload) }.getOrNull()
+                val knownKey = existing?.user?.public_key
+                val placeholder = user != null && user.long_name.isEmpty() && user.short_name.isEmpty() &&
+                    user.public_key.size == 0
+                val keyMismatch = user != null && knownKey != null && knownKey.size == 32 && user.public_key != knownKey
+                if (user != null && keyMismatch && !placeholder) {
+                    announceKeyMismatch(nodeId, user.public_key)
+                }
+                if (user != null && !placeholder && !keyMismatch) {
+                    val id = "!" + packet.from.toUInt().toString(16).padStart(8, '0')
+                    wb.user = user.newBuilder().also { ub -> ub.id = id }.build()
+                    if (!isOwn) wb.channel = packet.channel
+                }
+            }
+
+            PortNum.POSITION_APP -> {
+                val pos = runCatching { Position.ADAPTER.decode(decoded.payload) }.getOrNull()
+                if (pos != null) mergePosition(wb, existing?.position, pos)
+            }
+
+            else -> Unit
+        }
+
+        val updated = wb.build()
+        meshState = meshState.withNodes(meshState.nodes + (nodeId to updated))
+        if (isOwn) ownNode.value = updated
+        if (existing == null) {
+            emitNodeChangeOrLog(NodeChange.Added(updated))
+        } else {
+            val changed = diffNodeFields(existing, updated)
+            if (changed.isNotEmpty()) emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
+        }
+    }
+
+    // Bounded, insertion-ordered: the oldest (node, key) pair is forgotten first.
+    private val reportedKeyMismatches = LinkedHashSet<Pair<Int, ByteString>>()
+
+    private fun announceKeyMismatch(nodeId: NodeId, offered: ByteString) {
+        if (!reportedKeyMismatches.add(nodeId.raw to offered)) return
+        if (reportedKeyMismatches.size > MAX_REPORTED_KEY_MISMATCHES) {
+            reportedKeyMismatches.remove(reportedKeyMismatches.first())
+        }
+        events.tryEmit(MeshEvent.SecurityWarning.PublicKeyMismatch(nodeId, offered))
+    }
+
+    private fun mergePosition(wb: NodeInfo.Builder, previous: Position?, pos: Position) {
+        val noFix = (pos.latitude_i ?: 0) == 0 && (pos.longitude_i ?: 0) == 0
+        when {
+            // A request, or a position with nothing in it.
+            noFix && pos.time == 0 && pos.timestamp == 0 -> Unit
+
+            // Time-only update (clock sync from a client): keeps the stored fix.
+            noFix && pos.timestamp == 0 && pos.location_source == Position.LocSource.LOC_UNSET ->
+                wb.position =
+                    (previous ?: Position.Builder().build()).newBuilder().also { pb -> pb.time = pos.time }.build()
+
+            else -> wb.position = if (pos.time == 0 && previous != null) {
+                pos.newBuilder().also { pb -> pb.time = previous.time }.build()
+            } else {
+                pos
+            }
+        }
+    }
+
+    /**
      * The Ready-stage pipeline for a single inbound [MeshPacket]: presence, dedup, public
      * `packets` emission, session-passkey latching, RPC/ACK correlation, telemetry merge, and
      * external-config-change detection. Called for live packets in [routeNormalEnvelope] and
      * for the mid-handshake backlog flushed in [transitionToReady].
      */
-    private fun processInboundMeshPacket(packet: MeshPacket) {
+    private fun processInboundMeshPacket(packet: MeshPacket, receivedAt: Instant = clock.now()) {
         logger.verbose(TAG) {
             "Rx packet id=${packet.id} from=0x${packet.from.toString(16)} " +
                 "port=${packet.decoded?.portnum ?: "encrypted"}"
@@ -1638,6 +2316,7 @@ internal class MeshEngine(
             )
             return
         }
+        mergeLivePacketIntoNodeDb(packet, decoded)
         emitPacketOrLog(packet)
         // Decode the admin payload once; both the passkey latch and external-change detection
         // need it, and inbound ADMIN_APP traffic is hot during config syncs.
@@ -1646,18 +2325,30 @@ internal class MeshEngine(
         } else {
             null
         }
-        if (adminMsg != null && (decoded.request_id != 0 || adminMsg.isAdminResponse())) {
-            // every admin RESPONSE refreshes the responder's session passkey — latch them all
-            // (keyed per node) so remote admin sessions stay alive without re-seeding.
-            // Requests are excluded: when a remote node administers US, its request carries
-            // the passkey WE issued to it — latching that under the remote's key would poison
-            // our next RPC to that node with a passkey it never issued.
-            latchSessionPasskey(packet.from.takeIf { n -> n != 0 } ?: myNodeNum, adminMsg)
+        val unauthenticatedAdminReply = decoded.portnum == PortNum.ADMIN_APP && !isAuthenticatedAdminReply(packet)
+        if (unauthenticatedAdminReply && decoded.request_id != 0) {
+            logger.warn(TAG) { "Ignored unauthenticated admin reply from ${packet.from.toUInt()}" }
+        }
+        val correlatedAdminResponse = adminMsg != null && !unauthenticatedAdminReply &&
+            recognizesAdminReply(packet, decoded.request_id, adminMsg)
+        if (correlatedAdminResponse) {
+            // Install the key before completing the RPC, so its caller can immediately use the session.
+            latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg, receivedAt)
+            adminReplyTargets.remove(decoded.request_id)
+        }
+        val connectionStatus = adminMsg?.get_device_connection_status_response
+        if (connectionStatus != null && (packet.from == 0 || packet.from == myNodeNum)) {
+            trackLocalMqttState(connectionStatus)
         }
         // RPC dispatch: complete any pending getter / traceRoute / neighborInfo
         // request matching this packet's request_id. Must run before processRoutingAck
         // so a route_reply doesn't get mistakenly classified as a generic Acked send.
-        dispatcher.tryComplete(packet)
+        val response = if (correlatedAdminResponse && packet.from == 0) {
+            packet.newBuilder().also { it.from = myNodeNum }.build()
+        } else {
+            packet
+        }
+        if (!unauthenticatedAdminReply) dispatcher.tryComplete(response)
         processRoutingAck(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
@@ -1666,6 +2357,7 @@ internal class MeshEngine(
         // External config change detection: unsolicited admin messages from firmware
         // indicating another client modified channels/config on this device.
         if (adminMsg != null) maybeProcessExternalAdminChange(packet, adminMsg)
+        sessionReceive?.packet(packet, correlatedAdminResponse)
     }
 
     /**
@@ -1685,8 +2377,7 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            // Legacy text log. Drop explicitly — the firmware has a richer log channel via
-            // ClientNotification; we don't persist these.
+            deviceLogs.tryEmit(fromRadio.log_record!!)
             true
         }
 
@@ -1702,6 +2393,39 @@ internal class MeshEngine(
 
                 cn.low_entropy_key != null ->
                     events.tryEmit(MeshEvent.SecurityWarning.LowEntropyKey)
+
+                cn.key_verification_number_request != null -> cn.key_verification_number_request!!.let { r ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.EnterSecurityNumber(r.nonce, r.remote_longname),
+                        ),
+                    )
+                }
+
+                cn.key_verification_number_inform != null -> cn.key_verification_number_inform!!.let { i ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.ShowSecurityNumber(
+                                i.nonce,
+                                i.remote_longname,
+                                i.security_number,
+                            ),
+                        ),
+                    )
+                }
+
+                cn.key_verification_final != null -> cn.key_verification_final!!.let { f ->
+                    events.tryEmit(
+                        MeshEvent.KeyVerification(
+                            KeyVerificationPrompt.ConfirmVerification(
+                                f.nonce,
+                                f.remote_longname,
+                                f.isSender,
+                                f.verification_characters,
+                            ),
+                        ),
+                    )
+                }
             }
             true
         }
@@ -1727,16 +2451,25 @@ internal class MeshEngine(
         }
 
         fromRadio.fileInfo != null -> {
-            events.tryEmit(MeshEvent.FileInfoReceived(fromRadio.fileInfo!!))
+            val file = fromRadio.fileInfo!!
+            if (stage != HandshakeStage.Ready) pendingFiles[file.file_name] = file
+            events.tryEmit(MeshEvent.FileInfoReceived(file))
             true
         }
 
-        // Lockdown state report from hardened (MESHTASTIC_LOCKDOWN) firmware builds. Sent right
-        // after config_complete_id (so it can arrive mid-handshake) and after every
-        // AdminApi.lockdown command. Surfaced as a typed event so hosts can drive provisioning /
-        // unlock UX without inspecting raw FromRadio variants.
-        fromRadio.lockdown_status != null -> {
-            events.tryEmit(MeshEvent.LockdownStatusChanged(fromRadio.lockdown_status!!))
+        fromRadio.region_presets != null -> {
+            if (stage != HandshakeStage.Ready) pendingRegionPresets = fromRadio.region_presets
+            true
+        }
+
+        // Display mirror chunks: reassembled into whole frames / palettes, never rendered here.
+        fromRadio.display_frame != null -> {
+            handleDisplayFrameChunk(fromRadio.display_frame!!)
+            true
+        }
+
+        fromRadio.display_palette != null -> {
+            displayPaletteReassembler.accept(fromRadio.display_palette!!)?.let { displayPalette.value = it }
             true
         }
 
@@ -1748,6 +2481,43 @@ internal class MeshEngine(
         }
 
         else -> false
+    }
+
+    /**
+     * Emit [MeshEvent.MqttConnected] / [MeshEvent.MqttDisconnected] when a local
+     * `DeviceConnectionStatus` shows the broker link changed since the last one this connection
+     * saw. A first observation of disconnected only records the state.
+     */
+    private fun trackLocalMqttState(status: DeviceConnectionStatus) {
+        // Firmware reports MQTT only inside a WiFi or Ethernet status (AdminModule
+        // handleGetDeviceConnectionStatus); a device with neither reports nothing about it.
+        val networks = listOfNotNull(status.wifi?.status, status.ethernet?.status)
+        if (networks.isEmpty()) return
+        val connected = networks.any { it.is_mqtt_connected }
+        val previous = lastMqttConnected
+        lastMqttConnected = connected
+        if (connected && previous != true) {
+            events.tryEmit(MeshEvent.MqttConnected)
+        } else if (!connected && previous == true) {
+            events.tryEmit(MeshEvent.MqttDisconnected())
+        }
+    }
+
+    private fun handleDisplayFrameChunk(chunk: org.meshtastic.proto.DisplayFrame) {
+        when (val outcome = displayFrameReassembler.accept(chunk)) {
+            DisplayFrameReassembler.Outcome.Incomplete -> Unit
+
+            is DisplayFrameReassembler.Outcome.Complete -> displayFrames.tryEmit(outcome.frame)
+
+            is DisplayFrameReassembler.Outcome.Dropped ->
+                logger.warn(TAG) { "Dropped display frame chunk: ${outcome.reason}" }
+        }
+    }
+
+    private fun resetDisplayMirror() {
+        displayFrameReassembler.reset()
+        displayPaletteReassembler.reset()
+        displayPalette.value = null
     }
 
     private fun warnUnhandledVariant(variant: String, stage: HandshakeStage) {
@@ -1777,16 +2547,34 @@ internal class MeshEngine(
         }
         val messageId = MessageId(decoded.request_id)
 
+        if (routing.error_reason == Routing.Error.ADMIN_BAD_SESSION_KEY) {
+            // Drop the key only if the rejected request used the current one; a newer key
+            // installed since must survive a late rejection of an older one.
+            val node = packet.from.takeIf { it != 0 } ?: myNodeNum
+            val usedGeneration = requestPasskeyGenerations.remove(decoded.request_id)
+            if (usedGeneration != null && sessionPasskeys[node]?.generation == usedGeneration) {
+                sessionPasskeys.remove(node)
+            }
+            publishAdminSessions()
+        }
+
         // RPC failure: a Routing.Error variant matching a pending getter / traceRoute
         // is the failure surface for that call. Try the dispatcher BEFORE checking pendingSends
         // requests don't allocate a MessageHandle, so they wouldn't be in pendingSends.
         val errorReason = routing.error_reason
         if (errorReason != null && errorReason != Routing.Error.NONE &&
-            dispatcher.tryFailFromRouting(messageId.raw, errorReason)
+            dispatcher.ownsRoutingFailure(messageId.raw, packet.from, myNodeNum) &&
+            dispatcher.tryFailFromRouting(messageId.raw, errorReason, packet.from, myNodeNum)
         ) {
             // Defensive cleanup if a stale pendingSends entry shared the wire id.
             pendingSends.remove(messageId)
             ackTimeoutJobs.remove(messageId)?.cancel()
+            return
+        }
+
+        val paced = pacedSends[messageId]
+        if (paced != null) {
+            if (paced.state.value == SendState.Sent) handlePacedRouting(paced, packet, routing)
             return
         }
 
@@ -1828,21 +2616,7 @@ internal class MeshEngine(
                 // map to specific sealed variants so exhaustive-when consumers can branch on
                 // the common failure modes; everything else falls through to SendFailure.Other
                 // (which still carries the raw enum so diagnostics aren't lost).
-                val failure: SendFailure = when (errorReason) {
-                    Routing.Error.NO_ROUTE,
-                    Routing.Error.GOT_NAK,
-                    -> SendFailure.NoRoute
-
-                    Routing.Error.MAX_RETRANSMIT -> SendFailure.MaxRetransmit
-
-                    Routing.Error.TIMEOUT -> SendFailure.Timeout
-
-                    Routing.Error.DUTY_CYCLE_LIMIT -> SendFailure.DutyCycleLimit
-
-                    Routing.Error.RATE_LIMIT_EXCEEDED -> SendFailure.RateLimited
-
-                    else -> SendFailure.Other(errorReason)
-                }
+                val failure = routingFailure(errorReason)
                 flow.value = SendState.Failed(failure)
                 pendingSends.remove(messageId)
                 ackTimeoutJobs.remove(messageId)?.cancel()
@@ -2074,6 +2848,9 @@ internal class MeshEngine(
     }
 
     private fun scheduleReconnect(cause: MeshtasticException) {
+        clearNodeDbRefresh()
+        sessionReceive?.end()
+        frameReaderJob?.cancel()
         val cap = autoReconnectConfig.maxAttempts
         if (cap != null && reconnectAttempt >= cap) {
             logger.warn(TAG, cause) {
@@ -2089,15 +2866,14 @@ internal class MeshEngine(
         // Reset session-level state so the next handshake starts clean. We deliberately keep
         // engineScope, storage, supervisorJobRef and channels live across the cycle.
         handshakeStage = HandshakeStage.Idle
+        lockdownLink.value = null
+        readySendGeneration.value = null
+        clearPacedSends()
+        clearSessionPasskeys()
+        dispatcher.cancelAll(AdminResult.NodeUnreachable)
         configBundleState.value = null
-        pendingNodes.clear()
-        pendingConfigs = emptyList()
-        pendingModuleConfigs = emptyList()
-        pendingChannels.clear()
-        pendingMyInfo = null
-        pendingMetadata = null
-        settleBuffer.clear()
-        handshakePacketBuffer.clear()
+        lastMqttConnected = null
+        clearPendingHandshake()
         for ((_, job) in ackTimeoutJobs) job.cancel()
         ackTimeoutJobs.clear()
         stage2WatchdogJob?.cancel()
@@ -2105,6 +2881,7 @@ internal class MeshEngine(
         stage2ProgressCounter = 0L
         recentInboundPacketKeys.clear()
         recentInboundPacketKeySet.clear()
+        resetDisplayMirror()
         livenessWatchdogJob?.cancel()
         livenessWatchdogJob = null
 
@@ -2131,11 +2908,15 @@ internal class MeshEngine(
     private fun handleReconnectTick(msg: EngineMessage.ReconnectTick) {
         if (!autoReconnectInProgress) return
         val scope = engineScope ?: return
+        val previousReader = frameReaderJob
         scope.launch {
             val outcome = try {
-                autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
-                runCatching { transport.disconnect() }
-                transport.connect()
+                lockdownWriteMutex.withLock {
+                    autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
+                    runCatching { transport.disconnect() }
+                    previousReader?.join()
+                    transport.connect()
+                }
                 EngineMessage.ReconnectAttemptResult(success = true, cause = null)
             } catch (e: CancellationException) {
                 throw e
@@ -2181,6 +2962,175 @@ internal class MeshEngine(
         val finalMs = (capped * multiplier).coerceAtLeast(0.0).toLong()
         return finalMs.milliseconds
     }
+
+    private fun routingFailure(errorReason: Routing.Error): SendFailure = when (errorReason) {
+        Routing.Error.NO_ROUTE,
+        Routing.Error.GOT_NAK,
+        -> SendFailure.NoRoute
+
+        Routing.Error.MAX_RETRANSMIT -> SendFailure.MaxRetransmit
+
+        Routing.Error.TIMEOUT -> SendFailure.Timeout
+
+        Routing.Error.DUTY_CYCLE_LIMIT -> SendFailure.DutyCycleLimit
+
+        Routing.Error.RATE_LIMIT_EXCEEDED -> SendFailure.RateLimited
+
+        else -> SendFailure.Other(errorReason)
+    }
+
+    private fun handlePacedSend(send: EngineMessage.PacedSend) {
+        val failure = when {
+            handshakeStage != HandshakeStage.Ready || send.generation != receiveGeneration -> SendFailure.Disconnected
+            pendingSends.containsKey(send.id) || dispatcher.contains(send.id.raw) -> SendFailure.IdCollision
+            else -> null
+        }
+        if (failure != null) {
+            rejectPaced(send, failure)
+            return
+        }
+
+        pendingSends[send.id] = send.state
+        pacedSends[send.id] = send
+        pacedQueue.addLast(send)
+        send.admission.complete(true)
+        pumpPacedQueue()
+    }
+
+    private fun rejectPaced(send: EngineMessage.PacedSend, failure: SendFailure) {
+        pacedReservations.decrementAndGet()
+        completeNotDispatched(send, failure)
+    }
+
+    private fun completeNotDispatched(send: EngineMessage.PacedSend, failure: SendFailure) {
+        send.state.value = SendState.Failed(failure)
+        send.admission.complete(false)
+        send.dispatch.complete(false)
+        send.receipt.complete(QueueReceipt.NotDispatched)
+    }
+
+    private fun pumpPacedQueue() {
+        if (queueWrite != null || handshakeStage != HandshakeStage.Ready) return
+        while (pacedQueue.isNotEmpty()) {
+            val send = pacedQueue.removeFirst()
+            val packet = preparePacketForSend(send.packet, send.id.raw)
+            if (!trySendToRadio(ToRadio.Builder().also { it.packet = packet }.build(), pacedSend = send)) {
+                finishPaced(send, SendState.Failed(SendFailure.Disconnected))
+                send.dispatch.complete(false)
+                send.receipt.complete(QueueReceipt.NotDispatched)
+                continue
+            }
+
+            rememberAdminRequest(packet)
+            send.state.value = SendState.Sent
+            queueWrite = send
+            send.dispatch.complete(true)
+            return
+        }
+    }
+
+    private fun handlePacedWriteCompleted(send: EngineMessage.PacedSend) {
+        if (pacedSends[send.id] !== send) return
+        if (queueWrite === send) {
+            queueWriteTimeout = engineScope?.launch {
+                delay(PACED_QUEUE_TIMEOUT)
+                inbox.trySend(EngineMessage.PacedQueueTimeout(send))
+            }
+        }
+        if (send.expectsRouting()) startSendAckTimeout(send.id, send.state)
+    }
+
+    private fun EngineMessage.PacedSend.expectsRouting(): Boolean =
+        packet.want_ack || packet.decoded?.want_response == true
+
+    private fun handlePacedQueueTimeout(send: EngineMessage.PacedSend) {
+        if (queueWrite !== send) return
+        releaseQueueWrite(send)
+        if (!send.expectsRouting()) finishPaced(send, SendState.Failed(SendFailure.Timeout))
+        send.receipt.complete(QueueReceipt.Unconfirmed)
+        pumpPacedQueue()
+    }
+
+    private fun handlePacedQueueStatus(send: EngineMessage.PacedSend, result: Int) {
+        val receipt = when (result) {
+            0 -> QueueReceipt.Accepted
+            ERRNO_SHOULD_RELEASE -> QueueReceipt.LocalDelivery
+            else -> QueueReceipt.Rejected
+        }
+        val terminal = when (receipt) {
+            QueueReceipt.Accepted -> SendState.Acked.takeUnless { send.expectsRouting() }
+            QueueReceipt.LocalDelivery -> SendState.Acked
+            QueueReceipt.Rejected -> SendState.Failed(SendFailure.QueueRejected(result))
+            else -> null
+        }
+        if (terminal != null) finishPaced(send, terminal)
+        send.receipt.complete(receipt)
+        releaseQueueWrite(send)
+        pumpPacedQueue()
+    }
+
+    private fun handlePacedRouting(send: EngineMessage.PacedSend, packet: MeshPacket, routing: Routing) {
+        if (routing.route_request != null) return
+        val error = routing.error_reason
+        val success = error == Routing.Error.NONE || routing.route_reply != null
+        val destination = send.packet.to
+        val broadcast = destination == BROADCAST_ADDR
+        val isLocal = packet.from == myNodeNum || packet.from == 0
+        // A positive unicast response must come from the destination. Errors may also originate
+        // in the local radio, for example when it exhausts its retransmissions.
+        if (success && !broadcast && packet.from != destination && !(destination == myNodeNum && isLocal)) return
+        if (!success && (error == null || (!isLocal && packet.from != destination))) return
+
+        val terminal = when {
+            !success -> SendState.Failed(routingFailure(checkNotNull(error)))
+            broadcast -> SendState.Delivered
+            else -> SendState.Acked
+        }
+        finishPaced(send, terminal)
+        send.receipt.complete(if (success) QueueReceipt.Accepted else QueueReceipt.Unconfirmed)
+        releaseQueueWrite(send)
+        pumpPacedQueue()
+    }
+
+    private fun releaseQueueWrite(send: EngineMessage.PacedSend) {
+        if (queueWrite !== send) return
+        queueWrite = null
+        queueWriteTimeout?.cancel()
+        queueWriteTimeout = null
+    }
+
+    private fun finishPaced(send: EngineMessage.PacedSend, state: SendState) {
+        pacedSends.remove(send.id)
+        pacedReservations.decrementAndGet()
+        pendingSends.remove(send.id)
+        ackTimeoutJobs.remove(send.id)?.cancel()
+        send.state.value = state
+    }
+
+    private fun clearPacedSends() {
+        queueWriteTimeout?.cancel()
+        queueWriteTimeout = null
+        queueWrite = null
+        pacedQueue.clear()
+        pacedSends.values.forEach {
+            if (it.state.value == SendState.Queued) {
+                rejectPaced(it, SendFailure.Disconnected)
+            } else {
+                pacedReservations.decrementAndGet()
+                it.state.value = SendState.Failed(SendFailure.Disconnected)
+                it.receipt.complete(QueueReceipt.Unconfirmed)
+            }
+            pendingSends.remove(it.id)
+        }
+        pacedSends.clear()
+    }
+
+    private fun preparePacketForSend(packet: MeshPacket, wireId: Int): MeshPacket = prepareOutboundAdminPacket(
+        packet.newBuilder().also {
+            it.from = if (packet.from == 0 && myNodeNum != 0) myNodeNum else packet.from
+            it.id = wireId
+        }.build(),
+    )
 
     private fun handleSend(msg: EngineMessage.Send) {
         // reject duplicate MessageId for an in-flight (non-terminal) send. Without this
@@ -2230,12 +3180,8 @@ internal class MeshEngine(
         }
         // Remote ADMIN_APP packets pick up the target's session passkey + PKC routing here
         // (no-op for everything else).
-        val packet = prepareOutboundAdminPacket(
-            msg.packet.newBuilder().also { wb ->
-                wb.from = if (msg.packet.from == 0 && myNodeNum != 0) myNodeNum else msg.packet.from
-                wb.id = wireId
-            }.build(),
-        )
+        val packet = preparePacketForSend(msg.packet, wireId)
+        rememberAdminRequest(packet)
         // Re-key so both QueueStatus and Routing ACK can look up via MessageId(wireId).
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
@@ -2245,7 +3191,7 @@ internal class MeshEngine(
                 wb.packet = packet
             }.build(),
         )
-        outbound.trySend(Frame(encoded.toByteString()))
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
@@ -2266,37 +3212,52 @@ internal class MeshEngine(
         //  • unicast want_ack — waits for recipient's Routing ACK
         //  • broadcast want_ack — waits for firmware's implicit ACK (relay overheard)
         //  • want_response requests (e.g. AdminMessage.get_owner_request)
-        if (packet.want_ack || wantsResponse) {
-            val key = MessageId(wireId)
-            val scope = engineScope ?: return
-            ackTimeoutJobs.remove(key)?.cancel()
-            ackTimeoutJobs[key] = scope.launch {
-                delay(sendTimeout)
-                inbox.trySend(EngineMessage.SendAckTimeout(key))
-            }
+        if (packet.want_ack || wantsResponse) startSendAckTimeout(wireKey, msg.stateFlow)
+    }
+
+    private fun startSendAckTimeout(id: MessageId, state: MutableStateFlow<SendState>) {
+        val scope = engineScope ?: return
+        ackTimeoutJobs.remove(id)?.cancel()
+        ackTimeoutJobs[id] = scope.launch {
+            delay(sendTimeout)
+            inbox.trySend(EngineMessage.SendAckTimeout(id, state))
         }
     }
 
     private fun handleCancelHandle(msg: EngineMessage.CancelHandle) {
         val stateFlow = pendingSends[msg.id] ?: return
-        if (stateFlow.value == SendState.Queued) {
+        if (msg.expected != null && msg.expected !== stateFlow) return
+        if (stateFlow.value != SendState.Queued) return
+        val paced = pacedSends[msg.id]
+        if (paced != null) {
+            pacedQueue.remove(paced)
+            finishPaced(paced, SendState.Failed(SendFailure.Cancelled))
+            paced.dispatch.complete(false)
+            paced.receipt.complete(QueueReceipt.NotDispatched)
+        } else {
             stateFlow.value = SendState.Failed(SendFailure.Cancelled)
             pendingSends.remove(msg.id)
+            ackTimeoutJobs.remove(msg.id)?.cancel()
         }
-        // regardless of state, drop any pending ACK timer so we don't post a stale
-        // SendAckTimeout for a handle the user has explicitly cancelled.
-        ackTimeoutJobs.remove(msg.id)?.cancel()
     }
 
     private fun handleHeartbeatTick() {
+        publishAdminSessions()
         if (handshakeStage != HandshakeStage.Ready) return
         if (!bleHeartbeatEnabled && transport.identity.raw.startsWith("ble:")) return
-        // keep-alive heartbeats use nonce=0 (see [keepaliveHeartbeat] for rationale).
-        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = keepaliveHeartbeat }.build())
-        logger.verbose(TAG) { "Heartbeat sent nonce=0" }
+        val nonce = sendKeepaliveHeartbeat()
+        logger.verbose(TAG) { "Heartbeat sent nonce=$nonce" }
         // piggy-back heartbeat persistence on the 30 s heartbeat tick so we write at most
         // a bounded number of rows per session tick, even on busy meshes.
         flushDirtyHeartbeats()
+    }
+
+    private fun sendKeepaliveHeartbeat(): Int {
+        val nonce = heartbeatNonce
+        heartbeatNonce = if (nonce == Int.MAX_VALUE) FIRST_HEARTBEAT_NONCE else nonce + 1
+        val heartbeat = Heartbeat.Builder().also { hb -> hb.nonce = nonce }.build()
+        sendToRadio(ToRadio.Builder().also { wb -> wb.heartbeat = heartbeat }.build())
+        return nonce
     }
 
     private fun handlePresenceCheckTick() {
@@ -2331,7 +3292,7 @@ internal class MeshEngine(
     private fun handleHandshakeTimeout(msg: EngineMessage.HandshakeTimeout) {
         if (handshakeStage == HandshakeStage.Ready) return // already succeeded
         // Stale timer from a stage we've already advanced past — ignore.
-        if (handshakeStage != msg.stage) return
+        if (msg.attempt != handshakeAttempt || handshakeStage != msg.stage) return
         logger.error(TAG) { "Handshake timeout at stage ${msg.stage.toDisplayName()}" }
 
         // emit a structured ProtocolWarning so consumers can distinguish
@@ -2401,12 +3362,21 @@ internal class MeshEngine(
     internal fun nodeMapSnapshot(): Map<NodeId, NodeInfo> = meshState.nodes
 
     internal fun sendToRadio(msg: ToRadio) {
-        try {
-            val encoded = WireCodec.encodeToRadio(msg)
-            outbound.trySend(Frame(encoded.toByteString()))
-        } catch (e: Exception) {
-            logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
-        }
+        trySendToRadio(msg)
+    }
+
+    internal fun trySendToRadio(msg: ToRadio): Boolean = trySendToRadio(msg, link = null)
+
+    private fun trySendToRadio(
+        msg: ToRadio,
+        link: LockdownLink? = null,
+        pacedSend: EngineMessage.PacedSend? = null,
+    ): Boolean = try {
+        val encoded = WireCodec.encodeToRadio(msg)
+        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
+    } catch (e: Exception) {
+        logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
+        false
     }
 
     /**
@@ -2416,6 +3386,61 @@ internal class MeshEngine(
      */
     internal fun sendAdmin(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
         inbox.trySend(EngineMessage.AdminFireAndForget(adminMsg, wantResponse, to))
+    }
+
+    fun enqueueLockdown(auth: LockdownAuth, target: Int?): AdminResult<Unit> {
+        val link = lockdownLink.value
+        if (target != null && target != link?.nodeNum) return AdminResult.Unauthorized
+        if (link == null) return AdminResult.NodeUnreachable
+        return if (inbox.trySend(EngineMessage.Lockdown(auth, link.generation, link.nodeNum)).isSuccess) {
+            AdminResult.Success(Unit)
+        } else {
+            AdminResult.NodeUnreachable
+        }
+    }
+
+    private fun handleLockdownCommand(msg: EngineMessage.Lockdown) {
+        val link = lockdownLink.value ?: return
+        if (msg.generation != link.generation || msg.nodeNum != link.nodeNum) return
+        val local = link.nodeNum
+        // Firmware consumes this command inline only when it targets the attached radio.
+        val admin = AdminMessage.Builder().also { it.lockdown_auth = msg.auth }.build()
+        val packet = MeshPacket.Builder().also {
+            it.to = local
+            it.from = local
+            it.id = nextMessageId().raw
+            it.decoded = Data.Builder().also { data ->
+                data.portnum = PortNum.ADMIN_APP
+                data.payload = AdminMessage.ADAPTER.encode(admin).toByteString()
+            }.build()
+        }.build()
+        trySendToRadio(ToRadio.Builder().also { it.packet = packet }.build(), link)
+    }
+
+    private suspend fun writeLockdownFrame(frame: Frame, link: LockdownLink) {
+        // Serialize credential writes with physical reconnection, so a queued command
+        // cannot reach a radio that has replaced its original link.
+        lockdownWriteMutex.withLock {
+            if (lockdownLink.value != link) return
+            logProtocolTx(frame)
+            val sent = withTimeoutOrNull(sendTimeout) { transport.send(frame) }
+            checkNotNull(sent) { "Lockdown write timed out" }
+        }
+    }
+
+    // my_info is the first Stage 1 frame. Firmware flushes its queued packets once Stage 1 ends and
+    // re-dates them when the clock turns valid (MeshService::reconcilePendingRxTimes), so the
+    // clock has to be set here. myNodeNum is still 0; firmware fills `from` and the packet id.
+    private fun sendHandshakeTimeSync(nodeNum: Int) {
+        val admin = AdminMessage.Builder().also { wb -> wb.set_time_only = clock.now().epochSeconds.toInt() }.build()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = nodeNum
+            wb.decoded = Data.Builder().also { d ->
+                d.portnum = PortNum.ADMIN_APP
+                d.payload = AdminMessage.ADAPTER.encode(admin).toByteString()
+            }.build()
+        }.build()
+        sendToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
     private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
@@ -2439,12 +3464,9 @@ internal class MeshEngine(
     }
 
     // ---- C-shared-flow emit helpers ----
-    // The hot SharedFlows (`packets`, `nodes`, `events`) all use BufferOverflow.DROP_OLDEST,
-    // which means `tryEmit` is always supposed to return `true`. We still wrap each call site
-    // through these helpers so:
-    //   • a future BufferOverflow change (or a misconfigured custom replay buffer) doesn't
-    //     silently drop data without surfacing a `MeshEvent.PacketsDropped` signal, and
-    //   • all packet-drop accounting flows through one place that subscribers can observe.
+    // `packets` and `nodes` are BufferOverflow.SUSPEND flows, so `tryEmit` returns false when a
+    // subscriber leaves the buffer full. The engine never suspends on its own output: the
+    // rejected item is dropped and reported as `MeshEvent.PacketsDropped`.
 
     private fun emitPacketOrLog(packet: MeshPacket) {
         if (!packets.tryEmit(packet)) {
@@ -2456,7 +3478,7 @@ internal class MeshEngine(
     private fun emitNodeChangeOrLog(change: NodeChange) {
         if (!nodes.tryEmit(change)) {
             logger.warn(TAG) { "nodes flow rejected emit ($change); reporting drop" }
-            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Events, count = 1))
+            events.tryEmit(MeshEvent.PacketsDropped(DroppedFlow.Nodes, count = 1))
         }
     }
 
@@ -2606,7 +3628,15 @@ internal class MeshEngine(
     // (only if it's still in a non-terminal state — a late ACK that won the race takes
     // precedence) and prune our bookkeeping.
     private fun handleSendAckTimeout(msg: EngineMessage.SendAckTimeout) {
-        val flow = pendingSends[msg.id] ?: return
+        val flow = pendingSends[msg.id]?.takeIf { it === msg.state } ?: return
+        val paced = pacedSends[msg.id]
+        if (paced != null) {
+            finishPaced(paced, SendState.Failed(SendFailure.AckTimeout))
+            paced.receipt.complete(QueueReceipt.Unconfirmed)
+            releaseQueueWrite(paced)
+            pumpPacedQueue()
+            return
+        }
         ackTimeoutJobs.remove(msg.id)
         when (flow.value) {
             SendState.Queued, SendState.Sent -> {
@@ -2621,12 +3651,34 @@ internal class MeshEngine(
         }
     }
 
+    private inline fun logProtocol(message: () -> String) {
+        if (protocolLogLevel != LogLevel.NONE && logger !== LogSink.Silent) {
+            logger.log(protocolLogLevel, PROTOCOL_TAG, message(), null)
+        }
+    }
+
+    private fun logProtocolTx(frame: Frame) = logProtocol {
+        val bytes = frame.bytes.toByteArray()
+        val toRadio = runCatching {
+            ToRadio.ADAPTER.decode(bytes.copyOfRange(WireFraming.HEADER_SIZE, bytes.size))
+        }.getOrNull()
+        "tx " + (toRadio?.let(payloadRedactor::describe) ?: "undecodable frame bytes=${bytes.size}")
+    }
+
     private companion object {
         private const val TAG = "MeshEngine"
+        private const val REASON_IDENTITY_MISMATCH = "identity_mismatch"
+        private const val REASON_NODE_RENUMBERED = "node_renumbered"
+        private const val ADMIN_REPLY_CAP = 128
+        private const val REQUEST_GENERATION_CAP = 64
+        private const val MAX_PACED_SENDS = 128
+        private val PACED_QUEUE_TIMEOUT = 5.seconds
+        private const val PROTOCOL_TAG = "Protocol"
 
         // Handshake nonces (protocol.md §6).
         const val NONCE_STAGE1 = 69420
         const val NONCE_STAGE2 = 69421
+        const val FIRST_HEARTBEAT_NONCE = 2
 
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
@@ -2664,11 +3716,21 @@ internal class MeshEngine(
         // clients (Android `Stage2ConnectState` uses ~60s) and fail faster on stalled devices.
         const val STAGE2_HARD_CAP_MS = 60_000L
 
+        // records a slow `deviceLogs` collector can fall behind by before the oldest are dropped.
+        const val DEVICE_LOG_BUFFER = 64
+
+        // (node, offered key) pairs remembered so a repeated mismatch is reported once.
+        const val MAX_REPORTED_KEY_MISMATCHES = 256
+
         // maximum frames buffered during the inter-stage settle window.
         const val SETTLE_BUFFER_CAP = 64
 
         // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
         const val HANDSHAKE_PACKET_BUFFER_CAP = 64
+
+        // How long one transport write may take before the link counts as failed. Separate from
+        // sendTimeout, which bounds the wait for a routing ACK.
+        val TRANSPORT_WRITE_TIMEOUT = 30.seconds
 
         // name of the legacy secondary channel used for remote admin when PKC keys are
         // unavailable. Matched case-insensitively against ChannelSettings.name.
@@ -2684,10 +3746,11 @@ internal class MeshEngine(
         const val ERRNO_BASE: Int = 32
         const val ERRNO_SHOULD_RELEASE: Int = 35
 
-        // Firmware regenerates session passkeys every ~150s and they remain valid for ~300s.
-        // A 4-minute TTL ensures we don't use a stale passkey on reconnect while still
-        // avoiding unnecessary re-seeding within a single connected session.
-        val SESSION_PASSKEY_TTL: Duration = 4.minutes
+        // AdminModule.cpp: checkPassKey accepts a key for 300 s from generation; setPassKey
+        // generates a new one on the first response after the key is 150 s old. A key seen in a
+        // response is thus expected to work for 150 s and never valid after 300 s.
+        val SESSION_PASSKEY_TTL: Duration = 300.seconds
+        val SESSION_PASSKEY_ACTIVE_FOR: Duration = 150.seconds
 
         // minimum interval between consecutive encrypted-packet skip warnings.
         const val ENCRYPTED_SKIP_WARNING_INTERVAL_MS: Long = 60_000L
@@ -2698,6 +3761,9 @@ internal class MeshEngine(
 
     private data class InboundPacketKey(val from: Int, val to: Int, val channel: Int, val id: Int)
 
-    /** In-memory per-node session passkey with absolute expiry (epoch ms). */
-    private class SessionPasskeyEntry(val bytes: ByteArray, val expiresAtMs: Long)
+    /** In-memory per-node session passkey and when it was last observed. */
+    private class SessionPasskeyEntry(val bytes: ByteArray, val refreshedAt: Instant, val generation: Int)
+
+    /** A mid-handshake packet with the instant it arrived. */
+    private class BufferedPacket(val packet: MeshPacket, val receivedAt: Instant)
 }

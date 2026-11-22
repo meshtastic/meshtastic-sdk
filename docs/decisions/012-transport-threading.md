@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Accepted |
+| **Status** | Accepted; superseded in part by [ADR-016](016-usb-serial-for-android-backend.md) (Android serial backends) |
 | **Date** | 2026-04-19 |
 | **Deciders** | Maintainers |
 | **Supersedes** | — |
@@ -21,6 +21,10 @@ fundamentally different threading models:
 - **Serial** — `jSerialComm` on both JVM and Android (blocking reads on
   a dedicated thread; Android opens via `SerialPort.fromAndroidPort` after
   the host app handles the `UsbManager` permission Intent).
+
+> **Superseded in part by [ADR-016](016-usb-serial-for-android-backend.md):** Android serial
+> also runs on usb-serial-for-android (`AndroidUsbSerialPorts`). `transport-websocket` (Ktor
+> client WebSockets) is fully suspending, like TCP.
 
 The audit asked: what's the contract between a transport's threading
 model and the engine's actor invariant?
@@ -110,6 +114,10 @@ declaration.
   is additive — existing call sites that pass nothing retain the old
   behaviour. Other transports (TCP, serial) already accepted a
   `CoroutineScope`/parent; this aligns BLE with the same pattern.
+
+  > **Note:** of the public constructors and factories, only `BleTransport` takes a coroutine
+  > context. `TcpTransport(host, port)`, `WebSocketTransport(url, httpClient)` and the serial
+  > `open(...)` factories take none.
 
 ## References
 

@@ -1,5 +1,5 @@
 // Klib ABI Dump
-// Targets: [iosArm64, iosSimulatorArm64, iosX64]
+// Targets: [iosArm64, iosSimulatorArm64, iosX64, js, wasmJs]
 // Rendering settings:
 // - Signature version: 2
 // - Show manifest properties: true
@@ -21,6 +21,10 @@ final enum class org.meshtastic.sdk.transport.serial/SerialPortTransport : kotli
 
 final class org.meshtastic.sdk.transport.serial/SerialFrameAssembler { // org.meshtastic.sdk.transport.serial/SerialFrameAssembler|null[0]
     constructor <init>(kotlin/Function1<org.meshtastic.sdk/Frame, kotlin/Unit>) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.<init>|<init>(kotlin.Function1<org.meshtastic.sdk.Frame,kotlin.Unit>){}[0]
+
+    final var onTextLine // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.onTextLine|{}onTextLine[0]
+        final fun <get-onTextLine>(): kotlin/Function1<kotlin/String, kotlin/Unit>? // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.onTextLine.<get-onTextLine>|<get-onTextLine>(){}[0]
+        final fun <set-onTextLine>(kotlin/Function1<kotlin/String, kotlin/Unit>?) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.onTextLine.<set-onTextLine>|<set-onTextLine>(kotlin.Function1<kotlin.String,kotlin.Unit>?){}[0]
 
     final fun feed(kotlin/Byte) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.feed|feed(kotlin.Byte){}[0]
     final fun feed(kotlin/ByteArray, kotlin/Int = ...) // org.meshtastic.sdk.transport.serial/SerialFrameAssembler.feed|feed(kotlin.ByteArray;kotlin.Int){}[0]
@@ -59,3 +63,8 @@ final class org.meshtastic.sdk.transport.serial/SerialPortInfo { // org.meshtast
     final fun hashCode(): kotlin/Int // org.meshtastic.sdk.transport.serial/SerialPortInfo.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // org.meshtastic.sdk.transport.serial/SerialPortInfo.toString|toString(){}[0]
 }
+
+final val org.meshtastic.sdk.transport.serial/MESHTASTIC_USB_VENDOR_IDS // org.meshtastic.sdk.transport.serial/MESHTASTIC_USB_VENDOR_IDS|{}MESHTASTIC_USB_VENDOR_IDS[0]
+    final fun <get-MESHTASTIC_USB_VENDOR_IDS>(): kotlin.collections/Set<kotlin/Int> // org.meshtastic.sdk.transport.serial/MESHTASTIC_USB_VENDOR_IDS.<get-MESHTASTIC_USB_VENDOR_IDS>|<get-MESHTASTIC_USB_VENDOR_IDS>(){}[0]
+
+final fun (org.meshtastic.sdk.transport.serial/SerialPortInfo).org.meshtastic.sdk.transport.serial/isLikelyMeshtastic(): kotlin/Boolean // org.meshtastic.sdk.transport.serial/isLikelyMeshtastic|isLikelyMeshtastic@org.meshtastic.sdk.transport.serial.SerialPortInfo(){}[0]

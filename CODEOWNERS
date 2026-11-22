@@ -26,13 +26,14 @@
 # Engine + public API — single source of truth, requires API review
 /core/                                                  @meshtastic/sdk-maintainers
 /core/api/                                              @meshtastic/sdk-maintainers @meshtastic/api-stewards
-/docs/SPEC.md                                           @meshtastic/sdk-maintainers @meshtastic/api-stewards
+/.specify/memory/constitution.md                        @meshtastic/sdk-maintainers @meshtastic/api-stewards
 /docs/api-reference.md                                  @meshtastic/api-stewards
 
 # Transports — owners per stack
 /transport-ble/                                         @meshtastic/sdk-maintainers @meshtastic/transport-ble
 /transport-tcp/                                         @meshtastic/sdk-maintainers @meshtastic/transport-net
 /transport-serial/                                      @meshtastic/sdk-maintainers @meshtastic/android @meshtastic/transport-net
+/transport-websocket/                                   @meshtastic/sdk-maintainers @meshtastic/transport-net
 
 # Storage
 /storage-sqldelight/                                    @meshtastic/sdk-maintainers @meshtastic/storage
