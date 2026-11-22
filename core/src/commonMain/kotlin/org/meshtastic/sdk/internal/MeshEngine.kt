@@ -218,6 +218,17 @@ internal class MeshEngine(
     // ADR-002 exception: the last run's supervisor, which connect() joins so the next run starts after its cleanup.
     private val lastRun = atomic<Job?>(null)
 
+    // ADR-002 exception: lifecycle idempotency; set while one connect() decides whether and when its run starts.
+    private val admitting = atomic(false)
+
+    // The boundary handles one run owns, so its cleanup cannot close or clear a later run's.
+    private class RunHandles(
+        val job: Job,
+        val connected: CompletableDeferred<Unit>,
+        val inbox: Channel<EngineMessage>,
+        val outbound: Channel<OutboundFrame>,
+    )
+
     /**
      * Awaiter for the in-flight [connect] call.
      *
@@ -429,28 +440,40 @@ internal class MeshEngine(
     private val nextWireId = atomic(Random.nextInt())
 
     suspend fun connect() {
-        val previous = lastRun.value
-        if (supervisorJobRef.value != null) throw MeshtasticException.AlreadyConnected()
-        // A failed or cancelled connect() returns before its run's cleanup has closed the channels and reset state.
-        previous?.join()
-        val sup = SupervisorJob(parentContext[Job])
-
-        // the job we just created and throw.
-        if (!supervisorJobRef.compareAndSet(null, sup)) {
-            sup.cancel()
-            throw MeshtasticException.AlreadyConnected()
-        }
-        lastRun.value = sup
-        if (previous != null) {
-            inboxRef.value = Channel(Channel.UNLIMITED)
-            outboundRef.value = Channel(Channel.UNLIMITED)
-        }
-
+        // One connect() at a time is admitted, so lastRun read below is the run current at admission.
+        if (!admitting.compareAndSet(false, true)) throw MeshtasticException.AlreadyConnected()
         val connectDeferred = CompletableDeferred<Unit>()
-        // publish the awaiter on the boundary atomic *before* posting the message so a
-        // concurrent disconnect() can complete it exceptionally even if the actor is cancelled
-        // before it ever processes EngineMessage.Connect.
-        activeConnectDeferred.value = connectDeferred
+        val sup = SupervisorJob(parentContext[Job])
+        var admitted = false
+        try {
+            if (supervisorJobRef.value != null) throw MeshtasticException.AlreadyConnected()
+            // Published before the wait below, so a disconnect() during it cancels this attempt. It also lets a
+            // disconnect() complete the awaiter if the actor is cancelled before it processes EngineMessage.Connect.
+            activeConnectDeferred.value = connectDeferred
+            val previous = lastRun.value
+            // A failed or cancelled connect() returns before its run's cleanup has closed the channels and reset state.
+            previous?.join()
+            if (!supervisorJobRef.compareAndSet(null, sup)) throw MeshtasticException.AlreadyConnected()
+            // disconnect() fails the awaiter before it takes the supervisor, so one of the two sees the other.
+            if (connectDeferred.isCompleted) {
+                supervisorJobRef.compareAndSet(sup, null)
+                connectDeferred.await() // rethrows disconnect()'s cancellation
+                throw CancellationException("disconnect requested")
+            }
+            lastRun.value = sup
+            if (previous != null) {
+                inboxRef.value = Channel(Channel.UNLIMITED)
+                outboundRef.value = Channel(Channel.UNLIMITED)
+            }
+            admitted = true
+        } finally {
+            if (!admitted) {
+                sup.cancel()
+                activeConnectDeferred.compareAndSet(connectDeferred, null)
+            }
+            admitting.value = false
+        }
+        val run = RunHandles(sup, connectDeferred, inboxRef.value, outboundRef.value)
         val scope = CoroutineScope(parentContext + sup)
         engineScope = scope
         val saves = Channel<ConfigBundle>(Channel.CONFLATED)
@@ -460,7 +483,7 @@ internal class MeshEngine(
         }
 
         scope.launch(CoroutineName("meshtastic-engine-actor")) {
-            runEngine()
+            runEngine(run)
         }
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
@@ -507,7 +530,8 @@ internal class MeshEngine(
             connectDeferred.await()
         } catch (e: Exception) {
             // Clean up on failure so a subsequent connect() can start fresh
-            supervisorJobRef.getAndSet(null)?.cancel()
+            supervisorJobRef.compareAndSet(sup, null)
+            sup.cancel()
             throw e
         } finally {
             // clear the awaiter slot so a subsequent disconnect() doesn't try to fail
@@ -653,14 +677,14 @@ internal class MeshEngine(
     fun isConnectedAtGeneration(generation: Long): Boolean =
         connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
 
-    private suspend fun runEngine() {
+    private suspend fun runEngine(run: RunHandles) {
         try {
-            for (msg in inbox) {
+            for (msg in run.inbox) {
                 processMessage(msg)
             }
         } finally {
             withContext(NonCancellable) {
-                cleanup()
+                cleanup(run)
             }
         }
     }
@@ -682,7 +706,7 @@ internal class MeshEngine(
      * 8. Disconnect transport.
      * 9. Emit [ConnectionState.Disconnected] — unblocks `disconnect()` callers.
      */
-    private suspend fun cleanup() {
+    private suspend fun cleanup(run: RunHandles) {
         clearNodeDbRefresh()
         sessionReceive?.finish()
         // stop the liveness watchdog before any other work so it cannot race with the
@@ -696,13 +720,14 @@ internal class MeshEngine(
             MeshtasticException.Transport("Engine cancelled before connection completed"),
         )
         pendingConnectDeferred = null
-        activeConnectDeferred.getAndSet(null)?.completeExceptionally(
-            CancellationException("Engine cancelled before connection completed"),
-        )
+        // Only this run's handles: a later connect() owns whatever replaced them.
+        if (activeConnectDeferred.compareAndSet(run.connected, null)) {
+            run.connected.completeExceptionally(CancellationException("Engine cancelled before connection completed"))
+        }
 
         readySendGeneration.value = null
-        inbox.close()
-        var drained = inbox.tryReceive()
+        run.inbox.close()
+        var drained = run.inbox.tryReceive()
         while (drained.isSuccess) {
             val msg = drained.getOrNull()
             when (msg) {
@@ -715,7 +740,7 @@ internal class MeshEngine(
 
                 else -> Unit
             }
-            drained = inbox.tryReceive()
+            drained = run.inbox.tryReceive()
         }
 
         // ②ʹ fail any pre-Ready queued sends with Disconnected (semantically equivalent
@@ -728,7 +753,7 @@ internal class MeshEngine(
         }
         pendingSends.clear()
 
-        outbound.close()
+        run.outbound.close()
 
         // Final flush of any dirty heartbeats so presence data survives a clean disconnect.
         try {
@@ -781,7 +806,7 @@ internal class MeshEngine(
         } catch (_: Exception) {
         }
 
-        supervisorJobRef.value = null
+        supervisorJobRef.compareAndSet(run.job, null)
         configSaves?.close()
         configSaves = null
         engineScope = null

@@ -7,6 +7,9 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -145,6 +148,44 @@ class EngineTest {
         runCurrent()
         assertEquals(SendState.Sent, handle.state.value, "the cancelled run's teardown reached the new session")
         client.disconnect()
+    }
+
+    @Test
+    fun testDisconnectWhileAConnectWaitsForTheLastTeardownCancelsThatConnect() = runTest {
+        val fake = fakeTransport()
+        val closeGate = CompletableDeferred<Unit>()
+        var opens = 0
+        val gatedClose = object : RadioTransport by fake {
+            override suspend fun connect() {
+                opens++
+                fake.connect()
+            }
+
+            override suspend fun disconnect() {
+                closeGate.await()
+                fake.disconnect()
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(gatedClose)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .build()
+        client.connect()
+        // The first run's teardown holds on the link close.
+        launch { client.disconnect() }
+        runCurrent()
+        val second = async { runCatching { client.connect() } }
+        runCurrent()
+
+        client.disconnect()
+        closeGate.complete(Unit)
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertIs<CancellationException>(second.await().exceptionOrNull())
+        assertEquals(1, opens, "the connect asked to stop before it began opened the link anyway")
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
     }
 
     // ── Send / cancel ─────────────────────────────────────────────────────
