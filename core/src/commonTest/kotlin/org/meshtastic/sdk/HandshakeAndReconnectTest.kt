@@ -2090,6 +2090,7 @@ class HandshakeAndReconnectTest {
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L
+
         // Android: 60 s Stage 2 budget x STAGE_GUARD_TOTAL_CAP_FACTOR 10 (MeshConnectionManagerImpl).
         const val STAGE2_HARD_CAP_MS = 600_000L
         val SEEDED_PASSKEY = byteArrayOf(1, 2, 3, 4)
