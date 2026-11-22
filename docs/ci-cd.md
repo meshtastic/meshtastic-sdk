@@ -112,7 +112,7 @@ The `meshtastic.kmp.library` convention plugin ([`KmpLibraryConventionPlugin.kt`
 | Module | JVM | Android | iOS¹ | JS and Wasm² | Notes |
 |---|:-:|:-:|:-:|:-:|---|
 | `:core` | ✅ | ✅ | ✅ | ✅ | Engine and interfaces; re-exports the `org.meshtastic:protobufs` types through `api`. ADR-008 forbids in-tree project dependencies. |
-| `:storage-sqldelight` | ✅ JDBC | ✅ Android driver | ✅ native driver (`appleMain`) | ❌ | Driver factory per target; PRAGMAs per [ADR-014](./decisions/014-storage-pragmas.md), applied in each `SqlDelightStorageProvider.*.kt`. |
+| `:storage-sqldelight` | ✅ JDBC | ✅ Android driver | ✅ native driver (`appleMain`) | ✅ JS (browser worker), ❌ Wasm | Driver factory per target; PRAGMAs per [ADR-014](./decisions/014-storage-pragmas.md), applied in each `SqlDelightStorageProvider.*.kt`. |
 | `:transport-tcp` | ✅ | ✅ | ✅ | ❌ | Ktor network sockets, which have no JS artifact. |
 | `:transport-ble` | ✅ Kable btleplug backend | ✅ | ✅ | ❌ | Kable backend per platform; Kable's `js` target isn't declared here. |
 | `:transport-serial` | ✅ | ✅ | common types only | ❌ | jSerialComm in a custom `jvmAndroidMain` group (see [`transport-serial/build.gradle.kts`](../transport-serial/build.gradle.kts)). The iOS klibs carry `SerialFrameAssembler`, `SerialPortInfo` and the vendor ID set, and no backend. |

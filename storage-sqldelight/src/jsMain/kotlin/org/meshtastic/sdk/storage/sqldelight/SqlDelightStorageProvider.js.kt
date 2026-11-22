@@ -20,7 +20,7 @@ import org.w3c.dom.WorkerType
  * Creates a browser provider whose databases run in workers made by [createWorker].
  *
  * [createWorker] receives the database file name (`":memory:"` for in-memory mode) and returns a
- * worker that speaks the SQLDelight web-worker protocol, such as one started from the
+ * module worker that speaks the SQLDelight web-worker protocol, such as one started from the
  * `sqlite-opfs.worker.mjs` script shipped with this module:
  *
  * ```kotlin
@@ -28,6 +28,11 @@ import org.w3c.dom.WorkerType
  *     Worker("/sqlite-opfs.worker.mjs?db=$dbFile", WorkerOptions(type = "module".unsafeCast<WorkerType>()))
  * }
  * ```
+ *
+ * That script imports the bare specifier `@sqlite.org/sqlite-wasm`, which a browser cannot resolve
+ * in a worker, so the host bundles the worker (webpack, Vite) or serves its own two-line entry that
+ * imports `sqlite3InitModule` from the URL where it serves `@sqlite.org/sqlite-wasm` and passes it to
+ * `serveSqliteWorker` from `sqlite-opfs-worker-core.mjs`.
  *
  * The index that maps transports and radios to database files is kept in `localStorage`.
  *

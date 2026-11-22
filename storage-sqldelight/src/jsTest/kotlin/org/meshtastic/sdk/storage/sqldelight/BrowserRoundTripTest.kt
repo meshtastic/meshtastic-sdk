@@ -9,9 +9,13 @@ package org.meshtastic.sdk.storage.sqldelight
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.worker.WebWorkerDriver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.NodeInfo
@@ -92,6 +96,31 @@ class BrowserRoundTripTest {
         }, 0).await()
         assertEquals(3L, version)
         storage.close()
+    }
+
+    @Test
+    fun aSecondWorkerOnTheSameDatabaseWaitsForTheFirstAndKeepsItsData() = runTest {
+        val name = "shared-${Random.nextInt(0, Int.MAX_VALUE)}.db"
+        val first = driver(name)
+        first.execute(null, "CREATE TABLE t (x INTEGER)", 0).await()
+        first.execute(null, "INSERT INTO t VALUES (7)", 0).await()
+
+        // The first worker still holds the pool's files, so the second must wait for them, not fail.
+        val second = driver(name)
+        val read = async {
+            second.executeQuery(null, "SELECT x FROM t", { c ->
+                QueryResult.AsyncValue {
+                    c.next().await()
+                    c.getLong(0)
+                }
+            }, 0).await()
+        }
+        // Real time, so the second worker reaches its pool install while the first still holds the files.
+        withContext(Dispatchers.Default) { delay(2_000) }
+        first.close()
+
+        assertEquals(7L, read.await())
+        second.close()
     }
 
     @Test

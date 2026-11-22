@@ -71,7 +71,11 @@ for a file-backed database. The implementation therefore differs per driver:
   `@sqlite.org/sqlite-wasm` with the `opfs-sahpool` VFS, one connection per
   worker. The worker sets `synchronous=NORMAL` and `foreign_keys=ON` when it opens
   the file. `opfs-sahpool` does not support WAL, so the browser keeps the default
-  rollback journal.
+  rollback journal. A failed pool install deletes the pool directory and its
+  databases (`removeVfs()` in SQLite's `sqlite3-vfs-opfs-sahpool`), so a worker
+  installs only while it holds a Web Lock named for the pool; a second tab or a
+  worker still closing waits instead of failing. A failure with the lock held,
+  such as missing OPFS APIs or exhausted quota, still takes that cleanup path.
   See `storage-sqldelight/src/jsMain/resources/sqlite-opfs-worker-core.mjs`.
 
 `StorageDriverTest` (jvmTest) asserts `journal_mode=wal` after a fresh
