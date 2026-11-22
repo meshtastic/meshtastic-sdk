@@ -343,7 +343,7 @@ public enum class NodeField { Name, Position, SignalQuality, Battery, Telemetry,
 - Every subscriber receives one `Snapshot` first, then deltas in causal order.
 - A collector more than 256 changes behind loses the newest ones, reported as `PacketsDropped` on `events` (see [Streams](#streams)). Re-subscribe or use `nodeSnapshot()` to resynchronize.
 - `Updated.changed` lists the fields that differ from the previous `NodeInfo`.
-- `WentOffline` fires when a node's `last_heard` is older than `Builder.presenceTimeout`; `lastHeard` is that epoch, for "last seen" UI. `CameOnline` fires when the node is heard again.
+- `WentOffline` fires when a node's `last_heard` is older than `Builder.presenceTimeout`; `lastHeard` is that epoch, for "last seen" UI. `CameOnline` fires when the node is heard again; firmware's replay of stored history after the handshake does not count (protocol.md, "Node DB after the handshake").
 
 ## `ConnectionState`
 

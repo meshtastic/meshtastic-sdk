@@ -2283,7 +2283,13 @@ internal class MeshEngine(
         val existing = meshState.nodes[nodeId]
         val wb = (existing ?: NodeInfo.Builder().also { b -> b.num = packet.from }.build()).newBuilder()
 
-        wb.last_heard = packet.rx_time.takeIf { it != 0 } ?: clock.now().epochSeconds.toInt()
+        val rxTime = packet.rx_time?.takeIf { it != 0 }
+        when {
+            rxTime != null -> wb.last_heard = rxTime
+
+            // A replay with no rx_time is history from a node never heard on a trusted clock.
+            !packet.isStoredReplay() -> wb.last_heard = clock.now().epochSeconds.toInt()
+        }
         if (!isOwn) {
             // An SNR is ours only when heard over our own radio; firmware replays carry no rx_rssi.
             if (packet.transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && packet.rx_rssi != null) {
@@ -2331,6 +2337,11 @@ internal class MeshEngine(
         }
     }
 
+    // Firmware replays stored satellite data after config_complete_id marked TRANSPORT_LORA, but only a
+    // radio receive sets rx_rssi (PhoneAPI::makeReplay*Packet, NodeDB::updateFrom), so this is history.
+    private fun MeshPacket.isStoredReplay(): Boolean =
+        transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && rx_rssi == null
+
     // Bounded, insertion-ordered: the oldest (node, key) pair is forgotten first.
     private val reportedKeyMismatches = LinkedHashSet<Pair<Int, ByteString>>()
 
@@ -2374,7 +2385,7 @@ internal class MeshEngine(
         }
         // Any frame from a node counts as presence activity. A packet the session sees is offered before
         // the CameOnline it may cause.
-        val heard = { if (packet.from != 0) markNodeHeard(NodeId(packet.from)) }
+        val heard = { if (packet.from != 0 && !packet.isStoredReplay()) markNodeHeard(NodeId(packet.from)) }
         if (shouldDropDuplicateInboundPacket(packet)) return heard()
         val decoded = packet.decoded
         if (decoded == null) {
