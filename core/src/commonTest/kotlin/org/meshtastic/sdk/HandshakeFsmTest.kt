@@ -36,7 +36,7 @@ import kotlin.test.assertTrue
  * - Pre-handshake byte discipline (frames before Stage 1 nonce posts are dropped).
  * - Stage 1 timeout: no `config_complete_id=69420` within 20 s ⇒
  *   [MeshtasticException.HandshakeTimeout] with stage `"Stage1Draining"`.
- * - Stage 2 timeout: no `config_complete_id=69421` within 60 s ⇒
+ * - Stage 2 timeout: a silent Stage 2 (no frame across a 30 s progress tick) ends within 60 s ⇒
  *   [MeshtasticException.HandshakeTimeout] with stage `"Stage2Draining"`.
  * - The public projection traverses
  *   `Disconnected → Connecting → Configuring(Stage1) → Configuring(Stage2) → Connected`.

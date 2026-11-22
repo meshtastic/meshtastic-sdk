@@ -146,7 +146,8 @@ public class RadioClient internal constructor(
      * A node appears once an admin response from it carries a passkey and disappears when the
      * key expires, the node rejects it with `ADMIN_BAD_SESSION_KEY`, the connection ends or the
      * local identity changes. A node that is absent has [AdminSessionStatus.NoSession]. The local
-     * node's session is seeded during the handshake. Expiry is evaluated on the engine's
+     * node's session is seeded during the handshake when the node answers within 10 s, and
+     * otherwise by its reply to the client's next admin request. Expiry is evaluated on the engine's
      * 30 s heartbeat tick against the injected [Builder.clock], so a transition can surface up to
      * 30 s late; the passkey bytes are never exposed.
      *

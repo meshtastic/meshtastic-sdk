@@ -143,7 +143,7 @@ Unbounded with no suspension is deliberate. A bounded inbox that suspends would 
 | Lifecycle | `Connect`, `Disconnect`, `ReconnectTick`, `ReconnectAttemptResult` |
 | Inbound | `FrameRx`, `TransportStateChanged` |
 | Outbound | `Send`, `CancelHandle`, `AdminFireAndForget`, `PostRpc` |
-| Handshake | `HandshakeStage1SettleComplete`, `HandshakeHeartbeatSettleComplete`, `Stage1RetryWantConfig`, `HandshakeTimeout` |
+| Handshake | `HandshakeStage1SettleComplete`, `HandshakeHeartbeatSettleComplete`, `HandshakeTimeout` |
 | Timers | `HeartbeatTick`, `LivenessTick`, `PresenceCheckTick`, `SendAckTimeout`, `PendingResponseTimeout`, `AdminTimeout` |
 
 ## Engine invariants

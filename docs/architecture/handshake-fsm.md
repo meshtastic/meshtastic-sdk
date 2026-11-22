@@ -17,7 +17,7 @@ The internal `HandshakeStage` enum has six values. The public `ConnectionState.C
 
 A failure (`MeshtasticException.HandshakeTimeout`, a transport drop) resets `HandshakeStage` to `Idle`; the engine then projects `Reconnecting(cause, attempt)` or `Disconnected`. `progress` never decreases within one connect attempt and comes from received over expected envelope counts.
 
-Timers: Stage 1 re-sends `want_config_id = 69420` after 10 s without a sentinel (`STAGE1_RETRY_MS`) and times out at 20 s (`STAGE1_TIMEOUT_MS`). The settle waits are 100 ms each (`INTER_STAGE_SETTLE_MS`). Stage 2 times out when no frame arrives between two 30 s checks, or at 60 s in total (`STAGE2_PROGRESS_TICK_MS`, `STAGE2_HARD_CAP_MS`). Seeding times out after 10 s (`SEED_TIMEOUT_MS`).
+Timers: Stage 1 sends `want_config_id = 69420` once and times out at 20 s (`STAGE1_TIMEOUT_MS`); it never resends in-session (`protocol.md` §6 host-side rule 8). The settle waits are 100 ms each (`INTER_STAGE_SETTLE_MS`). Stage 2 times out when no frame arrives between two 30 s checks, or at 600 s in total (`STAGE2_PROGRESS_TICK_MS`, `STAGE2_HARD_CAP_MS`). Seeding waits 10 s (`SEED_TIMEOUT_MS`) for `get_owner_response`, then goes `Ready` without the passkey and emits `ProtocolWarning("session passkey seed timed out")`.
 
 ### Config-only sessions (`RadioClient.Builder.skipNodeDb`)
 
@@ -44,7 +44,8 @@ stateDiagram-v2
     Stage2Draining --> Idle: HandshakeTimeout(Stage2Draining) /\ntransport drop
 
     SeedingSession --> Ready: AdminMessage.get_owner_response\n(session_passkey latched)
-    SeedingSession --> Idle: HandshakeTimeout(SeedingSession) /\ntransport drop
+    SeedingSession --> Ready: SEED_TIMEOUT_MS elapsed\n(no passkey, ProtocolWarning)
+    SeedingSession --> Idle: transport drop
 
     Ready --> Idle: disconnect() /\ntransport drop
     Ready --> [*]
