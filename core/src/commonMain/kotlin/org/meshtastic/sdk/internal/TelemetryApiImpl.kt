@@ -105,10 +105,8 @@ internal class TelemetryApiImpl(
         } else {
             node
         }
-        val requestId = engine.nextMessageId().raw
         val payload = Telemetry.ADAPTER.encode(Telemetry.Builder().also(variant).build()).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = requestId
             wb.from = engine.myNodeNumOrNull() ?: 0
             wb.to = target.raw
             wb.channel = engine.nodeSnapshot()[target]?.channel ?: 0
@@ -120,7 +118,7 @@ internal class TelemetryApiImpl(
                 wb.dest = target.raw
             }.build()
         }.build()
-        val result = engine.submitRpc(packet, requestId, ResponseKind.Telemetry, rpcTimeout)
+        val result = engine.submitRpc(packet, ResponseKind.Telemetry, rpcTimeout)
         return when (result) {
             is AdminResult.Success -> {
                 val arm = select(result.value)

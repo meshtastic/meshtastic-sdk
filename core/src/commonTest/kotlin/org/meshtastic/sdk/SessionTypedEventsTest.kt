@@ -167,6 +167,101 @@ class SessionTypedEventsTest {
         client.disconnect()
     }
 
+    @Test
+    fun aBatchMirrorsItsWritesInTheOrderTheDeviceAppliedThem() = runTest {
+        val (transport, client, _) = connected()
+
+        // AdminModule: set_fixed_position sets config.position.fixed_position, and a later set_config
+        // replaces config.position whole, so the device ends with the flag cleared.
+        val edit = async {
+            client.admin.editSettings {
+                setFixedPosition(HERE)
+                setConfig(positionConfig(fixed = false))
+            }
+        }
+        ackAdminUntilSettled(transport)
+
+        assertIs<AdminResult.Success<Unit>>(edit.await())
+        assertEquals(false, client.configBundle.value?.configs?.firstNotNullOfOrNull { it.position }?.fixed_position)
+        client.disconnect()
+    }
+
+    @Test
+    fun aBatchPersistsTheConfigItsLastWriteLeaves() = runTest {
+        val storage = InMemoryStorage()
+        val (transport, client, _) = connected(storage = storage)
+
+        // The device ends with fixed_position set: set_fixed_position comes after the set_config that cleared it.
+        val edit = async {
+            client.admin.editSettings {
+                setConfig(positionConfig(fixed = false))
+                setFixedPosition(HERE)
+            }
+        }
+        ackAdminUntilSettled(transport)
+
+        assertIs<AdminResult.Success<Unit>>(edit.await())
+        assertEquals(true, storage.loadConfig()?.configs?.firstNotNullOfOrNull { it.position }?.fixed_position)
+        client.disconnect()
+    }
+
+    @Test
+    fun channelsRestoredFromStorageDuringSeedingArriveInTheReadySnapshot() = runTest {
+        val stored = listOf(
+            Channel.Builder().also { wb ->
+                wb.role = Channel.Role.PRIMARY
+                wb.settings = ChannelSettings.Builder().also { it.name = "stored" }.build()
+            }.build(),
+        )
+        val storage = InMemoryStorage()
+        storage.recordOwnNode(NodeId(LOCAL), "2.7.0", null)
+        storage.saveChannels(stored)
+        // A reconnect whose handshake carries no channels: the engine falls back to the stored ones.
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity("fake:restored-channels"),
+            autoHandshake = true,
+            nodeNum = LOCAL,
+        )
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(PreloadedStorageProvider(storage))
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .sessionReceive()
+            .build()
+        val events = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        client.connect()
+        runCurrent()
+
+        assertEquals(stored, client.channels.value)
+        assertEquals(stored, assertIs<RadioSessionEvent.Ready>(events.first()).channels)
+        client.disconnect()
+    }
+
+    private class PreloadedStorageProvider(private val storage: InMemoryStorage) : StorageProvider {
+        override suspend fun activate(identity: TransportIdentity): DeviceStorage = storage
+    }
+
+    // Acks every acked admin write, the batch's begin and commit among them, until none is left.
+    private fun TestScope.ackAdminUntilSettled(transport: FakeRadioTransport) {
+        val acked = mutableSetOf<Int>()
+        while (true) {
+            runCurrent()
+            val pending = transport.outboundPackets()
+                .filter { it.decoded?.portnum == PortNum.ADMIN_APP && it.want_ack && it.id !in acked }
+            if (pending.isEmpty()) return
+            for (packet in pending) {
+                acked += packet.id
+                transport.injectRoutingAck(packet.id)
+            }
+        }
+    }
+
+    private fun positionConfig(fixed: Boolean) = Config.Builder().also { wb ->
+        wb.position = Config.PositionConfig.Builder().also { it.fixed_position = fixed }.build()
+    }.build()
+
     private data class Connected(
         val transport: FakeRadioTransport,
         val client: RadioClient,
@@ -175,6 +270,7 @@ class SessionTypedEventsTest {
 
     private suspend fun TestScope.connected(
         presenceTimeout: kotlin.time.Duration = kotlin.time.Duration.INFINITE,
+        storage: InMemoryStorage? = null,
     ): Connected {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:typed-events"),
@@ -210,7 +306,7 @@ class SessionTypedEventsTest {
         )
         val client = RadioClient.Builder()
             .transport(transport)
-            .storage(InMemoryStorageProvider())
+            .storage(storage?.let(::PreloadedStorageProvider) ?: InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .sessionReceive()
@@ -252,5 +348,9 @@ class SessionTypedEventsTest {
     private companion object {
         const val LOCAL = 1
         const val PEER = 0x2222
+        val HERE: org.meshtastic.proto.Position = org.meshtastic.proto.Position.Builder().also { wb ->
+            wb.latitude_i = 377_749_000
+            wb.longitude_i = -1_224_194_000
+        }.build()
     }
 }

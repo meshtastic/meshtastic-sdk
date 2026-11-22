@@ -340,6 +340,10 @@ internal class MeshEngine(
      */
     private var livenessBudgetMs: Long = 0L
     private var livenessWatchdogJob: Job? = null
+
+    // One heartbeat and one presence loop per Ready session.
+    private var heartbeatJob: Job? = null
+    private var presenceJob: Job? = null
     private var disconnecting = false
 
     /**
@@ -570,8 +574,9 @@ internal class MeshEngine(
      * winds down.
      *
      * The caller must:
-     *  1. Have already populated `packet.id` with [requestId] (the value returned by
-     *     [nextMessageId].raw).
+     *  1. Leave `packet.id` zero for the actor to allocate an id no in-flight request holds, or set
+     *     a caller-chosen id. A chosen id already in flight returns [AdminResult.NodeUnreachable]
+     *     and leaves the request holding it untouched.
      *  2. Set `decoded.want_response = true` (or `want_ack = true` for ack-only flows; not used
      *     by this path — those flow through [trySend]/[MessageHandle]).
      *
@@ -580,17 +585,11 @@ internal class MeshEngine(
      * before the request reaches the actor.
      */
     @Suppress("UNCHECKED_CAST")
-    suspend fun <T> submitRpc(
-        packet: MeshPacket,
-        requestId: Int,
-        kind: ResponseKind<T>,
-        timeout: Duration,
-    ): AdminResult<T> {
+    suspend fun <T> submitRpc(packet: MeshPacket, kind: ResponseKind<T>, timeout: Duration): AdminResult<T> {
         val deferred = CompletableDeferred<AdminResult<Any?>>()
         val sent = inbox.trySend(
             EngineMessage.PostRpc(
                 packet = packet,
-                requestId = requestId,
                 kind = kind,
                 deferred = deferred,
                 timeout = timeout,
@@ -676,12 +675,8 @@ internal class MeshEngine(
 
                 is EngineMessage.PacedSend -> rejectPaced(msg, SendFailure.Disconnected)
 
-                // Their callers await these; the session is gone, so there is nothing left to apply.
-                is EngineMessage.ApplyConfigEdits -> msg.done.complete(Unit)
-
-                is EngineMessage.ApplyChannel -> msg.done.complete(Unit)
-
-                is EngineMessage.ApplyNodeWrite -> msg.done.complete(Unit)
+                // Its caller awaits it; the session is gone, so there is nothing left to apply.
+                is EngineMessage.ApplyLocalWrites -> msg.done.complete(Unit)
 
                 else -> Unit
             }
@@ -837,18 +832,9 @@ internal class MeshEngine(
 
             is EngineMessage.CancelHandle -> handleCancelHandle(msg)
 
-            is EngineMessage.ApplyConfigEdits -> {
-                mergeConfigEdits(msg.configs, msg.moduleConfigs)
-                msg.done.complete(Unit)
-            }
-
-            is EngineMessage.ApplyNodeWrite -> {
-                mergeNodeWrite(msg.write)
-                msg.done.complete(Unit)
-            }
-
-            is EngineMessage.ApplyChannel -> {
-                updateChannelAndPersist(msg.channel)
+            is EngineMessage.ApplyLocalWrites -> {
+                // A write acked on a link since replaced must not land on the node that replaced it.
+                if (msg.generation == connectionGeneration.value) mergeLocalWrites(msg.writes)
                 msg.done.complete(Unit)
             }
 
@@ -856,7 +842,12 @@ internal class MeshEngine(
                 if (msg.generation == receiveGeneration && channelsState.value == null) {
                     channelsState.value = msg.channels
                     meshState = meshState.withChannels(msg.channels)
-                    sessionReceive?.channelsChanged(msg.channels)
+                    // Before Ready the session consumer gets them in the Ready snapshot, not as a change.
+                    if (handshakeStage == HandshakeStage.Ready) {
+                        sessionReceive?.channelsChanged(msg.channels)
+                    } else if (handshakeStage == HandshakeStage.SeedingSession && pendingChannels.isEmpty()) {
+                        pendingChannels.addAll(msg.channels)
+                    }
                 }
             }
 
@@ -910,20 +901,24 @@ internal class MeshEngine(
 
     private fun handlePostRpc(msg: EngineMessage.PostRpc) {
         // Engine must be Ready: RPCs require an established session passkey + nodenum.
-        if (handshakeStage != HandshakeStage.Ready || pacedSends.containsKey(MessageId(msg.requestId))) {
+        // A caller-chosen id already in flight is refused, never re-registered over the request holding it.
+        val chosenId = msg.packet.id
+        if (handshakeStage != HandshakeStage.Ready || (chosenId != 0 && wireIdInFlight(chosenId))) {
             msg.deferred.complete(AdminResult.NodeUnreachable)
             return
         }
+        val requestId = if (chosenId != 0) chosenId else allocateFreeWireId()
+        val packet = if (chosenId != 0) msg.packet else msg.packet.newBuilder().also { it.id = requestId }.build()
         // Register before sending so a fast device reply can never race the registration.
-        val adminTarget = if (msg.packet.decoded?.portnum == PortNum.ADMIN_APP) {
-            msg.packet.to.takeIf { it != 0 } ?: myNodeNum
+        val adminTarget = if (packet.decoded?.portnum == PortNum.ADMIN_APP) {
+            packet.to.takeIf { it != 0 } ?: myNodeNum
         } else {
             null
         }
-        dispatcher.register(msg.requestId, msg.kind, msg.deferred, expectedSender = adminTarget)
-        rememberAdminRequest(msg.packet)
+        dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = adminTarget)
+        rememberAdminRequest(packet)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
-        val outboundPacket = prepareOutboundAdminPacket(msg.packet)
+        val outboundPacket = prepareOutboundAdminPacket(packet)
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = outboundPacket
@@ -934,9 +929,24 @@ internal class MeshEngine(
         val scope = engineScope ?: return
         val job = scope.launch {
             delay(msg.timeout)
-            inbox.trySend(EngineMessage.PendingResponseTimeout(msg.requestId))
+            inbox.trySend(EngineMessage.PendingResponseTimeout(requestId))
         }
-        dispatcher.attachTimeoutJob(msg.requestId, job)
+        dispatcher.attachTimeoutJob(requestId, job)
+    }
+
+    // Actor only: a pending RPC or an unsettled send holds the id until its reply or terminal state.
+    private fun wireIdInFlight(id: Int): Boolean {
+        if (dispatcher.contains(id) || pacedSends.containsKey(MessageId(id))) return true
+        val state = pendingSends[MessageId(id)]?.value ?: return false
+        return state !is SendState.Failed && state != SendState.Acked && state != SendState.Delivered
+    }
+
+    // A caller-chosen id can sit ahead of the shared counter, so automatic RPC ids step over held ones.
+    private fun allocateFreeWireId(): Int {
+        while (true) {
+            val id = nextMessageId().raw
+            if (!wireIdInFlight(id)) return id
+        }
     }
 
     private fun handlePendingResponseTimeout(msg: EngineMessage.PendingResponseTimeout) {
@@ -2032,7 +2042,8 @@ internal class MeshEngine(
         }
 
         // Start the 30 s periodic heartbeat scheduler.
-        engineScope?.launch {
+        heartbeatJob?.cancel()
+        heartbeatJob = engineScope?.launch {
             while (true) {
                 delay(HEARTBEAT_INTERVAL_MS)
                 inbox.trySend(EngineMessage.HeartbeatTick)
@@ -2055,8 +2066,10 @@ internal class MeshEngine(
         }
 
         // Presence check: scan nodes for offline transitions every 30s (piggybacks on heartbeat interval).
+        presenceJob?.cancel()
+        presenceJob = null
         if (presenceTimeout.isPositive() && presenceTimeout.isFinite()) {
-            engineScope?.launch {
+            presenceJob = engineScope?.launch {
                 while (true) {
                     delay(HEARTBEAT_INTERVAL_MS)
                     inbox.trySend(EngineMessage.PresenceCheckTick)
@@ -2935,6 +2948,10 @@ internal class MeshEngine(
         resetDisplayMirror()
         livenessWatchdogJob?.cancel()
         livenessWatchdogJob = null
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+        presenceJob?.cancel()
+        presenceJob = null
 
         // Fail in-flight sends — their wire IDs won't survive the device-side session restart.
         for ((_, stateFlow) in pendingSends) {
@@ -3629,10 +3646,39 @@ internal class MeshEngine(
         }
     }
 
-    /** Applies an acknowledged node-database write on the actor and returns once the node map shows it. */
-    suspend fun applyNodeWrite(write: NodeWrite) {
+    /**
+     * Applies acknowledged local [writes] on the actor, in order, and returns once the session state
+     * shows them. Nothing applies unless [generation] is still the current connection's.
+     */
+    suspend fun applyLocalWrites(writes: List<LocalWrite>, generation: Long) {
+        if (writes.isEmpty()) return
         val done = CompletableDeferred<Unit>()
-        if (inbox.trySend(EngineMessage.ApplyNodeWrite(write, done)).isSuccess) done.await()
+        if (inbox.trySend(EngineMessage.ApplyLocalWrites(writes, generation, done)).isSuccess) done.await()
+    }
+
+    // Call order, as the device applied them: a later write to the same field wins.
+    private fun mergeLocalWrites(writes: List<LocalWrite>) {
+        val bundleBefore = configBundleState.value
+        for (write in writes) {
+            when (write) {
+                is LocalWrite.Config -> mergeConfigEdits(listOf(write.config), emptyList())
+                is LocalWrite.ModuleConfig -> mergeConfigEdits(emptyList(), listOf(write.config))
+                is LocalWrite.Channel -> updateChannelAndPersist(write.channel)
+                is LocalWrite.Node -> mergeNodeWrite(write.write)
+            }
+        }
+        val bundle = configBundleState.value
+        if (bundle == null || bundle === bundleBefore) return
+        engineScope?.launch {
+            if (storageDegraded) return@launch
+            try {
+                storage?.saveConfig(bundle)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.warn(TAG, e) { "local write: saveConfig failed (non-fatal)" }
+            }
+        }
     }
 
     // Mirrors AdminModule: removeNodeByNum, the favorite and ignored flags, and handleSetOwner.
@@ -3720,12 +3766,6 @@ internal class MeshEngine(
         emitNodeChangeOrLog(NodeChange.Updated(updated, changed))
     }
 
-    /** Applies an acknowledged local channel write on the actor and returns once it is visible. */
-    suspend fun applyChannelWrite(channel: org.meshtastic.proto.Channel) {
-        val done = CompletableDeferred<Unit>()
-        if (inbox.trySend(EngineMessage.ApplyChannel(channel, done)).isSuccess) done.await()
-    }
-
     // Actor only. The storage flush is best effort: the next handshake re-reads channels anyway.
     private fun updateChannelAndPersist(channel: org.meshtastic.proto.Channel) {
         val idx = channel.index
@@ -3773,21 +3813,7 @@ internal class MeshEngine(
         }
     }
 
-    /**
-     * Merges acknowledged local [Config] and [ModuleConfig] writes into [configBundleState] on the
-     * actor, replacing the written sections, and returns once the bundle shows them.
-     */
-    suspend fun applyConfigEdits(
-        writtenConfigs: List<org.meshtastic.proto.Config>,
-        writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
-    ) {
-        if (writtenConfigs.isEmpty() && writtenModuleConfigs.isEmpty()) return
-        val done = CompletableDeferred<Unit>()
-        if (inbox.trySend(EngineMessage.ApplyConfigEdits(writtenConfigs, writtenModuleConfigs, done)).isSuccess) {
-            done.await()
-        }
-    }
-
+    // Actor only. Replaces the written sections in the bundle; mergeLocalWrites persists the result.
     private fun mergeConfigEdits(
         writtenConfigs: List<org.meshtastic.proto.Config>,
         writtenModuleConfigs: List<org.meshtastic.proto.ModuleConfig>,
@@ -3807,20 +3833,7 @@ internal class MeshEngine(
             mergeModuleConfigs(current.moduleConfigs, writtenModuleConfigs)
         }
 
-        val updated = current.copy(configs = mergedConfigs, moduleConfigs = mergedModuleConfigs)
-        commitConfigBundle(updated)
-
-        // Persist the updated bundle to storage.
-        engineScope?.launch {
-            if (storageDegraded) return@launch
-            try {
-                storage?.saveConfig(updated)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "applyConfigEdits: saveConfig failed (non-fatal)" }
-            }
-        }
+        commitConfigBundle(current.copy(configs = mergedConfigs, moduleConfigs = mergedModuleConfigs))
     }
 
     // ---- storage error wrapping ----

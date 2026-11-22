@@ -20,6 +20,7 @@ import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.time.Duration.Companion.seconds
 import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
@@ -143,6 +144,56 @@ class P2RoutingRpcTest {
     }
 
     @Test
+    fun aChosenIdAnotherRequestHoldsIsRefusedAndTheFirstStillGetsItsReply() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val dest = NodeId(0xdead)
+        val first = async { client.routing.traceRoute(dest) }
+        runCurrent()
+        val held = transport.outboundPackets().last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
+
+        val second = async { client.routing.requestNeighborInfo(NodeId(0xbeef), requestId = held.id) }
+        runCurrent()
+        assertEquals(AdminResult.NodeUnreachable, second.await())
+
+        transport.injectRouteReply(requestId = held.id, reply = ROUTE, fromNode = dest.raw)
+        runCurrent()
+        assertEquals(AdminResult.Success(ROUTE), first.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun anAutomaticIdStepsOverAChosenIdAheadOfTheCounter() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        fun lastTrace() = transport.outboundPackets().last { it.decoded?.portnum == PortNum.TRACEROUTE_APP }
+        val warmup = async { client.routing.traceRoute(NodeId(0xa1)) }
+        runCurrent()
+        // The next id the shared counter hands out.
+        val ahead = lastTrace().id + 1
+        val chosenDest = NodeId(0xb2)
+        val chosen = async { client.routing.traceRoute(chosenDest, requestId = ahead) }
+        runCurrent()
+
+        val autoDest = NodeId(0xc3)
+        val automatic = async { client.routing.traceRoute(autoDest) }
+        runCurrent()
+        val autoRequest = lastTrace()
+        assertEquals(autoDest.raw, autoRequest.to)
+        assertNotEquals(ahead, autoRequest.id)
+
+        transport.injectRouteReply(requestId = ahead, reply = ROUTE, fromNode = chosenDest.raw)
+        transport.injectRouteReply(requestId = autoRequest.id, reply = ROUTE_BACK, fromNode = autoDest.raw)
+        runCurrent()
+        assertEquals(AdminResult.Success(ROUTE), chosen.await())
+        assertEquals(AdminResult.Success(ROUTE_BACK), automatic.await())
+        warmup.cancel()
+        client.disconnect()
+    }
+
+    @Test
     fun requestNeighborInfoResolvesOnReply() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
@@ -204,5 +255,10 @@ class P2RoutingRpcTest {
         assertEquals(3, req.hop_limit)
         deferred.cancel()
         client.disconnect()
+    }
+
+    private companion object {
+        val ROUTE: RouteDiscovery = RouteDiscovery.Builder().also { it.route = listOf(0x111) }.build()
+        val ROUTE_BACK: RouteDiscovery = RouteDiscovery.Builder().also { it.route = listOf(0x222) }.build()
     }
 }

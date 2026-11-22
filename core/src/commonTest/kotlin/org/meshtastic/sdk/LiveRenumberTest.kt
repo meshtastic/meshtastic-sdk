@@ -7,7 +7,9 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Runnable
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -19,12 +21,16 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.ToRadio
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.toFrame
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -155,6 +161,69 @@ class LiveRenumberTest {
         assertSessionRestarted(transport, events)
         client.disconnect()
     }
+
+    @Test
+    fun aWriteAckedBeforeTheRestartDoesNotLandOnTheNewSession() = runTest {
+        val (transport, client, events) = connected()
+        // The caller resumes only when drained, so the session can restart between the ack and that resume.
+        val caller = HeldDispatcher()
+        val save = async(caller) { client.admin.setOwner(User.Builder().also { it.long_name = "Stale" }.build()) }
+        caller.drain()
+        runCurrent()
+        transport.injectRoutingAck(lastAdminWrite(transport).id, fromNode = LOCAL)
+        runCurrent()
+
+        renumber(transport)
+        assertSessionRestarted(transport, events)
+        caller.drain()
+        runCurrent()
+        caller.drain()
+
+        assertTrue(save.isCompleted, "the write settled")
+        assertIs<AdminResult.Success<Unit>>(save.await())
+        assertEquals(RENUMBERED, client.ownNode.value?.num)
+        assertNotEquals("Stale", client.ownNode.value?.user?.long_name, "the old session's write reached the new one")
+        client.disconnect()
+    }
+
+    @Test
+    fun theRestartedSessionKeepsOneHeartbeatLoop() = runTest {
+        val (transport, client, events) = connected()
+        renumber(transport)
+        assertSessionRestarted(transport, events)
+
+        val before = heartbeats(transport)
+        // protocol.md section 16: one keep-alive every 30 s. A frame every 20 s keeps the liveness watchdog quiet.
+        repeat(15) {
+            transport.injectFrame(queueStatus())
+            advanceTimeBy(20_000)
+            runCurrent()
+        }
+
+        assertEquals(10, heartbeats(transport) - before, "heartbeats over 300 s")
+        client.disconnect()
+    }
+
+    private class HeldDispatcher : CoroutineDispatcher() {
+        private val queue = ArrayDeque<Runnable>()
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            queue.addLast(block)
+        }
+
+        fun drain() {
+            while (queue.isNotEmpty()) queue.removeFirst().run()
+        }
+    }
+
+    private fun heartbeats(transport: FakeRadioTransport): Int = transport.outboundFrames().count { frame ->
+        val bytes = frame.bytes.toByteArray()
+        runCatching { ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)) }.getOrNull()?.heartbeat != null
+    }
+
+    private fun queueStatus() = FromRadio.Builder().also { wb ->
+        wb.queueStatus = QueueStatus.Builder().also { it.free = 16 }.build()
+    }.build().toFrame()
 
     // Firmware reports the new number from here on, the re-handshake included.
     private fun TestScope.renumber(transport: FakeRadioTransport) {

@@ -38,7 +38,8 @@ public interface RoutingApi {
      * @param hopLimit hops the request may travel; `null` uses the device's `lora.hop_limit`.
      * @param channel channel to send on; `null` uses the channel [dest] was last heard on.
      * @param requestId non-zero packet id to use, for a caller that logs the request; `null`
-     *   allocates one.
+     *   allocates one. An id another request still holds returns [AdminResult.NodeUnreachable]
+     *   and leaves that request alone.
      * @return on success, the [RouteDiscovery] with `route`, `route_back` and per-hop SNR.
      */
     public suspend fun traceRoute(
@@ -53,7 +54,8 @@ public interface RoutingApi {
      * last-heard SNR and interval. A remote request carries `want_ack`, `Data.dest` and the device
      * hop limit, on [channel] or the channel the node was last heard on.
      *
-     * @param requestId non-zero packet id to use; `null` allocates one.
+     * @param requestId non-zero packet id to use; `null` allocates one. An id another request still
+     *   holds returns [AdminResult.NodeUnreachable] and leaves that request alone.
      */
     public suspend fun requestNeighborInfo(
         node: NodeId = NodeId.LOCAL,

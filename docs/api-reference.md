@@ -162,9 +162,9 @@ The engine never waits for a collector. All five are hot: collectors share one u
 
 ### Session receive
 
-Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, reported channels and nodes. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect, or a live renumber of the connected node, starts a new session on the same stream.
+Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, channels and nodes. When the handshake reports no channels, the snapshot carries the ones stored for the device. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect, or a live renumber of the connected node, starts a new session on the same stream.
 
-After `Ready` the stream also carries what the SDK derives, in the same sequence as packets: `NodeChanged` for each node-map change, `ConfigChanged` and `ChannelsChanged` with the whole new bundle or channel list, and `Event` for each `MeshEvent` raised after `Ready` except `LockdownStatusChanged`, `QueueStatusChanged` and `PacketsDropped`. `IdentityRebound` fires inside a handshake, so it reaches only `RadioClient.events`; `Ready.myInfo` carries the identity. A packet comes before the changes it causes. An acknowledged local admin write appears once the call returns: config and channel writes as `ConfigChanged` or `ChannelsChanged`, and `setOwner`, `setFavorite`, `setIgnored` and `removeNode` as `NodeChanged`. A consumer that projects these into its own store needs no other flow.
+After `Ready` the stream also carries what the SDK derives, in the same sequence as packets: `NodeChanged` for each node-map change, `ConfigChanged` and `ChannelsChanged` with the whole new bundle or channel list, and `Event` for each `MeshEvent` raised after `Ready` except `LockdownStatusChanged`, `QueueStatusChanged` and `PacketsDropped`. `IdentityRebound` fires inside a handshake, so it reaches only `RadioClient.events`; `Ready.myInfo` carries the identity. A packet comes before the changes it causes. An acknowledged local admin write appears once the call returns: config and channel writes as `ConfigChanged` or `ChannelsChanged`, and `setOwner`, `setFavorite`, `setIgnored` and `removeNode` as `NodeChanged`. An `editSettings` or `batch` block applies its writes in call order, as the device did. A write whose link was replaced before the call returned is not applied; the new session's handshake reports the device's state. A consumer that projects these into its own store needs no other flow.
 
 Call `requestNodeDbRefresh()` to start a nodes-only download on this connection. The matching completion produces `NodeDbRefreshed` in receive order. Packets continue through the engine during the download. Overlapping requests queue a single follow-up. If the download stalls, the SDK ends the connection to prevent a late response from being attributed to another request.
 
@@ -580,12 +580,22 @@ public interface TelemetryApi {
 
 ```kotlin
 public interface RoutingApi {
-    public suspend fun traceRoute(dest: NodeId, hopLimit: Int = DEFAULT_HOP_LIMIT): AdminResult<RouteDiscovery>   // DEFAULT_HOP_LIMIT = 7
-    public suspend fun requestNeighborInfo(node: NodeId = NodeId.LOCAL): AdminResult<NeighborInfo>
+    public fun withRpcTimeout(timeout: Duration): RoutingApi
+    public suspend fun traceRoute(
+        dest: NodeId,
+        hopLimit: Int? = null,           // null: the device's lora.hop_limit
+        channel: ChannelIndex? = null,   // null: the channel dest was last heard on
+        requestId: Int? = null,          // null: the SDK allocates one
+    ): AdminResult<RouteDiscovery>
+    public suspend fun requestNeighborInfo(
+        node: NodeId = NodeId.LOCAL,
+        channel: ChannelIndex? = null,
+        requestId: Int? = null,
+    ): AdminResult<NeighborInfo>
 }
 ```
 
-A traceroute across many hops can take longer than the default 30 s `rpcTimeout`.
+A traceroute across many hops can take longer than the default 30 s `rpcTimeout`; `withRpcTimeout` gives one caller a longer wait. A caller-chosen `requestId` that another request still holds returns `NodeUnreachable` and leaves that request alone, and an id the SDK allocates never lands on one a caller holds.
 
 ## `StoreForwardApi`
 

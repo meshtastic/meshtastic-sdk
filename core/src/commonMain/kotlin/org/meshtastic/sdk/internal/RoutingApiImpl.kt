@@ -40,10 +40,10 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
         requestId: Int?,
     ): AdminResult<RouteDiscovery> {
         val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
-        val id = requestId?.takeIf { it != 0 } ?: engine.nextMessageId().raw
         // TraceRouteModule answers only TRACEROUTE_APP; RoutingModule never replies to a route_request.
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = id
+            // Zero lets the engine pick an id no in-flight request holds.
+            wb.id = requestId ?: 0
             wb.from = local
             wb.to = dest.raw
             wb.channel = (channel ?: heardChannel(dest)).raw
@@ -56,7 +56,7 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
                 wb.dest = dest.raw
             }.build()
         }.build()
-        return engine.submitRpc(packet, id, ResponseKind.RouteDiscoveryReply, rpcTimeout)
+        return engine.submitRpc(packet, ResponseKind.RouteDiscoveryReply, rpcTimeout)
     }
 
     override suspend fun requestNeighborInfo(
@@ -67,10 +67,10 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
         val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
         val target = if (node == NodeId.LOCAL) NodeId(local) else node
         val remote = target.raw != local
-        val id = requestId?.takeIf { it != 0 } ?: engine.nextMessageId().raw
         val payload = ProtoNeighborInfo.ADAPTER.encode(ProtoNeighborInfo.Builder().build()).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = id
+            // Zero lets the engine pick an id no in-flight request holds.
+            wb.id = requestId ?: 0
             wb.from = local
             wb.to = target.raw
             if (remote) {
@@ -86,7 +86,7 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
                 if (remote) wb.dest = target.raw
             }.build()
         }.build()
-        return engine.submitRpc(packet, id, ResponseKind.NeighborInfoReply, rpcTimeout)
+        return engine.submitRpc(packet, ResponseKind.NeighborInfoReply, rpcTimeout)
     }
 
     private fun heardChannel(node: NodeId): ChannelIndex = ChannelIndex(engine.nodeSnapshot()[node]?.channel ?: 0)
