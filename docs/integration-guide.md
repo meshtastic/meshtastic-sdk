@@ -85,7 +85,7 @@ val transport = BleTransport(radio)
 
 `BleScanner.scan()` filters on the Meshtastic service UUID; `DiscoveredRadio` carries `name`, `rssi`, and `address`. To pick a radio from a user-typed `ble:NEEDLE`, filter with `bleAdvertisementMatches`.
 
-On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` connects by MAC address without a fresh scan, and `bondedBleDevices(context)` lists the host's bonded devices for a picker. `BleResilience(bondFirst = true, autoConnectFallback = true, refreshStaleGattCache = true)` turns on link recovery for difficult radios. `refreshStaleGattCache` reads two private Kable fields by reflection; the AAR ships the keep rules from [`transport-ble/consumer-rules.pro`](../transport-ble/consumer-rules.pro), so R8 keeps them in a minified build. `BleTransport.deviceLogs()` streams the radio's log ([observability.md](./observability.md#device-logs)).
+On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` connects by MAC address without a fresh scan, and `bondedBleDevices(context)` lists the host's bonded devices for a picker. `BleResilience(bondFirst = true, autoConnectFallback = true, refreshStaleGattCache = true)` turns on link recovery for difficult radios. `BleTransport.deviceLogs()` streams the radio's log ([observability.md](./observability.md#device-logs)).
 
 For a firmware update, pass `refreshGattCacheOnConnect` to the Android address factory. The callback can consume a pending refresh for that radio after its next successful link, before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic.
 

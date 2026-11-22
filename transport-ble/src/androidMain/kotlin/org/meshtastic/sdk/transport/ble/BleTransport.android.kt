@@ -17,13 +17,6 @@ import kotlinx.coroutines.launch
 import kotlin.coroutines.EmptyCoroutineContext
 
 /**
- * ATT MTU requested after each link establishment. ToRadio/FromRadio frames are up to 512 bytes
- * and Android keeps the ATT MTU at the BLE minimum (23 — i.e. 20-byte writes) unless the central
- * explicitly negotiates; 517 is the Android maximum and what Meshtastic firmware expects.
- */
-private const val PREFERRED_MTU: Int = 517
-
-/**
  * How long to hold [AndroidPeripheral.Priority.High] after connecting before downgrading to
  * [AndroidPeripheral.Priority.Balanced]. Covers the config handshake window (faster connection
  * interval ≈ faster handshake) without holding the radio at high duty cycle forever.
@@ -36,11 +29,12 @@ private const val CONNECTION_PRIORITY_BOOST_MS: Long = 30_000L
  * On Android, Kable's `Identifier` is a type alias for `String`, but [toIdentifier] is the
  * canonical conversion and remains correct across Kable versions.
  *
- * After each successful link establishment the transport negotiates the ATT MTU
- * ([PREFERRED_MTU]) and requests a high connection priority for the handshake window
- * (downgraded to Balanced after [CONNECTION_PRIORITY_BOOST_MS]; the pending downgrade is
- * cancelled if the session disconnects first). Both are best-effort: a failure leaves the
- * OS defaults in place and never fails the connect.
+ * Kable requests an ATT MTU of 517 as each link is established (`PeripheralBuilder.mtu`, its
+ * Android default): ToRadio/FromRadio frames are up to 512 bytes, and Android otherwise stays at
+ * the 23-byte minimum. After each link the transport also requests a high connection priority for
+ * the handshake window (downgraded to Balanced after [CONNECTION_PRIORITY_BOOST_MS]; the pending
+ * downgrade is cancelled if the session disconnects first). That request is best-effort: a
+ * failure leaves the OS default in place and never fails the connect.
  *
  * Example — bonded device (no fresh advertisement, must use `autoConnect`):
  * ```kotlin
@@ -90,7 +84,7 @@ public fun BleTransport(
     refreshGattCacheOnConnect: () -> Boolean,
     builderAction: PeripheralBuilder.() -> Unit,
 ): BleTransport = BleTransport(address, resilience, builderAction).also { transport ->
-    transport.gattCacheRefresher = GattCacheRefresher { transport.peripheral.refreshHiddenGattCache() }
+    transport.gattCacheRefresher = GattCacheRefresher { transport.peripheral.refreshGattCacheOrFalse() }
     transport.shouldRefreshGattCache = { discoveryIncomplete ->
         refreshGattCacheOnConnect() || (resilience.refreshStaleGattCache && discoveryIncomplete)
     }
@@ -100,7 +94,6 @@ internal actual fun applyPlatformTuning(transport: BleTransport) {
     transport.postConnectHook = { connected ->
         val android = connected as? AndroidPeripheral
         if (android != null) {
-            tryTune { android.requestMtu(PREFERRED_MTU) }
             tryTune { android.requestConnectionPriority(AndroidPeripheral.Priority.High) }
             // Receiver scope is per-connect-cycle: this delayed downgrade is cancelled at
             // disconnect(), so a stale timer can never fire into a later session's boost window.
