@@ -31,7 +31,7 @@ GATT message boundaries replace the stream header (`0x94 0xC3 LEN_HI LEN_LO`) th
 
 ## MTU and connection priority
 
-Every GATT operation carries exactly one `ToRadio` or `FromRadio`. On Android, Kable requests an ATT MTU of 517 as each link is established (`PeripheralBuilder.mtu`, its default); a host building its own peripheral sets `mtu` there. The factory functions (`BleTransport(radio)`, `BleTransport(address)` and `BleTransport(device)`) also request high connection priority after connect, then drop to balanced priority after 30 seconds, best effort. The plain constructor `BleTransport(peripheral, address)` leaves priority to the OS.
+Every GATT operation carries exactly one `ToRadio` or `FromRadio`. On Android, Kable requests an ATT MTU of 517 as each link is established (`PeripheralBuilder.mtu`, its default); a host building its own peripheral sets `mtu` there. A rejected exchange fails that connect attempt rather than leaving a 23-byte link, which could not carry a `ToRadio` frame. The factory functions (`BleTransport(radio)`, `BleTransport(address)` and `BleTransport(device)`) also request high connection priority after connect, then drop to balanced priority after 30 seconds, best effort. The plain constructor `BleTransport(peripheral, address)` leaves priority to the OS.
 
 ## Bonding and pairing
 
