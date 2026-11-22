@@ -59,6 +59,8 @@ class StoredReplayTest {
     @Test
     fun aLiveLoRaPacketWithoutRxTimeIsStampedNow() = runTest {
         val (transport, client) = connected()
+        transport.injectPacket(live(rxTime = HEARD_AT))
+        runCurrent()
         advanceTimeBy(5.seconds)
 
         transport.injectPacket(live(rxTime = 0))
@@ -80,6 +82,8 @@ class StoredReplayTest {
         assertTrue(changes.any { it is NodeChange.WentOffline && it.nodeId == NodeId(PEER) }, "$changes")
 
         transport.injectPacket(replay())
+        // A node whose stored last_heard is a wall-clock time replays with rx_time set.
+        transport.injectPacket(replay(rxTime = HEARD_AT))
         runCurrent()
         assertTrue(changes.none { it is NodeChange.CameOnline }, "a replay counted as presence: $changes")
 
@@ -104,9 +108,10 @@ class StoredReplayTest {
         }.build()
     }.build()
 
-    // The shape PhoneAPI::makeReplayPositionPacket gives a node whose last_heard is not a wall-clock time.
-    private fun replay(): MeshPacket = MeshPacket.Builder().also { wb ->
-        wb.id = 0x7E57
+    // The shape PhoneAPI::makeReplayPositionPacket gives; rx_time only for a wall-clock last_heard.
+    private fun replay(rxTime: Int? = null): MeshPacket = MeshPacket.Builder().also { wb ->
+        wb.id = 0x7E57 + (rxTime ?: 0)
+        wb.rx_time = rxTime
         wb.from = PEER
         wb.to = BROADCAST
         wb.priority = MeshPacket.Priority.BACKGROUND
