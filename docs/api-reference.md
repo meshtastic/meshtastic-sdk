@@ -116,7 +116,7 @@ Auto-reconnect is off unless the builder receives a config with `enabled = true`
 | `suspend fun connect()` | Suspends until `Connected`. Throws `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`) or `CancellationException`. Not idempotent: calling it while connected throws `AlreadyConnected`, because a silent no-op hides reconnect-loop bugs. |
 | `suspend fun RadioClient.connectAndAwaitReady(timeout: Duration = 30.seconds): ConfigBundle` | Calls `connect()` and returns the committed `ConfigBundle`. Throws `HandshakeTimeout(stage = "connectAndAwaitReady")` when the bundle doesn't arrive within `timeout`. |
 | `suspend fun RadioClient.awaitInitialNodeDb(): Map<NodeId, NodeInfo>` | Waits for the first node map after the handshake commits. |
-| `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. |
+| `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. The same client can `connect()` again afterwards; `sessionEvents` has completed and stays complete. |
 | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T` | Connects, runs `block`, and always disconnects, on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. |
 | `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | `null` until `Connected`, then the local node. |

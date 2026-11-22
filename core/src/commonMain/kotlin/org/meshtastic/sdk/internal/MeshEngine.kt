@@ -190,7 +190,9 @@ internal class MeshEngine(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    private val inbox = Channel<EngineMessage>(Channel.UNLIMITED)
+    // ADR-002 exception: cleanup() closes both channels, and connect() opens fresh ones for the next run.
+    private val inboxRef = atomic(Channel<EngineMessage>(Channel.UNLIMITED))
+    private val inbox: Channel<EngineMessage> get() = inboxRef.value
 
     private data class OutboundFrame(
         val frame: Frame,
@@ -200,7 +202,8 @@ internal class MeshEngine(
         val generation: Long = 0L,
     )
 
-    private val outbound = Channel<OutboundFrame>(Channel.UNLIMITED)
+    private val outboundRef = atomic(Channel<OutboundFrame>(Channel.UNLIMITED))
+    private val outbound: Channel<OutboundFrame> get() = outboundRef.value
     private val lockdownWriteMutex = Mutex()
 
     /**
@@ -211,6 +214,9 @@ internal class MeshEngine(
      * guards only the lifecycle handle, not engine state.
      */
     private val supervisorJobRef = atomic<Job?>(null)
+
+    // ADR-002 exception: the last run's supervisor, which connect() joins so the next run starts after its cleanup.
+    private val lastRun = atomic<Job?>(null)
 
     /**
      * Awaiter for the in-flight [connect] call.
@@ -415,12 +421,21 @@ internal class MeshEngine(
     private val nextWireId = atomic(Random.nextInt())
 
     suspend fun connect() {
+        val previous = lastRun.value
+        if (supervisorJobRef.value != null) throw MeshtasticException.AlreadyConnected()
+        // A failed or cancelled connect() returns before its run's cleanup has closed the channels and reset state.
+        previous?.join()
         val sup = SupervisorJob(parentContext[Job])
 
         // the job we just created and throw.
         if (!supervisorJobRef.compareAndSet(null, sup)) {
             sup.cancel()
             throw MeshtasticException.AlreadyConnected()
+        }
+        lastRun.value = sup
+        if (previous != null) {
+            inboxRef.value = Channel(Channel.UNLIMITED)
+            outboundRef.value = Channel(Channel.UNLIMITED)
         }
 
         val connectDeferred = CompletableDeferred<Unit>()
@@ -792,6 +807,8 @@ internal class MeshEngine(
         reconnectJob = null
         reconnectAttempt = 0
         autoReconnectInProgress = false
+        renumberedTo = null
+        heldRenumberAck = null
         configBundleState.value = null
         channelsState.value = null
 

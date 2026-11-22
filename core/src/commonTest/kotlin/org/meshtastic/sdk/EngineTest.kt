@@ -7,7 +7,11 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -88,6 +92,59 @@ class EngineTest {
         client.disconnect()
         client.disconnect() // second disconnect must not throw
         assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun testConnectAgainAfterDisconnectReachesConnectedOnTheSameClient() = runTest {
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity("fake:reconnect"),
+            autoHandshake = true,
+            nodeNum = 0x0A0B_0C0D,
+        )
+        val client = buildClient(transport)
+        client.connect()
+        client.disconnect()
+
+        client.connect()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        assertEquals(0x0A0B_0C0D, client.ownNode.value?.num)
+        val handle = client.send(unicastPacket())
+        runCurrent()
+        assertEquals(SendState.Sent, handle.state.value, "the second session writes packets")
+        client.disconnect()
+    }
+
+    @Test
+    fun testConnectRightAfterACancelledConnectKeepsTheNewSession() = runTest {
+        val fake = fakeTransport()
+        // A real link takes a moment to close, so the cancelled run's teardown outlasts its connect().
+        val slowClose = object : RadioTransport by fake {
+            override suspend fun disconnect() {
+                delay(500)
+                fake.disconnect()
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(slowClose)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .build()
+        // The handshake's settle delays hold this connect mid-handshake until virtual time advances.
+        val first = launch { client.connect() }
+        runCurrent()
+        first.cancelAndJoin()
+
+        client.connect()
+        // Past the cancelled run's slow close.
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        val handle = client.send(unicastPacket())
+        runCurrent()
+        assertEquals(SendState.Sent, handle.state.value, "the cancelled run's teardown reached the new session")
+        client.disconnect()
     }
 
     // ── Send / cancel ─────────────────────────────────────────────────────

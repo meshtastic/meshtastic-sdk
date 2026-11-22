@@ -391,7 +391,8 @@ public class RadioClient internal constructor(
      *
      * Stops the engine, closes the transport, and releases storage. Never throws; idempotent.
      * In-flight [MessageHandle]s that have not reached terminal state will be failed with
-     * [SendFailure.Disconnected].
+     * [SendFailure.Disconnected]. The same client may [connect] again afterwards; [sessionEvents]
+     * has completed and stays complete.
      *
      * **Suspend semantics:** suspends until the engine has drained pending failures, the
      * transport is fully disconnected, and storage is closed. Returns when [connection]
