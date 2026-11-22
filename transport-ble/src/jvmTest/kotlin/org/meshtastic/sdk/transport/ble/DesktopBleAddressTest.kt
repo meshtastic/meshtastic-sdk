@@ -7,9 +7,11 @@
  */
 package org.meshtastic.sdk.transport.ble
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.sdk.MeshtasticException
 import kotlin.test.Test
@@ -73,14 +75,17 @@ class DesktopBleAddressTest {
     }
 
     @Test
-    fun findAdvertisedRadioFailsWithTransportWhenNothingMatchesInTime() = runTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun findAdvertisedRadioFailsWithTransportAfterFifteenSeconds() = runTest {
         val scan = flow {
             emit(radio(LINUX_ID.replace("E5_6E", "00_01")))
             awaitCancellation()
         }
         val error = assertFailsWith<MeshtasticException.Transport> {
-            findAdvertisedRadio(MAC, scan, timeout = 15.seconds, os = DesktopBleOs.Linux)
+            findAdvertisedRadio(MAC, scan, os = DesktopBleOs.Linux)
         }
+        // The documented scan bound for BleTransport(address).
+        assertEquals(15.seconds.inWholeMilliseconds, currentTime)
         assertTrue(error.message.orEmpty().contains(MAC), error.message)
     }
 

@@ -16,6 +16,7 @@ import org.meshtastic.sdk.TransportState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class BleTransportDeferredTest {
@@ -40,13 +41,13 @@ class BleTransportDeferredTest {
     }
 
     @Test
-    fun aFailedResolutionFailsConnectWithTransport() = runTest {
-        val transport = createDeferredBleTransport(ADDRESS, builderAction = {}) {
-            throw MeshtasticException.Transport("no radio")
-        }
+    fun aFailedResolutionFailsConnectWithItsCause() = runTest {
+        val notFound = MeshtasticException.Transport("no radio")
+        val transport = createDeferredBleTransport(ADDRESS, builderAction = {}) { throw notFound }
 
-        assertFailsWith<MeshtasticException.Transport> { transport.connect() }
+        val error = assertFailsWith<MeshtasticException.Transport> { transport.connect() }
 
+        assertSame(notFound, error.cause)
         assertTrue(transport.state.value is TransportState.Error)
         transport.shutdown()
     }
