@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -206,6 +207,32 @@ class SessionTypedEventsTest {
     }
 
     @Test
+    fun aConfigSaveThatFinishesLateDoesNotOverwriteANewerOne() = runTest {
+        val inner = InMemoryStorage()
+        val firstSave = CompletableDeferred<Unit>()
+        var gateNextSave = false
+        val storage = object : DeviceStorage by inner {
+            override suspend fun saveConfig(config: ConfigBundle) {
+                if (gateNextSave) {
+                    gateNextSave = false
+                    firstSave.await()
+                }
+                inner.saveConfig(config)
+            }
+        }
+        val (transport, client, _) = connected(storage = storage)
+
+        gateNextSave = true
+        ackLastAdmin(transport) { client.admin.setConfig(positionConfig(fixed = true)) }
+        ackLastAdmin(transport) { client.admin.setConfig(positionConfig(fixed = false)) }
+        firstSave.complete(Unit)
+        runCurrent()
+
+        assertEquals(false, inner.loadConfig()?.configs?.firstNotNullOfOrNull { it.position }?.fixed_position)
+        client.disconnect()
+    }
+
+    @Test
     fun channelsRestoredFromStorageDuringSeedingArriveInTheReadySnapshot() = runTest {
         val stored = listOf(
             Channel.Builder().also { wb ->
@@ -239,7 +266,7 @@ class SessionTypedEventsTest {
         client.disconnect()
     }
 
-    private class PreloadedStorageProvider(private val storage: InMemoryStorage) : StorageProvider {
+    private class PreloadedStorageProvider(private val storage: DeviceStorage) : StorageProvider {
         override suspend fun activate(identity: TransportIdentity): DeviceStorage = storage
     }
 
@@ -270,7 +297,7 @@ class SessionTypedEventsTest {
 
     private suspend fun TestScope.connected(
         presenceTimeout: kotlin.time.Duration = kotlin.time.Duration.INFINITE,
-        storage: InMemoryStorage? = null,
+        storage: DeviceStorage? = null,
     ): Connected {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:typed-events"),

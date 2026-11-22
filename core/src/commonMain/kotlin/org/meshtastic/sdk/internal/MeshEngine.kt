@@ -236,6 +236,10 @@ internal class MeshEngine(
 
     private var handshakeStage = HandshakeStage.Idle
     private var engineScope: CoroutineScope? = null
+
+    // Config snapshots for storage, saved one at a time by a single consumer; conflated, since each bundle is
+    // whole and only the newest has to land.
+    private var configSaves: Channel<ConfigBundle>? = null
     private var frameReaderJob: Job? = null
     private var receiveGeneration = 0L
 
@@ -426,6 +430,11 @@ internal class MeshEngine(
         activeConnectDeferred.value = connectDeferred
         val scope = CoroutineScope(parentContext + sup)
         engineScope = scope
+        val saves = Channel<ConfigBundle>(Channel.CONFLATED)
+        configSaves = saves
+        scope.launch(CoroutineName("meshtastic-config-saves")) {
+            for (bundle in saves) persistConfig(bundle)
+        }
 
         scope.launch(CoroutineName("meshtastic-engine-actor")) {
             runEngine()
@@ -747,6 +756,8 @@ internal class MeshEngine(
         }
 
         supervisorJobRef.value = null
+        configSaves?.close()
+        configSaves = null
         engineScope = null
         handshakeStage = HandshakeStage.Idle
         lockdownLink.value = null
@@ -2800,12 +2811,7 @@ internal class MeshEngine(
             val updated = current.copy(configs = merged)
             commitConfigBundle(updated)
             // Persist the merged config bundle
-            engineScope?.launch {
-                if (storageDegraded) return@launch
-                try {
-                    storage?.saveConfig(updated)
-                } catch (_: Exception) { /* non-fatal */ }
-            }
+            configSaves?.trySend(updated)
             emitEvent(MeshEvent.ExternalConfigChange(ExternalChangeKind.CONFIG))
             return
         }
@@ -2816,12 +2822,7 @@ internal class MeshEngine(
             val merged = mergeModuleConfigs(current.moduleConfigs, listOf(moduleConfig))
             val updated = current.copy(moduleConfigs = merged)
             commitConfigBundle(updated)
-            engineScope?.launch {
-                if (storageDegraded) return@launch
-                try {
-                    storage?.saveConfig(updated)
-                } catch (_: Exception) { /* non-fatal */ }
-            }
+            configSaves?.trySend(updated)
             emitEvent(MeshEvent.ExternalConfigChange(ExternalChangeKind.MODULE_CONFIG))
             return
         }
@@ -3669,15 +3670,17 @@ internal class MeshEngine(
         }
         val bundle = configBundleState.value
         if (bundle == null || bundle === bundleBefore) return
-        engineScope?.launch {
-            if (storageDegraded) return@launch
-            try {
-                storage?.saveConfig(bundle)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.warn(TAG, e) { "local write: saveConfig failed (non-fatal)" }
-            }
+        configSaves?.trySend(bundle)
+    }
+
+    private suspend fun persistConfig(bundle: ConfigBundle) {
+        if (storageDegraded) return
+        try {
+            storage?.saveConfig(bundle)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG, e) { "saveConfig failed (non-fatal)" }
         }
     }
 
