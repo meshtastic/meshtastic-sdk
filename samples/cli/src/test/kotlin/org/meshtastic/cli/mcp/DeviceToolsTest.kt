@@ -393,7 +393,7 @@ class DeviceToolsTest {
         val quiet = async { sendText(rig.client, a("""{"text":"psst","want_ack":false,"await_ms":1000}""")) }
         runCurrent()
         assertFalse(rig.packets(PortNum.TEXT_MESSAGE_APP).last().want_ack)
-        quiet.await()
+        assertEquals("dispatched", quiet.await().getValue("outcome").jsonPrimitive.content)
     }
 
     @Test
@@ -472,6 +472,7 @@ class DeviceToolsTest {
         )
         val out = call.await()
         assertEquals("reply", out.getValue("outcome").jsonPrimitive.content)
+        assertEquals("!00000033", out.getValue("from").jsonPrimitive.content)
         assertEquals(1, out.obj("result").getValue("latitude_i").jsonPrimitive.int)
         val silent = request(rig.client, a("""{"kind":"node_info","dest":"!00000044","timeout_ms":1000}"""))
         assertEquals("timeout", silent.getValue("outcome").jsonPrimitive.content)

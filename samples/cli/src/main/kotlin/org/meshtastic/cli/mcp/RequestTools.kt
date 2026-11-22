@@ -7,12 +7,7 @@
  */
 package org.meshtastic.cli.mcp
 
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
+import com.squareup.wire.Message
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,55 +15,17 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import org.meshtastic.proto.MeshPacket
-import org.meshtastic.proto.PortNum
-import org.meshtastic.proto.Position
-import org.meshtastic.proto.User
+import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ChannelIndex
-import org.meshtastic.sdk.MeshtasticException
-import org.meshtastic.sdk.MessageHandle
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.RouteDiscoveryResult
-import org.meshtastic.sdk.channelFor
-import org.meshtastic.sdk.requestPosition
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val NANOS_PER_MS = 1_000_000L
 private const val SNR_SCALE = 4f
 
 private fun elapsedMs(startedNanos: Long) = (System.nanoTime() - startedNanos) / NANOS_PER_MS
-
-/** Sends a request via [send] and waits for the reply packet that answers it on [port]. */
-private suspend fun requestWithReply(
-    client: RadioClient,
-    port: PortNum,
-    timeoutMs: Long,
-    send: suspend () -> MessageHandle,
-): Pair<MessageHandle, MeshPacket?> = coroutineScope {
-    // Subscribe before sending so a fast reply cannot slip past.
-    val inbox = Channel<MeshPacket>(Channel.UNLIMITED)
-    val collector = launch(start = CoroutineStart.UNDISPATCHED) { client.packets.collect { inbox.trySend(it) } }
-    try {
-        val handle = try {
-            send()
-        } catch (e: MeshtasticException) {
-            toolError("request: ${e::class.simpleName}: ${e.message}", e)
-        }
-        val reply = withTimeoutOrNull(timeoutMs) {
-            var found: MeshPacket? = null
-            while (found == null) {
-                val packet = inbox.receive()
-                val data = packet.decoded
-                if (data != null && data.portnum == port && data.request_id == handle.id.raw) found = packet
-            }
-            found
-        }
-        handle to reply
-    } finally {
-        collector.cancel()
-    }
-}
 
 internal val TELEMETRY_VARIANTS = listOf(
     "device",
@@ -108,12 +65,12 @@ internal suspend fun request(client: RadioClient, args: Args): JsonObject {
             buildJsonObject { put("result", ProtoPaths.toJson(info)) }
         }
 
-        "position" -> replyRequest(client, PortNum.POSITION_APP, timeoutMs, dest, channel) { node, ch ->
-            client.requestPosition(node, ch)
+        "position" -> replyRequest("position", dest) { node ->
+            client.routing.withRpcTimeout(timeoutMs.milliseconds).requestPosition(node, channel)
         }
 
-        "node_info" -> replyRequest(client, PortNum.NODEINFO_APP, timeoutMs, dest, channel) { node, ch ->
-            client.requestNodeInfo(node, ch)
+        "node_info" -> replyRequest("node_info", dest) { node ->
+            client.routing.withRpcTimeout(timeoutMs.milliseconds).requestNodeInfo(node, channel)
         }
 
         else -> toolError("unknown kind '$kind' (${REQUEST_KINDS.joinToString(" | ")})")
@@ -174,30 +131,25 @@ private suspend fun telemetryRequest(client: RadioClient, variant: String, dest:
     }
 }
 
-private suspend fun replyRequest(
-    client: RadioClient,
-    port: PortNum,
-    timeoutMs: Long,
+/** Runs a position or node-info [call]; a silent node is `outcome: timeout`, any other failure a tool error. */
+private suspend fun <T : Message<*, *>> replyRequest(
+    what: String,
     dest: NodeId?,
-    channel: ChannelIndex?,
-    send: (NodeId, ChannelIndex) -> MessageHandle,
+    call: suspend (NodeId) -> AdminResult<T>,
 ): JsonObject {
     val node = dest ?: toolError("dest is required")
-    val (handle, reply) = requestWithReply(client, port, timeoutMs) {
-        send(node, channel ?: client.channelFor(node))
+    val result = try {
+        call(node)
+    } catch (e: IllegalArgumentException) {
+        toolError("$what: ${e.message}", e)
     }
     return buildJsonObject {
-        put("message_id", handle.id.toString())
-        if (reply == null) {
+        if (result == AdminResult.Timeout) {
             put("outcome", "timeout")
         } else {
             put("outcome", "reply")
-            put("from", NodeId(reply.from).toString())
-            val payload = reply.decoded?.payload ?: okio.ByteString.EMPTY
-            when (port) {
-                PortNum.POSITION_APP -> put("result", ProtoPaths.toJson(Position.ADAPTER.decode(payload)))
-                else -> put("result", ProtoPaths.toJson(User.ADAPTER.decode(payload)))
-            }
+            put("from", node.toString())
+            put("result", ProtoPaths.toJson(result.orFail(what)))
         }
     }
 }

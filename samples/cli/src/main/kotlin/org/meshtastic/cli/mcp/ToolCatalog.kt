@@ -37,7 +37,8 @@ internal val deviceTools: List<ToolDef> = listOf(
     ToolDef(
         "send_text",
         "Send a text message and wait for Acked/Delivered/Failed. A broadcast succeeds on the implicit ACK of a " +
-            "neighbour's rebroadcast. Returns `{message_id, to, channel, outcome, reason, states, elapsed_ms}`.",
+            "neighbour's rebroadcast. With want_ack false the send completes on dispatch and `outcome` is " +
+            "`dispatched`. Returns `{message_id, to, channel, outcome, reason, states, elapsed_ms}`.",
         schema(required = listOf("text")) {
             prop("text", "string", "Message body (UTF-8, at most 233 bytes).")
             prop("to", "string", "Alias of dest, kept for older callers.")

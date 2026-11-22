@@ -26,7 +26,6 @@ import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.SendOutcome
 import org.meshtastic.sdk.deleteWaypoint
 import org.meshtastic.sdk.newWaypointId
-import org.meshtastic.sdk.sendDirectMessage
 import org.meshtastic.sdk.sendPosition
 import org.meshtastic.sdk.sendWaypoint
 
@@ -45,11 +44,15 @@ internal suspend fun nodesList(client: RadioClient, args: Args): JsonObject {
     }
 }
 
-/** Runs [send], then waits up to `await_ms` for the handle's terminal outcome. */
+/**
+ * Runs [send], then waits up to `await_ms` for the handle's terminal outcome. Without [wantAck] the
+ * SDK completes the handle on dispatch, so a success is reported as `dispatched`, not delivery.
+ */
 private suspend fun sendAndAwait(
     args: Args,
     dest: NodeId,
     channel: Int,
+    wantAck: Boolean,
     send: suspend () -> MessageHandle,
 ): JsonObject {
     val awaitMs = args.long("await_ms") ?: DEFAULT_AWAIT_MS
@@ -75,7 +78,7 @@ private suspend fun sendAndAwait(
         when (outcome) {
             null -> put("outcome", "timeout")
 
-            is SendOutcome.Success -> put("outcome", "success")
+            is SendOutcome.Success -> put("outcome", if (wantAck) "success" else "dispatched")
 
             is SendOutcome.Failure -> {
                 put("outcome", "failure")
@@ -92,13 +95,8 @@ internal suspend fun sendText(client: RadioClient, args: Args): JsonObject {
     val dest = args.dest() ?: NodeId.BROADCAST
     val channel = args.int("channel") ?: 0
     val wantAck = args.bool("want_ack") ?: true
-    return sendAndAwait(args, dest, channel) {
-        // sendText always asks for an ACK; sendDirectMessage is the same packet with the flag chosen.
-        if (wantAck) {
-            client.sendText(text = text, to = dest, channel = ChannelIndex(channel))
-        } else {
-            client.sendDirectMessage(dest, text, ChannelIndex(channel), wantAck = false)
-        }
+    return sendAndAwait(args, dest, channel, wantAck) {
+        client.sendText(text = text, to = dest, channel = ChannelIndex(channel), wantAck = wantAck)
     }
 }
 
@@ -106,8 +104,9 @@ internal suspend fun sendPositionTool(client: RadioClient, args: Args): JsonObje
     val latLng = LatLng(args.requireDouble("latitude"), args.requireDouble("longitude"), args.int("altitude"))
     val dest = args.dest() ?: NodeId.BROADCAST
     val channel = args.int("channel") ?: 0
-    return sendAndAwait(args, dest, channel) {
-        client.sendPosition(latLng, dest, ChannelIndex(channel), wantAck = args.bool("want_ack") ?: false)
+    val wantAck = args.bool("want_ack") ?: false
+    return sendAndAwait(args, dest, channel, wantAck) {
+        client.sendPosition(latLng, dest, ChannelIndex(channel), wantAck = wantAck)
     }
 }
 
@@ -134,7 +133,7 @@ internal suspend fun sendWaypointTool(client: RadioClient, args: Args): JsonObje
     if (!delete && (waypoint.latitude_i == null || waypoint.longitude_i == null)) {
         toolError("latitude and longitude are required")
     }
-    val result = sendAndAwait(args, dest, channel.raw) {
+    val result = sendAndAwait(args, dest, channel.raw, wantAck) {
         try {
             if (delete) {
                 client.deleteWaypoint(waypoint, dest, channel, wantAck)
