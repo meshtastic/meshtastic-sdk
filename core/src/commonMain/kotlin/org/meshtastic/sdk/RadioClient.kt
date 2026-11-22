@@ -38,6 +38,7 @@ import org.meshtastic.sdk.internal.RoutingApiImpl
 import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
 import org.meshtastic.sdk.internal.defaultHopLimit
+import org.meshtastic.sdk.internal.nodeInfoRequestPacket
 import org.meshtastic.sdk.internal.summarizeFromRadio
 import org.meshtastic.sdk.internal.summarizeToRadio
 import kotlin.coroutines.CoroutineContext
@@ -338,7 +339,8 @@ public class RadioClient internal constructor(
      * Request [node]'s [NodeInfo] on [channel], carrying [user] so the remote also learns ours.
      *
      * Sends `NODEINFO_APP` with `want_response = true` and no `want_ack`, as the Android app does.
-     * [user] defaults to our own node's user; `null` sends an empty payload.
+     * [user] defaults to our own node's user; `null` sends an empty payload. The handle tracks only
+     * the send; [RoutingApi.requestNodeInfo] sends the same request and returns the reply.
      *
      * @throws IllegalArgumentException if [node] is our own node or [NodeId.LOCAL]
      * @throws MeshtasticException.NotConnected if not currently connected
@@ -349,18 +351,7 @@ public class RadioClient internal constructor(
         require(node != NodeId.LOCAL && node.raw != engine.myNodeNumOrNull()) {
             "node info is requested from another node, not our own"
         }
-        val packet = MeshPacket.Builder().also { wb ->
-            wb.to = node.raw
-            wb.channel = channel.raw
-            wb.want_ack = false
-            wb.hop_limit = defaultHopLimit()
-            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                wb.portnum = PortNum.NODEINFO_APP
-                wb.payload = user?.let { User.ADAPTER.encode(it).toByteString() } ?: okio.ByteString.EMPTY
-                wb.want_response = true
-            }.build()
-        }.build()
-        return send(packet)
+        return send(nodeInfoRequestPacket(node.raw, channel.raw, defaultHopLimit(), user))
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
@@ -482,13 +473,15 @@ public class RadioClient internal constructor(
      * Wraps the text in a [MeshPacket] with `decoded.portnum = TEXT_MESSAGE_APP` and
      * `decoded.payload = text.encodeToByteArray()`, then calls [send].
      *
-     * Sets `want_ack = true` so the firmware provides delivery feedback:
+     * [wantAck] (default `true`) sets `want_ack` so the firmware provides delivery feedback:
      * - **Unicast**: the recipient sends a Routing ACK back to the sender.
      * - **Broadcast**: the firmware generates an implicit ACK when it overhears a neighbor
      *   relay the packet. This confirms at least one mesh node retransmitted the message.
      *
-     * The returned [MessageHandle] will resolve to [SendOutcome.Success] on ACK, or
+     * With it set, the returned [MessageHandle] resolves to [SendOutcome.Success] on ACK, or
      * [SendOutcome.Failure] if the firmware exhausts retransmissions without confirmation.
+     * Without it the packet carries the device hop limit, since firmware fills a zero hop limit
+     * only on a `want_ack` packet.
      *
      * Parameter order matches [sendReaction] (`to` before `channel`) as of 0.2.0.
      *
@@ -497,6 +490,7 @@ public class RadioClient internal constructor(
      * @param channel the channel index (default: 0)
      * @param replyId the packet ID of the message this text replies to (threaded reply), or `0`
      *   (default) for a standalone message (parameter added in 0.2.0)
+     * @param wantAck request delivery feedback (default `true`; parameter added in 0.3.0)
      * @return a handle tracking delivery state
      * @throws MeshtasticException.NotConnected if not currently connected
      * @throws MeshtasticException.PayloadTooLarge if the encoded text exceeds the device limit
@@ -507,6 +501,7 @@ public class RadioClient internal constructor(
         to: NodeId = NodeId.BROADCAST,
         channel: ChannelIndex = ChannelIndex(0),
         replyId: Int = 0,
+        wantAck: Boolean = true,
     ): MessageHandle {
         val payload = text.encodeToByteArray()
         if (payload.size > DATA_PAYLOAD_LEN) {
@@ -515,7 +510,9 @@ public class RadioClient internal constructor(
         val packet = MeshPacket.Builder().also { wb ->
             wb.to = to.raw
             wb.channel = channel.raw
-            wb.want_ack = true
+            wb.want_ack = wantAck
+            // Firmware fills a zero hop limit only on a want_ack packet.
+            if (!wantAck) wb.hop_limit = defaultHopLimit()
             wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
                 wb.portnum = org.meshtastic.proto.PortNum.TEXT_MESSAGE_APP
                 wb.payload = payload.toByteString()
@@ -524,6 +521,16 @@ public class RadioClient internal constructor(
         }.build()
         return send(packet)
     }
+
+    /** The 0.2 signature, kept so callers compiled against it still link. */
+    @Deprecated("Kept for binary compatibility", level = DeprecationLevel.HIDDEN)
+    @Throws(MeshtasticException::class)
+    public fun sendText(
+        text: String,
+        to: NodeId = NodeId.BROADCAST,
+        channel: ChannelIndex = ChannelIndex(0),
+        replyId: Int = 0,
+    ): MessageHandle = sendText(text, to, channel, replyId, wantAck = true)
 
     /**
      * Convenience: send an emoji reaction to an existing message.
@@ -686,10 +693,11 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Routing API for traceRoute and neighbor enumeration. Available while connected.
+     * Routing API for traceRoute, neighbor enumeration, and position and node-info requests that
+     * wait for the reply. Available while connected.
      */
     public val routing: RoutingApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout)
+        RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout, nowEpochSeconds = ::nowEpochSeconds)
     }
 
     /**

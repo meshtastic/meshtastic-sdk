@@ -921,12 +921,12 @@ internal class MeshEngine(
         val requestId = if (chosenId != 0) chosenId else allocateFreeWireId()
         val packet = if (chosenId != 0) msg.packet else msg.packet.newBuilder().also { it.id = requestId }.build()
         // Register before sending so a fast device reply can never race the registration.
-        val adminTarget = if (packet.decoded?.portnum == PortNum.ADMIN_APP) {
-            packet.to.takeIf { it != 0 } ?: myNodeNum
-        } else {
-            null
+        val expectedSender = when {
+            packet.decoded?.portnum == PortNum.ADMIN_APP -> packet.to.takeIf { it != 0 } ?: myNodeNum
+            msg.kind.answeredByTarget -> packet.to
+            else -> null
         }
-        dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = adminTarget)
+        dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = expectedSender)
         rememberAdminRequest(packet)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(packet)
@@ -3344,13 +3344,13 @@ internal class MeshEngine(
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // Fire-and-forget broadcasts (want_ack=false, no want_response): auto-resolve to
-        // Acked immediately. No firmware ACK will arrive so without this the
+        // Fire-and-forget sends (want_ack=false, no want_response), broadcast or unicast: auto-resolve
+        // to Acked immediately. No firmware ACK will arrive and no timeout is armed, so without this the
         // MessageHandle.await() would suspend forever.
-        if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
+        if (!packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
             pendingSends.remove(MessageId(wireId))
-            logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
+            logger.debug(TAG) { "Fire-and-forget send auto-acked id=${msg.id}" }
             return
         }
 

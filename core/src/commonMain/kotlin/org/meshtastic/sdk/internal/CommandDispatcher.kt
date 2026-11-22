@@ -7,18 +7,22 @@
  */
 package org.meshtastic.sdk.internal
 
+import com.squareup.wire.ProtoAdapter
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceConnectionStatus
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.RouteDiscovery
 import org.meshtastic.proto.Routing
 import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.proto.Telemetry
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.LogSink
 import org.meshtastic.sdk.debug
@@ -110,7 +114,7 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         if (requestId == 0) return false
         val entry = pending[requestId] ?: return false
         if (entry.expectedSender != null &&
-            (entry.expectedSender != packet.from || decoded.portnum != PortNum.ADMIN_APP)
+            (entry.expectedSender != packet.from || (entry.kind.isAdmin && decoded.portnum != PortNum.ADMIN_APP))
         ) {
             return false
         }
@@ -151,6 +155,10 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
             ResponseKind.StoreForwardReply -> decodeStoreForwardHistory(decoded.payload, decoded.portnum)
 
             ResponseKind.StoreForwardStatsReply -> decodeStoreForwardStats(decoded.payload, decoded.portnum)
+
+            ResponseKind.PositionReply -> decodeOnPort(decoded, PortNum.POSITION_APP, Position.ADAPTER)
+
+            ResponseKind.NodeInfoReply -> decodeOnPort(decoded, PortNum.NODEINFO_APP, User.ADAPTER)
         }
 
         if (resolved == null) {
@@ -301,6 +309,15 @@ internal class CommandDispatcher(private val logger: LogSink = LogSink.Silent) {
         }
     }
 
+    private fun <T : Any> decodeOnPort(decoded: Data, port: PortNum, adapter: ProtoAdapter<T>): AdminResult<T>? {
+        if (decoded.portnum != port) return null
+        return try {
+            AdminResult.Success(adapter.decode(decoded.payload))
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun decodeStoreForward(payload: okio.ByteString, portnum: PortNum?): StoreAndForward? {
         if (portnum != PortNum.STORE_FORWARD_APP) return null
         return try {
@@ -360,4 +377,26 @@ internal sealed interface ResponseKind<T> {
     data object NeighborInfoReply : ResponseKind<ProtoNeighborInfo>
     data object StoreForwardReply : ResponseKind<StoreAndForward.History>
     data object StoreForwardStatsReply : ResponseKind<StoreAndForward.Statistics>
+
+    /** Reply on `POSITION_APP` from the node the request went to. */
+    data object PositionReply : ResponseKind<Position>
+
+    /** Reply on `NODEINFO_APP` from the node the request went to. */
+    data object NodeInfoReply : ResponseKind<User>
 }
+
+/** Admin kinds, whose reply arrives on `ADMIN_APP`. */
+internal val ResponseKind<*>.isAdmin: Boolean
+    get() = when (this) {
+        ResponseKind.AdminConfig, ResponseKind.AdminModuleConfig, ResponseKind.AdminOwner,
+        ResponseKind.AdminChannel, ResponseKind.AdminDeviceMetadata, ResponseKind.AdminCannedMessages,
+        ResponseKind.AdminRingtone, ResponseKind.AdminDeviceConnectionStatus, ResponseKind.AdminRemoteHardwarePins,
+        ResponseKind.AdminDeviceUIConfig,
+        -> true
+
+        else -> false
+    }
+
+/** Kinds answered by the node the request went to, so the reply's sender must be that node. */
+internal val ResponseKind<*>.answeredByTarget: Boolean
+    get() = this == ResponseKind.PositionReply || this == ResponseKind.NodeInfoReply

@@ -7,13 +7,13 @@
  */
 package org.meshtastic.sdk
 
-import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.Paxcount
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
+import org.meshtastic.sdk.internal.positionRequestPacket
 import kotlin.coroutines.cancellation.CancellationException
 
 internal const val POSITION_SCALE = 1e7
@@ -54,6 +54,8 @@ public suspend fun RadioClient.sendPosition(
  * (`firmware:src/mesh/Router.cpp:468`); it replies with its own position whatever the request carries
  * (`firmware:src/modules/PositionModule.cpp:291-304`, `src/mesh/MeshModule.cpp:186-190`).
  * Use [requestPositionOnHeardChannel] to address the node on the channel it was last heard on.
+ * The handle tracks only the send; [RoutingApi.requestPosition] sends the same request and returns
+ * the reply.
  *
  * @since 0.1.0
  */
@@ -74,25 +76,7 @@ public fun RadioClient.requestPosition(
     from: NodeId,
     channel: ChannelIndex = ChannelIndex(0),
     position: Position?,
-): MessageHandle {
-    val payload = position?.let { pos ->
-        val stamped = if (pos.time == 0) pos.newBuilder().also { it.time = nowEpochSeconds() }.build() else pos
-        Position.ADAPTER.encode(stamped).toByteString()
-    } ?: ByteString.EMPTY
-    val packet = MeshPacket.Builder().also { wb ->
-        wb.to = from.raw
-        wb.channel = channel.raw
-        wb.want_ack = false
-        wb.hop_limit = defaultHopLimit()
-        wb.priority = MeshPacket.Priority.BACKGROUND
-        wb.decoded = Data.Builder().also { wb ->
-            wb.portnum = PortNum.POSITION_APP
-            wb.payload = payload
-            wb.want_response = true
-        }.build()
-    }.build()
-    return send(packet)
-}
+): MessageHandle = send(positionRequestPacket(from.raw, channel.raw, defaultHopLimit(), position) { nowEpochSeconds() })
 
 /**
  * [requestPosition] carrying [position] to [from] on the channel [channelFor] resolves for it.
