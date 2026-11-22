@@ -10,7 +10,6 @@ package org.meshtastic.sdk.internal
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.AbstractCoroutineContextElement
 import kotlin.coroutines.CoroutineContext
@@ -44,13 +43,29 @@ internal class AdminEditLocks {
 }
 
 /**
- * Run [envelope] holding this lock. Calling this again for the same lock from inside [envelope]
- * throws instead of waiting on itself forever.
+ * Run [envelope] holding the lock [resolve] names for the target.
+ *
+ * The target is resolved again once the lock is held: a node that became the connected one while
+ * the caller queued, by a live renumber, moves it to the connected node's lock. Inside another
+ * envelope, the lock is taken only if free, since waiting while holding one deadlocks against a
+ * caller nesting the other way; a contended or same-node nested call throws [IllegalStateException].
  */
-internal suspend fun <R> Mutex.withEditLock(envelope: suspend () -> R): R {
+internal suspend fun <R> withEditLock(resolve: () -> Mutex, envelope: suspend () -> R): R {
     val held = currentCoroutineContext()[HeldEditLocks]?.locks.orEmpty()
-    check(this !in held) { "editSettings and batch cannot be nested for the same node" }
-    return withLock { withContext(HeldEditLocks(held + this)) { envelope() } }
+    while (true) {
+        val lock = resolve()
+        check(lock !in held) { "editSettings and batch cannot be nested for the same node" }
+        if (held.isEmpty()) {
+            lock.lock()
+        } else {
+            check(lock.tryLock()) { "A nested editSettings or batch cannot wait for another caller's edit" }
+        }
+        try {
+            if (resolve() === lock) return withContext(HeldEditLocks(held + lock)) { envelope() }
+        } finally {
+            lock.unlock()
+        }
+    }
 }
 
 private class HeldEditLocks(val locks: Set<Mutex>) : AbstractCoroutineContextElement(HeldEditLocks) {

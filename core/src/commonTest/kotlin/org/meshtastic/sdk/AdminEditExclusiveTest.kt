@@ -171,14 +171,7 @@ class AdminEditExclusiveTest {
         transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id)
         runCurrent()
 
-        // Firmware 2.8.1+ moves the node to a new number mid-session and resends my_info.
-        transport.nodeNum = RENUMBERED
-        transport.injectFrame(
-            FromRadio.Builder().also { wb ->
-                wb.my_info = MyNodeInfo.Builder().also { it.my_node_num = RENUMBERED }.build()
-            }.build().toFrame(),
-        )
-        runCurrent()
+        renumber(transport)
 
         val byClient = async { client.admin.editSettings { setConfig(deviceConfig) } }
         val byNewNumber = async { client.admin.forNode(NodeId(RENUMBERED)).editSettings { setConfig(displayConfig) } }
@@ -203,6 +196,130 @@ class AdminEditExclusiveTest {
         assertIs<AdminResult.Success<Unit>>(first.await())
         assertIs<AdminResult.Success<Unit>>(byClient.await())
         assertIs<AdminResult.Success<Unit>>(byNewNumber.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun aCallerQueuedOnTheNumberTheNodeMovesToWaitsForTheConnectedNodesEdit() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val newNumber = NodeId(RENUMBERED)
+        val localGate = CompletableDeferred<Unit>()
+        val remoteGate = CompletableDeferred<Unit>()
+
+        val local = async { client.admin.editSettings { localGate.await() } }
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id)
+        runCurrent()
+        // Before the renumber the new number is another node, so these two queue on its own lock.
+        val holder = async { client.admin.forNode(newNumber).editSettings { remoteGate.await() } }
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id, RENUMBERED)
+        runCurrent()
+        val queued = async { client.admin.forNode(newNumber).editSettings { setConfig(displayConfig) } }
+        runCurrent()
+
+        renumber(transport)
+        remoteGate.complete(Unit)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id, RENUMBERED)
+        runCurrent()
+        assertIs<AdminResult.Success<Unit>>(holder.await())
+        assertEquals(
+            listOf(BEGIN, BEGIN, COMMIT),
+            ops(transport, before),
+            "the queued caller is now on the connected node",
+        )
+
+        localGate.complete(Unit)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id, RENUMBERED)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id, RENUMBERED)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id, RENUMBERED)
+        runCurrent()
+
+        assertEquals(
+            listOf(BEGIN, BEGIN, COMMIT, COMMIT, BEGIN, "set:display", COMMIT),
+            ops(transport, before),
+        )
+        assertIs<AdminResult.Success<Unit>>(local.await())
+        assertIs<AdminResult.Success<Unit>>(queued.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun editsNestedInOppositeOrdersFailInsteadOfDeadlocking() = runTest {
+        val remote = NodeId(0x20202020)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+        val localGate = CompletableDeferred<Unit>()
+        val remoteGate = CompletableDeferred<Unit>()
+        fun last(to: Int, predicate: (AdminMessage) -> Boolean) = transport.outboundPackets().drop(before)
+            .last { it.to == to && adminOf(it)?.let(predicate) == true }
+
+        val localThenRemote = async {
+            runCatching {
+                client.admin.editSettings {
+                    localGate.await()
+                    client.admin.forNode(remote).editSettings { }
+                }
+            }
+        }
+        val remoteThenLocal = async {
+            runCatching {
+                client.admin.forNode(remote).editSettings {
+                    remoteGate.await()
+                    client.admin.editSettings { }
+                }
+            }
+        }
+        runCurrent()
+        transport.injectRoutingAck(last(LOCAL) { it.begin_edit_settings == true }.id)
+        transport.injectRoutingAck(last(remote.raw) { it.begin_edit_settings == true }.id, remote.raw)
+        runCurrent()
+        localGate.complete(Unit)
+        remoteGate.complete(Unit)
+        runCurrent()
+        transport.injectRoutingAck(last(LOCAL) { it.commit_edit_settings == true }.id)
+        transport.injectRoutingAck(last(remote.raw) { it.commit_edit_settings == true }.id, remote.raw)
+        runCurrent()
+
+        assertIs<IllegalStateException>(localThenRemote.await().exceptionOrNull())
+        assertIs<IllegalStateException>(remoteThenLocal.await().exceptionOrNull())
+        client.disconnect()
+    }
+
+    @Test
+    fun anUncontendedEditNestedForAnotherNodeRuns() = runTest {
+        val remote = NodeId(0x20202020)
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        val before = transport.outboundPackets().size
+
+        val outer = async {
+            client.admin.editSettings {
+                client.admin.forNode(remote).editSettings { setFavorite(NodeId(0x30303030), favorite = true) }
+            }
+        }
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.begin_edit_settings == true }.id, remote.raw)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id, remote.raw)
+        runCurrent()
+        transport.injectRoutingAck(latest(transport, before) { it.commit_edit_settings == true }.id)
+        runCurrent()
+
+        val result = assertIs<AdminResult.Success<AdminResult<Unit>>>(outer.await())
+        assertIs<AdminResult.Success<Unit>>(result.value)
         client.disconnect()
     }
 
@@ -280,6 +397,17 @@ class AdminEditExclusiveTest {
             .sendTimeout(60.seconds)
             .build()
         return transport to client
+    }
+
+    // Firmware 2.8.1+ moves the node to a new number mid-session and resends my_info.
+    private fun TestScope.renumber(transport: FakeRadioTransport) {
+        transport.nodeNum = RENUMBERED
+        transport.injectFrame(
+            FromRadio.Builder().also { wb ->
+                wb.my_info = MyNodeInfo.Builder().also { it.my_node_num = RENUMBERED }.build()
+            }.build().toFrame(),
+        )
+        runCurrent()
     }
 
     private fun ops(transport: FakeRadioTransport, before: Int): List<String> =

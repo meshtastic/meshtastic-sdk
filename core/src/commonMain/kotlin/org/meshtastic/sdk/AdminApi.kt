@@ -394,8 +394,8 @@ public interface AdminApi {
      * order, across every [AdminApi] of the client: `client.admin` and `forNode` of the connected
      * node's number share one queue, even across a renumber. A second call waits until the first
      * commit is answered; a call to another node does not wait. A caller cancelled while waiting
-     * sends nothing. Calling [editSettings] or [batch] for the same node from inside [block] throws
-     * [IllegalStateException].
+     * sends nothing. From inside [block], a call for the same node throws [IllegalStateException];
+     * one for another node runs if no other caller has that node's edit open, and throws otherwise.
      *
      * Plain writes such as [setConfig] do not wait. Sent while another caller's envelope is open,
      * firmware applies one at once and defers its save and any reboot to that envelope's commit.

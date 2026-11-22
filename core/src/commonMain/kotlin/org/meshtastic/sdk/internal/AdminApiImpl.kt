@@ -481,7 +481,7 @@ internal class AdminApiImpl(
         return setTimeOnly(instant.epochSeconds.toInt())
     }
 
-    override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> = editLock().withEditLock {
+    override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> = withEditLock(::editLock) {
         val generation = engine.connectionGeneration()
         val begin = beginEditSettings()
         if (begin !is AdminResult.Success) return@withEditLock begin.cast()
@@ -505,7 +505,7 @@ internal class AdminApiImpl(
         AdminResult.Success(payload)
     }
 
-    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T = editLock().withEditLock {
+    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T = withEditLock(::editLock) {
         val generation = engine.connectionGeneration()
         beginEditSettings().getOrThrow()
         val edit = AdminEditImpl(generation)
