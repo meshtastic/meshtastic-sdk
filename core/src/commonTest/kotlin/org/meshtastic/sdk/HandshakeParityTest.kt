@@ -55,6 +55,7 @@ class HandshakeParityTest {
 
         advanceTimeBy(2)
         runCurrent()
+        assertTrue(connectJob.isCompleted, "Stage 1 must end at STAGE1_TIMEOUT_MS")
         val timeout = assertIs<MeshtasticException.HandshakeTimeout>(connectJob.await().exceptionOrNull())
         assertEquals("Stage 1", timeout.stage)
         assertEquals(1, transport.stage1Requests())
@@ -109,6 +110,7 @@ class HandshakeParityTest {
 
         advanceTimeBy(2)
         runCurrent()
+        assertTrue(connectJob.isCompleted, "the seed wait must end at SEED_TIMEOUT_MS")
         assertTrue(connectJob.await().isSuccess)
         assertEquals(ConnectionState.Connected, client.connection.value)
         assertTrue(events.any { it is MeshEvent.ProtocolWarning && it.message == "session passkey seed timed out" })
