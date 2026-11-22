@@ -81,16 +81,20 @@ internal class SqlDelightStorage(
         // web worker driver take no schema, so stamp and migrate here.
         val schema = MeshDatabase.Schema
         val stamped = scalarLong("PRAGMA user_version")
-        if (!alreadyInitialised) {
-            schema.create(driver).await()
-            driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
-        } else {
-            val version = if (stamped == 0L) unstampedVersion() else stamped
-            if (version < schema.version) {
-                schema.migrate(driver, version, schema.version).await()
-            }
-            if (version < schema.version || stamped == 0L) {
+        // One transaction: a reload between the DDL and the stamp would otherwise leave a schema the
+        // next open re-creates or re-migrates and fails on.
+        db.transaction {
+            if (!alreadyInitialised) {
+                schema.create(driver).await()
                 driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
+            } else {
+                val version = if (stamped == 0L) unstampedVersion() else stamped
+                if (version < schema.version) {
+                    schema.migrate(driver, version, schema.version).await()
+                }
+                if (version < schema.version || stamped == 0L) {
+                    driver.execute(null, "PRAGMA user_version = ${schema.version}", 0).await()
+                }
             }
         }
         schemaReady = true

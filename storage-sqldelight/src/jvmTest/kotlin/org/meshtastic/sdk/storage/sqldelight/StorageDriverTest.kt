@@ -17,6 +17,7 @@ import java.nio.file.Files
 import kotlin.io.path.absolutePathString
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class StorageDriverTest {
@@ -80,6 +81,42 @@ class StorageDriverTest {
         assertEquals("3", scalarString(driver, "PRAGMA user_version"))
         assertEquals("0", scalarString(driver, "SELECT count(*) FROM sqlite_master WHERE name='messages'"))
         driver.close()
+    }
+
+    @Test
+    fun `a migration cut off before its version stamp runs again on the next open`() = runTest {
+        val path = Files.createTempDirectory("interrupted-migration").resolve("mesh.db").absolutePathString()
+        val setup = createDriver(path)
+        V1_DDL.forEach { setup.execute(null, it, 0).value }
+        setup.execute(null, "PRAGMA user_version = 1", 0).value
+        setup.execute(null, "INSERT INTO nodes(node_num) VALUES (77)", 0).value
+        setup.close()
+
+        val real = createDriver(path)
+        val cutOff = object : SqlDriver by real {
+            override fun execute(
+                identifier: Int?,
+                sql: String,
+                parameters: Int,
+                binders: (app.cash.sqldelight.db.SqlPreparedStatement.() -> Unit)?,
+            ): QueryResult<Long> = if (sql.startsWith(
+                    "PRAGMA user_version =",
+                )
+            ) {
+                error("reload")
+            } else {
+                real.execute(identifier, sql, parameters, binders)
+            }
+        }
+        assertFailsWith<IllegalStateException> { SqlDelightStorage(cutOff).loadNodes() }
+        real.close()
+
+        val reopened = createDriver(path)
+        val storage = SqlDelightStorage(reopened)
+        storage.saveHeartbeat(NodeId(77), 5L) // 2.sqm's column, added once
+        assertEquals(mapOf(NodeId(77) to 5L), storage.loadHeartbeats())
+        assertEquals("3", scalarString(reopened, "PRAGMA user_version"))
+        reopened.close()
     }
 
     @Test
