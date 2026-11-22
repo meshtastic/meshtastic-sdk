@@ -30,6 +30,7 @@ import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.internal.AdminApiImpl
+import org.meshtastic.sdk.internal.AdminEditLocks
 import org.meshtastic.sdk.internal.FileTransferApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
 import org.meshtastic.sdk.internal.MqttProxyApiImpl
@@ -97,6 +98,9 @@ public class RadioClient internal constructor(
     private val autoSyncTimeOnConnect: Boolean,
     private val parentContext: kotlin.coroutines.CoroutineContext,
 ) {
+
+    // Shared by every AdminApi of this client, so edit envelopes to one node never interleave.
+    private val adminEditLocks = AdminEditLocks()
 
     // ── Observable state ────────────────────────────────────────────────────
 
@@ -680,7 +684,12 @@ public class RadioClient internal constructor(
      * See [AdminApi] for the full method list.
      */
     public val admin: AdminApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        AdminApiImpl(engine = engine, rpcTimeout = rpcTimeout, nowProvider = { clock.now() })
+        AdminApiImpl(
+            engine = engine,
+            rpcTimeout = rpcTimeout,
+            nowProvider = { clock.now() },
+            editLocks = adminEditLocks,
+        )
     }
 
     /**

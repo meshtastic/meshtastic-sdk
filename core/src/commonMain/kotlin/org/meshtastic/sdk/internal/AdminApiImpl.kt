@@ -62,6 +62,7 @@ internal class AdminApiImpl(
     private val engine: MeshEngine,
     private val rpcTimeout: Duration,
     private val nowProvider: () -> Instant,
+    private val editLocks: AdminEditLocks,
     private val targetNode: NodeId? = null,
 ) : AdminApi {
 
@@ -69,6 +70,7 @@ internal class AdminApiImpl(
         engine = engine,
         rpcTimeout = rpcTimeout,
         nowProvider = nowProvider,
+        editLocks = editLocks,
         targetNode = dest,
     )
 
@@ -76,6 +78,7 @@ internal class AdminApiImpl(
         engine = engine,
         rpcTimeout = timeout,
         nowProvider = nowProvider,
+        editLocks = editLocks,
         targetNode = targetNode,
     )
 
@@ -478,10 +481,10 @@ internal class AdminApiImpl(
         return setTimeOnly(instant.epochSeconds.toInt())
     }
 
-    override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> {
+    override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> = editLock().withEditLock {
         val generation = engine.connectionGeneration()
         val begin = beginEditSettings()
-        if (begin !is AdminResult.Success) return begin.cast()
+        if (begin !is AdminResult.Success) return@withEditLock begin.cast()
         val edit = AdminEditImpl(generation)
         val payload = try {
             edit.block()
@@ -492,17 +495,17 @@ internal class AdminApiImpl(
                 throw failure
             }
             cleanup.exceptionOrNull()?.let(failure::addSuppressed)
-            return failure.result.cast()
+            return@withEditLock failure.result.cast()
         }
         val commit = closeEditSettings(generation).getOrElse { throw it }
-        if (commit !is AdminResult.Success) return commit.cast()
+        if (commit !is AdminResult.Success) return@withEditLock commit.cast()
 
         edit.applyLocallyAfterCommit()
 
-        return AdminResult.Success(payload)
+        AdminResult.Success(payload)
     }
 
-    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T {
+    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T = editLock().withEditLock {
         val generation = engine.connectionGeneration()
         beginEditSettings().getOrThrow()
         val edit = AdminEditImpl(generation)
@@ -517,10 +520,13 @@ internal class AdminApiImpl(
         closeEditSettings(generation).getOrElse { throw it }.getOrThrow()
 
         edit.applyLocallyAfterCommit()
-        return payload
+        payload
     }
 
     // ── Internal helpers ────────────────────────────────────────────────────
+
+    /** The connected node shares one lock under any number or instance; a remote node has its own. */
+    private fun editLock() = if (isLocalTarget()) editLocks.local() else editLocks.remote(checkNotNull(targetNode).raw)
 
     /**
      * Send an admin packet that carries a typed response on ADMIN_APP. Routes via
