@@ -179,7 +179,7 @@ Every published module builds `jvm`, `androidTarget` (`minSdk = 26`), `iosArm64`
 | `transport-tcp`            | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | Ktor sockets; mDNS discovery per platform. |
 | `transport-websocket`      | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | Ktor client (CIO on JVM and Android, Darwin on iOS, the platform `WebSocket` on JS and Wasm). Needs firmware#12412 (ESP32) or #12413 (meshtasticd), both unmerged; plain `ws://` on meshtasticd needs #12414. |
 | `transport-serial`         | ✓   | ✓                     | —         | —             | —       | —   | —    | Android: jSerialComm, or usb-serial-for-android (`compileOnly`, the host adds it). The iOS klibs carry only the common types; iOS has no serial backend. |
-| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | —   | —    | SQLDelight: JDBC driver on the JVM, Android driver on Android, native driver on iOS. |
+| `storage-sqldelight`       | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | —    | SQLDelight: JDBC driver on the JVM, Android driver on Android, native driver on iOS, a web worker on `@sqlite.org/sqlite-wasm` (OPFS) in the browser. |
 | `testing`                  | ✓   | ✓                     | ✓         | ✓             | ✓       | ✓   | ✓    | `FakeRadioTransport` and `TestClock` for `commonTest`. |
 
 ✓ means built and tested in CI. — means no artifact for that target, or no platform API for that transport.

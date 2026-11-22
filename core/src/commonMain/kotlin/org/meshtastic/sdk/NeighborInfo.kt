@@ -39,6 +39,11 @@ public data class NeighborInfo(
         }
     }
 
+    private fun Float.toDecimalString(): String {
+        val text = toString()
+        return if (text.all { it.isDigit() || it == '-' }) "$text.0" else text
+    }
+
     public companion object {
         /**
          * Parse from proto NeighborInfo fields.

@@ -203,6 +203,7 @@ A `MeshtasticException` subclass without a test is a real gap; a coverage dip fr
 ./gradlew :transport-ble:jvmTest --tests "*FrameStrip*"  # one class
 ./gradlew iosSimulatorArm64Test                          # iOS (macOS)
 ./gradlew jsNodeTest wasmJsNodeTest                      # JS and Wasm under the Node.js on PATH
+./gradlew jsBrowserTest                                  # browser storage tests in headless Chrome (CHROME_BIN or installed Chrome)
 ./gradlew koverXmlReport                                 # JVM coverage report
 ./gradlew check                                          # full gate
 ```

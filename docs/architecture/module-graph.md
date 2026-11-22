@@ -55,7 +55,7 @@ Read an arrow as "is a dependency of": `:core → :transport-ble` means `:transp
 | `:transport-tcp` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
 | `:transport-websocket` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `:transport-serial` | ✓ | ✓ | common only | common only | common only | — | — |
-| `:storage-sqldelight` | ✓ | ✓ | ✓ | ✓ | ✓ | — | — |
+| `:storage-sqldelight` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | — |
 | `:testing` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `:bom` | n/a (Maven BOM only) | | | | | | |
 

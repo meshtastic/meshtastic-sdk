@@ -7,6 +7,9 @@
  */
 package org.meshtastic.sdk.storage.sqldelight
 
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlPreparedStatement
 import kotlinx.coroutines.test.runTest
 import okio.FileSystem
 import okio.Path.Companion.toPath
@@ -25,6 +28,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -175,5 +179,39 @@ class NodeKeyedStorageTest {
         assertTrue(s2.loadNodes().isEmpty())
         s1.close()
         s2.close()
+    }
+
+    @Test
+    fun `failed first bind closes the database it opened`() = runTest {
+        val drivers = mutableListOf<RejectingInsertDriver>()
+        val provider = SqlDelightStorageProvider(baseDir) { path ->
+            RejectingInsertDriver(createDriver(path)).also { drivers += it }
+        }
+        val storage = provider.activate(TransportIdentity("ble:AA"))
+        storage.saveNode(sampleNode(7, "Scratch"))
+
+        assertFailsWith<IllegalStateException> { storage.recordOwnNode(NodeId(42), "2.5.0") }
+
+        assertEquals(1, drivers.size)
+        assertTrue(drivers.single().closed)
+    }
+}
+
+private class RejectingInsertDriver(private val delegate: SqlDriver) : SqlDriver by delegate {
+    var closed = false
+
+    override fun execute(
+        identifier: Int?,
+        sql: String,
+        parameters: Int,
+        binders: (SqlPreparedStatement.() -> Unit)?,
+    ): QueryResult<Long> {
+        check(!sql.trimStart().startsWith("INSERT", ignoreCase = true)) { "write rejected" }
+        return delegate.execute(identifier, sql, parameters, binders)
+    }
+
+    override fun close() {
+        closed = true
+        delegate.close()
     }
 }

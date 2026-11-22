@@ -29,7 +29,7 @@ If generated protocol symbols look wrong, check that the pin resolves: `./gradle
 ## Commands
 
 - Full gate: `./gradlew check`
-- Unit tests: `./gradlew jvmTest`; `./gradlew jsNodeTest wasmJsNodeTest` (Node.js on `PATH`); on macOS when relevant, `./gradlew iosSimulatorArm64Test`
+- Unit tests: `./gradlew jvmTest`; `./gradlew jsNodeTest wasmJsNodeTest` (Node.js on `PATH`); `./gradlew jsBrowserTest` (Chrome, or `CHROME_BIN`); on macOS when relevant, `./gradlew iosSimulatorArm64Test`
 - Lint: `./gradlew detekt spotlessCheck`
 - Format: `./gradlew spotlessApply`
 - Architecture rules: detekt `ForbiddenImport` and the `:core:verifyModuleBoundary` task, both wired into `check`. See [ADR-008](docs/decisions/008-architecture-enforcement.md) and [`docs/architecture/enforcement.md`](docs/architecture/enforcement.md).

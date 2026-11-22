@@ -39,6 +39,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   dependency of `:transport-tcp`), `AndroidTcpDiscovery(context)` (`NsdManager`) and
   `IosTcpDiscovery` (`NSNetServiceBrowser`). The iOS implementation compiles on every iOS
   target but has not been run on a device or simulator.
+- Browser target for `:storage-sqldelight`: `SqlDelightStorageProvider(baseDir, createWorker)` keeps
+  each radio's database in SQLite on the Origin Private File System, through a worker shipped
+  in the klib (`sqlite-opfs.worker.mjs`). Storage calls are now serialized on every target.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep`: host work the supervisor runs
   after the backoff delay and before each `transport.connect()`, such as re-requesting a USB
   permission or power-cycling a radio. Throwing counts as a failed attempt.

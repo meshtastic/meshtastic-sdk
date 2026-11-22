@@ -23,6 +23,7 @@ meshtasticProtobufs         = "2.8.3"
 
 # --- Storage ---
 sqldelight                  = "2.4.1"
+sqliteWasm                  = "3.51.2-build9"
 
 # --- Transports ---
 kable                       = "0.45.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
@@ -78,6 +79,8 @@ wireMoshiAdapter            = { module = "com.squareup.wire:wire-moshi-adapter",
 meshtasticProtobufs         = { module = "org.meshtastic:protobufs",                             version.ref = "meshtasticProtobufs" }
 
 sqldelightRuntime           = { module = "app.cash.sqldelight:runtime",                          version.ref = "sqldelight" }
+sqldelightAsyncExt          = { module = "app.cash.sqldelight:async-extensions",                 version.ref = "sqldelight" }
+sqldelightWebWorkerDriver   = { module = "app.cash.sqldelight:web-worker-driver",                version.ref = "sqldelight" }
 sqldelightCoroutinesExt     = { module = "app.cash.sqldelight:coroutines-extensions",            version.ref = "sqldelight" }
 sqldelightAndroidDriver     = { module = "app.cash.sqldelight:android-driver",                   version.ref = "sqldelight" }
 sqldelightSqliteDriver      = { module = "app.cash.sqldelight:sqlite-driver",                    version.ref = "sqldelight" }
