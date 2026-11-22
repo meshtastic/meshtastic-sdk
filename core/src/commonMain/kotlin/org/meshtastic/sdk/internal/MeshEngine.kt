@@ -261,6 +261,11 @@ internal class MeshEngine(
     private var heldRenumberAckFrom = 0
     private var renumberRestartJob: Job? = null
 
+    // Firmware before 2.8.1 renumbers without resending my_info. A write to our old number then fails
+    // PKI_SEND_FAIL_PUBLIC_KEY and is held for the NAK that names the new one.
+    private var staleNumberWrite: EngineMessage.PacedSend? = null
+    private var silentRenumberProbe: Job? = null
+
     // Command admission captures the exact physical link and node id before posting to the actor.
     private data class LockdownLink(val generation: Long, val nodeNum: Int)
 
@@ -809,6 +814,7 @@ internal class MeshEngine(
         autoReconnectInProgress = false
         renumberedTo = null
         heldRenumberAck = null
+        staleNumberWrite = null
         configBundleState.value = null
         channelsState.value = null
 
@@ -880,6 +886,8 @@ internal class MeshEngine(
             }
 
             is EngineMessage.StorageDegraded -> markStorageDegraded(msg.reason, msg.cause)
+
+            is EngineMessage.SilentRenumberProbe -> handleSilentRenumberProbe(msg.send)
 
             EngineMessage.RenumberRestart -> if (
                 handshakeStage == HandshakeStage.Ready && renumberedTo != null && pacedSends.isEmpty()
@@ -2224,8 +2232,9 @@ internal class MeshEngine(
                 // (ERRNO_SHOULD_RELEASE) means "no error, packet handled without LoRa TX" —
                 // a SUCCESS. Values 1..31 are genuine Routing.Error codes that
                 // Router::send returns directly (e.g. DUTY_CYCLE_LIMIT = 9). The two
-                // namespaces collide at >= 32 (BAD_REQUEST = 32, NOT_AUTHORIZED = 33, …),
-                // so ERRNO values must never be decoded as Routing.Error.
+                // namespaces collide at 32..35 (BAD_REQUEST = 32, NOT_AUTHORIZED = 33, …),
+                // so those are read as ERRNO; above 35 only Routing.Error codes remain
+                // (PKI_SEND_FAIL_PUBLIC_KEY = 39 from perhapsEncode).
                 if (queueStatus.res == 0 || queueStatus.res == ERRNO_SHOULD_RELEASE) {
                     pendingSends[packetId]?.value = SendState.Sent
                 } else {
@@ -2233,7 +2242,7 @@ internal class MeshEngine(
                     // the handle / pending RPC instead of letting the caller wait out the
                     // full ACK timer for a packet that never left the device.
                     val rpcResult: AdminResult<Nothing> =
-                        if (queueStatus.res < ERRNO_BASE) {
+                        if (queueStatus.res < ERRNO_BASE || queueStatus.res > ERRNO_SHOULD_RELEASE) {
                             Routing.Error.fromValue(queueStatus.res)
                                 ?.let(CommandDispatcher::mapRoutingError)
                                 ?: AdminResult.NodeUnreachable
@@ -2990,8 +2999,11 @@ internal class MeshEngine(
         failPreSendQueueWith(SendFailure.Disconnected)
         renumberedTo = null
         heldRenumberAck = null
+        staleNumberWrite = null
         renumberRestartJob?.cancel()
         renumberRestartJob = null
+        silentRenumberProbe?.cancel()
+        silentRenumberProbe = null
     }
 
     private fun handleReadyMyInfo(info: org.meshtastic.proto.MyNodeInfo) = beginRenumber(info.my_node_num)
@@ -3209,12 +3221,32 @@ internal class MeshEngine(
     private fun handlePacedQueueTimeout(send: EngineMessage.PacedSend) {
         if (queueWrite !== send) return
         releaseQueueWrite(send)
+        if (staleNumberWrite === send) {
+            staleNumberWrite = null
+            finishPaced(send, SendState.Failed(SendFailure.QueueRejected(PKI_SEND_FAIL_PUBLIC_KEY)))
+            send.receipt.complete(QueueReceipt.Rejected)
+            pumpPacedQueue()
+            return
+        }
         if (!send.expectsRouting()) finishPaced(send, SendState.Failed(SendFailure.Timeout))
         send.receipt.complete(QueueReceipt.Unconfirmed)
         pumpPacedQueue()
     }
 
     private fun handlePacedQueueStatus(send: EngineMessage.PacedSend, result: Int) {
+        // Router::send refuses a destination it holds no key for and NAKs from the device's current
+        // number (abortSendAndNak). For our own number that means it moved, so keep the queue held for it.
+        if (result == PKI_SEND_FAIL_PUBLIC_KEY && send.packet.to == myNodeNum && renumberedTo == null) {
+            staleNumberWrite = send
+            return
+        }
+        if (result == 0 && send.expectsRouting() && renumberedTo == null && isFirstRegionSet(send.packet)) {
+            silentRenumberProbe?.cancel()
+            silentRenumberProbe = engineScope?.launch {
+                delay(SILENT_RENUMBER_MS)
+                inbox.trySend(EngineMessage.SilentRenumberProbe(send))
+            }
+        }
         val receipt = when (result) {
             0 -> QueueReceipt.Accepted
             ERRNO_SHOULD_RELEASE -> QueueReceipt.LocalDelivery
@@ -3235,6 +3267,13 @@ internal class MeshEngine(
     private fun handlePacedRouting(send: EngineMessage.PacedSend, packet: MeshPacket, routing: Routing) {
         if (routing.route_request != null) return
         val error = routing.error_reason
+        // The device addresses that NAK to itself, under the number it now holds.
+        if (error == Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY && send.packet.to == myNodeNum && packet.from != 0 &&
+            packet.from != myNodeNum && packet.to == packet.from
+        ) {
+            resendToRenumbered(send, packet.from)
+            return
+        }
         val success = error == Routing.Error.NONE || routing.route_reply != null
         val destination = send.packet.to
         val broadcast = destination == BROADCAST_ADDR
@@ -3262,6 +3301,41 @@ internal class MeshEngine(
         send.receipt.complete(if (success) QueueReceipt.Accepted else QueueReceipt.Unconfirmed)
         releaseQueueWrite(send)
         pumpPacedQueue()
+    }
+
+    private fun resendToRenumbered(send: EngineMessage.PacedSend, newNum: Int) {
+        if (staleNumberWrite === send) staleNumberWrite = null
+        releaseQueueWrite(send)
+        pacedSends.remove(send.id)
+        pendingSends.remove(send.id)
+        ackTimeoutJobs.remove(send.id)?.cancel()
+        // PhoneAPI::wasSeenRecently drops a phone packet whose id it has seen, so the resend takes a new one.
+        val resend = send.copy(id = nextMessageId())
+        pendingSends[resend.id] = resend.state
+        pacedSends[resend.id] = resend
+        pacedQueue.addFirst(resend)
+        beginRenumber(newNum)
+        pumpPacedQueue()
+    }
+
+    // AdminModule::handleSetConfig mints the PKI key, and with it the node number, on a region set from UNSET.
+    private fun isFirstRegionSet(packet: MeshPacket): Boolean {
+        val decoded = packet.decoded ?: return false
+        if (packet.to != myNodeNum || decoded.portnum != PortNum.ADMIN_APP) return false
+        val region = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()?.set_config?.lora?.region
+        val current = meshState.configBundle?.configs?.firstNotNullOfOrNull { it.lora }?.region
+        return region != null && region != UNSET_REGION && current == UNSET_REGION
+    }
+
+    // The device runs a local write before it reports QueueStatus 0 (Router::sendLocal), and acks it unless
+    // the write moved its number (ReliableRouter::sniffReceived checks isToUs). Without an ack or my_info the
+    // write applied and the number moved silently.
+    private fun handleSilentRenumberProbe(send: EngineMessage.PacedSend) {
+        if (pacedSends[send.id] !== send || send.state.value != SendState.Sent || renumberedTo != null) return
+        if (handshakeStage != HandshakeStage.Ready) return
+        logger.info(TAG) { "First region set settled without an ack or my_info; restarting the handshake" }
+        finishPaced(send, SendState.Acked)
+        restartSessionForRenumber()
     }
 
     private fun releaseQueueWrite(send: EngineMessage.PacedSend) {
@@ -4029,6 +4103,13 @@ internal class MeshEngine(
 
         // How long the paced queue stays empty after a renumber before the handshake restarts.
         const val RENUMBER_SETTLE_MS = 1_000L
+
+        // How long a first region set may go without an ack or my_info before the engine assumes a renumber.
+        const val SILENT_RENUMBER_MS = 5_000L
+        val UNSET_REGION = org.meshtastic.proto.Config.LoRaConfig.RegionCode.UNSET
+
+        // Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY, which Router::send also returns as a QueueStatus result.
+        val PKI_SEND_FAIL_PUBLIC_KEY: Int = Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY.value
 
         // name of the legacy secondary channel used for remote admin when PKC keys are
         // unavailable. Matched case-insensitively against ChannelSettings.name.

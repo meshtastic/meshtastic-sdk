@@ -773,28 +773,37 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
     // ERRNO_NO_INTERFACES and ERRNO_DISABLED (firmware MeshTypes.h): no radio to send on, so retrying cannot help.
-    is SendFailure.QueueRejected -> if (reason.res == ERRNO_NO_INTERFACES || reason.res == ERRNO_DISABLED) {
-        AdminResult.Failed(Routing.Error.NO_INTERFACE)
-    } else {
-        AdminResult.RateLimited
+    // ERRNO_* ends at 35; above it the result is a Routing.Error that Router::send returned, such as
+    // PKI_SEND_FAIL_PUBLIC_KEY.
+    is SendFailure.QueueRejected -> when {
+        reason.res == ERRNO_NO_INTERFACES || reason.res == ERRNO_DISABLED -> AdminResult.Failed(
+            Routing.Error.NO_INTERFACE,
+        )
+
+        reason.res > ERRNO_SHOULD_RELEASE ->
+            Routing.Error.fromValue(reason.res)?.let(::mapRoutingErrorToAdminResult) ?: AdminResult.RateLimited
+
+        else -> AdminResult.RateLimited
     }
 
     // The SDK paced queue or the firmware transmit queue is full; the link is up, so back off and retry.
     SendFailure.QueueFull, SendFailure.RateLimited -> AdminResult.RateLimited
 
-    is SendFailure.Other -> when (reason.routingError) {
-        Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
-
-        Routing.Error.NOT_AUTHORIZED,
-        Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
-        -> AdminResult.Unauthorized
-
-        Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
-
-        else -> AdminResult.Failed(reason.routingError)
-    }
+    is SendFailure.Other -> mapRoutingErrorToAdminResult(reason.routingError)
 
     is SendFailure.Unknown -> AdminResult.Timeout
+}
+
+private fun mapRoutingErrorToAdminResult(error: Routing.Error): AdminResult<Unit> = when (error) {
+    Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
+
+    Routing.Error.NOT_AUTHORIZED,
+    Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
+    -> AdminResult.Unauthorized
+
+    Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
+
+    else -> AdminResult.Failed(error)
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -802,3 +811,4 @@ private fun <T> AdminResult<*>.cast(): AdminResult<T> = this as AdminResult<T>
 
 private const val ERRNO_NO_INTERFACES = 33
 private const val ERRNO_DISABLED = 34
+private const val ERRNO_SHOULD_RELEASE = 35

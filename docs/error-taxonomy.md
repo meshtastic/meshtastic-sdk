@@ -99,9 +99,9 @@ The mapping is in `MeshEngine` and is driven by the Wire-generated `Routing.Erro
 
 ### `QueueStatus` rejections
 
-A non-zero `QueueStatus.res` means the local device's transmit queue rejected the packet before it was sent. Values from 32 up are in the firmware's ERRNO namespace, not `Routing.Error`: 32 is queue full or unknown, 33 no interface, 34 radio disabled, and 35 (`ERRNO_SHOULD_RELEASE`) means success, so the SDK treats 35 as `Sent`. Values 1 to 31 are genuine `Routing.Error` codes, such as `DUTY_CYCLE_LIMIT` (9).
+A non-zero `QueueStatus.res` means the local device rejected the packet before it was sent. Values 32 to 35 are in the firmware's ERRNO namespace, not `Routing.Error`: 32 is queue full or unknown, 33 no interface, 34 radio disabled, and 35 (`ERRNO_SHOULD_RELEASE`) means success, so the SDK treats 35 as `Sent`. Values 1 to 31 and above 35 are genuine `Routing.Error` codes that `Router::send` returns, such as `DUTY_CYCLE_LIMIT` (9) or `PKI_SEND_FAIL_PUBLIC_KEY` (39) for a destination the device holds no key for.
 
-Any rejecting `res` fails a tracked send with `SendFailure.QueueRejected(res)`. An in-flight RPC fails with `AdminResult.NodeUnreachable` for 32 and up, and through the `Routing.Error` mapping in the next section for 1 to 31.
+Any rejecting `res` fails a tracked send with `SendFailure.QueueRejected(res)`. An in-flight RPC fails with `AdminResult.NodeUnreachable` for 32 to 35, and through the `Routing.Error` mapping in the next section otherwise. A paced write to the connected node's own number that gets `PKI_SEND_FAIL_PUBLIC_KEY` is the exception: the node has renumbered, so the engine waits for its NAK (see [Identity rebind](#identity-rebind)).
 
 ## `AdminResult`
 
@@ -132,7 +132,7 @@ RPC paths map a `Routing.Error` before it would become a `SendFailure`:
 
 A remote read whose `MAX_RETRANSMIT` comes from the connected radio keeps waiting for the reply, which can still arrive over another path, and returns `Failed(MAX_RETRANSMIT)` only at its timeout.
 
-Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute` and `MaxRetransmit` become `Failed` with that error; `Disconnected`, `HandshakeFailed`, `DutyCycleLimit`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table. `NodeUnreachable` therefore means the link was lost or the send never left. Over BLE, a restart-class command to the connected node that the transport wrote before the link dropped returns `Success` (see [protocol.md](protocol.md), edit transactions).
+Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute` and `MaxRetransmit` become `Failed` with that error; `Disconnected`, `HandshakeFailed`, `DutyCycleLimit`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` with a `Routing.Error` above 35 follows the table, `QueueRejected` with 33 or 34 becomes `Failed(NO_INTERFACE)`, and any other `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table. `NodeUnreachable` therefore means the link was lost or the send never left. Over BLE, a restart-class command to the connected node that the transport wrote before the link dropped returns `Success` (see [protocol.md](protocol.md), edit transactions).
 
 `lockdown` on an `AdminApi` from `forNode(…)` returns `Unauthorized`; it works on the local node only. When the local node's `security.is_managed` is set, most admin calls on the local node, `setTime` among them, return `Unauthorized` without sending.
 
@@ -170,6 +170,11 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 `IdentityRebound` fires before the engine touches storage and before the next `NodeChange.Snapshot` reaches `nodes`, so subscribers have one ordered point to snapshot state from. `reason` is `"identity_mismatch"` when storage is cleared. It's `"node_renumbered"` when the radio reported the same validated `MyNodeInfo.device_id` under a new NodeNum (firmware 2.8 derives the NodeNum from the public key); storage is kept and only the old own-node row is removed. [storage.md](./architecture/storage.md#identity-rebind-detection-s-p0-2) covers the on-disk behavior.
 
 A connected node can also renumber live: its first region set moves `my_node_num` to `crc32(public_key)` and resends `my_info`, and firmware may deliver the write's routing ACK, which carries the new number, before or after it. The engine holds an ACK for an in-flight write to the connected node until a `my_info` names its sender, or waits for that write after the `my_info`, so the write completes as `Success`. Then it ends the session and runs a new handshake on the same link, which rebinds as above. A session consumer sees `Ended`, then `Ready` with the new number.
+
+Firmware before 2.8.1 renumbers without resending `my_info` and without acking the write that moved the number: `ReliableRouter::sniffReceived` acks only a packet addressed to the node's current number. The engine covers both shapes it leaves:
+
+- A first region set (a local `set_config` whose `lora.region` leaves `UNSET`) that gets `QueueStatus` 0, then neither an ACK nor `my_info` within 5 s, completes as `Success`: the device runs a local write before it reports that status. The engine then restarts the handshake on the same link and learns the new number from its `my_info`. Paced writes still queued fail with `Disconnected`.
+- A later write to the old number, such as the commit of an `editSettings` batch, gets `QueueStatus.res` 39 (`PKI_SEND_FAIL_PUBLIC_KEY`) and a NAK the device sends to itself under its new number (`Router::send`, `abortSendAndNak`). The engine holds the write for that NAK, resends it to the new number under a new packet id, since firmware drops a phone packet id it has seen, and restarts the session once the write settles. Without the NAK within five seconds the write fails with `QueueRejected(39)`.
 ### Security warnings
 
 `PublicKeyMismatch` comes from the engine. The other two `SecurityWarning` variants come from the `ClientNotification.payload_variant` oneof (`duplicated_public_key`, `low_entropy_key` in `mesh.proto`). The engine emits the raw `Notification` and the typed variant.
