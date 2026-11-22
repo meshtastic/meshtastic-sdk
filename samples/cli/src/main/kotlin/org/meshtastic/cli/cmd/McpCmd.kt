@@ -18,7 +18,7 @@ import kotlin.system.exitProcess
 /** `cli mcp` — serve MCP over stdio, keeping one radio connection open across tool calls. */
 internal class McpCmd : BaseCommand(name = "mcp") {
     override fun help(context: Context) =
-        "Serve MCP over stdio (tools: connect, connection_state, nodes, send_text); logs go to stderr."
+        "Serve MCP over stdio (connect, config, admin, send and request tools); logs go to stderr."
 
     override fun run() {
         // stdout carries only JSON-RPC frames, so every println in the process is pointed at stderr.

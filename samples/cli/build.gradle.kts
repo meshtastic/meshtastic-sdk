@@ -24,6 +24,10 @@ dependencies {
     implementation(libs.wireMoshiAdapter)
     implementation(libs.clikt)
     implementation(libs.mcpKotlinSdkServer)
+
+    testImplementation(project(":testing"))
+    testImplementation(libs.kotlinTest)
+    testImplementation(libs.coroutinesTest)
 }
 
 application {
