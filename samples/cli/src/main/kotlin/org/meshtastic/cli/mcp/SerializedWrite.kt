@@ -8,7 +8,10 @@
 package org.meshtastic.cli.mcp
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.coroutines.cancellation.CancellationException
 
 private val writeTail = AtomicReference(CompletableDeferred<Unit>().apply { complete(Unit) })
 
@@ -18,6 +21,12 @@ internal suspend fun <T> serializedWrite(block: suspend () -> T): T {
     val previous = writeTail.getAndSet(mine)
     try {
         previous.await()
+    } catch (e: CancellationException) {
+        withContext(NonCancellable) { previous.await() }
+        mine.complete(Unit)
+        throw e
+    }
+    try {
         return block()
     } finally {
         mine.complete(Unit)

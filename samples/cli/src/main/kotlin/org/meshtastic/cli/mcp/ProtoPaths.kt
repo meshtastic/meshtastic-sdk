@@ -97,7 +97,7 @@ internal object ProtoPaths {
     /** JSON drops fields this build does not know; copies them from [base] onto [next], recursing into messages. */
     @Suppress("UNCHECKED_CAST")
     private fun <M : Message<*, *>> restoreUnknownFields(base: M, next: M): M {
-        val builder = (next as Message<M, *>).newBuilder() as Message.Builder<M, *>
+        val builder = next.newBuilder()
         builder.addUnknownFields(base.unknownFields)
         for (field in next.javaClass.fields.filter { !Modifier.isStatic(it.modifiers) }) {
             val old = field.get(base) as? Message<*, *>
@@ -106,7 +106,7 @@ internal object ProtoPaths {
                 builder.javaClass.getField(field.name).set(builder, restoreUnknownFields(old, new))
             }
         }
-        return builder.build()
+        return builder.build() as M
     }
 
     /** [merge] for a message whose class is only known at runtime. */
