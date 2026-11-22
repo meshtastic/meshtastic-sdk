@@ -11,7 +11,9 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.RouteDiscovery
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.NodeId
@@ -28,10 +30,16 @@ import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
  * - [requestNeighborInfo] sends an empty [ProtoNeighborInfo] on `NEIGHBORINFO_APP` with
  *   `want_response = true`. The neighborinfo module on the device responds with its current
  *   neighbor table.
+ * - [requestPosition] and [requestNodeInfo] send the packets of `RadioClient.requestPosition` and
+ *   `RadioClient.requestNodeInfo`; the dispatcher matches the reply by `request_id`, port and sender.
  */
-internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTimeout: Duration) : RoutingApi {
+internal class RoutingApiImpl(
+    private val engine: MeshEngine,
+    private val rpcTimeout: Duration,
+    private val nowEpochSeconds: () -> Int,
+) : RoutingApi {
 
-    override fun withRpcTimeout(timeout: Duration): RoutingApi = RoutingApiImpl(engine, timeout)
+    override fun withRpcTimeout(timeout: Duration): RoutingApi = RoutingApiImpl(engine, timeout, nowEpochSeconds)
 
     override suspend fun traceRoute(
         dest: NodeId,
@@ -88,6 +96,47 @@ internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTim
         }.build()
         return engine.submitRpc(packet, ResponseKind.NeighborInfoReply, rpcTimeout)
     }
+
+    override suspend fun requestPosition(
+        node: NodeId,
+        channel: ChannelIndex?,
+        position: Position?,
+        requestId: Int?,
+    ): AdminResult<Position> {
+        val local = remoteTargetOrNull(node) ?: return AdminResult.NodeUnreachable
+        val packet = positionRequestPacket(
+            to = node.raw,
+            channel = (channel ?: heardChannel(node)).raw,
+            hopLimit = engine.defaultHopLimit(),
+            position = position,
+            nowEpochSeconds = nowEpochSeconds,
+        )
+        return engine.submitRpc(packet.withIdAndFrom(requestId, local), ResponseKind.PositionReply, rpcTimeout)
+    }
+
+    override suspend fun requestNodeInfo(node: NodeId, channel: ChannelIndex?, requestId: Int?): AdminResult<User> {
+        val local = remoteTargetOrNull(node) ?: return AdminResult.NodeUnreachable
+        val packet = nodeInfoRequestPacket(
+            to = node.raw,
+            channel = (channel ?: heardChannel(node)).raw,
+            hopLimit = engine.defaultHopLimit(),
+            user = engine.ownNode.value?.user,
+        )
+        return engine.submitRpc(packet.withIdAndFrom(requestId, local), ResponseKind.NodeInfoReply, rpcTimeout)
+    }
+
+    // The local node number, or null before the handshake; a request to ourselves is a caller error.
+    private fun remoteTargetOrNull(node: NodeId): Int? {
+        val local = engine.myNodeNumOrNull()
+        require(node != NodeId.LOCAL && node.raw != local) { "the request goes to another node, not our own" }
+        return local
+    }
+
+    // Zero lets the engine pick an id no in-flight request holds.
+    private fun MeshPacket.withIdAndFrom(requestId: Int?, local: Int): MeshPacket = newBuilder().also { wb ->
+        wb.id = requestId ?: 0
+        wb.from = local
+    }.build()
 
     private fun heardChannel(node: NodeId): ChannelIndex = ChannelIndex(engine.nodeSnapshot()[node]?.channel ?: 0)
 }

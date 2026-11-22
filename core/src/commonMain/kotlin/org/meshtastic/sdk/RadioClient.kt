@@ -38,6 +38,7 @@ import org.meshtastic.sdk.internal.RoutingApiImpl
 import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
 import org.meshtastic.sdk.internal.defaultHopLimit
+import org.meshtastic.sdk.internal.nodeInfoRequestPacket
 import org.meshtastic.sdk.internal.summarizeFromRadio
 import org.meshtastic.sdk.internal.summarizeToRadio
 import kotlin.coroutines.CoroutineContext
@@ -338,7 +339,8 @@ public class RadioClient internal constructor(
      * Request [node]'s [NodeInfo] on [channel], carrying [user] so the remote also learns ours.
      *
      * Sends `NODEINFO_APP` with `want_response = true` and no `want_ack`, as the Android app does.
-     * [user] defaults to our own node's user; `null` sends an empty payload.
+     * [user] defaults to our own node's user; `null` sends an empty payload. The handle tracks only
+     * the send; [RoutingApi.requestNodeInfo] sends the same request and returns the reply.
      *
      * @throws IllegalArgumentException if [node] is our own node or [NodeId.LOCAL]
      * @throws MeshtasticException.NotConnected if not currently connected
@@ -349,18 +351,7 @@ public class RadioClient internal constructor(
         require(node != NodeId.LOCAL && node.raw != engine.myNodeNumOrNull()) {
             "node info is requested from another node, not our own"
         }
-        val packet = MeshPacket.Builder().also { wb ->
-            wb.to = node.raw
-            wb.channel = channel.raw
-            wb.want_ack = false
-            wb.hop_limit = defaultHopLimit()
-            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
-                wb.portnum = PortNum.NODEINFO_APP
-                wb.payload = user?.let { User.ADAPTER.encode(it).toByteString() } ?: okio.ByteString.EMPTY
-                wb.want_response = true
-            }.build()
-        }.build()
-        return send(packet)
+        return send(nodeInfoRequestPacket(node.raw, channel.raw, defaultHopLimit(), user))
     }
 
     // ── Lifecycle ───────────────────────────────────────────────────────────
@@ -686,10 +677,11 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Routing API for traceRoute and neighbor enumeration. Available while connected.
+     * Routing API for traceRoute, neighbor enumeration, and position and node-info requests that
+     * wait for the reply. Available while connected.
      */
     public val routing: RoutingApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
-        RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout)
+        RoutingApiImpl(engine = engine, rpcTimeout = rpcTimeout, nowEpochSeconds = ::nowEpochSeconds)
     }
 
     /**

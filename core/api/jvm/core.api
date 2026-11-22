@@ -2183,6 +2183,10 @@ public abstract interface class org/meshtastic/sdk/RoutingApi {
 	public static final field DEFAULT_HOP_LIMIT I
 	public abstract fun requestNeighborInfo-TlUpBXE (ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun requestNeighborInfo-TlUpBXE$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun requestNodeInfo-TlUpBXE (ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun requestNodeInfo-TlUpBXE$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun requestPosition-dQMhl-M (ILorg/meshtastic/sdk/ChannelIndex;Lorg/meshtastic/proto/Position;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun requestPosition-dQMhl-M$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Lorg/meshtastic/proto/Position;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun traceRoute-JW28Az8 (ILjava/lang/Integer;Lorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun traceRoute-JW28Az8$default (Lorg/meshtastic/sdk/RoutingApi;ILjava/lang/Integer;Lorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun withRpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RoutingApi;
@@ -2194,6 +2198,8 @@ public final class org/meshtastic/sdk/RoutingApi$Companion {
 
 public final class org/meshtastic/sdk/RoutingApi$DefaultImpls {
 	public static synthetic fun requestNeighborInfo-TlUpBXE$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun requestNodeInfo-TlUpBXE$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public static synthetic fun requestPosition-dQMhl-M$default (Lorg/meshtastic/sdk/RoutingApi;ILorg/meshtastic/sdk/ChannelIndex;Lorg/meshtastic/proto/Position;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun traceRoute-JW28Az8$default (Lorg/meshtastic/sdk/RoutingApi;ILjava/lang/Integer;Lorg/meshtastic/sdk/ChannelIndex;Ljava/lang/Integer;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 

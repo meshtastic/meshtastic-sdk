@@ -921,12 +921,12 @@ internal class MeshEngine(
         val requestId = if (chosenId != 0) chosenId else allocateFreeWireId()
         val packet = if (chosenId != 0) msg.packet else msg.packet.newBuilder().also { it.id = requestId }.build()
         // Register before sending so a fast device reply can never race the registration.
-        val adminTarget = if (packet.decoded?.portnum == PortNum.ADMIN_APP) {
-            packet.to.takeIf { it != 0 } ?: myNodeNum
-        } else {
-            null
+        val expectedSender = when {
+            packet.decoded?.portnum == PortNum.ADMIN_APP -> packet.to.takeIf { it != 0 } ?: myNodeNum
+            msg.kind.answeredByTarget -> packet.to
+            else -> null
         }
-        dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = adminTarget)
+        dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = expectedSender)
         rememberAdminRequest(packet)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = prepareOutboundAdminPacket(packet)

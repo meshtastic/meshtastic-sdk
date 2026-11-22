@@ -403,6 +403,16 @@ A connected SDK client can request another `69421` download through its optional
 
 A request is a `POSITION_APP` packet with `want_response = true`. Firmware answers it from `PositionModule::allocReply`, which builds the reply from its own position and ignores the request payload (`firmware:src/modules/PositionModule.cpp:291-304`, dispatched by `src/mesh/MeshModule.cpp:186-190`), throttled to one reply per three minutes. An empty request therefore draws the same reply as one carrying our position, so `requestPosition` stays empty and goes out at `BACKGROUND` priority as Android's does (`CommandSenderImpl.kt:312`). A plain unicast is encrypted with the channel's key unless firmware PKI-encrypts it, in which case the channel does not matter (`Router.cpp:1170-1196`), so `channelFor` gives the channel from `NodeInfo.channel` the way Android does (`CommandSenderImpl.kt:141`).
 
+`RoutingApi.requestPosition` and `RoutingApi.requestNodeInfo` wait for the reply. `setReplyTo` sends it to the requester with `request_id` set to the request's id, on the module's port (`firmware:src/mesh/MeshModule.cpp:264-276`), and traffic management answers a node-info request from its cache with `from` set to the target (`src/modules/TrafficManagementModule.cpp:1525-1533`), so the SDK matches on `request_id`, port and sender. Firmware sends no reply at all, so the call times out, when:
+
+- a position reply went out in the last three minutes, to anyone, outside the `LOST_AND_FOUND` role (`PositionModule.cpp:291-297`);
+- the target runs `TAK_TRACKER`, which answers on `ATAK_PLUGIN_V2` (`PositionModule.cpp:282-285`);
+- a node-info request from us arrived in the last 12 hours (`USERPREFS_NODEINFO_REPLY_SUPPRESS_SECS`, `NodeInfoModule.cpp:34-46`, `151-156`);
+- the target sent its own node info within 30 minutes, scaled up on a busy mesh (`NodeInfoModule.cpp:164-184`);
+- channel utilization is 40 % or more (`NodeInfoModule.cpp:158-162`, `src/airtime.h:230`).
+
+A position request to a node with no fix, or on a channel with position precision 0, gets `Routing.Error.NO_RESPONSE` from `MeshModule` (`PositionModule.cpp:187-212`, `MeshModule.cpp:218-229`), which the SDK returns as `AdminResult.Failed`. Node-info never answers with that error: every path that declines sets `ignoreRequest`.
+
 ### Waypoints
 
 A `Waypoint` is keyed by `id`; a new one with a known id replaces the old on every device. Firmware reads `expire == 0` as "never expires" and `expire == 1` as "deleted"; any other value is an epoch-seconds deadline (`firmware:src/meshUtils.h:95-102`). A delete is the same waypoint re-sent with `expire = 1` (`firmware:src/modules/WaypointModule.cpp:226-227`; Android does the same, `WaypointDialogs.kt:101`). `locked_to == 0` leaves the waypoint open to anyone; otherwise only that node may change it, and firmware only removes a waypoint locked to another node locally, never mesh-wide (`WaypointModule.cpp:217-224`). Android refuses to send id `0` (`BaseMapViewModel.kt:224`) and takes new ids from its packet-id generator. The SDK exposes `Waypoint.isExpired`, `Waypoint.canBeEditedBy`, `newWaypointId`, `RadioClient.sendWaypoint` and `RadioClient.deleteWaypoint`, and keeps no waypoint store.

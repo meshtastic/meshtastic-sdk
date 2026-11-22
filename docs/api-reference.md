@@ -188,7 +188,7 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 | `sendRaw(frame: ToRadio)` | `Unit`; not tracked or acknowledged | `NotConnected` |
 | `suspend nodeSnapshot()` | `Map<NodeId, NodeInfo>` | `NotConnected` |
 
-`PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendText` and `sendReaction` set `want_ack`. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`.
+`PayloadTooLarge` fires when `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). `sendText` and `sendReaction` set `want_ack`. Extensions in the same package cover common payloads: `sendPosition(latLng, to, channel, wantAck)`, `requestPosition(from, channel)`, `sendDirectMessage(to, text, channel, wantAck)`, and `sendDirectMessageEncrypted(to, text, wantAck)`, which sets `pki_encrypted`. The request helpers return a handle for the send only; [`RoutingApi`](#routingapi) `requestPosition` and `requestNodeInfo` send the same requests and return the reply.
 
 ### Channel-aware helpers
 
@@ -592,8 +592,21 @@ public interface RoutingApi {
         channel: ChannelIndex? = null,
         requestId: Int? = null,
     ): AdminResult<NeighborInfo>
+    public suspend fun requestPosition(
+        node: NodeId,
+        channel: ChannelIndex? = null,   // null: the channel node was last heard on
+        position: Position? = null,      // our position to share; null sends an empty payload
+        requestId: Int? = null,
+    ): AdminResult<Position>
+    public suspend fun requestNodeInfo(
+        node: NodeId,
+        channel: ChannelIndex? = null,
+        requestId: Int? = null,
+    ): AdminResult<User>
 }
 ```
+
+`requestPosition` and `requestNodeInfo` send the packets of `RadioClient.requestPosition(from, channel, position)` and `RadioClient.requestNodeInfo(node, channel)` (which carries our own user) and return the reply instead of a `MessageHandle`. The reply must be on the request's port, carry its id as `request_id` and come from `node`. Both throw `IllegalArgumentException` for our own node. Firmware stays silent in several cases, so `Timeout` is an expected result: a node answers one position request per three minutes, a `TAK_TRACKER` answers on `ATAK_PLUGIN_V2` instead, and a node answers a node-info request only if it has not heard one from us in 12 hours, has not sent its own node info within its throttle window, and channel utilization is under 40 %. A position request to a node with no fix or with position sharing off on the channel fails with `Failed(NO_RESPONSE)`. [Protocol](./protocol.md#position-requests-and-dm-channels) has the firmware references.
 
 A traceroute across many hops can take longer than the default 30 s `rpcTimeout`; `withRpcTimeout` gives one caller a longer wait. A caller-chosen `requestId` that another request still holds returns `NodeUnreachable` and leaves that request alone, and an id the SDK allocates never lands on one a caller holds.
 

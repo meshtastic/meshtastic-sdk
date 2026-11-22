@@ -7,12 +7,16 @@
  */
 package org.meshtastic.sdk
 
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.RouteDiscovery
+import org.meshtastic.proto.User
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Duration
 import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 
 /**
- * Mesh route discovery and neighbor enumeration RPCs.
+ * Mesh route discovery, neighbor enumeration, and position and node-info requests that wait for
+ * the target's reply.
  *
  * Acquired via [RadioClient.routing]. Available only while the client is connected.
  *
@@ -62,6 +66,57 @@ public interface RoutingApi {
         channel: ChannelIndex? = null,
         requestId: Int? = null,
     ): AdminResult<ProtoNeighborInfo>
+
+    /**
+     * Request [node]'s [Position] and wait for its reply: the packet
+     * [RadioClient.requestPosition] sends (`POSITION_APP`, `want_response`, no `want_ack`, background
+     * priority, the device hop limit), matched on the reply's `request_id` and sender.
+     *
+     * Firmware answers with its own position at the requesting channel's precision. It sends no
+     * reply, so the call returns [AdminResult.Timeout], when it answered any position request in the
+     * last 3 minutes (except in `LOST_AND_FOUND` role) or runs the `TAK_TRACKER` role, which
+     * answers on `ATAK_PLUGIN_V2` instead. With position sharing off on the channel (precision 0)
+     * or no fix it answers `Routing.Error.NO_RESPONSE`, returned as [AdminResult.Failed].
+     *
+     * @param channel channel to send on; `null` uses the channel [node] was last heard on.
+     * @param position our position to share with [node], `time` set to now when it is `0`; `null`
+     *   sends an empty payload.
+     * @param requestId non-zero packet id to use; `null` allocates one. An id another request still
+     *   holds returns [AdminResult.NodeUnreachable] and leaves that request alone.
+     * @throws IllegalArgumentException if [node] is our own node or [NodeId.LOCAL]
+     * @since 0.3.0
+     */
+    @Throws(IllegalArgumentException::class, CancellationException::class)
+    public suspend fun requestPosition(
+        node: NodeId,
+        channel: ChannelIndex? = null,
+        position: Position? = null,
+        requestId: Int? = null,
+    ): AdminResult<Position>
+
+    /**
+     * Request [node]'s [User] and wait for its reply: the packet [RadioClient.requestNodeInfo]
+     * sends with our own user (`NODEINFO_APP`, `want_response`, no `want_ack`, the device hop
+     * limit), matched on the reply's `request_id` and sender. A traffic-management node may answer
+     * from its cache in [node]'s name; that reply counts.
+     *
+     * Firmware never answers with a routing error here. It sends no reply, so the call returns
+     * [AdminResult.Timeout], when it already heard a node-info request from us in the last 12 hours
+     * (`USERPREFS_NODEINFO_REPLY_SUPPRESS_SECS`), sent its own node info within its throttle window
+     * (30 minutes, longer on a busy mesh), or sees channel utilization over 40 %.
+     *
+     * @param channel channel to send on; `null` uses the channel [node] was last heard on.
+     * @param requestId non-zero packet id to use; `null` allocates one. An id another request still
+     *   holds returns [AdminResult.NodeUnreachable] and leaves that request alone.
+     * @throws IllegalArgumentException if [node] is our own node or [NodeId.LOCAL]
+     * @since 0.3.0
+     */
+    @Throws(IllegalArgumentException::class, CancellationException::class)
+    public suspend fun requestNodeInfo(
+        node: NodeId,
+        channel: ChannelIndex? = null,
+        requestId: Int? = null,
+    ): AdminResult<User>
 
     public companion object {
         public const val DEFAULT_HOP_LIMIT: Int = 7
