@@ -111,6 +111,19 @@ class HopLimitDefaultTest {
         }
     }
 
+    @Test
+    fun aUnicastTextWithoutAnAckCompletesWithoutOne() = runTest {
+        val (_, client) = connectedClient(loraHopLimit = 5)
+        try {
+            val handle = client.sendText("unacked", to = NodeId(0x2222), wantAck = false)
+            runCurrent()
+            // No routing ACK comes for a packet without want_ack, so nothing else can settle the handle.
+            assertEquals(SendState.Acked, handle.state.value)
+        } finally {
+            client.disconnect()
+        }
+    }
+
     private suspend fun TestScope.connectedClient(loraHopLimit: Int?): Pair<FakeRadioTransport, RadioClient> {
         val frames = if (loraHopLimit == null) {
             emptyList()

@@ -3344,13 +3344,13 @@ internal class MeshEngine(
 
         val wantsResponse = packet.decoded?.want_response == true
 
-        // Fire-and-forget broadcasts (want_ack=false, no want_response): auto-resolve to
-        // Acked immediately. No firmware ACK will arrive so without this the
+        // Fire-and-forget sends (want_ack=false, no want_response), broadcast or unicast: auto-resolve
+        // to Acked immediately. No firmware ACK will arrive and no timeout is armed, so without this the
         // MessageHandle.await() would suspend forever.
-        if (packet.to == BROADCAST_ADDR && !packet.want_ack && !wantsResponse) {
+        if (!packet.want_ack && !wantsResponse) {
             msg.stateFlow.value = SendState.Acked
             pendingSends.remove(MessageId(wireId))
-            logger.debug(TAG) { "Broadcast (fire-and-forget) auto-acked id=${msg.id}" }
+            logger.debug(TAG) { "Fire-and-forget send auto-acked id=${msg.id}" }
             return
         }
 
