@@ -7,6 +7,7 @@
  */
 package org.meshtastic.cli.mcp
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import okio.ByteString.Companion.toByteString
@@ -75,6 +76,23 @@ class ProtoPathsTest {
             ProtoPaths.merge(Config.LoRaConfig::class.java, lora, mapOf("hop_limt" to JsonPrimitive(1)))
         }
         assertTrue("hop_limt" in ex.message.orEmpty())
+    }
+
+    @Test
+    fun fromJsonRejectsAMisspelledNestedKey() {
+        val json = Json.parseToJsonElement(
+            """{"mqtt":{"enabled":true,"map_report_settings":{"publish_interval_sec":60}}}""",
+        ).jsonObject
+        val ex = assertFailsWith<ToolFailure> { ProtoPaths.fromJson(ModuleConfig::class.java, json) }
+        assertTrue("publish_interval_sec" in ex.message.orEmpty(), ex.message)
+    }
+
+    @Test
+    fun fromJsonAcceptsCamelAndSnakeKeys() {
+        val json = Json.parseToJsonElement("""{"hopLimit":4,"tx_power":9}""").jsonObject
+        val parsed = ProtoPaths.fromJson(Config.LoRaConfig::class.java, json)
+        assertEquals(4, parsed.hop_limit)
+        assertEquals(9, parsed.tx_power)
     }
 
     @Test

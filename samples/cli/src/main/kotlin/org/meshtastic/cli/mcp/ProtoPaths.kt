@@ -39,10 +39,42 @@ internal object ProtoPaths {
         else -> element
     }
 
-    fun <M : Message<*, *>> fromJson(type: Class<M>, json: JsonObject): M = try {
-        moshi.adapter(type).fromJson(json.toString()) ?: toolError("empty ${type.simpleName}")
-    } catch (e: com.squareup.moshi.JsonDataException) {
-        toolError("bad value for ${type.simpleName}: ${e.message}", e)
+    /** Decodes [json] into [type]; a key naming no field, at any depth, is a tool error (Moshi would drop it). */
+    fun <M : Message<*, *>> fromJson(type: Class<M>, json: JsonObject): M {
+        rejectUnknownKeys(type, json, type.simpleName)
+        return try {
+            moshi.adapter(type).fromJson(json.toString()) ?: toolError("empty ${type.simpleName}")
+        } catch (e: com.squareup.moshi.JsonDataException) {
+            toolError("bad value for ${type.simpleName}: ${e.message}", e)
+        }
+    }
+
+    private fun rejectUnknownKeys(type: Class<*>, json: JsonObject, where: String) {
+        for ((key, value) in json) {
+            val name = snake(key)
+            val field = type.fields.firstOrNull { it.name == name && !Modifier.isStatic(it.modifiers) }
+                ?: toolError("unknown field '$key' in $where (${type.simpleName})")
+            val nested = messageType(field.genericType) ?: continue
+            when (value) {
+                is JsonObject -> rejectUnknownKeys(nested, value, "$where.$key")
+
+                is JsonArray -> value.forEachIndexed { i, item ->
+                    if (item is JsonObject) rejectUnknownKeys(nested, item, "$where.$key[$i]")
+                }
+
+                else -> Unit
+            }
+        }
+    }
+
+    /** The message class of a message-typed or list-of-message field, else null. */
+    private fun messageType(generic: java.lang.reflect.Type): Class<*>? = when (generic) {
+        is Class<*> -> generic.takeIf { Message::class.java.isAssignableFrom(it) }
+
+        is java.lang.reflect.ParameterizedType -> (generic.actualTypeArguments.singleOrNull() as? Class<*>)
+            ?.takeIf { Message::class.java.isAssignableFrom(it) }
+
+        else -> null
     }
 
     /** Leaf paths of [edits], with nested objects flattened into dotted keys. */
