@@ -60,6 +60,7 @@ public class SendBuilder internal constructor() {
     private var channel: ChannelIndex = ChannelIndex(0)
     private var wantAck: Boolean = false
     private var hopLimit: Int? = null
+    private var priority: MeshPacket.Priority = MeshPacket.Priority.UNSET
 
     /** Set the destination [NodeId]. Defaults to [NodeId.BROADCAST]. */
     public fun to(nodeId: NodeId) {
@@ -92,6 +93,12 @@ public class SendBuilder internal constructor() {
     public fun hopLimit(hops: Int?) {
         checkNotProtoOnly("hopLimit(Int)")
         this.hopLimit = hops
+    }
+
+    /** Set the packet priority, for example `BACKGROUND` for position and telemetry traffic. Defaults to `UNSET`. */
+    public fun priority(value: MeshPacket.Priority) {
+        checkNotProtoOnly("priority(Priority)")
+        this.priority = value
     }
 
     /** Encode [text] as a `TEXT_MESSAGE_APP` payload (UTF-8). Mutually exclusive with the other payload setters. */
@@ -160,6 +167,7 @@ public class SendBuilder internal constructor() {
             wb.channel = channel.raw
             wb.want_ack = wantAck
             wb.hop_limit = hopLimit ?: defaultHopLimit
+            wb.priority = priority
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = portnum
                 wb.payload = payload
@@ -189,4 +197,16 @@ public class SendBuilder internal constructor() {
 public suspend fun RadioClient.send(block: SendBuilder.() -> Unit): MessageHandle {
     val builder = SendBuilder().apply(block)
     return send(builder.build(defaultHopLimit = defaultHopLimit()))
+}
+
+/**
+ * DSL form of [RadioClient.sendPaced]. Builds the same [MeshPacket] as `send { … }` and queues it
+ * behind the current radio queue write.
+ *
+ * @throws IllegalStateException if zero or more than one payload setter was called
+ * @since 0.3.0
+ */
+public suspend fun RadioClient.sendPaced(block: SendBuilder.() -> Unit): PacedMessageHandle {
+    val builder = SendBuilder().apply(block)
+    return sendPaced(builder.build(defaultHopLimit = defaultHopLimit()))
 }

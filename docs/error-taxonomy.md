@@ -169,6 +169,7 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 
 `IdentityRebound` fires before the engine touches storage and before the next `NodeChange.Snapshot` reaches `nodes`, so subscribers have one ordered point to snapshot state from. `reason` is `"identity_mismatch"` when storage is cleared. It's `"node_renumbered"` when the radio reported the same validated `MyNodeInfo.device_id` under a new NodeNum (firmware 2.8 derives the NodeNum from the public key); storage is kept and only the old own-node row is removed. [storage.md](./architecture/storage.md#identity-rebind-detection-s-p0-2) covers the on-disk behavior.
 
+A connected node can also renumber live: its first region set moves `my_node_num` to `crc32(public_key)` and resends `my_info`, and firmware may deliver the write's routing ACK, which carries the new number, before or after it. The engine holds an ACK for an in-flight write to the connected node until a `my_info` names its sender, or waits for that write after the `my_info`, so the write completes as `Success`. Then it ends the session and runs a new handshake on the same link, which rebinds as above. A session consumer sees `Ended`, then `Ready` with the new number.
 ### Security warnings
 
 `PublicKeyMismatch` comes from the engine. The other two `SecurityWarning` variants come from the `ClientNotification.payload_variant` oneof (`duplicated_public_key`, `low_entropy_key` in `mesh.proto`). The engine emits the raw `Notification` and the typed variant.

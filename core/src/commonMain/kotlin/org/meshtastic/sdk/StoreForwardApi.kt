@@ -48,6 +48,22 @@ public interface StoreForwardApi {
     public suspend fun requestHistory(since: Int? = null, server: NodeId? = null): AdminResult<Int>
 
     /**
+     * Ask the connected node, when it is an S&F server itself, to replay history to this client.
+     *
+     * Sends a `CLIENT_HISTORY` request to our own node at `BACKGROUND` priority with no ack or
+     * response requested, as the Android app does. Negative arguments are sent as `0`.
+     * Replayed messages arrive on `RadioClient.packets`.
+     *
+     * @param lastRequest the `last_request` marker from the previous replay, or `0`
+     * @param windowMinutes how far back to replay, in minutes
+     * @param maxMessages the most messages to replay
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @since 0.3.0
+     */
+    @Throws(MeshtasticException::class)
+    public fun requestLocalHistory(lastRequest: Int, windowMinutes: Int, maxMessages: Int): MessageHandle
+
+    /**
      * Query statistics from a Store-and-Forward server.
      *
      * @param server the S&F node to query. If null, queries the first known server.

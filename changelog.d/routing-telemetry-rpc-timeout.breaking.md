@@ -1,0 +1,1 @@
+- `RoutingApi` and `TelemetryApi` gained `withRpcTimeout`; a class that implements either must add it.

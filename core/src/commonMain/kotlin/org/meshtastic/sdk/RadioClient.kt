@@ -28,12 +28,16 @@ import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
+import org.meshtastic.proto.User
 import org.meshtastic.sdk.internal.AdminApiImpl
 import org.meshtastic.sdk.internal.FileTransferApiImpl
 import org.meshtastic.sdk.internal.MeshEngine
+import org.meshtastic.sdk.internal.MqttProxyApiImpl
+import org.meshtastic.sdk.internal.RemoteShellApiImpl
 import org.meshtastic.sdk.internal.RoutingApiImpl
 import org.meshtastic.sdk.internal.StoreForwardApiImpl
 import org.meshtastic.sdk.internal.TelemetryApiImpl
+import org.meshtastic.sdk.internal.defaultHopLimit
 import org.meshtastic.sdk.internal.summarizeFromRadio
 import org.meshtastic.sdk.internal.summarizeToRadio
 import kotlin.coroutines.CoroutineContext
@@ -324,6 +328,35 @@ public class RadioClient internal constructor(
             wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
                 wb.portnum = org.meshtastic.proto.PortNum.NODEINFO_APP
                 wb.payload = okio.ByteString.EMPTY
+                wb.want_response = true
+            }.build()
+        }.build()
+        return send(packet)
+    }
+
+    /**
+     * Request [node]'s [NodeInfo] on [channel], carrying [user] so the remote also learns ours.
+     *
+     * Sends `NODEINFO_APP` with `want_response = true` and no `want_ack`, as the Android app does.
+     * [user] defaults to our own node's user; `null` sends an empty payload.
+     *
+     * @throws IllegalArgumentException if [node] is our own node or [NodeId.LOCAL]
+     * @throws MeshtasticException.NotConnected if not currently connected
+     * @since 0.3.0
+     */
+    @Throws(MeshtasticException::class, IllegalArgumentException::class)
+    public fun requestNodeInfo(node: NodeId, channel: ChannelIndex, user: User? = ownNode.value?.user): MessageHandle {
+        require(node != NodeId.LOCAL && node.raw != engine.myNodeNumOrNull()) {
+            "node info is requested from another node, not our own"
+        }
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.to = node.raw
+            wb.channel = channel.raw
+            wb.want_ack = false
+            wb.hop_limit = defaultHopLimit()
+            wb.decoded = org.meshtastic.proto.Data.Builder().also { wb ->
+                wb.portnum = PortNum.NODEINFO_APP
+                wb.payload = user?.let { User.ADAPTER.encode(it).toByteString() } ?: okio.ByteString.EMPTY
                 wb.want_response = true
             }.build()
         }.build()
@@ -676,7 +709,26 @@ public class RadioClient internal constructor(
             rpcTimeout = rpcTimeout,
             coroutineContext = parentContext,
             nowProvider = { clock.now() },
+            sendPacket = { send(it) },
         )
+    }
+
+    /**
+     * Remote shell (`REMOTE_SHELL_APP`) frames to and from a node, PKI-encrypted. Available while connected.
+     *
+     * @since 0.3.0
+     */
+    public val remoteShell: RemoteShellApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        RemoteShellApiImpl(client = this)
+    }
+
+    /**
+     * MQTT client proxy messages between the device and a host-side broker connection. Available while connected.
+     *
+     * @since 0.3.0
+     */
+    public val mqttProxy: MqttProxyApi by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        MqttProxyApiImpl(client = this)
     }
 
     /**
@@ -722,23 +774,19 @@ public class RadioClient internal constructor(
      * The hop limit a convenience send uses when the caller passes `null`: the device's
      * `lora.hop_limit` once the handshake has delivered it, else the firmware default.
      */
-    internal fun defaultHopLimit(): Int {
-        val configured = engine.configBundleState.value
-            ?.configs
-            ?.firstNotNullOfOrNull { it.lora }
-            ?.hop_limit
-            ?: 0
-        return if (configured > 0) configured else FIRMWARE_DEFAULT_HOP_LIMIT
-    }
+    internal fun defaultHopLimit(): Int = engine.defaultHopLimit()
+
+    /** The injected clock's current time in epoch seconds. */
+    internal fun nowEpochSeconds(): Int = clock.now().epochSeconds.toInt()
+
+    /** The local node number, or null before the handshake has reported it. */
+    internal fun nodeNum(): Int? = engine.myNodeNumOrNull()
 
     // ── Builder ─────────────────────────────────────────────────────────────
 
     public companion object {
         /** Indicates a reaction (emoji) rather than a standalone text message. */
         private const val EMOJI_INDICATOR: Int = 1
-
-        /** `HOP_RELIABLE` in `firmware:src/mesh/MeshTypes.h`, what the firmware uses for `lora.hop_limit = 0`. */
-        private const val FIRMWARE_DEFAULT_HOP_LIMIT: Int = 3
 
         /** Create a new [Builder]. */
         public fun Builder(): Builder = Builder()
@@ -775,7 +823,6 @@ public class RadioClient internal constructor(
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
         private var skipNodeDb: Boolean = false
         private var sessionReceiveCapacity: Int? = null
-        private var sessionReceiveEnvelopes: Boolean = false
 
         /**
          * Set a pre-built [RadioTransport] instance directly.
@@ -978,21 +1025,16 @@ public class RadioClient internal constructor(
         /**
          * Enable [RadioClient.sessionEvents] with a bounded buffer for one collector.
          *
+         * A received packet can bring a node change with it, so size [capacity] for about two events
+         * per packet in a burst.
+         *
          * @param capacity Maximum number of queued events, including session boundaries.
          * @throws IllegalArgumentException if capacity is nonpositive or unlimited.
          */
-        public fun sessionReceive(capacity: Int = 256): Builder = apply {
+        public fun sessionReceive(capacity: Int = 512): Builder = apply {
             require(capacity in 1 until Int.MAX_VALUE) { "Session receive capacity must be positive and finite" }
             sessionReceiveCapacity = capacity
         }
-
-        /**
-         * Include non-packet [FromRadio] envelopes received after the handshake in the ordered session stream.
-         *
-         * Enable [sessionReceive] as well. [RadioSessionEvent.Envelope] shares the same sequence and bounded queue
-         * as packets. Use this for protocol events such as queue status that a host must reconcile with its own state.
-         */
-        public fun sessionReceiveEnvelopes(): Builder = apply { sessionReceiveEnvelopes = true }
 
         /**
          * Build and return a [RadioClient].
@@ -1019,7 +1061,6 @@ public class RadioClient internal constructor(
                 protocolLogLevel = protocolLogLevel,
                 payloadRedactor = payloadRedactor,
                 sessionReceiveCapacity = sessionReceiveCapacity,
-                sessionReceiveEnvelopes = sessionReceiveEnvelopes,
             )
 
             return RadioClient(

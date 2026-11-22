@@ -114,12 +114,10 @@ internal class AdminApiImpl(
 
     private fun isLocalTarget(): Boolean = targetNode == null || targetNode.raw == engine.myNodeNumOrNull()
 
-    override suspend fun setConfig(config: Config): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_config = config }.build())
-    }.also { result ->
-        // The device acked the write, so configBundle reflects it without a round trip.
-        if (result is AdminResult.Success && isLocalTarget()) engine.applyConfigEdits(listOf(config), emptyList())
-    }
+    override suspend fun setConfig(config: Config): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.set_config = config }.build(),
+        LocalWrite.Config(config),
+    )
 
     override suspend fun getModuleConfig(type: AdminMessage.ModuleConfigType): AdminResult<ModuleConfig> =
         retryOnSessionExpiry {
@@ -131,11 +129,10 @@ internal class AdminApiImpl(
             )
         }
 
-    override suspend fun setModuleConfig(config: ModuleConfig): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_module_config = config }.build())
-    }.also { result ->
-        if (result is AdminResult.Success && isLocalTarget()) engine.applyConfigEdits(emptyList(), listOf(config))
-    }
+    override suspend fun setModuleConfig(config: ModuleConfig): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.set_module_config = config }.build(),
+        LocalWrite.ModuleConfig(config),
+    )
 
     override suspend fun getOwner(): AdminResult<User> = retryOnSessionExpiry {
         submitAdminRpc(
@@ -144,9 +141,25 @@ internal class AdminApiImpl(
         )
     }
 
-    override suspend fun setOwner(user: User): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_owner = user }.build())
+    /**
+     * Send an acked write and, once the connected node acks it, mirror it on the SDK state without a
+     * round trip. The write carries the generation of the link it went out on, so a link replaced
+     * before the caller resumes does not take it.
+     */
+    private suspend fun submitLocalWrite(adminMsg: AdminMessage, write: LocalWrite): AdminResult<Unit> {
+        var generation = engine.connectionGeneration()
+        val result = retryOnSessionExpiry {
+            generation = engine.connectionGeneration()
+            submitAdminAck(adminMsg)
+        }
+        if (result is AdminResult.Success && isLocalTarget()) engine.applyLocalWrites(listOf(write), generation)
+        return result
     }
+
+    override suspend fun setOwner(user: User): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.set_owner = user }.build(),
+        LocalWrite.Node(NodeWrite.Owner(user)),
+    )
 
     override suspend fun getChannel(index: ChannelIndex): AdminResult<Channel> = retryOnSessionExpiry {
         submitAdminRpc(
@@ -159,17 +172,10 @@ internal class AdminApiImpl(
         )
     }
 
-    override suspend fun setChannel(channel: Channel): AdminResult<Unit> {
-        val result = retryOnSessionExpiry {
-            submitAdminAck(
-                AdminMessage.Builder().also { wb ->
-                    wb.set_channel = channel
-                }.build(),
-            )
-        }
-        if (result is AdminResult.Success && isLocalTarget()) engine.updateChannelAndPersist(channel)
-        return result
-    }
+    override suspend fun setChannel(channel: Channel): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.set_channel = channel }.build(),
+        LocalWrite.Channel(channel),
+    )
 
     override suspend fun listChannels(): AdminResult<List<Channel>> {
         val collected = mutableListOf<Channel>()
@@ -196,37 +202,40 @@ internal class AdminApiImpl(
         return AdminResult.Success(collected.toList())
     }
 
-    override suspend fun setFavorite(node: NodeId, favorite: Boolean): AdminResult<Unit> = retryOnSessionExpiry {
+    override suspend fun setFavorite(node: NodeId, favorite: Boolean): AdminResult<Unit> {
         val msg = if (favorite) {
             AdminMessage.Builder().also { wb -> wb.set_favorite_node = node.raw }.build()
         } else {
             AdminMessage.Builder().also { wb -> wb.remove_favorite_node = node.raw }.build()
         }
-        submitAdminAck(msg)
+        return submitLocalWrite(msg, LocalWrite.Node(NodeWrite.Flags(node.raw, favorite = favorite)))
     }
 
-    override suspend fun setIgnored(node: NodeId, ignored: Boolean): AdminResult<Unit> = retryOnSessionExpiry {
+    override suspend fun setIgnored(node: NodeId, ignored: Boolean): AdminResult<Unit> {
         val msg = if (ignored) {
             AdminMessage.Builder().also { wb -> wb.set_ignored_node = node.raw }.build()
         } else {
             AdminMessage.Builder().also { wb -> wb.remove_ignored_node = node.raw }.build()
         }
-        submitAdminAck(msg)
+        return submitLocalWrite(msg, LocalWrite.Node(NodeWrite.Flags(node.raw, ignored = ignored)))
     }
 
-    override suspend fun toggleMuted(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.toggle_muted_node = node.raw }.build())
-    }
+    override suspend fun toggleMuted(node: NodeId): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.toggle_muted_node = node.raw }.build(),
+        LocalWrite.Node(NodeWrite.ToggleMuted(node.raw)),
+    )
 
     // ── Position ────────────────────────────────────────────────────────────
 
-    override suspend fun setFixedPosition(position: Position): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build())
-    }
+    override suspend fun setFixedPosition(position: Position): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build(),
+        LocalWrite.Node(NodeWrite.FixedPosition(position)),
+    )
 
-    override suspend fun removeFixedPosition(): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build())
-    }
+    override suspend fun removeFixedPosition(): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build(),
+        LocalWrite.Node(NodeWrite.FixedPosition(null)),
+    )
 
     // ── Device UI Config ────────────────────────────────────────────────────
 
@@ -271,6 +280,10 @@ internal class AdminApiImpl(
 
     override suspend fun setRingtone(rtttl: String): AdminResult<Unit> = retryOnSessionExpiry {
         submitAdminAck(AdminMessage.Builder().also { wb -> wb.set_ringtone_message = rtttl }.build())
+    }
+
+    override suspend fun playRingtone(): AdminResult<Unit> = retryOnSessionExpiry {
+        submitAdminAck(AdminMessage.Builder().also { wb -> wb.play_ringtone_request = true }.build())
     }
 
     // ── Device status ───────────────────────────────────────────────────────
@@ -345,9 +358,10 @@ internal class AdminApiImpl(
 
     // ── Node removal ────────────────────────────────────────────────────────
 
-    override suspend fun removeNode(node: NodeId): AdminResult<Unit> = retryOnSessionExpiry {
-        submitAdminAck(AdminMessage.Builder().also { wb -> wb.remove_by_nodenum = node.raw }.build())
-    }
+    override suspend fun removeNode(node: NodeId): AdminResult<Unit> = submitLocalWrite(
+        AdminMessage.Builder().also { wb -> wb.remove_by_nodenum = node.raw }.build(),
+        LocalWrite.Node(NodeWrite.Remove(node.raw)),
+    )
 
     // ── Input / Display ─────────────────────────────────────────────────────
 
@@ -483,7 +497,7 @@ internal class AdminApiImpl(
         val commit = closeEditSettings(generation).getOrElse { throw it }
         if (commit !is AdminResult.Success) return commit.cast()
 
-        edit.updateLocalConfigAfterCommit()
+        edit.applyLocallyAfterCommit()
 
         return AdminResult.Success(payload)
     }
@@ -502,7 +516,7 @@ internal class AdminApiImpl(
         }
         closeEditSettings(generation).getOrElse { throw it }.getOrThrow()
 
-        edit.updateLocalConfigAfterCommit()
+        edit.applyLocallyAfterCommit()
         return payload
     }
 
@@ -517,10 +531,8 @@ internal class AdminApiImpl(
         kind: ResponseKind<T>,
         to: NodeId = localNode(),
     ): AdminResult<T> {
-        val requestId = engine.nextMessageId().raw
         val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = requestId
             wb.from = engine.myNodeNumOrNull() ?: 0
             wb.to = to.raw
             wb.decoded = Data.Builder().also { wb ->
@@ -529,7 +541,7 @@ internal class AdminApiImpl(
                 wb.want_response = true
             }.build()
         }.build()
-        return engine.submitRpc(packet, requestId, kind, rpcTimeout)
+        return engine.submitRpc(packet, kind, rpcTimeout)
     }
 
     /**
@@ -661,16 +673,16 @@ internal class AdminApiImpl(
     }
 
     private inner class AdminEditImpl(private val generation: Long) : AdminEdit {
-        private val writtenConfigs = mutableListOf<Config>()
-        private val writtenModuleConfigs = mutableListOf<ModuleConfig>()
+        // In call order: the device applies the block's writes in the order they arrived.
+        private val writes = mutableListOf<LocalWrite>()
 
-        fun updateLocalConfigAfterCommit() {
-            if (isLocalTarget()) engine.applyConfigEdits(writtenConfigs, writtenModuleConfigs)
+        suspend fun applyLocallyAfterCommit() {
+            if (isLocalTarget()) engine.applyLocalWrites(writes, generation)
         }
 
         override suspend fun setConfig(config: Config) {
             enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_config = config }.build())
-            writtenConfigs += config
+            writes += LocalWrite.Config(config)
         }
         override suspend fun setModuleConfig(config: ModuleConfig) {
             enqueueOrThrow(
@@ -678,18 +690,16 @@ internal class AdminApiImpl(
                     wb.set_module_config = config
                 }.build(),
             )
-            writtenModuleConfigs += config
+            writes += LocalWrite.ModuleConfig(config)
         }
-        override suspend fun setOwner(user: User) = enqueueOrThrow(
-            AdminMessage.Builder().also { wb ->
-                wb.set_owner = user
-            }.build(),
-        )
-        override suspend fun setChannel(channel: Channel) = enqueueOrThrow(
-            AdminMessage.Builder().also { wb ->
-                wb.set_channel = channel
-            }.build(),
-        )
+        override suspend fun setOwner(user: User) {
+            enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_owner = user }.build())
+            writes += LocalWrite.Node(NodeWrite.Owner(user))
+        }
+        override suspend fun setChannel(channel: Channel) {
+            enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_channel = channel }.build())
+            writes += LocalWrite.Channel(channel)
+        }
         override suspend fun setFavorite(node: NodeId, favorite: Boolean) {
             val msg = if (favorite) {
                 AdminMessage.Builder().also { wb -> wb.set_favorite_node = node.raw }.build()
@@ -697,6 +707,7 @@ internal class AdminApiImpl(
                 AdminMessage.Builder().also { wb -> wb.remove_favorite_node = node.raw }.build()
             }
             enqueueOrThrow(msg)
+            writes += LocalWrite.Node(NodeWrite.Flags(node.raw, favorite = favorite))
         }
         override suspend fun setIgnored(node: NodeId, ignored: Boolean) {
             val msg = if (ignored) {
@@ -705,13 +716,16 @@ internal class AdminApiImpl(
                 AdminMessage.Builder().also { wb -> wb.remove_ignored_node = node.raw }.build()
             }
             enqueueOrThrow(msg)
+            writes += LocalWrite.Node(NodeWrite.Flags(node.raw, ignored = ignored))
         }
-        override suspend fun setFixedPosition(position: Position) = enqueueOrThrow(
-            AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build(),
-        )
-        override suspend fun removeFixedPosition() = enqueueOrThrow(
-            AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build(),
-        )
+        override suspend fun setFixedPosition(position: Position) {
+            enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.set_fixed_position = position }.build())
+            writes += LocalWrite.Node(NodeWrite.FixedPosition(position))
+        }
+        override suspend fun removeFixedPosition() {
+            enqueueOrThrow(AdminMessage.Builder().also { wb -> wb.remove_fixed_position = true }.build())
+            writes += LocalWrite.Node(NodeWrite.FixedPosition(null))
+        }
 
         /**
          * Enqueue an admin packet inside an `editSettings` block. `want_ack = false` because the

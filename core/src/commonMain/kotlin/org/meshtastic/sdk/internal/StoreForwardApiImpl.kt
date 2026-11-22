@@ -25,6 +25,8 @@ import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.proto.StoreForwardPlusPlus
 import org.meshtastic.sdk.AdminResult
 import org.meshtastic.sdk.ConnectionState
+import org.meshtastic.sdk.MeshtasticException
+import org.meshtastic.sdk.MessageHandle
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.SfppHash
@@ -41,6 +43,7 @@ internal class StoreForwardApiImpl(
     private val rpcTimeout: Duration,
     coroutineContext: CoroutineContext,
     private val nowProvider: () -> Instant,
+    private val sendPacket: (MeshPacket) -> MessageHandle,
 ) : StoreForwardApi {
 
     private val scope = CoroutineScope(coroutineContext + CoroutineName("meshtastic-store-forward"))
@@ -73,7 +76,6 @@ internal class StoreForwardApiImpl(
     override suspend fun requestHistory(since: Int?, server: NodeId?): AdminResult<Int> {
         val myNode = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
         val targetServer = resolveServer(server) ?: return AdminResult.NodeUnreachable
-        val requestId = engine.nextMessageId().raw
         val payload = StoreAndForward.ADAPTER.encode(
             StoreAndForward.Builder().also { wb ->
                 wb.rr = StoreAndForward.RequestResponse.CLIENT_HISTORY
@@ -83,7 +85,6 @@ internal class StoreForwardApiImpl(
             }.build(),
         ).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = requestId
             wb.from = myNode
             wb.to = targetServer.raw
             wb.decoded = Data.Builder().also { wb ->
@@ -92,7 +93,7 @@ internal class StoreForwardApiImpl(
                 wb.want_response = true
             }.build()
         }.build()
-        return when (val result = engine.submitRpc(packet, requestId, ResponseKind.StoreForwardReply, rpcTimeout)) {
+        return when (val result = engine.submitRpc(packet, ResponseKind.StoreForwardReply, rpcTimeout)) {
             is AdminResult.Success -> AdminResult.Success(result.value.history_messages)
             AdminResult.Timeout -> AdminResult.Timeout
             AdminResult.NodeUnreachable -> AdminResult.NodeUnreachable
@@ -103,17 +104,39 @@ internal class StoreForwardApiImpl(
         }
     }
 
+    override fun requestLocalHistory(lastRequest: Int, windowMinutes: Int, maxMessages: Int): MessageHandle {
+        val myNode = engine.myNodeNumOrNull() ?: throw MeshtasticException.NotConnected()
+        val payload = StoreAndForward.ADAPTER.encode(
+            StoreAndForward.Builder().also { wb ->
+                wb.rr = StoreAndForward.RequestResponse.CLIENT_HISTORY
+                wb.history = StoreAndForward.History.Builder().also { wb ->
+                    wb.last_request = lastRequest.coerceAtLeast(0)
+                    wb.window = windowMinutes.coerceAtLeast(0)
+                    wb.history_messages = maxMessages.coerceAtLeast(0)
+                }.build()
+            }.build(),
+        ).toByteString()
+        val packet = MeshPacket.Builder().also { wb ->
+            wb.from = myNode
+            wb.to = myNode
+            wb.priority = MeshPacket.Priority.BACKGROUND
+            wb.decoded = Data.Builder().also { wb ->
+                wb.portnum = PortNum.STORE_FORWARD_APP
+                wb.payload = payload
+            }.build()
+        }.build()
+        return sendPacket(packet)
+    }
+
     override suspend fun requestStats(server: NodeId?): AdminResult<StoreForwardStats> {
         val myNode = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
         val targetServer = resolveServer(server) ?: return AdminResult.NodeUnreachable
-        val requestId = engine.nextMessageId().raw
         val payload = StoreAndForward.ADAPTER.encode(
             StoreAndForward.Builder().also { wb ->
                 wb.rr = StoreAndForward.RequestResponse.CLIENT_STATS
             }.build(),
         ).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = requestId
             wb.from = myNode
             wb.to = targetServer.raw
             wb.decoded = Data.Builder().also { wb ->
@@ -125,7 +148,6 @@ internal class StoreForwardApiImpl(
         return when (
             val result = engine.submitRpc(
                 packet,
-                requestId,
                 ResponseKind.StoreForwardStatsReply,
                 rpcTimeout,
             )

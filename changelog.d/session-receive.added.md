@@ -3,5 +3,7 @@
   stream drains accepted events and reports the affected session while the radio stays online.
   On reconnect, the SDK starts a reader for the new transport connection and discards work
   queued by the previous reader.
-- Hosts can opt into ordered post-handshake envelopes such as queue status and check whether a
-  raw command was admitted to the transport send queue.
+- After `Ready` the stream carries typed `NodeChanged`, `ConfigChanged`, `ChannelsChanged` and
+  `Event` in order with packets, so an app can project the session into its own store without
+  decoding envelopes. Acknowledged local admin writes appear there once the call returns.
+- Hosts can check whether a raw command was admitted to the transport send queue.

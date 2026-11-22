@@ -17,14 +17,15 @@ final class org.meshtastic.sdk.testing/FakeRadioTransport : org.meshtastic.sdk/R
         final fun <get-identity>(): org.meshtastic.sdk/TransportIdentity // org.meshtastic.sdk.testing/FakeRadioTransport.identity.<get-identity>|<get-identity>(){}[0]
     final val linkDropsOnRestartCommands // org.meshtastic.sdk.testing/FakeRadioTransport.linkDropsOnRestartCommands|{}linkDropsOnRestartCommands[0]
         final fun <get-linkDropsOnRestartCommands>(): kotlin/Boolean // org.meshtastic.sdk.testing/FakeRadioTransport.linkDropsOnRestartCommands.<get-linkDropsOnRestartCommands>|<get-linkDropsOnRestartCommands>(){}[0]
-    final val nodeNum // org.meshtastic.sdk.testing/FakeRadioTransport.nodeNum|{}nodeNum[0]
-        final fun <get-nodeNum>(): kotlin/Int // org.meshtastic.sdk.testing/FakeRadioTransport.nodeNum.<get-nodeNum>|<get-nodeNum>(){}[0]
     final val state // org.meshtastic.sdk.testing/FakeRadioTransport.state|{}state[0]
         final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/TransportState> // org.meshtastic.sdk.testing/FakeRadioTransport.state.<get-state>|<get-state>(){}[0]
 
     final var deviceId // org.meshtastic.sdk.testing/FakeRadioTransport.deviceId|{}deviceId[0]
         final fun <get-deviceId>(): okio/ByteString // org.meshtastic.sdk.testing/FakeRadioTransport.deviceId.<get-deviceId>|<get-deviceId>(){}[0]
         final fun <set-deviceId>(okio/ByteString) // org.meshtastic.sdk.testing/FakeRadioTransport.deviceId.<set-deviceId>|<set-deviceId>(okio.ByteString){}[0]
+    final var nodeNum // org.meshtastic.sdk.testing/FakeRadioTransport.nodeNum|{}nodeNum[0]
+        final fun <get-nodeNum>(): kotlin/Int // org.meshtastic.sdk.testing/FakeRadioTransport.nodeNum.<get-nodeNum>|<get-nodeNum>(){}[0]
+        final fun <set-nodeNum>(kotlin/Int) // org.meshtastic.sdk.testing/FakeRadioTransport.nodeNum.<set-nodeNum>|<set-nodeNum>(kotlin.Int){}[0]
 
     final fun frames(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/Frame> // org.meshtastic.sdk.testing/FakeRadioTransport.frames|frames(){}[0]
     final fun injectAdminResponse(kotlin/Int, org.meshtastic.proto/AdminMessage, kotlin/Int = ..., kotlin/Boolean = ..., kotlin/Int = ...) // org.meshtastic.sdk.testing/FakeRadioTransport.injectAdminResponse|injectAdminResponse(kotlin.Int;org.meshtastic.proto.AdminMessage;kotlin.Int;kotlin.Boolean;kotlin.Int){}[0]

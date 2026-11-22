@@ -12,8 +12,8 @@ import org.meshtastic.proto.Data
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.RouteDiscovery
-import org.meshtastic.proto.Routing
 import org.meshtastic.sdk.AdminResult
+import org.meshtastic.sdk.ChannelIndex
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RoutingApi
 import kotlin.time.Duration
@@ -22,56 +22,72 @@ import org.meshtastic.proto.NeighborInfo as ProtoNeighborInfo
 /**
  * Engine-backed [RoutingApi].
  *
- * - [traceRoute] sends an empty `RouteDiscovery` wrapped in a [Routing] envelope on
- *   `ROUTING_APP` with `want_response = true`. The mesh propagates the discovery hop-by-hop;
- *   the destination replies with `route_reply` populated. The dispatcher matches by
- *   `request_id`.
+ * - [traceRoute] sends an empty `RouteDiscovery` on `TRACEROUTE_APP` with `want_response` and
+ *   `want_ack`; `TraceRouteModule` on each hop appends itself and the destination replies on the
+ *   same port. The dispatcher matches by `request_id`.
  * - [requestNeighborInfo] sends an empty [ProtoNeighborInfo] on `NEIGHBORINFO_APP` with
  *   `want_response = true`. The neighborinfo module on the device responds with its current
  *   neighbor table.
  */
 internal class RoutingApiImpl(private val engine: MeshEngine, private val rpcTimeout: Duration) : RoutingApi {
 
-    override suspend fun traceRoute(dest: NodeId, hopLimit: Int): AdminResult<RouteDiscovery> {
-        if (engine.myNodeNumOrNull() == null) return AdminResult.NodeUnreachable
-        val requestId = engine.nextMessageId().raw
-        val payload = Routing.ADAPTER.encode(
-            Routing.Builder().also { wb ->
-                wb.route_request = RouteDiscovery.Builder().build()
-            }.build(),
-        ).toByteString()
+    override fun withRpcTimeout(timeout: Duration): RoutingApi = RoutingApiImpl(engine, timeout)
+
+    override suspend fun traceRoute(
+        dest: NodeId,
+        hopLimit: Int?,
+        channel: ChannelIndex?,
+        requestId: Int?,
+    ): AdminResult<RouteDiscovery> {
+        val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
+        // TraceRouteModule answers only TRACEROUTE_APP; RoutingModule never replies to a route_request.
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = requestId
-            wb.from = engine.myNodeNumOrNull() ?: 0
+            // Zero lets the engine pick an id no in-flight request holds.
+            wb.id = requestId ?: 0
+            wb.from = local
             wb.to = dest.raw
-            wb.hop_limit = hopLimit.coerceAtLeast(0)
+            wb.channel = (channel ?: heardChannel(dest)).raw
+            wb.want_ack = true
+            wb.hop_limit = hopLimit ?: engine.defaultHopLimit()
             wb.decoded = Data.Builder().also { wb ->
-                wb.portnum = PortNum.ROUTING_APP
-                wb.payload = payload
+                wb.portnum = PortNum.TRACEROUTE_APP
+                wb.payload = RouteDiscovery.ADAPTER.encode(RouteDiscovery.Builder().build()).toByteString()
                 wb.want_response = true
+                wb.dest = dest.raw
             }.build()
         }.build()
-        return engine.submitRpc(packet, requestId, ResponseKind.RouteDiscoveryReply, rpcTimeout)
+        return engine.submitRpc(packet, ResponseKind.RouteDiscoveryReply, rpcTimeout)
     }
 
-    override suspend fun requestNeighborInfo(node: NodeId): AdminResult<ProtoNeighborInfo> {
-        val target = if (node == NodeId.LOCAL) {
-            NodeId(engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable)
-        } else {
-            node
-        }
-        val requestId = engine.nextMessageId().raw
+    override suspend fun requestNeighborInfo(
+        node: NodeId,
+        channel: ChannelIndex?,
+        requestId: Int?,
+    ): AdminResult<ProtoNeighborInfo> {
+        val local = engine.myNodeNumOrNull() ?: return AdminResult.NodeUnreachable
+        val target = if (node == NodeId.LOCAL) NodeId(local) else node
+        val remote = target.raw != local
         val payload = ProtoNeighborInfo.ADAPTER.encode(ProtoNeighborInfo.Builder().build()).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
-            wb.id = requestId
-            wb.from = engine.myNodeNumOrNull() ?: 0
+            // Zero lets the engine pick an id no in-flight request holds.
+            wb.id = requestId ?: 0
+            wb.from = local
             wb.to = target.raw
+            if (remote) {
+                // Without want_ack firmware keeps a zero hop limit, so the request would stop at a neighbor.
+                wb.channel = (channel ?: heardChannel(target)).raw
+                wb.want_ack = true
+                wb.hop_limit = engine.defaultHopLimit()
+            }
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.NEIGHBORINFO_APP
                 wb.payload = payload
                 wb.want_response = true
+                if (remote) wb.dest = target.raw
             }.build()
         }.build()
-        return engine.submitRpc(packet, requestId, ResponseKind.NeighborInfoReply, rpcTimeout)
+        return engine.submitRpc(packet, ResponseKind.NeighborInfoReply, rpcTimeout)
     }
+
+    private fun heardChannel(node: NodeId): ChannelIndex = ChannelIndex(engine.nodeSnapshot()[node]?.channel ?: 0)
 }

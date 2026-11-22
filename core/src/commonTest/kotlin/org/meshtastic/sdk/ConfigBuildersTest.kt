@@ -780,6 +780,8 @@ private class CapturingAdminApi(
 
     override suspend fun setRingtone(rtttl: String): AdminResult<Unit> = unused()
 
+    override suspend fun playRingtone(): AdminResult<Unit> = unused()
+
     override suspend fun getDeviceConnectionStatus(): AdminResult<DeviceConnectionStatus> = unused()
 
     override suspend fun getRemoteHardwarePins(): AdminResult<NodeRemoteHardwarePinsResponse> = unused()

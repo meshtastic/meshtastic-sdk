@@ -1527,14 +1527,14 @@ class HandshakeAndReconnectTest {
             transport.injectAlivePacket(103)
             runCurrent()
 
-            assertEquals(
-                listOf(Triple(first.sessionId, 1L, 101), Triple(first.sessionId, 2L, 102)),
-                List(2) {
-                    assertIs<RadioSessionEvent.Packet>(awaitItem()).let {
-                        Triple(it.sessionId, it.sequence, it.packet.id)
-                    }
-                },
-            )
+            val p101 = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
+            val p102 = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
+            assertEquals(listOf(101, 102), listOf(p101.packet.id, p102.packet.id))
+            assertEquals(listOf(first.sessionId, first.sessionId), listOf(p101.sessionId, p102.sessionId))
+            assertEquals(1L, p101.sequence)
+            assertTrue(p102.sequence > p101.sequence)
+            val dropped = assertIs<RadioSessionEvent.Event>(awaitSkippingNodes())
+            assertIs<MeshEvent.TransportError>(dropped.event)
             assertEquals(RadioSessionEvent.Ended(first.sessionId), awaitItem())
             val second = assertIs<RadioSessionEvent.Ready>(awaitItem())
             assertTrue(second.sessionId > first.sessionId)
@@ -1542,7 +1542,7 @@ class HandshakeAndReconnectTest {
             val packet = assertIs<RadioSessionEvent.Packet>(awaitItem())
             assertEquals(Triple(second.sessionId, 1L, 103), Triple(packet.sessionId, packet.sequence, packet.packet.id))
             client.disconnect()
-            assertEquals(RadioSessionEvent.Ended(second.sessionId), awaitItem())
+            assertEquals(RadioSessionEvent.Ended(second.sessionId), awaitSkippingNodes())
             awaitComplete()
         }
     }
@@ -1550,7 +1550,7 @@ class HandshakeAndReconnectTest {
     @Test
     fun nodeDbRefreshKeepsPacketsFlowingAndCoalescesFollowUp() = runTest {
         val transport = ScriptedTransport(TransportIdentity("fake:node-db-refresh"), nowMs = { currentTime })
-        val client = buildClient(transport, sessionReceiveCapacity = 8, includeEnvelopes = true)
+        val client = buildClient(transport, sessionReceiveCapacity = 16)
 
         assertNotNull(client.sessionEvents).test {
             assertFalse(client.requestNodeDbRefresh())
@@ -1568,21 +1568,22 @@ class HandshakeAndReconnectTest {
             transport.injectFromRadio(FromRadio.Builder().also { it.config_complete_id = NONCE_STAGE1 }.build())
             // Queued before the request reached the radio: live traffic, not part of the dump.
             transport.injectStage2Progress(0x9999)
-            assertEquals(0x9999, assertIs<RadioSessionEvent.Envelope>(awaitItem()).envelope.node_info?.num)
+            val live = assertIs<NodeChange.Added>(assertIs<RadioSessionEvent.NodeChanged>(awaitItem()).change)
+            assertEquals(0x9999, live.node.num)
             // The dump opens with our own node_info.
             transport.injectStage2Progress(transport.nodeNum)
             transport.injectStage2Progress(0x1234)
             transport.injectAlivePacket(201)
-            val packet = assertIs<RadioSessionEvent.Packet>(awaitItem())
+            val packet = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
             assertEquals(201, packet.packet.id)
             assertEquals(ConnectionState.Connected, client.connection.value)
             assertEquals(2, stage2Count())
 
             val complete = FromRadio.Builder().also { it.config_complete_id = NONCE_STAGE2 }.build()
             transport.injectFromRadio(complete)
-            val first = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
+            val first = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitSkippingNodes())
             assertEquals(ready.sessionId, first.sessionId)
-            assertEquals(3L, first.sequence)
+            assertTrue(first.sequence > packet.sequence)
             assertEquals(setOf(NodeId(transport.nodeNum), NodeId(0x1234)), first.nodes.keys)
             runCurrent()
             assertEquals(3, stage2Count())
@@ -1590,12 +1591,12 @@ class HandshakeAndReconnectTest {
             transport.injectStage2Progress(transport.nodeNum)
             transport.injectStage2Progress(0x4321)
             transport.injectFromRadio(complete)
-            val second = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitItem())
-            assertEquals(4L, second.sequence)
+            val second = assertIs<RadioSessionEvent.NodeDbRefreshed>(awaitSkippingNodes())
+            assertTrue(second.sequence > first.sequence)
             assertEquals(setOf(NodeId(transport.nodeNum), NodeId(0x4321)), second.nodes.keys)
             assertEquals(3, stage2Count())
             client.disconnect()
-            assertEquals(RadioSessionEvent.Ended(ready.sessionId), awaitItem())
+            assertEquals(RadioSessionEvent.Ended(ready.sessionId), awaitSkippingNodes())
             awaitComplete()
         }
     }
@@ -1615,11 +1616,13 @@ class HandshakeAndReconnectTest {
             repeat(5) { index ->
                 advanceTimeBy(11_000)
                 transport.injectAlivePacket(301 + index)
-                assertIs<RadioSessionEvent.Packet>(awaitItem())
+                assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
                 assertEquals(ConnectionState.Connected, client.connection.value)
             }
             advanceTimeBy(6_000)
             runCurrent()
+            val stalled = assertIs<RadioSessionEvent.Event>(awaitSkippingNodes())
+            assertIs<MeshEvent.TransportError>(stalled.event)
             assertEquals(RadioSessionEvent.Ended(ready.sessionId), awaitItem())
             awaitComplete()
             assertFalse(client.requestNodeDbRefresh())
@@ -1627,36 +1630,39 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun sessionReceiveOrdersQueueStatusWithPackets() = runTest {
-        val transport = ScriptedTransport(TransportIdentity("fake:session-envelopes"), nowMs = { currentTime })
-        val client = buildClient(transport, sessionReceiveCapacity = 8, includeEnvelopes = true)
+    fun sessionReceiveOrdersEventsWithPacketsAndKeepsQueueStatusOut() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:session-events"), nowMs = { currentTime })
+        val client = buildClient(transport, sessionReceiveCapacity = 8)
         val status = QueueStatus.Builder().also { it.mesh_packet_id = 201 }.build()
+        val notice = org.meshtastic.proto.ClientNotification.Builder().also { it.message = "low battery" }.build()
 
         assertNotNull(client.sessionEvents).test {
             client.connect()
             val snapshot = assertIs<RadioSessionEvent.Ready>(awaitItem())
             transport.injectAlivePacket(201)
             transport.injectFromRadio(FromRadio.Builder().also { it.queueStatus = status }.build())
+            transport.injectFromRadio(FromRadio.Builder().also { it.clientNotification = notice }.build())
             transport.injectAlivePacket(202)
+            runCurrent()
 
-            val first = assertIs<RadioSessionEvent.Packet>(awaitItem())
-            val reply = assertIs<RadioSessionEvent.Envelope>(awaitItem())
-            val second = assertIs<RadioSessionEvent.Packet>(awaitItem())
-            assertEquals(listOf(1L, 2L, 3L), listOf(first.sequence, reply.sequence, second.sequence))
-            assertEquals(snapshot.sessionId, reply.sessionId)
-            assertEquals(status, reply.envelope.queueStatus)
+            val received = cancelAndConsumeRemainingEvents().mapNotNull { (it as? app.cash.turbine.Event.Item)?.value }
+            val ordered = received.filterNot { it is RadioSessionEvent.NodeChanged }
+            val first = assertIs<RadioSessionEvent.Packet>(ordered[0])
+            val notification = assertIs<MeshEvent.Notification>(assertIs<RadioSessionEvent.Event>(ordered[1]).event)
+            val second = assertIs<RadioSessionEvent.Packet>(ordered[2])
+            assertEquals(3, ordered.size, "queue status stays off the session stream: $ordered")
+            assertEquals(notice, notification.notification)
             assertEquals(listOf(201, 202), listOf(first.packet.id, second.packet.id))
-
-            client.disconnect()
-            assertEquals(RadioSessionEvent.Ended(snapshot.sessionId), awaitItem())
-            awaitComplete()
+            assertTrue(received.all { it.sessionId == snapshot.sessionId })
+            val eventSequence = assertIs<RadioSessionEvent.Event>(ordered[1]).sequence
+            assertTrue(first.sequence < eventSequence && eventSequence < second.sequence)
         }
     }
 
     @Test
     fun sessionReceiveOverflowDrainsPrefixWhileAckAndRpcContinue() = runTest {
         val transport = ScriptedTransport(TransportIdentity("fake:session-overflow"), nowMs = { currentTime })
-        val client = buildClient(transport, sessionReceiveCapacity = 1, includeEnvelopes = true)
+        val client = buildClient(transport, sessionReceiveCapacity = 1)
         val releaseCollector = CompletableDeferred<Unit>()
         val events = mutableListOf<RadioSessionEvent>()
         val collection = backgroundScope.async {
@@ -1744,7 +1750,6 @@ class HandshakeAndReconnectTest {
         transport: RadioTransport,
         autoReconnect: AutoReconnectConfig = AutoReconnectConfig.Disabled,
         sessionReceiveCapacity: Int? = null,
-        includeEnvelopes: Boolean = false,
     ): RadioClient = RadioClient.Builder()
         .transport(transport)
         .storage(InMemoryStorageProvider())
@@ -1755,13 +1760,20 @@ class HandshakeAndReconnectTest {
         .autoReconnect(autoReconnect)
         .apply {
             sessionReceiveCapacity?.let { sessionReceive(it) }
-            if (includeEnvelopes) sessionReceiveEnvelopes()
         }
         .build()
 
     private fun assertReconnectState(state: ConnectionState, attempt: Int) {
         val reconnecting = assertIs<ConnectionState.Reconnecting>(state)
         assertEquals(attempt, reconnecting.attempt)
+    }
+
+    // Live packets and dump frames also publish NodeChanged; these tests follow the other events.
+    private suspend fun app.cash.turbine.ReceiveTurbine<RadioSessionEvent>.awaitSkippingNodes(): RadioSessionEvent {
+        while (true) {
+            val event = awaitItem()
+            if (event !is RadioSessionEvent.NodeChanged) return event
+        }
     }
 
     private fun TestScope.drainCurrent(times: Int = 20) {

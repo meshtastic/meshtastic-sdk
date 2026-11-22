@@ -116,6 +116,27 @@ internal sealed interface EngineMessage {
 
     data class PacedQueueTimeout(val send: PacedSend) : EngineMessage
 
+    // ── State writes from outside the actor ─────────────────────────────────
+
+    /**
+     * Apply acknowledged local writes in the order the device applied them; [done] completes once
+     * applied. Skipped when [generation] is no longer the current connection's.
+     */
+    data class ApplyLocalWrites(
+        val writes: List<LocalWrite>,
+        val generation: Long,
+        val done: CompletableDeferred<Unit>,
+    ) : EngineMessage
+
+    /** Channels loaded from storage for a session whose handshake reported none. */
+    data class ChannelsRestored(val channels: List<org.meshtastic.proto.Channel>, val generation: Long) : EngineMessage
+
+    /** Restart the handshake on the current link after a live renumber settled its write. */
+    data object RenumberRestart : EngineMessage
+
+    /** A storage write made outside the actor failed. */
+    data class StorageDegraded(val reason: String, val cause: Throwable?) : EngineMessage
+
     /** Cancel a previously queued send before it leaves the host. Idempotent. */
     data class CancelHandle(val id: MessageId, val expected: MutableStateFlow<SendState>? = null) : EngineMessage
 
@@ -174,9 +195,10 @@ internal sealed interface EngineMessage {
     // ── RPC dispatch (admin / telemetry / routing) ──────────────────
 
     /**
-     * Submit a typed RPC request whose response is correlated by [requestId] (the wire packet
-     * `id`). The actor:
-     *  1. Registers ([requestId], [kind]) in [CommandDispatcher].
+     * Submit a typed RPC request whose response is correlated by its wire packet `id`. A zero
+     * `packet.id` asks the actor to allocate one that no in-flight request holds; a caller-chosen
+     * id already in flight fails the request without touching the first. The actor:
+     *  1. Registers (id, [kind]) in [CommandDispatcher].
      *  2. Sends [packet] via the outbound writer.
      *  3. Arms a [timeout] timer that posts [PendingResponseTimeout] on expiry.
      *
@@ -186,7 +208,6 @@ internal sealed interface EngineMessage {
      */
     data class PostRpc(
         val packet: MeshPacket,
-        val requestId: Int,
         val kind: ResponseKind<*>,
         val deferred: CompletableDeferred<AdminResult<Any?>>,
         val timeout: Duration,
@@ -218,4 +239,29 @@ internal sealed interface EngineMessage {
 
     /** Outcome of a reconnect attempt initiated by [ReconnectTick]. */
     data class ReconnectAttemptResult(val success: Boolean, val cause: MeshtasticException?) : EngineMessage
+}
+
+/** An acknowledged admin write to the connected node, mirrored on the SDK's session state. */
+internal sealed interface LocalWrite {
+    data class Config(val config: org.meshtastic.proto.Config) : LocalWrite
+
+    data class ModuleConfig(val config: org.meshtastic.proto.ModuleConfig) : LocalWrite
+
+    data class Channel(val channel: org.meshtastic.proto.Channel) : LocalWrite
+
+    data class Node(val write: NodeWrite) : LocalWrite
+}
+
+/** An acknowledged admin write to the connected node that changes its node database, mirrored on the SDK map. */
+internal sealed interface NodeWrite {
+    data class Remove(val node: Int) : NodeWrite
+
+    data class Flags(val node: Int, val favorite: Boolean? = null, val ignored: Boolean? = null) : NodeWrite
+
+    data class Owner(val user: org.meshtastic.proto.User) : NodeWrite
+
+    data class ToggleMuted(val node: Int) : NodeWrite
+
+    /** A fixed position for our own node; `null` removes it. */
+    data class FixedPosition(val position: org.meshtastic.proto.Position?) : NodeWrite
 }

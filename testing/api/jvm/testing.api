@@ -33,6 +33,7 @@ public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtasti
 	public final fun outboundPackets ()Ljava/util/List;
 	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun setDeviceId (Lokio/ByteString;)V
+	public final fun setNodeNum (I)V
 	public final fun simulateError (Ljava/lang/Throwable;Z)V
 	public static synthetic fun simulateError$default (Lorg/meshtastic/sdk/testing/FakeRadioTransport;Ljava/lang/Throwable;ZILjava/lang/Object;)V
 }

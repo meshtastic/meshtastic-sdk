@@ -17,6 +17,7 @@ import org.meshtastic.proto.LocalStats
 import org.meshtastic.proto.PowerMetrics
 import org.meshtastic.proto.Telemetry
 import org.meshtastic.proto.TrafficManagementStats
+import kotlin.time.Duration
 
 /**
  * Telemetry RPCs and observation.
@@ -32,6 +33,15 @@ import org.meshtastic.proto.TrafficManagementStats
  */
 public interface TelemetryApi {
 
+    /**
+     * Return a [TelemetryApi] whose calls wait up to [timeout] for the reply, instead of the client's
+     * `rpcTimeout`. Use it for a multi-hop request whose answer, or the routing error that ends
+     * it, can arrive after a local round-trip would have.
+     *
+     * @param timeout how long each call waits for its reply or routing error
+     */
+    public fun withRpcTimeout(timeout: Duration): TelemetryApi
+
     /** Request the latest [DeviceMetrics] from [node]. */
     public suspend fun requestDevice(node: NodeId = NodeId.LOCAL): AdminResult<DeviceMetrics>
 
@@ -44,8 +54,8 @@ public interface TelemetryApi {
     /** Request the latest [AirQualityMetrics] from [node]. */
     public suspend fun requestAirQuality(node: NodeId = NodeId.LOCAL): AdminResult<AirQualityMetrics>
 
-    /** Request the local node's [LocalStats] (mesh-wide stats sourced from this device). */
-    public suspend fun requestLocalStats(): AdminResult<LocalStats>
+    /** Request [node]'s [LocalStats] (its mesh-wide counters); firmware answers a remote request too. */
+    public suspend fun requestLocalStats(node: NodeId = NodeId.LOCAL): AdminResult<LocalStats>
 
     /** Request the latest [HealthMetrics] from [node] (heart rate, SpO2, temperature). */
     public suspend fun requestHealth(node: NodeId = NodeId.LOCAL): AdminResult<HealthMetrics>
