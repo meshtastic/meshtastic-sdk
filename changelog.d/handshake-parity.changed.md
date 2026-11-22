@@ -4,7 +4,8 @@
   `HandshakeTimeout` at 20 s.
 - Stage 2 fails only after a 30 s progress window with no frame, or after 600 s in total, instead
   of after 60 s in total, so a large NodeDB over slow BLE completes. 600 s matches the Android
-  app's ceiling (10 times its 60 s Stage 2 budget).
+  app's ceiling (10 times its 60 s Stage 2 budget). `connectAndAwaitReady()` still gives up after
+  its own `timeout`, 30 s by default, so a caller expecting a long NodeDB download raises it.
 - A local `get_owner_request` that gets no reply within 10 s no longer fails `connect()` with
   `HandshakeTimeout("Seeding Session")`: the session goes `Connected` without the local passkey and
   emits `ProtocolWarning("session passkey seed timed out")`. Local admin writes need no passkey.

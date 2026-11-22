@@ -70,6 +70,31 @@ class BleTransportDeferredTest {
         assertEquals(0, peripheral.connectCalls)
     }
 
+    @Test
+    fun disconnectDuringResolutionOpensNoLinkAndALaterConnectWorks() = runTest {
+        val peripheral = FakeBlePeripheral()
+        val release = CompletableDeferred<Unit>()
+        val transport = createDeferredBleTransport(ADDRESS, builderAction = {}) {
+            release.await()
+            peripheral
+        }
+
+        val connecting = async { runCatching { transport.connect() } }
+        yield()
+        transport.disconnect()
+        release.complete(Unit)
+        connecting.await()
+
+        assertEquals(0, peripheral.connectCalls)
+        assertEquals(TransportState.Disconnected, transport.state.value)
+
+        transport.connect()
+
+        assertEquals(1, peripheral.connectCalls)
+        assertEquals(TransportState.Connected, transport.state.value)
+        transport.shutdown()
+    }
+
     private companion object {
         const val ADDRESS = "AA:BB:CC:DD:EE:FF"
     }

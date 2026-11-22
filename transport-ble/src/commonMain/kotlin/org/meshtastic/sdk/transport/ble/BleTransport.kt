@@ -149,6 +149,10 @@ public class BleTransport internal constructor(
     // ADR-012: lifecycle idempotency — only one Error transition per connect cycle.
     private val errorPublished = atomic(false)
 
+    // ADR-012: lifecycle idempotency — disconnect() advances it so a connect() still resolving its
+    // peripheral stops before any native connection work.
+    private val connectGeneration = atomic(0)
+
     /**
      * Platform hook invoked once per successful link establishment, after the GATT connection
      * (and Kable's service discovery) completes and before the warmup read. Platform factories
@@ -180,8 +184,9 @@ public class BleTransport internal constructor(
         // disconnect().
         frameChannel = Channel(capacity = 64)
         _state.value = TransportState.Connecting
+        val generation = connectGeneration.incrementAndGet()
         try {
-            ensurePeripheral()
+            ensurePeripheral(generation)
             bondControl?.let { control ->
                 control.ensureBonded(onBonding = { _state.value = TransportState.Bonding })
                 _state.value = TransportState.Connecting
@@ -281,9 +286,18 @@ public class BleTransport internal constructor(
         }
     }
 
-    /** Resolves a deferred peripheral once; a later connect reuses it. */
-    private suspend fun ensurePeripheral() {
-        if (resolvedPeripheral.value != null) return
+    /**
+     * Resolves a deferred peripheral once; a later connect reuses it. Fails if [disconnect] ran
+     * since this connect began as [generation], so a late resolution never opens a link.
+     */
+    private suspend fun ensurePeripheral(generation: Int) {
+        if (resolvedPeripheral.value == null) resolvePeripheralOnce()
+        if (connectGeneration.value != generation) {
+            throw CancellationException("BleTransport disconnected during connect")
+        }
+    }
+
+    private suspend fun resolvePeripheralOnce() {
         val resolve = checkNotNull(resolvePeripheral) { "BleTransport has neither a peripheral nor a resolver" }
         val resolved = resolve()
         resolvedPeripheral.value = resolved
@@ -354,6 +368,7 @@ public class BleTransport internal constructor(
         // Arm the error guard before publishing Disconnected, not after: a child failing in the
         // window between the two would otherwise overwrite Disconnected with Error.
         errorPublished.value = true
+        connectGeneration.incrementAndGet()
         _state.value = TransportState.Disconnected
         warmupComplete.value = false
         cancelJobs()
