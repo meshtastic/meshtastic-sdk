@@ -85,7 +85,7 @@ Optional and off by default. `BleResilience` carries three Android-only mechanis
 
 - `bondFirst` calls `BluetoothDevice.createBond()` when the device is not bonded and polls the bond state for up to 30 s. Needs `BLUETOOTH_CONNECT` on API 31+; the OS shows its own pairing dialog.
 - `autoConnectFallback` retries a direct connect that has not completed in 15 s with `autoConnect = true`, which Android resolves against a bonded device by address instead of waiting for a fresh advertisement.
-- `refreshStaleGattCache` invokes the hidden `BluetoothGatt.refresh()` when discovery lacks the Meshtastic service. Android's hidden-API blocklist can refuse it; the connect then proceeds unchanged. It reads private fields of Kable 0.45 by reflection, so a Kable bump needs the field names re-checked in `transport-ble/consumer-rules.pro`, which the AAR ships to R8.
+- `refreshStaleGattCache` invokes the hidden `BluetoothGatt.refresh()` when discovery lacks the Meshtastic service. Android's hidden-API blocklist can refuse it; the connect then proceeds unchanged. It goes through Kable's `AndroidPeripheral.refreshGattCache()`, an experimental Kable API.
 
 ## Scoped storage (Android 11+)
 

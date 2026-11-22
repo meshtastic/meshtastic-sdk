@@ -230,8 +230,8 @@ public final class org/meshtastic/sdk/AdminSessionStatus$Stale : org/meshtastic/
 public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public static final field Companion Lorg/meshtastic/sdk/AutoReconnectConfig$Companion;
 	public fun <init> ()V
-	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;Lkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)V
 	public final fun component1 ()Z
 	public final fun component2 ()Lkotlin/time/Duration;
@@ -1041,8 +1041,8 @@ public final class org/meshtastic/sdk/MeshEvent$FileInfoReceived : org/meshtasti
 }
 
 public final class org/meshtastic/sdk/MeshEvent$IdentityRebound : org/meshtastic/sdk/MeshEvent {
-	public synthetic fun <init> (IILjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (IILjava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILjava/lang/String;Lkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILjava/lang/String;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/NodeId;Ljava/lang/String;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1182,7 +1182,7 @@ public final class org/meshtastic/sdk/MeshEvent$SecurityWarning$LowEntropyKey : 
 }
 
 public final class org/meshtastic/sdk/MeshEvent$SecurityWarning$PublicKeyMismatch : org/meshtastic/sdk/MeshEvent$SecurityWarning {
-	public synthetic fun <init> (ILokio/ByteString;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILokio/ByteString;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;Lokio/ByteString;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1295,8 +1295,8 @@ public final class org/meshtastic/sdk/MeshTopology {
 }
 
 public final class org/meshtastic/sdk/MeshTopology$Edge {
-	public synthetic fun <init> (IIFIILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (IIFILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IIFILkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IIFILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/sdk/NodeId;FI)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1377,7 +1377,7 @@ public final class org/meshtastic/sdk/MeshtasticException$Transport : org/meshta
 }
 
 public final class org/meshtastic/sdk/MessageHandle {
-	public synthetic fun <init> (ILkotlinx/coroutines/flow/MutableStateFlow;Lkotlin/jvm/functions/Function1;Lorg/meshtastic/proto/MeshPacket;Lkotlin/jvm/functions/Function1;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILkotlinx/coroutines/flow/MutableStateFlow;Lkotlin/jvm/functions/Function1;Lorg/meshtastic/proto/MeshPacket;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/MessageId;Lkotlinx/coroutines/flow/MutableStateFlow;Lkotlin/jvm/functions/Function1;Lorg/meshtastic/proto/MeshPacket;Lkotlin/jvm/functions/Function1;)V
 	public final fun await (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun cancel ()V
@@ -1450,8 +1450,8 @@ public abstract interface class org/meshtastic/sdk/MqttProxyApi {
 
 public final class org/meshtastic/sdk/NeighborInfo {
 	public static final field Companion Lorg/meshtastic/sdk/NeighborInfo$Companion;
-	public synthetic fun <init> (ILjava/util/List;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (ILjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILjava/util/List;ILkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILjava/util/List;ILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;Ljava/util/List;I)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1477,7 +1477,7 @@ public final class org/meshtastic/sdk/NeighborInfo$Companion {
 }
 
 public final class org/meshtastic/sdk/NeighborInfo$Neighbor {
-	public synthetic fun <init> (IFLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IFLkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;F)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1508,7 +1508,7 @@ public final class org/meshtastic/sdk/NodeChange$Added : org/meshtastic/sdk/Node
 }
 
 public final class org/meshtastic/sdk/NodeChange$CameOnline : org/meshtastic/sdk/NodeChange {
-	public synthetic fun <init> (ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1523,7 +1523,7 @@ public final class org/meshtastic/sdk/NodeChange$CameOnline : org/meshtastic/sdk
 }
 
 public final class org/meshtastic/sdk/NodeChange$Removed : org/meshtastic/sdk/NodeChange {
-	public synthetic fun <init> (ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -1562,7 +1562,7 @@ public final class org/meshtastic/sdk/NodeChange$Updated : org/meshtastic/sdk/No
 }
 
 public final class org/meshtastic/sdk/NodeChange$WentOffline : org/meshtastic/sdk/NodeChange {
-	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;I)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -2100,8 +2100,8 @@ public abstract class org/meshtastic/sdk/RetryPolicy {
 
 public final class org/meshtastic/sdk/RetryPolicy$ExponentialBackoff : org/meshtastic/sdk/RetryPolicy {
 	public fun <init> ()V
-	public synthetic fun <init> (IJJDDILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (IJJDDLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IJJDDLkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IJJDDLkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (ILkotlin/time/Duration;Lkotlin/time/Duration;DD)V
 	public final fun component1 ()I
 	public final fun component2 ()Lkotlin/time/Duration;
@@ -2127,8 +2127,8 @@ public final class org/meshtastic/sdk/RetryPolicy$ExponentialBackoff : org/mesht
 
 public final class org/meshtastic/sdk/RetryPolicy$Fixed : org/meshtastic/sdk/RetryPolicy {
 	public fun <init> ()V
-	public synthetic fun <init> (IJILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (IJLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IJLkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IJLkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (ILkotlin/time/Duration;)V
 	public final fun component1 ()I
 	public final fun component2 ()Lkotlin/time/Duration;
@@ -2461,7 +2461,7 @@ public abstract interface class org/meshtastic/sdk/StoreForwardEvent {
 }
 
 public final class org/meshtastic/sdk/StoreForwardEvent$Heartbeat : org/meshtastic/sdk/StoreForwardEvent {
-	public synthetic fun <init> (ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -2476,7 +2476,7 @@ public final class org/meshtastic/sdk/StoreForwardEvent$Heartbeat : org/meshtast
 }
 
 public final class org/meshtastic/sdk/StoreForwardEvent$HistoryReplayComplete : org/meshtastic/sdk/StoreForwardEvent {
-	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;I)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -2493,7 +2493,7 @@ public final class org/meshtastic/sdk/StoreForwardEvent$HistoryReplayComplete : 
 }
 
 public final class org/meshtastic/sdk/StoreForwardEvent$HistoryReplayStarted : org/meshtastic/sdk/StoreForwardEvent {
-	public synthetic fun <init> (IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;I)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -2510,7 +2510,7 @@ public final class org/meshtastic/sdk/StoreForwardEvent$HistoryReplayStarted : o
 }
 
 public final class org/meshtastic/sdk/StoreForwardEvent$ServerDiscovered : org/meshtastic/sdk/StoreForwardEvent {
-	public synthetic fun <init> (ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I
@@ -2525,7 +2525,7 @@ public final class org/meshtastic/sdk/StoreForwardEvent$ServerDiscovered : org/m
 }
 
 public final class org/meshtastic/sdk/StoreForwardEvent$ServerLost : org/meshtastic/sdk/StoreForwardEvent {
-	public synthetic fun <init> (ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ILkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
 	public final fun component1-Unx0hic ()I

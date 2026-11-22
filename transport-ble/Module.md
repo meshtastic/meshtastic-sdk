@@ -31,7 +31,7 @@ GATT message boundaries replace the stream header (`0x94 0xC3 LEN_HI LEN_LO`) th
 
 ## MTU and connection priority
 
-Every GATT operation carries exactly one `ToRadio` or `FromRadio`. On Android, the factory functions (`BleTransport(radio)`, `BleTransport(address)` and `BleTransport(device)`) request an ATT MTU of 517 and high connection priority after connect, then drop to balanced priority after 30 seconds. Both requests are best effort. The plain constructor `BleTransport(peripheral, address)` leaves MTU and priority to Kable and the OS; a host that needs a specific MTU calls `Peripheral.requestMtu(...)` before passing the peripheral in.
+Every GATT operation carries exactly one `ToRadio` or `FromRadio`. On Android, Kable requests an ATT MTU of 517 as each link is established (`PeripheralBuilder.mtu`, its default); a host building its own peripheral sets `mtu` there. A rejected exchange fails that connect attempt rather than leaving a 23-byte link, which could not carry a `ToRadio` frame. The factory functions (`BleTransport(radio)`, `BleTransport(address)` and `BleTransport(device)`) also request high connection priority after connect, then drop to balanced priority after 30 seconds, best effort. The plain constructor `BleTransport(peripheral, address)` leaves priority to the OS.
 
 ## Bonding and pairing
 
@@ -52,7 +52,7 @@ After the link-layer connect, the transport reads the encrypted `fromradio` char
 - `BleResilience`: opt-in Android link recovery, passed as `resilience` to `BleTransport(radio, ...)` or `BleTransport(address | device, resilience)`. Everything is off by default and ignored on iOS and the JVM.
   - `bondFirst` bonds before the GATT connect, publishing `TransportState.Bonding` with a 30-second limit; a refused bond fails the connect.
   - `autoConnectFallback` retries with `autoConnect = true` when a direct connect hasn't completed in 15 seconds; the next `connect()` starts direct again.
-  - `refreshStaleGattCache` calls the hidden `BluetoothGatt.refresh()` (reflection into Kable's private fields; the AAR's `proguard.txt` carries the keep rules, so R8 applies them in a minified app) and reconnects once when discovery lacks the Meshtastic service or one of its characteristics. A refused refresh leaves the connect unchanged.
+  - `refreshStaleGattCache` calls Kable's `AndroidPeripheral.refreshGattCache()` (the hidden `BluetoothGatt.refresh()`) and reconnects once when discovery lacks the Meshtastic service or one of its characteristics. A refused refresh leaves the connect unchanged.
   - The Android address factory's `refreshGattCacheOnConnect` callback lets an app consume a pending post-update refresh request after the link connects, even if discovery returned a complete table. The transport attempts at most one cache refresh before the PhoneAPI handshake.
   - The write type stays write-with-response: firmware declares `toradio` as `CHR_PROPS_WRITE` only (`NRF52Bluetooth.cpp`, `NimbleBluetooth.cpp`).
 - `BleTransport.deviceLogs(): Flow<LogRecord>`: opt-in device logs from the `logradio` characteristic. The flow is cold: it subscribes while collected and unsubscribes on cancel, so collect again after a reconnect. It buffers 64 records and drops the oldest, so a slow collector never backpressures the link. Firmware streams only while `security.debug_log_api_enabled` is on. Undecodable or MTU-truncated notifications are skipped. The legacy text characteristic (`6c6fd238-...`) isn't read, since the firmware doesn't create it. This is separate from the PhoneAPI `FromRadio.log_record` path.

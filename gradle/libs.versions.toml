@@ -2,7 +2,7 @@
 
 [versions]
 # --- Kotlin & build ---
-kotlin                      = "2.4.10"
+kotlin                      = "2.4.21"
 agp                         = "9.5.2"
 javaVersion                 = "21"               # toolchain
 jvmTarget                   = "17"               # published bytecode and JDK API level
@@ -26,7 +26,7 @@ sqldelight                  = "2.4.1"
 sqliteWasm                  = "3.51.2-build9"
 
 # --- Transports ---
-kable                       = "0.45.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
+kable                       = "0.46.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
 ktor                        = "3.6.1"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 jmdns                       = "3.6.5"            # Apache-2.0; JVM mDNS discovery in transport-tcp, matches Meshtastic-Android
@@ -55,7 +55,7 @@ androidxTestRules           = "1.7.0"
 # --- Publishing / iOS distribution ---
 vanniktechMavenPublish      = "0.37.0"
 kmmBridge                   = "1.2.1"
-skie                        = "0.10.14"          # adds Kotlin 2.4.10 support
+skie                        = "0.10.16"          # adds Kotlin 2.4.10 support
 applePrivacyManifests       = "1.0.0"            # App Store ITMS-91053 compliance
 dokka                       = "2.3.0"
 

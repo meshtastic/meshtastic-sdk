@@ -173,7 +173,7 @@ While the node is in any `STATE_SEND_*` state other than `STATE_SEND_PACKETS`, a
 
 - The node requests MTU 517 on ESP32-S3 and ESP32-C6, which fits a 512-byte payload plus ATT overhead.
 - The fallback when negotiation fails is 23, the BLE minimum.
-- Each `toradio` write has to fit the negotiated MTU, so query it rather than assume it. The SDK's Android transport requests 517 after every link establishment.
+- Each `toradio` write has to fit the negotiated MTU, so query it rather than assume it. At 23 a write over 20 bytes fails, so a link left there cannot carry PhoneAPI frames. The SDK's Android transport requests 517 while each link is established, and a rejected exchange fails that connect attempt.
 
 ### Bonding and pairing
 
