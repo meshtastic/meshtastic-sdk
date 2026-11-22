@@ -1,6 +1,6 @@
 public final class org/meshtastic/sdk/testing/FakeRadioTransport : org/meshtastic/sdk/RadioTransport {
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZIZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZIZZLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZIZZLkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;ZIZZLkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun <init> (Lorg/meshtastic/sdk/TransportIdentity;Ljava/util/List;ZIZZ)V
 	public fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;

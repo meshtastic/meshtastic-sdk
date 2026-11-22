@@ -1,0 +1,90 @@
+public final class org/meshtastic/sdk/transport/ble/BleConstants {
+	public static final field INSTANCE Lorg/meshtastic/sdk/transport/ble/BleConstants;
+	public final fun getFROMNUM ()Lcom/juul/kable/Characteristic;
+	public final fun getFROMNUM_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getFROMRADIO ()Lcom/juul/kable/Characteristic;
+	public final fun getFROMRADIO_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getLOGRADIO ()Lcom/juul/kable/Characteristic;
+	public final fun getLOGRADIO_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getMESH_SERVICE_UUID ()Lkotlin/uuid/Uuid;
+	public final fun getTORADIO ()Lcom/juul/kable/Characteristic;
+	public final fun getTORADIO_UUID ()Lkotlin/uuid/Uuid;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleResilience {
+	public static final field Companion Lorg/meshtastic/sdk/transport/ble/BleResilience$Companion;
+	public fun <init> ()V
+	public fun <init> (ZZZ)V
+	public synthetic fun <init> (ZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAutoConnectFallback ()Z
+	public final fun getBondFirst ()Z
+	public final fun getRefreshStaleGattCache ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleResilience$Companion {
+	public final fun getNone ()Lorg/meshtastic/sdk/transport/ble/BleResilience;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleScanMatchKt {
+	public static final fun bleAdvertisementMatches (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Z
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleScanner {
+	public static final field INSTANCE Lorg/meshtastic/sdk/transport/ble/BleScanner;
+	public final fun scan ()Lkotlinx/coroutines/flow/Flow;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtastic/sdk/RadioTransport {
+	public fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;)V
+	public synthetic fun <init> (Lcom/juul/kable/Peripheral;Ljava/lang/String;Lkotlin/coroutines/CoroutineContext;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun connect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun deviceLogs ()Lkotlinx/coroutines/flow/Flow;
+	public fun disconnect (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun frames ()Lkotlinx/coroutines/flow/Flow;
+	public fun getIdentity ()Lorg/meshtastic/sdk/TransportIdentity;
+	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
+	public fun getLinkDropsOnRestartCommands ()Z
+	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun shutdown ()V
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleTransportFactoryKt {
+	public static final fun BleTransport (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lkotlin/coroutines/CoroutineContext;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static synthetic fun BleTransport$default (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lkotlin/coroutines/CoroutineContext;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BleTransport_androidKt {
+	public static final fun BleTransport (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static final fun BleTransport (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static final fun BleTransport (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static synthetic fun BleTransport$default (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static synthetic fun BleTransport$default (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BondedBleDevice {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddress ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/transport/ble/BondedBleDeviceKt {
+	public static final fun BleTransport (Lorg/meshtastic/sdk/transport/ble/BondedBleDevice;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static synthetic fun BleTransport$default (Lorg/meshtastic/sdk/transport/ble/BondedBleDevice;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static final fun bondedBleDevices (Landroid/content/Context;)Ljava/util/List;
+}
+
+public final class org/meshtastic/sdk/transport/ble/DiscoveredRadio {
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddress ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getRssi ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
