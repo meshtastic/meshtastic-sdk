@@ -10,6 +10,7 @@ package org.meshtastic.cli.mcp
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import okio.ByteString.Companion.decodeHex
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.ModuleConfig
@@ -48,6 +49,27 @@ class ProtoPathsTest {
             mapOf("map_report_settings.publish_interval_secs" to JsonPrimitive(3600)),
         )
         assertEquals(3600, merged.map_report_settings?.publish_interval_secs)
+    }
+
+    @Test
+    fun flattenKeepsEmptyObjectsSoTheirPathsAreValidated() {
+        val flat = ProtoPaths.flatten(
+            Json.parseToJsonElement("""{"lora":{"hop_limit":5},"mqtt":{"typo":{}}}""").jsonObject,
+        )
+        assertEquals(setOf("lora.hop_limit", "mqtt.typo"), flat.keys)
+    }
+
+    @Test
+    fun mergeKeepsUnknownFieldsOfTheBase() {
+        val unknown = "08ff01".let { it.decodeHex() }
+        val withUnknown = lora.newBuilder().addUnknownFields(unknown).build()
+        val merged = ProtoPaths.merge(
+            Config.LoRaConfig::class.java,
+            withUnknown,
+            mapOf("hop_limit" to JsonPrimitive(6)),
+        )
+        assertEquals(6, merged.hop_limit)
+        assertEquals(unknown, merged.unknownFields)
     }
 
     @Test

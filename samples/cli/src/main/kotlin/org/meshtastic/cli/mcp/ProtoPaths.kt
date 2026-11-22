@@ -81,7 +81,7 @@ internal object ProtoPaths {
     fun flatten(edits: JsonObject, prefix: String = ""): Map<String, JsonElement> = buildMap {
         for ((key, value) in edits) {
             val path = if (prefix.isEmpty()) key else "$prefix.$key"
-            if (value is JsonObject) putAll(flatten(value, path)) else put(path, value)
+            if (value is JsonObject && value.isNotEmpty()) putAll(flatten(value, path)) else put(path, value)
         }
     }
 
@@ -91,7 +91,22 @@ internal object ProtoPaths {
         for ((path, value) in edits) {
             tree = set(tree, canonical(type, path), value)
         }
-        return fromJson(type, tree)
+        return restoreUnknownFields(base, fromJson(type, tree))
+    }
+
+    /** JSON drops fields this build does not know; copies them from [base] onto [next], recursing into messages. */
+    @Suppress("UNCHECKED_CAST")
+    private fun <M : Message<*, *>> restoreUnknownFields(base: M, next: M): M {
+        val builder = (next as Message<M, *>).newBuilder() as Message.Builder<M, *>
+        builder.addUnknownFields(base.unknownFields)
+        for (field in next.javaClass.fields.filter { !Modifier.isStatic(it.modifiers) }) {
+            val old = field.get(base) as? Message<*, *>
+            val new = field.get(next) as? Message<*, *>
+            if (old != null && new != null) {
+                builder.javaClass.getField(field.name).set(builder, restoreUnknownFields(old, new))
+            }
+        }
+        return builder.build()
     }
 
     /** [merge] for a message whose class is only known at runtime. */

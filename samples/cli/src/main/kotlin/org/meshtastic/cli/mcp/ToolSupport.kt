@@ -46,7 +46,9 @@ internal class Args(val json: JsonObject) {
 
     fun has(key: String) = json[key] != null
 
-    fun string(key: String): String? = primitive(key)?.content
+    fun string(key: String): String? = primitive(key)?.let {
+        if (it.isString) it.content else toolError("$key must be a string")
+    }
 
     fun int(key: String): Int? = primitive(key)?.let { it.intOrNull ?: toolError("$key must be an integer") }
 
@@ -65,8 +67,19 @@ internal class Args(val json: JsonObject) {
     /** A string array, or a single string treated as a one-element array. */
     fun strings(key: String): List<String>? = when (val v = json[key]) {
         null -> null
-        is JsonArray -> v.map { (it as? JsonPrimitive)?.contentOrNull ?: toolError("$key must hold strings") }
-        is JsonPrimitive -> listOf(v.content)
+
+        is JsonArray -> v.map { item ->
+            (item as? JsonPrimitive)?.takeIf { it.isString }?.content ?: toolError("$key must hold strings")
+        }
+
+        is JsonPrimitive -> if (v.isString) {
+            listOf(
+                v.content,
+            )
+        } else {
+            toolError("$key must be a string or an array of strings")
+        }
+
         else -> toolError("$key must be an array of strings")
     }
 

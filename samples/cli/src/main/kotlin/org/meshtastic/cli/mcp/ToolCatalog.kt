@@ -75,7 +75,7 @@ internal val deviceTools: List<ToolDef> = listOf(
             prop("delete", "boolean", "Delete the waypoint with this id.")
             sendTarget()
         },
-        RADIO_WRITE,
+        RADIO_DESTRUCTIVE,
         ::sendWaypointTool,
     ),
     ToolDef(
@@ -89,7 +89,11 @@ internal val deviceTools: List<ToolDef> = listOf(
             prop("kind", "string", "What to request.", enum = REQUEST_KINDS)
             prop("dest", "string", "Target node; required for traceroute, position and node_info, default local.")
             prop("variant", "string", "Telemetry variant.", enum = TELEMETRY_VARIANTS)
-            prop("channel", "integer", "Channel index; default the channel the node was heard on.")
+            prop(
+                "channel",
+                "integer",
+                "Channel index (not for telemetry); default the channel the node was heard on.",
+            )
             prop("hop_limit", "integer", "Traceroute hop limit (default 7).")
             prop("timeout_ms", "integer", "Reply timeout in ms (default 60000); raise it for multi-hop.")
         },

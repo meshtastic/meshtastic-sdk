@@ -82,7 +82,11 @@ private fun settingsOf(args: Args, old: ChannelSettings, role: Channel.Role): Ch
     }.build()
 }
 
-internal suspend fun channelSet(client: RadioClient, args: Args): JsonObject {
+internal suspend fun channelSet(client: RadioClient, args: Args): JsonObject = serializedWrite {
+    channelSetLocked(client, args)
+}
+
+private suspend fun channelSetLocked(client: RadioClient, args: Args): JsonObject {
     val index = channelIndex(args)
     val t = target(client, args)
     val existing = currentChannel(client, t, index)

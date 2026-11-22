@@ -55,9 +55,9 @@ internal suspend fun request(client: RadioClient, args: Args): JsonObject {
             timeoutMs,
         )
 
-        "telemetry" -> telemetryRequest(client, args.requireString("variant"), dest, timeoutMs)
+        "telemetry" -> telemetryRequest(client, args.requireString("variant"), dest, timeoutMs, channel)
 
-        "local_stats" -> telemetryRequest(client, "local_stats", dest, timeoutMs)
+        "local_stats" -> telemetryRequest(client, "local_stats", dest, timeoutMs, channel)
 
         "neighbor_info" -> {
             val info = client.routing.withRpcTimeout(timeoutMs.milliseconds)
@@ -111,7 +111,14 @@ private suspend fun traceroute(
     }
 }
 
-private suspend fun telemetryRequest(client: RadioClient, variant: String, dest: NodeId?, timeoutMs: Long): JsonObject {
+private suspend fun telemetryRequest(
+    client: RadioClient,
+    variant: String,
+    dest: NodeId?,
+    timeoutMs: Long,
+    channel: ChannelIndex?,
+): JsonObject {
+    if (channel != null) toolError("channel is not supported for telemetry requests")
     val api = client.telemetry.withRpcTimeout(timeoutMs.milliseconds)
     val node = dest ?: NodeId.LOCAL
     val message = when (variant) {

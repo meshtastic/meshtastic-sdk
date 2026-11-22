@@ -32,6 +32,8 @@ import org.meshtastic.sdk.sendWaypoint
 private const val DEFAULT_AWAIT_MS = 30_000L
 private const val NANOS_PER_MS = 1_000_000L
 private const val POSITION_SCALE = 1e7
+private const val MAX_LATITUDE = 90.0
+private const val MAX_LONGITUDE = 180.0
 
 private fun elapsedMs(startedNanos: Long) = (System.nanoTime() - startedNanos) / NANOS_PER_MS
 
@@ -101,7 +103,9 @@ internal suspend fun sendText(client: RadioClient, args: Args): JsonObject {
 }
 
 internal suspend fun sendPositionTool(client: RadioClient, args: Args): JsonObject {
-    val latLng = LatLng(args.requireDouble("latitude"), args.requireDouble("longitude"), args.int("altitude"))
+    val latitude = args.requireDouble("latitude").also { checkLatitude(it) }
+    val longitude = args.requireDouble("longitude").also { checkLongitude(it) }
+    val latLng = LatLng(latitude, longitude, args.int("altitude"))
     val dest = args.dest() ?: NodeId.BROADCAST
     val channel = args.int("channel") ?: 0
     val wantAck = args.bool("want_ack") ?: false
@@ -110,12 +114,26 @@ internal suspend fun sendPositionTool(client: RadioClient, args: Args): JsonObje
     }
 }
 
+private fun checkLatitude(v: Double) {
+    if (!v.isFinite() || v !in -MAX_LATITUDE..MAX_LATITUDE) toolError("latitude must be within -90..90")
+}
+
+private fun checkLongitude(v: Double) {
+    if (!v.isFinite() || v !in -MAX_LONGITUDE..MAX_LONGITUDE) toolError("longitude must be within -180..180")
+}
+
 private fun iconOf(raw: String?): Int? = raw?.let { it.toIntOrNull() ?: it.codePointAt(0) }
 
 private fun waypointOf(args: Args, id: Int): Waypoint = Waypoint.Builder().also { w ->
     w.id = id
-    args.double("latitude")?.let { w.latitude_i = (it * POSITION_SCALE).toInt() }
-    args.double("longitude")?.let { w.longitude_i = (it * POSITION_SCALE).toInt() }
+    args.double("latitude")?.let {
+        checkLatitude(it)
+        w.latitude_i = (it * POSITION_SCALE).toInt()
+    }
+    args.double("longitude")?.let {
+        checkLongitude(it)
+        w.longitude_i = (it * POSITION_SCALE).toInt()
+    }
     args.string("name")?.let { w.name = it }
     args.string("description")?.let { w.description = it }
     iconOf(args.string("icon"))?.let { w.icon = it }

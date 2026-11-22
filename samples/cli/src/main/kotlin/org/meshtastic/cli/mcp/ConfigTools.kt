@@ -106,7 +106,11 @@ private fun groupBySection(flat: Map<String, JsonElement>): Map<Section, Map<Str
     return bySection
 }
 
-internal suspend fun configSet(client: RadioClient, args: Args): JsonObject {
+internal suspend fun configSet(client: RadioClient, args: Args): JsonObject = serializedWrite {
+    configSetLocked(client, args)
+}
+
+private suspend fun configSetLocked(client: RadioClient, args: Args): JsonObject {
     val values = args.obj("values") ?: toolError("values is required")
     val flat = ProtoPaths.flatten(values)
     if (flat.isEmpty()) toolError("values is empty")
@@ -128,15 +132,20 @@ internal suspend fun configSet(client: RadioClient, args: Args): JsonObject {
     return commit(t, merged)
 }
 
+/** Sets [message] as the oneof member [section] on [builder] without a JSON round trip, which would drop unknown fields. */
+private fun <B> wrapSection(builder: B, section: Section, message: Message<*, *>): B {
+    builder!!.javaClass.getMethod(section.name, message.javaClass).invoke(builder, message)
+    return builder
+}
+
 private suspend fun commit(t: Target, merged: Map<Section, Message<*, *>>): JsonObject {
     val configs = mutableListOf<Config>()
     val modules = mutableListOf<ModuleConfig>()
     for ((section, message) in merged) {
-        val wrapper = buildJsonObject { put(section.name, ProtoPaths.toJson(message)) }
         if (section.config != null) {
-            configs += ProtoPaths.fromJson(Config::class.java, wrapper)
+            configs += wrapSection(Config.Builder(), section, message).build()
         } else {
-            modules += ProtoPaths.fromJson(ModuleConfig::class.java, wrapper)
+            modules += wrapSection(ModuleConfig.Builder(), section, message).build()
         }
     }
     t.api.editSettings {
