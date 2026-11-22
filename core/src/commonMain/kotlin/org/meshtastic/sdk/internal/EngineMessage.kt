@@ -134,6 +134,9 @@ internal sealed interface EngineMessage {
     /** Restart the handshake on the current link after a live renumber settled its write. */
     data object RenumberRestart : EngineMessage
 
+    /** A first region set got QueueStatus 0; check whether an ack or my_info followed. */
+    data class SilentRenumberProbe(val send: PacedSend) : EngineMessage
+
     /** A storage write made outside the actor failed. */
     data class StorageDegraded(val reason: String, val cause: Throwable?) : EngineMessage
 

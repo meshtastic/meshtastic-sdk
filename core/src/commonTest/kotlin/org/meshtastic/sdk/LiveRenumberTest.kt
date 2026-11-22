@@ -34,43 +34,24 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
- * Firmware's first region set moves `my_node_num` to `crc32(public_key)`, resends `my_info`, and
- * acknowledges the write from the new number, in either order.
+ * From 2.8.1 firmware's first region set moves `my_node_num` to `crc32(public_key)` and resends
+ * `my_info`. The write itself gets QueueStatus 0 and no ack: `ReliableRouter::sniffReceived` acks only
+ * a packet addressed to the current number. Writes addressed to the new number are acked from it.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class LiveRenumberTest {
 
     @Test
-    fun anAckFromTheNewNumberBeforeMyInfoSettlesTheWriteAndRestartsTheSession() = runTest {
+    fun myInfoAfterTheRegionWriteCompletesItWithoutAnAckAndRestartsTheSession() = runTest {
         val (transport, client, events) = connected()
         val save = async { client.admin.setConfig(regionUs) }
         runCurrent()
-        val write = lastAdminWrite(transport)
 
-        transport.injectRoutingAck(write.id, fromNode = RENUMBERED)
-        runCurrent()
+        // Bench, 2.8.3: QueueStatus 0 for the write, no ack, my_info with the new number 3.8 s later.
+        advanceTimeBy(3_800)
         renumber(transport)
 
-        assertIs<AdminResult.Success<Unit>>(save.await())
-        assertSessionRestarted(transport, events)
-        client.disconnect()
-    }
-
-    @Test
-    fun myInfoBeforeTheAckWaitsForTheWriteThenRestartsTheSession() = runTest {
-        val (transport, client, events) = connected()
-        val save = async { client.admin.setConfig(regionUs) }
-        runCurrent()
-        val write = lastAdminWrite(transport)
-
-        renumber(transport)
-        advanceTimeBy(5_000)
-        runCurrent()
-        assertEquals(1, stage1Requests(transport), "the restart waits for the write to settle")
-
-        transport.injectRoutingAck(write.id, fromNode = RENUMBERED)
-        runCurrent()
-
+        assertTrue(save.isCompleted, "the write waits for an ack firmware never sends")
         assertIs<AdminResult.Success<Unit>>(save.await())
         assertSessionRestarted(transport, events)
         client.disconnect()
@@ -135,29 +116,6 @@ class LiveRenumberTest {
         runCurrent()
 
         assertIs<AdminResult.Success<Unit>>(edit.await())
-        assertSessionRestarted(transport, events)
-        client.disconnect()
-    }
-
-    @Test
-    fun aWriteStartedWhileTheRenumberingWriteAwaitsItsAckGoesToTheNewNumber() = runTest {
-        val (transport, client, events) = connected()
-        val first = async { client.admin.setConfig(regionUs) }
-        runCurrent()
-        val firstWrite = lastAdminWrite(transport)
-        renumber(transport)
-
-        val second = async { client.admin.setConfig(routerRole) }
-        runCurrent()
-        val secondWrite = lastAdminWrite(transport)
-        assertTrue(secondWrite.id != firstWrite.id)
-        assertEquals(RENUMBERED, secondWrite.to)
-        transport.injectRoutingAck(secondWrite.id, fromNode = RENUMBERED)
-        transport.injectRoutingAck(firstWrite.id, fromNode = RENUMBERED)
-        runCurrent()
-
-        assertIs<AdminResult.Success<Unit>>(first.await())
-        assertIs<AdminResult.Success<Unit>>(second.await())
         assertSessionRestarted(transport, events)
         client.disconnect()
     }
@@ -248,6 +206,16 @@ class LiveRenumberTest {
     private suspend fun TestScope.connected(): Triple<FakeRadioTransport, RadioClient, MutableList<RadioSessionEvent>> {
         val transport = FakeRadioTransport(
             identity = TransportIdentity("fake:renumber"),
+            // A freshly reset node: the region is unset until the first region set.
+            frames = listOf(
+                FromRadio.Builder().also { wb ->
+                    wb.config = Config.Builder().also { wb ->
+                        wb.lora = Config.LoRaConfig.Builder().also {
+                            it.region = Config.LoRaConfig.RegionCode.UNSET
+                        }.build()
+                    }.build()
+                }.build().toFrame(),
+            ),
             autoHandshake = true,
             autoQueueStatus = true,
             nodeNum = LOCAL,

@@ -389,6 +389,16 @@ public interface AdminApi {
      *
      * Each setter inside [block] is fire-and-forget; the begin/commit pair is awaited. If begin
      * or commit fails, the result reflects that failure and the block's return value is discarded.
+     *
+     * Firmware holds one open edit per node, so envelopes to the same node run one at a time, in call
+     * order, across every [AdminApi] of the client: `client.admin` and `forNode` of the connected
+     * node's number share one queue, even across a renumber. A second call waits until the first
+     * commit is answered; a call to another node does not wait. A caller cancelled while waiting
+     * sends nothing. From inside [block], a call for the same node throws [IllegalStateException];
+     * one for another node runs if no other caller has that node's edit open, and throws otherwise.
+     *
+     * Plain writes such as [setConfig] do not wait. Sent while another caller's envelope is open,
+     * firmware applies one at once and defers its save and any reboot to that envelope's commit.
      */
     public suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T>
 
@@ -397,7 +407,7 @@ public interface AdminApi {
      *
      * Getter failures throw [AdminResultException] via [getOrThrow]. If [block] throws, the SDK
      * still sends `commit_edit_settings` while the session is connected, so the writes made before
-     * the throw are applied, and then rethrows.
+     * the throw are applied, and then rethrows. It shares [editSettings]'s per-node queue.
      */
     public suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T
 }

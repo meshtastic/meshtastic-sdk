@@ -54,6 +54,20 @@ class AdminPacedWriteOutcomeTest {
     }
 
     @Test
+    fun aRoutingErrorInTheQueueResultIsReportedAsThatErrorNotAsRateLimited() = runTest {
+        val (transport, client) = connected()
+        val save = async { client.admin.forNode(NodeId(REMOTE)).setConfig(router) }
+        runCurrent()
+
+        // Router::send returns perhapsEncode's error for a node it holds no key for, and sendToMesh reports it.
+        transport.queueStatus(adminWrites(transport).single(), PKI_SEND_FAIL_PUBLIC_KEY)
+        runCurrent()
+
+        assertEquals(AdminResult.Failed(Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY), save.await())
+        client.disconnect()
+    }
+
+    @Test
     fun aQueuedWriteWhoseCallerIsCancelledNeverReachesTheRadio() = runTest {
         val (transport, client) = connected()
         val first = async { client.admin.setConfig(router) }
@@ -110,5 +124,9 @@ class AdminPacedWriteOutcomeTest {
         const val ERRNO_DISABLED = 34
 
         const val ERRNO_UNKNOWN = 32
+
+        const val PKI_SEND_FAIL_PUBLIC_KEY = 39
+
+        const val REMOTE = 0x0BAD_CAFE
     }
 }

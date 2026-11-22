@@ -190,7 +190,9 @@ internal class MeshEngine(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    private val inbox = Channel<EngineMessage>(Channel.UNLIMITED)
+    // ADR-002 exception: cleanup() closes both channels, and connect() opens fresh ones for the next run.
+    private val inboxRef = atomic(Channel<EngineMessage>(Channel.UNLIMITED))
+    private val inbox: Channel<EngineMessage> get() = inboxRef.value
 
     private data class OutboundFrame(
         val frame: Frame,
@@ -200,7 +202,8 @@ internal class MeshEngine(
         val generation: Long = 0L,
     )
 
-    private val outbound = Channel<OutboundFrame>(Channel.UNLIMITED)
+    private val outboundRef = atomic(Channel<OutboundFrame>(Channel.UNLIMITED))
+    private val outbound: Channel<OutboundFrame> get() = outboundRef.value
     private val lockdownWriteMutex = Mutex()
 
     /**
@@ -211,6 +214,20 @@ internal class MeshEngine(
      * guards only the lifecycle handle, not engine state.
      */
     private val supervisorJobRef = atomic<Job?>(null)
+
+    // ADR-002 exception: the last run's supervisor, which connect() joins so the next run starts after its cleanup.
+    private val lastRun = atomic<Job?>(null)
+
+    // ADR-002 exception: lifecycle idempotency; set while one connect() decides whether and when its run starts.
+    private val admitting = atomic(false)
+
+    // The boundary handles one run owns, so its cleanup cannot close or clear a later run's.
+    private class RunHandles(
+        val job: Job,
+        val connected: CompletableDeferred<Unit>,
+        val inbox: Channel<EngineMessage>,
+        val outbound: Channel<OutboundFrame>,
+    )
 
     /**
      * Awaiter for the in-flight [connect] call.
@@ -254,6 +271,14 @@ internal class MeshEngine(
     private var heldRenumberAck: EngineMessage.PacedSend? = null
     private var heldRenumberAckFrom = 0
     private var renumberRestartJob: Job? = null
+
+    // Firmware before 2.8.1 renumbers without resending my_info. A write to our old number then fails
+    // PKI_SEND_FAIL_PUBLIC_KEY and is held for the NAK that names the new one.
+    private var staleNumberWrite: EngineMessage.PacedSend? = null
+
+    // The first region set, run by the device (QueueStatus 0) and never acked: the number moved under it.
+    private var regionWrite: EngineMessage.PacedSend? = null
+    private var silentRenumberProbe: Job? = null
 
     // Command admission captures the exact physical link and node id before posting to the actor.
     private data class LockdownLink(val generation: Long, val nodeNum: Int)
@@ -415,19 +440,40 @@ internal class MeshEngine(
     private val nextWireId = atomic(Random.nextInt())
 
     suspend fun connect() {
-        val sup = SupervisorJob(parentContext[Job])
-
-        // the job we just created and throw.
-        if (!supervisorJobRef.compareAndSet(null, sup)) {
-            sup.cancel()
-            throw MeshtasticException.AlreadyConnected()
-        }
-
+        // One connect() at a time is admitted, so lastRun read below is the run current at admission.
+        if (!admitting.compareAndSet(false, true)) throw MeshtasticException.AlreadyConnected()
         val connectDeferred = CompletableDeferred<Unit>()
-        // publish the awaiter on the boundary atomic *before* posting the message so a
-        // concurrent disconnect() can complete it exceptionally even if the actor is cancelled
-        // before it ever processes EngineMessage.Connect.
-        activeConnectDeferred.value = connectDeferred
+        val sup = SupervisorJob(parentContext[Job])
+        var admitted = false
+        try {
+            if (supervisorJobRef.value != null) throw MeshtasticException.AlreadyConnected()
+            // Published before the wait below, so a disconnect() during it cancels this attempt. It also lets a
+            // disconnect() complete the awaiter if the actor is cancelled before it processes EngineMessage.Connect.
+            activeConnectDeferred.value = connectDeferred
+            val previous = lastRun.value
+            // A failed or cancelled connect() returns before its run's cleanup has closed the channels and reset state.
+            previous?.join()
+            if (!supervisorJobRef.compareAndSet(null, sup)) throw MeshtasticException.AlreadyConnected()
+            // disconnect() fails the awaiter before it takes the supervisor, so one of the two sees the other.
+            if (connectDeferred.isCompleted) {
+                supervisorJobRef.compareAndSet(sup, null)
+                connectDeferred.await() // rethrows disconnect()'s cancellation
+                throw CancellationException("disconnect requested")
+            }
+            lastRun.value = sup
+            if (previous != null) {
+                inboxRef.value = Channel(Channel.UNLIMITED)
+                outboundRef.value = Channel(Channel.UNLIMITED)
+            }
+            admitted = true
+        } finally {
+            if (!admitted) {
+                sup.cancel()
+                activeConnectDeferred.compareAndSet(connectDeferred, null)
+            }
+            admitting.value = false
+        }
+        val run = RunHandles(sup, connectDeferred, inboxRef.value, outboundRef.value)
         val scope = CoroutineScope(parentContext + sup)
         engineScope = scope
         val saves = Channel<ConfigBundle>(Channel.CONFLATED)
@@ -437,7 +483,7 @@ internal class MeshEngine(
         }
 
         scope.launch(CoroutineName("meshtastic-engine-actor")) {
-            runEngine()
+            runEngine(run)
         }
 
         scope.launch(CoroutineName("meshtastic-outbound-writer")) {
@@ -484,7 +530,8 @@ internal class MeshEngine(
             connectDeferred.await()
         } catch (e: Exception) {
             // Clean up on failure so a subsequent connect() can start fresh
-            supervisorJobRef.getAndSet(null)?.cancel()
+            supervisorJobRef.compareAndSet(sup, null)
+            sup.cancel()
             throw e
         } finally {
             // clear the awaiter slot so a subsequent disconnect() doesn't try to fail
@@ -619,6 +666,9 @@ internal class MeshEngine(
      */
     fun myNodeNumOrNull(): Int? = if (myNodeNum != 0) myNodeNum else null
 
+    /** Whether [num] is the connected node, under its number or the one a live renumber is moving it to. */
+    fun isConnectedNodeNum(num: Int): Boolean = num != 0 && (num == myNodeNum || num == renumberedTo)
+
     fun connectionGeneration(): Long = connectionGeneration.value
 
     val linkDropsOnRestartCommands: Boolean
@@ -627,14 +677,14 @@ internal class MeshEngine(
     fun isConnectedAtGeneration(generation: Long): Boolean =
         connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
 
-    private suspend fun runEngine() {
+    private suspend fun runEngine(run: RunHandles) {
         try {
-            for (msg in inbox) {
+            for (msg in run.inbox) {
                 processMessage(msg)
             }
         } finally {
             withContext(NonCancellable) {
-                cleanup()
+                cleanup(run)
             }
         }
     }
@@ -656,7 +706,7 @@ internal class MeshEngine(
      * 8. Disconnect transport.
      * 9. Emit [ConnectionState.Disconnected] — unblocks `disconnect()` callers.
      */
-    private suspend fun cleanup() {
+    private suspend fun cleanup(run: RunHandles) {
         clearNodeDbRefresh()
         sessionReceive?.finish()
         // stop the liveness watchdog before any other work so it cannot race with the
@@ -670,13 +720,14 @@ internal class MeshEngine(
             MeshtasticException.Transport("Engine cancelled before connection completed"),
         )
         pendingConnectDeferred = null
-        activeConnectDeferred.getAndSet(null)?.completeExceptionally(
-            CancellationException("Engine cancelled before connection completed"),
-        )
+        // Only this run's handles: a later connect() owns whatever replaced them.
+        if (activeConnectDeferred.compareAndSet(run.connected, null)) {
+            run.connected.completeExceptionally(CancellationException("Engine cancelled before connection completed"))
+        }
 
         readySendGeneration.value = null
-        inbox.close()
-        var drained = inbox.tryReceive()
+        run.inbox.close()
+        var drained = run.inbox.tryReceive()
         while (drained.isSuccess) {
             val msg = drained.getOrNull()
             when (msg) {
@@ -689,7 +740,7 @@ internal class MeshEngine(
 
                 else -> Unit
             }
-            drained = inbox.tryReceive()
+            drained = run.inbox.tryReceive()
         }
 
         // ②ʹ fail any pre-Ready queued sends with Disconnected (semantically equivalent
@@ -702,7 +753,7 @@ internal class MeshEngine(
         }
         pendingSends.clear()
 
-        outbound.close()
+        run.outbound.close()
 
         // Final flush of any dirty heartbeats so presence data survives a clean disconnect.
         try {
@@ -755,7 +806,7 @@ internal class MeshEngine(
         } catch (_: Exception) {
         }
 
-        supervisorJobRef.value = null
+        supervisorJobRef.compareAndSet(run.job, null)
         configSaves?.close()
         configSaves = null
         engineScope = null
@@ -792,6 +843,10 @@ internal class MeshEngine(
         reconnectJob = null
         reconnectAttempt = 0
         autoReconnectInProgress = false
+        renumberedTo = null
+        heldRenumberAck = null
+        staleNumberWrite = null
+        regionWrite = null
         configBundleState.value = null
         channelsState.value = null
 
@@ -864,6 +919,8 @@ internal class MeshEngine(
 
             is EngineMessage.StorageDegraded -> markStorageDegraded(msg.reason, msg.cause)
 
+            is EngineMessage.SilentRenumberProbe -> handleSilentRenumberProbe(msg.send)
+
             EngineMessage.RenumberRestart -> if (
                 handshakeStage == HandshakeStage.Ready && renumberedTo != null && pacedSends.isEmpty()
             ) {
@@ -920,16 +977,18 @@ internal class MeshEngine(
         }
         val requestId = if (chosenId != 0) chosenId else allocateFreeWireId()
         val packet = if (chosenId != 0) msg.packet else msg.packet.newBuilder().also { it.id = requestId }.build()
+        // Between a renumber and the restart, the device answers only to its new number.
+        val sent = retargetRenumbered(packet)
         // Register before sending so a fast device reply can never race the registration.
         val expectedSender = when {
-            packet.decoded?.portnum == PortNum.ADMIN_APP -> packet.to.takeIf { it != 0 } ?: myNodeNum
-            msg.kind.answeredByTarget -> packet.to
+            sent.decoded?.portnum == PortNum.ADMIN_APP -> sent.to.takeIf { it != 0 } ?: myNodeNum
+            msg.kind.answeredByTarget -> sent.to
             else -> null
         }
         dispatcher.register(requestId, msg.kind, msg.deferred, expectedSender = expectedSender)
-        rememberAdminRequest(packet)
+        rememberAdminRequest(sent)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
-        val outboundPacket = prepareOutboundAdminPacket(packet)
+        val outboundPacket = retargetRenumbered(prepareOutboundAdminPacket(packet))
         val encoded = WireCodec.encodeToRadio(
             ToRadio.Builder().also { wb ->
                 wb.packet = outboundPacket
@@ -1972,7 +2031,9 @@ internal class MeshEngine(
      * encryption: PKI, or the legacy admin channel's PSK, the two paths firmware accepts remote admin on.
      */
     private fun isAuthenticatedAdminReply(packet: MeshPacket): Boolean {
-        if (packet.from == 0 || packet.from == myNodeNum || packet.pki_encrypted) return true
+        if (packet.from == 0 || packet.from == myNodeNum || packet.from == renumberedTo || packet.pki_encrypted) {
+            return true
+        }
         val adminIndex = adminChannelIndex()
         return adminIndex != null && packet.channel == adminIndex
     }
@@ -2207,8 +2268,9 @@ internal class MeshEngine(
                 // (ERRNO_SHOULD_RELEASE) means "no error, packet handled without LoRa TX" —
                 // a SUCCESS. Values 1..31 are genuine Routing.Error codes that
                 // Router::send returns directly (e.g. DUTY_CYCLE_LIMIT = 9). The two
-                // namespaces collide at >= 32 (BAD_REQUEST = 32, NOT_AUTHORIZED = 33, …),
-                // so ERRNO values must never be decoded as Routing.Error.
+                // namespaces collide at 32..35 (BAD_REQUEST = 32, NOT_AUTHORIZED = 33, …),
+                // so those are read as ERRNO; above 35 only Routing.Error codes remain
+                // (PKI_SEND_FAIL_PUBLIC_KEY = 39 from perhapsEncode).
                 if (queueStatus.res == 0 || queueStatus.res == ERRNO_SHOULD_RELEASE) {
                     pendingSends[packetId]?.value = SendState.Sent
                 } else {
@@ -2216,7 +2278,7 @@ internal class MeshEngine(
                     // the handle / pending RPC instead of letting the caller wait out the
                     // full ACK timer for a packet that never left the device.
                     val rpcResult: AdminResult<Nothing> =
-                        if (queueStatus.res < ERRNO_BASE) {
+                        if (queueStatus.res < ERRNO_BASE || queueStatus.res > ERRNO_SHOULD_RELEASE) {
                             Routing.Error.fromValue(queueStatus.res)
                                 ?.let(CommandDispatcher::mapRoutingError)
                                 ?: AdminResult.NodeUnreachable
@@ -2283,7 +2345,13 @@ internal class MeshEngine(
         val existing = meshState.nodes[nodeId]
         val wb = (existing ?: NodeInfo.Builder().also { b -> b.num = packet.from }.build()).newBuilder()
 
-        wb.last_heard = packet.rx_time.takeIf { it != 0 } ?: clock.now().epochSeconds.toInt()
+        val rxTime = packet.rx_time?.takeIf { it != 0 }
+        when {
+            rxTime != null -> wb.last_heard = rxTime
+
+            // A replay with no rx_time is history from a node never heard on a trusted clock.
+            !packet.isStoredReplay() -> wb.last_heard = clock.now().epochSeconds.toInt()
+        }
         if (!isOwn) {
             // An SNR is ours only when heard over our own radio; firmware replays carry no rx_rssi.
             if (packet.transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && packet.rx_rssi != null) {
@@ -2331,6 +2399,11 @@ internal class MeshEngine(
         }
     }
 
+    // Firmware replays stored satellite data after config_complete_id marked TRANSPORT_LORA, but only a
+    // radio receive sets rx_rssi (PhoneAPI::makeReplay*Packet, NodeDB::updateFrom), so this is history.
+    private fun MeshPacket.isStoredReplay(): Boolean =
+        transport_mechanism == MeshPacket.TransportMechanism.TRANSPORT_LORA && rx_rssi == null
+
     // Bounded, insertion-ordered: the oldest (node, key) pair is forgotten first.
     private val reportedKeyMismatches = LinkedHashSet<Pair<Int, ByteString>>()
 
@@ -2374,7 +2447,7 @@ internal class MeshEngine(
         }
         // Any frame from a node counts as presence activity. A packet the session sees is offered before
         // the CameOnline it may cause.
-        val heard = { if (packet.from != 0) markNodeHeard(NodeId(packet.from)) }
+        val heard = { if (packet.from != 0 && !packet.isStoredReplay()) markNodeHeard(NodeId(packet.from)) }
         if (shouldDropDuplicateInboundPacket(packet)) return heard()
         val decoded = packet.decoded
         if (decoded == null) {
@@ -2962,8 +3035,12 @@ internal class MeshEngine(
         failPreSendQueueWith(SendFailure.Disconnected)
         renumberedTo = null
         heldRenumberAck = null
+        staleNumberWrite = null
+        regionWrite = null
         renumberRestartJob?.cancel()
         renumberRestartJob = null
+        silentRenumberProbe?.cancel()
+        silentRenumberProbe = null
     }
 
     private fun handleReadyMyInfo(info: org.meshtastic.proto.MyNodeInfo) = beginRenumber(info.my_node_num)
@@ -2978,6 +3055,9 @@ internal class MeshEngine(
             held.receipt.complete(QueueReceipt.Accepted)
             releaseQueueWrite(held)
         }
+        // The device ran the region write before its QueueStatus 0 and, having moved, never acks it.
+        regionWrite?.takeIf { pacedSends[it.id] === it }?.let { finishPaced(it, SendState.Acked) }
+        regionWrite = null
         // Queued writes, a batch commit among them, still go out, addressed to the new number.
         pumpPacedQueue()
         maybeRestartForRenumber()
@@ -3181,12 +3261,42 @@ internal class MeshEngine(
     private fun handlePacedQueueTimeout(send: EngineMessage.PacedSend) {
         if (queueWrite !== send) return
         releaseQueueWrite(send)
+        if (staleNumberWrite === send) {
+            staleNumberWrite = null
+            finishPaced(send, SendState.Failed(SendFailure.QueueRejected(PKI_SEND_FAIL_PUBLIC_KEY)))
+            send.receipt.complete(QueueReceipt.Rejected)
+            pumpPacedQueue()
+            return
+        }
         if (!send.expectsRouting()) finishPaced(send, SendState.Failed(SendFailure.Timeout))
         send.receipt.complete(QueueReceipt.Unconfirmed)
         pumpPacedQueue()
     }
 
     private fun handlePacedQueueStatus(send: EngineMessage.PacedSend, result: Int) {
+        // Router::send refuses a destination it holds no key for and NAKs from the device's current
+        // number (abortSendAndNak). For our own number that means it moved: resend to the new number,
+        // or hold the queue until that NAK names it.
+        if (result == PKI_SEND_FAIL_PUBLIC_KEY && send.packet.to == myNodeNum) {
+            val moved = renumberedTo
+            if (moved != null) resendToRenumbered(send, moved) else staleNumberWrite = send
+            return
+        }
+        if (result == 0 && send.expectsRouting() && isFirstRegionSet(send.packet)) {
+            if (renumberedTo != null) {
+                finishPaced(send, SendState.Acked)
+                send.receipt.complete(QueueReceipt.Accepted)
+                releaseQueueWrite(send)
+                pumpPacedQueue()
+                return
+            }
+            regionWrite = send
+            silentRenumberProbe?.cancel()
+            silentRenumberProbe = engineScope?.launch {
+                delay(SILENT_RENUMBER_MS)
+                inbox.trySend(EngineMessage.SilentRenumberProbe(send))
+            }
+        }
         val receipt = when (result) {
             0 -> QueueReceipt.Accepted
             ERRNO_SHOULD_RELEASE -> QueueReceipt.LocalDelivery
@@ -3207,6 +3317,13 @@ internal class MeshEngine(
     private fun handlePacedRouting(send: EngineMessage.PacedSend, packet: MeshPacket, routing: Routing) {
         if (routing.route_request != null) return
         val error = routing.error_reason
+        // The device addresses that NAK to itself, under the number it now holds.
+        if (error == Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY && send.packet.to == myNodeNum && packet.from != 0 &&
+            packet.from != myNodeNum && packet.to == packet.from
+        ) {
+            resendToRenumbered(send, packet.from)
+            return
+        }
         val success = error == Routing.Error.NONE || routing.route_reply != null
         val destination = send.packet.to
         val broadcast = destination == BROADCAST_ADDR
@@ -3234,6 +3351,42 @@ internal class MeshEngine(
         send.receipt.complete(if (success) QueueReceipt.Accepted else QueueReceipt.Unconfirmed)
         releaseQueueWrite(send)
         pumpPacedQueue()
+    }
+
+    private fun resendToRenumbered(send: EngineMessage.PacedSend, newNum: Int) {
+        if (staleNumberWrite === send) staleNumberWrite = null
+        releaseQueueWrite(send)
+        pacedSends.remove(send.id)
+        pendingSends.remove(send.id)
+        ackTimeoutJobs.remove(send.id)?.cancel()
+        // PhoneAPI::wasSeenRecently drops a phone packet whose id it has seen, so the resend takes a new one.
+        val resend = send.copy(id = nextMessageId())
+        pendingSends[resend.id] = resend.state
+        pacedSends[resend.id] = resend
+        pacedQueue.addFirst(resend)
+        beginRenumber(newNum)
+        pumpPacedQueue()
+    }
+
+    // AdminModule::handleSetConfig mints the PKI key, and with it the node number, on a region set from UNSET.
+    private fun isFirstRegionSet(packet: MeshPacket): Boolean {
+        val decoded = packet.decoded ?: return false
+        if (packet.to != myNodeNum || decoded.portnum != PortNum.ADMIN_APP) return false
+        val region = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull()?.set_config?.lora?.region
+        val current = meshState.configBundle?.configs?.firstNotNullOfOrNull { it.lora }?.region
+        return region != null && region != UNSET_REGION && current == UNSET_REGION
+    }
+
+    // The device runs a local write before it reports QueueStatus 0 (Router::sendLocal), and acks it unless
+    // the write moved its number (ReliableRouter::sniffReceived checks isToUs). Without an ack or my_info the
+    // write applied and the number moved silently.
+    private fun handleSilentRenumberProbe(send: EngineMessage.PacedSend) {
+        if (regionWrite === send) regionWrite = null
+        if (pacedSends[send.id] !== send || send.state.value != SendState.Sent || renumberedTo != null) return
+        if (handshakeStage != HandshakeStage.Ready) return
+        logger.info(TAG) { "First region set settled without an ack or my_info; restarting the handshake" }
+        finishPaced(send, SendState.Acked)
+        restartSessionForRenumber()
     }
 
     private fun releaseQueueWrite(send: EngineMessage.PacedSend) {
@@ -4001,6 +4154,13 @@ internal class MeshEngine(
 
         // How long the paced queue stays empty after a renumber before the handshake restarts.
         const val RENUMBER_SETTLE_MS = 1_000L
+
+        // How long a first region set may go without an ack or my_info before the engine assumes a renumber.
+        const val SILENT_RENUMBER_MS = 5_000L
+        val UNSET_REGION = org.meshtastic.proto.Config.LoRaConfig.RegionCode.UNSET
+
+        // Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY, which Router::send also returns as a QueueStatus result.
+        val PKI_SEND_FAIL_PUBLIC_KEY: Int = Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY.value
 
         // name of the legacy secondary channel used for remote admin when PKC keys are
         // unavailable. Matched case-insensitively against ChannelSettings.name.

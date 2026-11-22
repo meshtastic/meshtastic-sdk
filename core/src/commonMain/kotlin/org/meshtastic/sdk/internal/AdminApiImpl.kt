@@ -62,6 +62,7 @@ internal class AdminApiImpl(
     private val engine: MeshEngine,
     private val rpcTimeout: Duration,
     private val nowProvider: () -> Instant,
+    private val editLocks: AdminEditLocks,
     private val targetNode: NodeId? = null,
 ) : AdminApi {
 
@@ -69,6 +70,7 @@ internal class AdminApiImpl(
         engine = engine,
         rpcTimeout = rpcTimeout,
         nowProvider = nowProvider,
+        editLocks = editLocks,
         targetNode = dest,
     )
 
@@ -76,6 +78,7 @@ internal class AdminApiImpl(
         engine = engine,
         rpcTimeout = timeout,
         nowProvider = nowProvider,
+        editLocks = editLocks,
         targetNode = targetNode,
     )
 
@@ -478,10 +481,10 @@ internal class AdminApiImpl(
         return setTimeOnly(instant.epochSeconds.toInt())
     }
 
-    override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> {
+    override suspend fun <T> editSettings(block: suspend AdminEdit.() -> T): AdminResult<T> = withEditLock(::editLock) {
         val generation = engine.connectionGeneration()
         val begin = beginEditSettings()
-        if (begin !is AdminResult.Success) return begin.cast()
+        if (begin !is AdminResult.Success) return@withEditLock begin.cast()
         val edit = AdminEditImpl(generation)
         val payload = try {
             edit.block()
@@ -492,17 +495,17 @@ internal class AdminApiImpl(
                 throw failure
             }
             cleanup.exceptionOrNull()?.let(failure::addSuppressed)
-            return failure.result.cast()
+            return@withEditLock failure.result.cast()
         }
         val commit = closeEditSettings(generation).getOrElse { throw it }
-        if (commit !is AdminResult.Success) return commit.cast()
+        if (commit !is AdminResult.Success) return@withEditLock commit.cast()
 
         edit.applyLocallyAfterCommit()
 
-        return AdminResult.Success(payload)
+        AdminResult.Success(payload)
     }
 
-    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T {
+    override suspend fun <T> batch(block: suspend AdminBatchScope.() -> T): T = withEditLock(::editLock) {
         val generation = engine.connectionGeneration()
         beginEditSettings().getOrThrow()
         val edit = AdminEditImpl(generation)
@@ -517,10 +520,19 @@ internal class AdminApiImpl(
         closeEditSettings(generation).getOrElse { throw it }.getOrThrow()
 
         edit.applyLocallyAfterCommit()
-        return payload
+        payload
     }
 
     // ── Internal helpers ────────────────────────────────────────────────────
+
+    /**
+     * The connected node shares one lock under any number or instance, including the number a live
+     * renumber is moving it to before the session restarts; a remote node has its own.
+     */
+    private fun editLock() = when {
+        targetNode == null || engine.isConnectedNodeNum(targetNode.raw) -> editLocks.local()
+        else -> editLocks.remote(targetNode.raw)
+    }
 
     /**
      * Send an admin packet that carries a typed response on ADMIN_APP. Routes via
@@ -773,28 +785,37 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
     // ERRNO_NO_INTERFACES and ERRNO_DISABLED (firmware MeshTypes.h): no radio to send on, so retrying cannot help.
-    is SendFailure.QueueRejected -> if (reason.res == ERRNO_NO_INTERFACES || reason.res == ERRNO_DISABLED) {
-        AdminResult.Failed(Routing.Error.NO_INTERFACE)
-    } else {
-        AdminResult.RateLimited
+    // ERRNO_* ends at 35; above it the result is a Routing.Error that Router::send returned, such as
+    // PKI_SEND_FAIL_PUBLIC_KEY.
+    is SendFailure.QueueRejected -> when {
+        reason.res == ERRNO_NO_INTERFACES || reason.res == ERRNO_DISABLED -> AdminResult.Failed(
+            Routing.Error.NO_INTERFACE,
+        )
+
+        reason.res > ERRNO_SHOULD_RELEASE ->
+            Routing.Error.fromValue(reason.res)?.let(::mapRoutingErrorToAdminResult) ?: AdminResult.RateLimited
+
+        else -> AdminResult.RateLimited
     }
 
     // The SDK paced queue or the firmware transmit queue is full; the link is up, so back off and retry.
     SendFailure.QueueFull, SendFailure.RateLimited -> AdminResult.RateLimited
 
-    is SendFailure.Other -> when (reason.routingError) {
-        Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
-
-        Routing.Error.NOT_AUTHORIZED,
-        Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
-        -> AdminResult.Unauthorized
-
-        Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
-
-        else -> AdminResult.Failed(reason.routingError)
-    }
+    is SendFailure.Other -> mapRoutingErrorToAdminResult(reason.routingError)
 
     is SendFailure.Unknown -> AdminResult.Timeout
+}
+
+private fun mapRoutingErrorToAdminResult(error: Routing.Error): AdminResult<Unit> = when (error) {
+    Routing.Error.ADMIN_BAD_SESSION_KEY -> AdminResult.SessionKeyExpired
+
+    Routing.Error.NOT_AUTHORIZED,
+    Routing.Error.ADMIN_PUBLIC_KEY_UNAUTHORIZED,
+    -> AdminResult.Unauthorized
+
+    Routing.Error.RATE_LIMIT_EXCEEDED -> AdminResult.RateLimited
+
+    else -> AdminResult.Failed(error)
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -802,3 +823,4 @@ private fun <T> AdminResult<*>.cast(): AdminResult<T> = this as AdminResult<T>
 
 private const val ERRNO_NO_INTERFACES = 33
 private const val ERRNO_DISABLED = 34
+private const val ERRNO_SHOULD_RELEASE = 35

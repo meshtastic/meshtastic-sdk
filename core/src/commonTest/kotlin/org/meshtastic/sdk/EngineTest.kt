@@ -7,7 +7,14 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -87,6 +94,97 @@ class EngineTest {
         client.connect()
         client.disconnect()
         client.disconnect() // second disconnect must not throw
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun testConnectAgainAfterDisconnectReachesConnectedOnTheSameClient() = runTest {
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity("fake:reconnect"),
+            autoHandshake = true,
+            nodeNum = 0x0A0B_0C0D,
+        )
+        val client = buildClient(transport)
+        client.connect()
+        client.disconnect()
+
+        client.connect()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        assertEquals(0x0A0B_0C0D, client.ownNode.value?.num)
+        val handle = client.send(unicastPacket())
+        runCurrent()
+        assertEquals(SendState.Sent, handle.state.value, "the second session writes packets")
+        client.disconnect()
+    }
+
+    @Test
+    fun testConnectRightAfterACancelledConnectKeepsTheNewSession() = runTest {
+        val fake = fakeTransport()
+        // A real link takes a moment to close, so the cancelled run's teardown outlasts its connect().
+        val slowClose = object : RadioTransport by fake {
+            override suspend fun disconnect() {
+                delay(500)
+                fake.disconnect()
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(slowClose)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .build()
+        // The handshake's settle delays hold this connect mid-handshake until virtual time advances.
+        val first = launch { client.connect() }
+        runCurrent()
+        first.cancelAndJoin()
+
+        client.connect()
+        // Past the cancelled run's slow close.
+        advanceTimeBy(1_000)
+        runCurrent()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        val handle = client.send(unicastPacket())
+        runCurrent()
+        assertEquals(SendState.Sent, handle.state.value, "the cancelled run's teardown reached the new session")
+        client.disconnect()
+    }
+
+    @Test
+    fun testDisconnectWhileAConnectWaitsForTheLastTeardownCancelsThatConnect() = runTest {
+        val fake = fakeTransport()
+        val closeGate = CompletableDeferred<Unit>()
+        var opens = 0
+        val gatedClose = object : RadioTransport by fake {
+            override suspend fun connect() {
+                opens++
+                fake.connect()
+            }
+
+            override suspend fun disconnect() {
+                closeGate.await()
+                fake.disconnect()
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(gatedClose)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .build()
+        client.connect()
+        // The first run's teardown holds on the link close.
+        launch { client.disconnect() }
+        runCurrent()
+        val second = async { runCatching { client.connect() } }
+        runCurrent()
+
+        client.disconnect()
+        closeGate.complete(Unit)
+        advanceTimeBy(5_000)
+        runCurrent()
+
+        assertIs<CancellationException>(second.await().exceptionOrNull())
+        assertEquals(1, opens, "the connect asked to stop before it began opened the link anyway")
         assertEquals(ConnectionState.Disconnected, client.connection.value)
     }
 

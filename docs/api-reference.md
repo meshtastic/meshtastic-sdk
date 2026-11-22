@@ -116,7 +116,7 @@ Auto-reconnect is off unless the builder receives a config with `enabled = true`
 | `suspend fun connect()` | Suspends until `Connected`. Throws `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`) or `CancellationException`. Not idempotent: calling it while connected throws `AlreadyConnected`, because a silent no-op hides reconnect-loop bugs. |
 | `suspend fun RadioClient.connectAndAwaitReady(timeout: Duration = 30.seconds): ConfigBundle` | Calls `connect()` and returns the committed `ConfigBundle`. Throws `HandshakeTimeout(stage = "connectAndAwaitReady")` when the bundle doesn't arrive within `timeout`. |
 | `suspend fun RadioClient.awaitInitialNodeDb(): Map<NodeId, NodeInfo>` | Waits for the first node map after the handshake commits. |
-| `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. |
+| `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. The same client can `connect()` again afterwards; `sessionEvents` has completed and stays complete. |
 | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T` | Connects, runs `block`, and always disconnects, on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. |
 | `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Connecting → …`. |
 | `ownNode: StateFlow<NodeInfo?>` | `null` until `Connected`, then the local node. |
@@ -343,7 +343,7 @@ public enum class NodeField { Name, Position, SignalQuality, Battery, Telemetry,
 - Every subscriber receives one `Snapshot` first, then deltas in causal order.
 - A collector more than 256 changes behind loses the newest ones, reported as `PacketsDropped` on `events` (see [Streams](#streams)). Re-subscribe or use `nodeSnapshot()` to resynchronize.
 - `Updated.changed` lists the fields that differ from the previous `NodeInfo`.
-- `WentOffline` fires when a node's `last_heard` is older than `Builder.presenceTimeout`; `lastHeard` is that epoch, for "last seen" UI. `CameOnline` fires when the node is heard again.
+- `WentOffline` fires when a node's `last_heard` is older than `Builder.presenceTimeout`; `lastHeard` is that epoch, for "last seen" UI. `CameOnline` fires when the node is heard again; firmware's replay of stored history after the handshake does not count (protocol.md, "Node DB after the handshake").
 
 ## `ConnectionState`
 
@@ -519,6 +519,8 @@ public sealed interface AdminResult<out T> {
 `ADMIN_BAD_SESSION_KEY` triggers one automatic retry: the engine re-issues `get_owner_request` to refresh the passkey and replays the call once. A second rejection returns `SessionKeyExpired`. `RateLimited` means the device refused the call for arriving too soon; back off before retrying. The full wire mapping is in [error-taxonomy.md](./error-taxonomy.md#wire-to-adminresult-mapping).
 
 `editSettings` wraps `block` in `begin_edit_settings` and `commit_edit_settings`, so the device applies the writes together. Setters inside `block` (`AdminEdit`: `setConfig`, `setModuleConfig`, `setOwner`, `setChannel`, `setFavorite`, `setIgnored`, `setFixedPosition`, `removeFixedPosition`) return once the paced queue dispatches them; the begin and commit are awaited. `batch` is the throwing counterpart and adds the getters `getConfig`, `getModuleConfig`, and `listChannels` (`AdminBatchScope`), which throw `AdminResultException` on failure. When `block` throws or is cancelled, the SDK still sends `commit_edit_settings` on the same connection, so writes queued before the failure are applied, then rethrows. On a replaced connection it sends nothing.
+
+Firmware holds one open edit per node, so `editSettings` and `batch` calls to the same node run one at a time, in call order, across every `AdminApi` of the client. `client.admin` and `client.admin.forNode(n)` for the connected node's number share one queue, which survives a renumber. The next call's `begin_edit_settings` waits until the previous commit is answered; a call to another node doesn't wait. A caller cancelled while waiting sends nothing. From inside `block`, a call for the same node throws `IllegalStateException`; one for another node runs if no other caller has that node's edit open, and throws otherwise, since waiting there could deadlock against a caller nesting the other way. Plain writes such as `setConfig` don't wait: sent during another caller's open edit, firmware applies them at once and defers their save and any reboot to that edit's commit.
 
 `AdminResult` helpers follow `kotlin.Result` naming (there's no `kotlin.Result` in the public API): `getOrNull()`, `getOrThrow()` (throws `AdminResultException`), `getOrElse(…)`, `isSuccess()`, `map {}`, `fold(onSuccess, onFailure)`, `onSuccess {}`, `onFailure {}`.
 
