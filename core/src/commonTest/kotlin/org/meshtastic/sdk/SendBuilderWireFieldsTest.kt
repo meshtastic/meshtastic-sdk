@@ -84,6 +84,23 @@ class SendBuilderWireFieldsTest {
     }
 
     @Test
+    fun `reaction false sends a reply that is not a reaction`() = runTest {
+        withConnectedClient { client, transport ->
+            client.send {
+                text("a threaded reply")
+                to(PEER)
+                replyTo(MessageId(ORIGINAL_ID))
+                reaction(false)
+            }
+            runCurrent()
+
+            val decoded = transport.outboundPackets().last().decoded!!
+            assertEquals(ORIGINAL_ID, decoded.reply_id)
+            assertEquals(0, decoded.emoji)
+        }
+    }
+
+    @Test
     fun `pkiEncrypted sends on channel 0 with the key the node map holds`() = runTest {
         withConnectedClient { client, transport ->
             transport.injectPacket(nodeInfoFrom(PEER, PEER_KEY))

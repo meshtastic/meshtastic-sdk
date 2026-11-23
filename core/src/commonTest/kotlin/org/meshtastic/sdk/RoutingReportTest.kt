@@ -121,6 +121,16 @@ class RoutingReportTest {
     }
 
     @Test
+    fun `a routing packet without a request id is not reported`() = runTest {
+        withClient { transport, reports, _ ->
+            transport.injectPacket(routing(from = PEER, requestId = 0, error = Routing.Error.NONE))
+            runCurrent()
+
+            assertTrue(reports.isEmpty())
+        }
+    }
+
+    @Test
     fun `the session stream carries the report after its routing packet`() = runTest {
         withClient { transport, _, session ->
             transport.injectPacket(routing(from = PEER, requestId = EARLIER_SESSION_ID, error = Routing.Error.NONE))

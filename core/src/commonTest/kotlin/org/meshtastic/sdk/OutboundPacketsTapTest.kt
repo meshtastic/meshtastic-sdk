@@ -11,6 +11,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.encodeUtf8
+import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.PortNum
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -64,6 +67,45 @@ class OutboundPacketsTapTest {
         assertTrue(tapped.all { it.from == OWN_NODE })
         client.disconnect()
         runCurrent()
+    }
+
+    @Test
+    fun `a lockdown command reaches the radio but never the tap`() = runTest {
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity("fake:outbound-tap-lockdown"),
+            autoHandshake = true,
+            nodeNum = OWN_NODE,
+        )
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .build()
+        client.connect()
+        runCurrent()
+        val tapped = mutableListOf<MeshPacket>()
+        backgroundScope.launch { client.outboundPackets.collect { tapped += it } }
+        runCurrent()
+
+        val accepted = client.tryLockdown(
+            LockdownAuth.Builder().also {
+                it.passphrase = "hunter2".encodeUtf8()
+            }.build(),
+        )
+        runCurrent()
+
+        assertTrue(accepted)
+        assertTrue(transport.outboundPackets().any { it.carriesLockdownAuth() }, "the command was written")
+        assertTrue(tapped.none { it.carriesLockdownAuth() }, "the passphrase stays off the tap")
+        client.disconnect()
+        runCurrent()
+    }
+
+    private fun MeshPacket.carriesLockdownAuth(): Boolean {
+        val data = decoded ?: return false
+        if (data.portnum != PortNum.ADMIN_APP) return false
+        return AdminMessage.ADAPTER.decode(data.payload).lockdown_auth != null
     }
 
     private companion object {
