@@ -61,7 +61,8 @@ class ConnectAdmissionRaceTest {
         )
         val parent = SupervisorJob()
         val engine = MeshEngine(
-            transport = transport,
+            identity = transport.identity,
+            transportProvider = { _, _ -> transport },
             storageProvider = InMemoryStorageProvider(),
             logger = LogSink.Silent,
             bleHeartbeatEnabled = false,

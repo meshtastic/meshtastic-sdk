@@ -182,4 +182,6 @@ private fun describe(state: ConnectionState): String = when (state) {
 
     is ConnectionState.DeviceSleeping ->
         "DeviceSleeping(since=${state.since}, expectedWakeSeconds=${state.expectedWakeSeconds})"
+
+    is ConnectionState.Failed -> "Failed(cause=${state.cause.message})"
 }

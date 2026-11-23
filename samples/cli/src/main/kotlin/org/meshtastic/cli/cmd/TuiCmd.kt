@@ -242,6 +242,8 @@ private fun Header(state: ConnectionState, label: String) {
         is ConnectionState.Reconnecting -> "RECONNECTING" to Color.Yellow
 
         is ConnectionState.DeviceSleeping -> "SLEEPING" to Color.Yellow
+
+        is ConnectionState.Failed -> "FAILED" to Color.Red
     }
     Column {
         Text("Meshtastic @ $label", color = Color.White, textStyle = TextStyle.Bold)

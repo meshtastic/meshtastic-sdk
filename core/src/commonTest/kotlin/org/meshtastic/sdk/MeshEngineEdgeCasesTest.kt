@@ -602,7 +602,7 @@ class MeshEngineEdgeCasesTest {
     }
 
     @Test
-    fun nonRecoverableTransportErrorEndsDisconnected() = runTest {
+    fun nonRecoverableTransportErrorEndsFailed() = runTest {
         val transport = fakeTransport()
         val client = buildClient(
             transport = transport,
@@ -621,7 +621,7 @@ class MeshEngineEdgeCasesTest {
         advanceTimeBy(1L)
         runCurrent()
 
-        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals("fatal", assertIs<ConnectionState.Failed>(client.connection.value).cause.message)
     }
 
     @Test

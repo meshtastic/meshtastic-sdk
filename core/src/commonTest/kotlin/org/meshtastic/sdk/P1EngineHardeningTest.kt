@@ -163,7 +163,8 @@ class P1EngineHardeningTest {
         // Transport that connects but never responds to Stage 1 → Stage 1 watchdog fires.
         val transport = SilentTransport(TransportIdentity("fake:p1-pre-send"))
         val engine = MeshEngine(
-            transport = transport,
+            identity = transport.identity,
+            transportProvider = { _, _ -> transport },
             storageProvider = InMemoryStorageProvider(),
             logger = LogSink.Silent,
             bleHeartbeatEnabled = false,

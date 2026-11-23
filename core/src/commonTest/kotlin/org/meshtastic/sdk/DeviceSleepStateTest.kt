@@ -252,7 +252,31 @@ class DeviceSleepStateTest {
 
         advanceTimeBy(300_000L)
         drain()
-        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertIs<ConnectionState.Failed>(client.connection.value)
+    }
+
+    @Test
+    fun retryNowWhileSleepingAttemptsAtOnce() = runTest {
+        val transport = SleepTransport(TransportIdentity("ble:B6"), powerSaving = true, lsSecs = 300)
+        val client = buildClient(transport, reconnect.copy(initialBackoff = 30.seconds))
+        client.connect()
+        runCurrent()
+        val before = transport.connectAttempts
+
+        transport.drop()
+        runCurrent()
+        assertIs<ConnectionState.DeviceSleeping>(client.connection.value)
+        advanceTimeBy(1_000L)
+        drain()
+        assertEquals(before, transport.connectAttempts, "still inside the 30 s backoff")
+
+        assertTrue(client.retryNow())
+        drain()
+
+        assertEquals(before + 1, transport.connectAttempts)
+        advanceTimeBy(300L)
+        drain()
+        assertEquals(ConnectionState.Connected, client.connection.value)
     }
 
     @Test

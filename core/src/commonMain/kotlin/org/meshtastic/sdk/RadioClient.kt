@@ -108,8 +108,9 @@ public class RadioClient internal constructor(
      * The current connection state.
      *
      * Transitions: [ConnectionState.Disconnected] → [ConnectionState.Connecting] →
-     * [ConnectionState.Configuring] → [ConnectionState.Connected]. May cycle through
-     * [ConnectionState.Reconnecting] on transport drops.
+     * [ConnectionState.Configuring] → [ConnectionState.Connected]. With auto-reconnect on, may
+     * cycle through [ConnectionState.Reconnecting] on transport drops and end in
+     * [ConnectionState.Failed] when retrying cannot help.
      */
     public val connection: StateFlow<ConnectionState> = engine.connectionState.asStateFlow()
 
@@ -395,6 +396,10 @@ public class RadioClient internal constructor(
      *
      * **Idempotency:** throws [MeshtasticException.AlreadyConnected] if already connected.
      *
+     * **Auto-reconnect:** with [Builder.autoReconnect] enabled, a failed first attempt is retried
+     * like a later drop, so this suspends until the first session connects, and throws only when the
+     * engine reaches [ConnectionState.Failed] (with that state's cause) or [disconnect] is called.
+     *
      * @throws MeshtasticException.AlreadyConnected if already connected
      * @throws MeshtasticException.Transport if the transport cannot establish a connection
      * @throws MeshtasticException.Protocol if the handshake fails or data is malformed
@@ -426,6 +431,18 @@ public class RadioClient internal constructor(
     public suspend fun disconnect() {
         engine.disconnect()
     }
+
+    /**
+     * Ends the auto-reconnect backoff wait so the next attempt starts now, for example when the app
+     * returns to the foreground or the network comes back. The attempt count and the backoff that
+     * follows are unchanged.
+     *
+     * @return `true` when the client was waiting to retry: [ConnectionState.Reconnecting] with a
+     *   `retryAt`, or [ConnectionState.DeviceSleeping] with auto-reconnect on. `false` otherwise,
+     *   and nothing changes.
+     * @since 0.3.0
+     */
+    public fun retryNow(): Boolean = engine.retryNow()
 
     // ── Outbound ────────────────────────────────────────────────────────────
 
@@ -858,7 +875,8 @@ public class RadioClient internal constructor(
      */
     public class Builder {
 
-        private var radioTransport: RadioTransport? = null
+        private var transportIdentity: TransportIdentity? = null
+        private var transportProvider: RadioTransportProvider? = null
         private var storageProvider: StorageProvider? = null
         private var logSink: LogSink = LogSink.Silent
         private var clock: kotlin.time.Clock = kotlin.time.Clock.System
@@ -891,7 +909,29 @@ public class RadioClient internal constructor(
          * Future: factory helpers for common transport configurations may allow
          * [TransportSpec] to be used without manually constructing a transport implementation.
          */
-        public fun transport(transport: RadioTransport): Builder = apply { radioTransport = transport }
+        public fun transport(transport: RadioTransport): Builder = transport(transport.identity) { _, _ -> transport }
+
+        /**
+         * Set a [RadioTransportProvider] that supplies the transport for each connection attempt,
+         * so auto-reconnect can replace a link that cannot be reused or wait until the environment
+         * allows one.
+         *
+         * ```kotlin
+         * RadioClient.Builder()
+         *     .transport(TransportIdentity("serial-android:$deviceName")) { _, _ ->
+         *         AndroidUsbSerialPorts.open(context, deviceName)
+         *     }
+         * ```
+         *
+         * @param identity keys storage for every transport the provider returns; it should match
+         *   their [RadioTransport.identity]
+         * @param provider called once per attempt, see [RadioTransportProvider]
+         * @since 0.3.0
+         */
+        public fun transport(identity: TransportIdentity, provider: RadioTransportProvider): Builder = apply {
+            transportIdentity = identity
+            transportProvider = provider
+        }
 
         /**
          * Set the storage provider (required).
@@ -1042,7 +1082,8 @@ public class RadioClient internal constructor(
             maxAttempts: Int? = null,
             backoffMultiplier: Double = 2.0,
             jitter: Double = 0.2,
-            recoveryStep: ReconnectRecoveryStep? = null,
+            stableAfter: Duration = Duration.ZERO,
+            maxHandshakeRecoveries: Int? = null,
         ): Builder = apply {
             autoReconnectConfig = AutoReconnectConfig(
                 enabled = enabled,
@@ -1051,7 +1092,8 @@ public class RadioClient internal constructor(
                 maxAttempts = maxAttempts,
                 backoffMultiplier = backoffMultiplier,
                 jitter = jitter,
-                recoveryStep = recoveryStep,
+                stableAfter = stableAfter,
+                maxHandshakeRecoveries = maxHandshakeRecoveries,
             )
         }
 
@@ -1095,10 +1137,11 @@ public class RadioClient internal constructor(
         public fun build(): RadioClient {
             val storage = requireNotNull(storageProvider) { "storage() is required" }
 
-            val transport: RadioTransport = requireNotNull(radioTransport) { "transport() is required" }
+            val provider = requireNotNull(transportProvider) { "transport() is required" }
 
             val engine = MeshEngine(
-                transport = transport,
+                identity = checkNotNull(transportIdentity),
+                transportProvider = provider,
                 storageProvider = storage,
                 logger = logSink,
                 bleHeartbeatEnabled = bleHeartbeatEnabled,
