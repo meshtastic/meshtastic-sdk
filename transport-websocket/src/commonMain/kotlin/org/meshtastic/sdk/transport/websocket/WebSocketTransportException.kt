@@ -25,7 +25,8 @@ import org.meshtastic.sdk.MeshtasticException
  * @property closeReason the reason text of the node's close frame; `null` when it was blank or no
  *   close frame arrived.
  * @property httpStatus the HTTP status the node answered the upgrade request with, when it refused
- *   it (404 when its firmware has no WebSocket phone API at the path); `null` otherwise.
+ *   it (404 when its firmware has no WebSocket phone API at the path); `null` otherwise. Always
+ *   `null` on JS and Wasm: the browser `WebSocket` does not expose the status of a failed upgrade.
  * @property slotContested `true` when the transport ended the fifth session in a row that dropped
  *   without a close frame within 30 seconds of opening, which means another client keeps taking the
  *   node's only WebSocket slot. Such an end is reported with `recoverable = false`.
