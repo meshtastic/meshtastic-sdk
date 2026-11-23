@@ -109,8 +109,8 @@ public class RadioClient internal constructor(
      *
      * Transitions: [ConnectionState.Disconnected] → [ConnectionState.Connecting] →
      * [ConnectionState.Configuring] → [ConnectionState.Connected]. With auto-reconnect on, may
-     * cycle through [ConnectionState.Reconnecting] on transport drops and end in
-     * [ConnectionState.Failed] when retrying cannot help.
+     * cycle through [ConnectionState.Reconnecting] on transport drops. An error retrying cannot fix
+     * ends in [ConnectionState.Failed], with auto-reconnect on or off.
      */
     public val connection: StateFlow<ConnectionState> = engine.connectionState.asStateFlow()
 
@@ -442,9 +442,9 @@ public class RadioClient internal constructor(
      * returns to the foreground or the network comes back. The attempt count and the backoff that
      * follows are unchanged.
      *
-     * @return `true` when the client was waiting to retry: [ConnectionState.Reconnecting] with a
-     *   `retryAt`, or [ConnectionState.DeviceSleeping] with auto-reconnect on. `false` otherwise,
-     *   and nothing changes.
+     * @return `true` when the client was waiting out a backoff: [ConnectionState.Reconnecting] with a
+     *   `retryAt`, or [ConnectionState.DeviceSleeping] between attempts. `false` otherwise, an
+     *   attempt in flight included, and nothing changes.
      * @since 0.3.0
      */
     public fun retryNow(): Boolean = engine.retryNow()

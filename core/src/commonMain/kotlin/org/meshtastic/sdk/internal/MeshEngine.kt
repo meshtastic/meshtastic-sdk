@@ -18,11 +18,14 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -159,6 +162,7 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
+
     // With auto-reconnect on, an overflow restarts the session so the consumer resumes on a fresh stream.
     private val sessionReceive = sessionReceiveCapacity?.let { capacity ->
         SessionReceive(capacity, restartOnOverflow = autoReconnectConfig.enabled) { sessionId ->
@@ -479,8 +483,19 @@ internal class MeshEngine(
 
     // The tick the backoff wait will deliver; retryNow() delivers it early.
     private var pendingTick: EngineMessage.ReconnectTick? = null
+        set(value) {
+            field = value
+            retryWaiting.value = value != null
+        }
+
+    // ADR-002 exception: pendingTick != null, readable by retryNow() on the caller's thread.
+    private val retryWaiting = atomic(false)
     private var attemptToken = 0L
     private var attemptJob: Job? = null
+
+    // ADR-002 exception: the link the running attempt opened, set off the actor, so cleanup can close it
+    // when the attempt's result never reaches the actor.
+    private val attemptLink = atomic<RadioTransport?>(null)
 
     // Sessions restarted in a row after a handshake or liveness timeout, a handshake protocol error or a
     // receive overflow. A session that reached Ready and then ended for any other reason resets it.
@@ -522,7 +537,11 @@ internal class MeshEngine(
         val sup = SupervisorJob(parentContext[Job])
         var admitted = false
         try {
-            if (supervisorJobRef.value != null) throw MeshtasticException.AlreadyConnected()
+            supervisorJobRef.value?.let { running ->
+                // Failed is published just before its run is cancelled; wait for that run's cleanup.
+                if (connectionState.value !is ConnectionState.Failed) throw MeshtasticException.AlreadyConnected()
+                running.join()
+            }
             // Published before the wait below, so a disconnect() during it cancels this attempt. It also lets a
             // disconnect() complete the awaiter if the actor is cancelled before it processes EngineMessage.Connect.
             activeConnectDeferred.value = connectDeferred
@@ -633,17 +652,19 @@ internal class MeshEngine(
             return
         }
         job.cancel()
-        connectionState.first { it == ConnectionState.Disconnected }
+        // Cleanup runs as the run's child, so this returns after it. A run cancelled before connect()
+        // launched it has no cleanup, and a terminal state from the run before must not outlive the call.
+        job.join()
+        when (val state = connectionState.value) {
+            is ConnectionState.Failed, is ConnectionState.DeviceSleeping ->
+                connectionState.compareAndSet(state, ConnectionState.Disconnected)
+
+            else -> Unit
+        }
     }
 
-    fun retryNow(): Boolean {
-        val waiting = when (val state = connectionState.value) {
-            is ConnectionState.Reconnecting -> state.retryAt != null
-            is ConnectionState.DeviceSleeping -> autoReconnectConfig.enabled
-            else -> false
-        }
-        return waiting && inbox.trySend(EngineMessage.RetryNow).isSuccess
-    }
+    // Only a backoff wait can be cut short; an attempt in flight, Reconnecting or DeviceSleeping, cannot.
+    fun retryNow(): Boolean = retryWaiting.value && inbox.trySend(EngineMessage.RetryNow).isSuccess
 
     fun trySend(packet: MeshPacket, id: MessageId, stateFlow: MutableStateFlow<SendState>) {
         val result = inbox.trySend(EngineMessage.Send(packet, id, stateFlow))
@@ -894,6 +915,7 @@ internal class MeshEngine(
             link?.disconnect()
         } catch (_: Exception) {
         }
+        attemptLink.getAndSet(null)?.takeIf { it !== link }?.let { disconnectQuietly(it) }
         transport = null
         transportObserver = null
         writeLink.value = null
@@ -1314,9 +1336,9 @@ internal class MeshEngine(
             installTransport(opened)
             opened.connect()
             return true
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: Exception) {
+            // Only the actor's own cancellation ends the run; a provider's timeout fails the attempt.
+            if (e is CancellationException) currentCoroutineContext().ensureActive()
             val ex =
                 e as? MeshtasticException ?: MeshtasticException.Transport(e.message ?: "transport connect failed", e)
             val tagged = MeshtasticException.tag(ex, transportIdentity = identity, operation = "connect")
@@ -2330,6 +2352,8 @@ internal class MeshEngine(
 
         // The backoff starts over once the session proves stable; the restart count when it ends without an overflow.
         readyThisSession = true
+        // A sleeping radio may stay awake for less than stableAfter; its next sleep starts the backoff over.
+        sleepAttempts = 0
         sleeping = null
         reconnectJob?.cancel()
         reconnectJob = null
@@ -3308,6 +3332,7 @@ internal class MeshEngine(
     private fun failSession(cause: MeshtasticException) {
         logger.warn(TAG, cause) { "Connection failed; not retrying" }
         linkUp = false
+        writeLink.value = null
         clearNodeDbRefresh()
         sessionReceive?.end()
         reconnectJob?.cancel()
@@ -3319,19 +3344,20 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Idle
         readySendGeneration.value = null
         lockdownLink.value = null
+        val failed = ConnectionState.Failed(cause)
+        terminalState = failed
+        // Published before connect() is released, so a caller that catches its throw already reads Failed.
+        connectionState.value = failed
         val deferred = pendingConnectDeferred
         pendingConnectDeferred = null
         deferred?.completeExceptionally(cause)
-        val failed = ConnectionState.Failed(cause)
-        terminalState = failed
-        connectionState.value = failed
         supervisorJobRef.value?.cancel()
     }
 
     /**
      * Restarts the session after an engine-detected stall ([cause]: a handshake or liveness timeout, a
-     * handshake protocol error or a session receive overflow) when auto-reconnect is on. Returns false when it is off, leaving the
-     * teardown to the caller.
+     * handshake protocol error or a session receive overflow) when auto-reconnect is on. Returns false
+     * when it is off, leaving the teardown to the caller.
      */
     private fun recoverSession(cause: MeshtasticException, overflow: Boolean = false): Boolean {
         if (!autoReconnectConfig.enabled || disconnecting) return false
@@ -3341,11 +3367,14 @@ internal class MeshEngine(
         val tagged = MeshtasticException.tag(cause, transportIdentity = identity, operation = "engine.recover")
         // A collector that keeps falling behind would otherwise restart the session forever.
         val cap = autoReconnectConfig.maxHandshakeRecoveries ?: if (overflow) DEFAULT_OVERFLOW_RESTARTS else null
-        if (cap != null && handshakeRecoveries >= cap) {
-            failSession(tagged)
-            return true
+        // A radio that kept its link through light sleep accepts the connect but stays silent until it wakes.
+        if (!inSleepWindow()) {
+            if (cap != null && handshakeRecoveries >= cap) {
+                failSession(tagged)
+                return true
+            }
+            handshakeRecoveries += 1
         }
-        handshakeRecoveries += 1
         if (handshakeStage != HandshakeStage.Ready) failPreSendQueueWith(SendFailure.HandshakeFailed)
         scheduleReconnect(tagged)
         return true
@@ -3462,17 +3491,14 @@ internal class MeshEngine(
         if (readyThisSession) handshakeRecoveries = 0
         readyThisSession = false
         linkUp = false
+        // A frame still queued for this link must not reach the transport once it is reconnected.
+        writeLink.value = null
         clearNodeDbRefresh()
         sessionReceive?.end()
         frameReaderJob?.cancel()
         val cap = autoReconnectConfig.maxAttempts
         // A sleep gets attempts outside the cap until its wake bound plus a grace has passed.
-        sleeping?.let { sleep ->
-            if (clock.now() >= sleep.since + sleep.expectedWakeSeconds.seconds + autoReconnectConfig.maxBackoff * 2) {
-                sleeping = null
-            }
-        }
-        val freeAttempt = sleeping != null
+        val freeAttempt = inSleepWindow()
         if (!freeAttempt && cap != null && reconnectAttempt >= cap) {
             logger.warn(TAG, cause) { "Auto-reconnect attempt cap ($cap) exhausted" }
             failSession(cause)
@@ -3515,14 +3541,17 @@ internal class MeshEngine(
                     previousReader?.join()
                     val next = transportProvider.open(msg.attempt, msg.cause)
                     opened = next
+                    attemptLink.value = next
                     next.connect()
                 }
                 EngineMessage.ReconnectAttemptResult(token, opened, cause = null)
-            } catch (e: CancellationException) {
-                // Torn down mid-attempt: a link opened for a session that no longer exists must not stay up.
-                withContext(NonCancellable) { disconnectQuietly(opened) }
-                throw e
             } catch (e: Exception) {
+                if (e is CancellationException && !currentCoroutineContext().isActive) {
+                    // Torn down mid-attempt: a link opened for a session that no longer exists must not stay up.
+                    withContext(NonCancellable) { disconnectQuietly(opened) }
+                    throw e
+                }
+                // A provider's own timeout (TimeoutCancellationException) fails the attempt, it doesn't end the engine.
                 val cause = e as? MeshtasticException
                     ?: MeshtasticException.Transport(e.message ?: "reconnect attempt failed", e)
                 EngineMessage.ReconnectAttemptResult(
@@ -3548,6 +3577,7 @@ internal class MeshEngine(
     private fun handleReconnectAttemptResult(msg: EngineMessage.ReconnectAttemptResult) {
         if (!autoReconnectInProgress || msg.token != attemptToken) return
         attemptJob = null
+        attemptLink.value = null
         msg.transport?.let(::installTransport)
         val link = msg.transport
         val failure = msg.cause ?: (link?.state?.value as? TransportState.Error)?.let { error ->
@@ -3560,7 +3590,7 @@ internal class MeshEngine(
         }
         if (failure == null && link != null) {
             logger.info(TAG) { "Auto-reconnect attempt ${reconnectAttempt + sleepAttempts} succeeded" }
-            sleeping = null
+            // The link can come up while the radio still sleeps; only Ready proves it awake.
             linkUp = true
             livenessBudgetMs = LIVENESS_TIMEOUT_MS
             startStage1Handshake()
@@ -3579,10 +3609,20 @@ internal class MeshEngine(
         scheduleReconnect(cause)
     }
 
+    /**
+     * True while [sleeping] is set and its wake bound plus grace has not passed; clears [sleeping] once
+     * it has. Attempts and handshake restarts inside the window count against no cap.
+     */
+    private fun inSleepWindow(): Boolean {
+        val sleep = sleeping ?: return false
+        if (clock.now() < sleep.since + sleep.expectedWakeSeconds.seconds + autoReconnectConfig.maxBackoff * 2) return true
+        sleeping = null
+        return false
+    }
+
     // Only a session that stayed up for stableAfter ends the failure streak.
     private fun resetFailureStreak() {
         reconnectAttempt = 0
-        sleepAttempts = 0
     }
 
     private fun computeBackoff(attempt: Int): kotlin.time.Duration {

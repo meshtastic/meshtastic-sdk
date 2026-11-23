@@ -31,7 +31,8 @@ import kotlin.time.Duration.Companion.seconds
  * runners (`runTest` / `advanceTimeBy`) drive the schedule deterministically.
  *
  * @property enabled toggle the supervisor entirely. When `false` the engine surfaces a
- *   single [ConnectionState.Disconnected] after a transport drop.
+ *   single [ConnectionState.Disconnected] after a recoverable transport drop; a non-recoverable error
+ *   or [MeshtasticException.FirmwareTooOld] still ends in [ConnectionState.Failed].
  * @property initialBackoff delay before the first reconnect attempt (default: 1 s).
  * @property maxBackoff hard cap on backoff between successive attempts (default: 60 s).
  * @property maxAttempts upper bound on reconnect attempts since the last stable link; `null` means

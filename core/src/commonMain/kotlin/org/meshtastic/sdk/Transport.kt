@@ -272,8 +272,10 @@ public interface RadioTransport {
  *
  * [open] may suspend until the environment allows a connection, for example until Bluetooth is on
  * or a USB permission is granted. While it is suspended the state is [ConnectionState.Reconnecting]
- * with `retryAt = null`, and waiting does not use up an attempt. Throwing (other than
- * cancellation) fails the attempt like a failed `connect()`.
+ * with `retryAt = null` ([ConnectionState.Connecting] for `attempt = 0`, [ConnectionState.DeviceSleeping]
+ * while a sleeping device is retried), and waiting does not use up an attempt. Throwing fails the
+ * attempt like a failed `connect()`, a [kotlinx.coroutines.CancellationException] from the
+ * provider's own timeout included; only cancelling the client ends it.
  *
  * @since 0.3.0
  */

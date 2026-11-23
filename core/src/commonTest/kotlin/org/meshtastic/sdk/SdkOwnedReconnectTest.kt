@@ -7,11 +7,14 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
@@ -144,6 +147,10 @@ class SdkOwnedReconnectTest {
         assertTrue(log.indexOf("a.disconnect") in 0 until reopenedAt, "log: $log")
         assertTrue(log.indexOf("a.reader-done") in 0 until reopenedAt, "log: $log")
         assertTrue(second.sent.any { it.want_config_id != null }, "the new session runs on the new transport")
+
+        first.drop()
+        drain()
+        assertEquals(ConnectionState.Connected, client.connection.value, "a replaced transport's late error is stale")
     }
 
     @Test
@@ -173,6 +180,7 @@ class SdkOwnedReconnectTest {
         drain()
         assertReconnecting(client, attempt = 1, retryInMs = null)
         assertEquals(listOf(0, 1), opens)
+        assertFalse(client.retryNow(), "an attempt in flight has no wait to end")
 
         ready.complete(Unit)
         settle()
@@ -333,6 +341,149 @@ class SdkOwnedReconnectTest {
         return stalled
     }
 
+    @Test
+    fun anAttemptThatFailsWithAnErrorStateAndAThrowAdvancesTheAttemptOnce() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        client.connect()
+
+        link.failNextConnects = 1
+        link.drop()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drain()
+
+        assertReconnecting(client, attempt = 2, retryInMs = 2_000)
+    }
+
+    @Test
+    fun aProviderThatCancelsItselfFailsTheAttemptAndTheEngineRetries() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(
+            link,
+            config(),
+            provider = { attempt, _ ->
+                // What a provider's withTimeout around a USB permission prompt throws.
+                if (attempt == 1) throw CancellationException("permission prompt timed out")
+                link
+            },
+        )
+        client.connect()
+
+        link.drop()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drain()
+        assertReconnecting(client, attempt = 2, retryInMs = 2_000)
+        assertTrue(client.retryNow())
+        settle()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
+    fun connectWaitsThroughAFailedOrCancelledFirstAttempt() = runTest {
+        for (failure in listOf(MeshtasticException.Transport("no route"), CancellationException("timed out"))) {
+            val link = ScriptLink("a", mutableListOf(), { currentTime })
+            var opens = 0
+            val client = buildClient(
+                link,
+                config(),
+                provider = { _, _ ->
+                    if (opens++ == 0) throw failure
+                    link
+                },
+            )
+            val connecting = backgroundScope.async { client.connect() }
+            drain()
+            assertReconnecting(client, attempt = 1, retryInMs = 1_000)
+            assertFalse(connecting.isCompleted, "connect() waits through a failed first attempt (${failure::class})")
+            advanceTimeBy(1_000L)
+            settle()
+            connecting.await()
+            assertEquals(ConnectionState.Connected, client.connection.value)
+            client.disconnect()
+        }
+    }
+
+    @Test
+    fun disconnectEndsASuspendedProviderAndABackoffWait() = runTest {
+        for (suspendProvider in listOf(true, false)) {
+            val link = ScriptLink("a", mutableListOf(), { currentTime })
+            val never = CompletableDeferred<Unit>()
+            val client = buildClient(
+                link,
+                config(initialBackoff = 30.seconds),
+                provider = { attempt, _ ->
+                    if (attempt > 0 && suspendProvider) never.await()
+                    link
+                },
+            )
+            client.connect()
+            val connects = link.connects.size
+            link.drop()
+            runCurrent()
+            if (suspendProvider) assertTrue(client.retryNow())
+            drain()
+
+            client.disconnect()
+            assertEquals(ConnectionState.Disconnected, client.connection.value)
+            advanceTimeBy(120_000L)
+            drain()
+            assertEquals(connects, link.connects.size, "no attempt after disconnect() (suspended=$suspendProvider)")
+            assertEquals(ConnectionState.Disconnected, client.connection.value)
+        }
+    }
+
+    @Test
+    fun connectRightAfterFailedStartsANewRun() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        client.connect()
+        var reconnect: Result<Unit>? = null
+        // Unconfined: runs inside the actor's publication of Failed, before that run is torn down.
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            client.connection.first { it is ConnectionState.Failed }
+            reconnect = runCatching { client.connect() }
+        }
+
+        link.drop(MeshtasticException.Transport("unsupported"), recoverable = false)
+        settle()
+
+        assertTrue(reconnect?.isSuccess == true, "connect() after Failed: $reconnect")
+        assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
+    fun aLinkOpenedAsTheSessionEndsIsDisconnected() = runTest {
+        val log = mutableListOf<String>()
+        val first = ScriptLink("a", log, { currentTime })
+        lateinit var client: RadioClient
+        val client0 = buildClient(
+            first,
+            config(),
+            provider = { attempt, _ ->
+                if (attempt == 0) {
+                    first
+                } else {
+                    // Its connect() returns as disconnect() begins, so the result reaches a closing engine.
+                    ScriptLink("link$attempt", log, { currentTime }, onConnect = {
+                        backgroundScope.launch { client.disconnect() }
+                    })
+                }
+            },
+        )
+        client = client0
+        client.connect()
+
+        first.drop()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drain()
+
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertTrue("link1.disconnect" in log, "log: $log")
+    }
+
     // Each packet from a peer queues a Packet and a NodeChanged; nothing collects, so the queue overflows.
     private fun TestScope.flood(link: ScriptLink) {
         repeat(SMALL_QUEUE * 2) { index ->
@@ -414,12 +565,14 @@ class SdkOwnedReconnectTest {
         private val name: String,
         private val log: MutableList<String>,
         private val nowMs: () -> Long,
+        private val onConnect: () -> Unit = {},
     ) : RadioTransport {
         private val inner = FakeRadioTransport(TransportIdentity("fake:sdk-reconnect"), autoHandshake = true)
         private val stateFlow = MutableStateFlow<TransportState>(TransportState.Disconnected)
 
         /** When false the radio never answers `want_config_id`, so Stage 1 times out. */
         var answerHandshake = true
+        var failNextConnects = 0
         val connects = mutableListOf<Long>()
         val sent = mutableListOf<ToRadio>()
 
@@ -429,8 +582,16 @@ class SdkOwnedReconnectTest {
         override suspend fun connect() {
             log += "$name.connect"
             connects += nowMs()
+            if (failNextConnects > 0) {
+                // A BLE connect timeout: the transport publishes its Error, then connect() throws.
+                failNextConnects -= 1
+                val failure = MeshtasticException.Transport("connect timed out")
+                stateFlow.value = TransportState.Error(failure, recoverable = true)
+                throw failure
+            }
             inner.connect()
             stateFlow.value = TransportState.Connected
+            onConnect()
         }
 
         override suspend fun disconnect() {

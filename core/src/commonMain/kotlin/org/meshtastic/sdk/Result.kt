@@ -179,8 +179,8 @@ public sealed interface SendOutcome {
  * Lifecycle of the SDK's connection to a device.
  *
  * Transitions from [Disconnected] → [Connecting] → [Configuring] → [Connected].
- * With auto-reconnect on, a drop or hang goes through [Reconnecting] and back to [Configuring];
- * an error that retrying cannot fix ends in [Failed].
+ * With auto-reconnect on, a drop or hang goes through [Reconnecting] and back to [Configuring].
+ * An error that retrying cannot fix ends in [Failed], with auto-reconnect on or off.
  *
  * **Device sleep:** a sleeping device's link simply drops. The engine reports
  * [DeviceSleeping] instead of [Reconnecting] only when a fully handshaken session drops and the
@@ -252,8 +252,10 @@ public sealed interface ConnectionState {
      * [RadioClient.disconnect] is called.
      *
      * Reconnect attempts made before `since` plus [expectedWakeSeconds] plus a grace of twice
-     * [AutoReconnectConfig.maxBackoff] do not count against [AutoReconnectConfig.maxAttempts];
-     * after that the state becomes [Reconnecting].
+     * [AutoReconnectConfig.maxBackoff] do not count against [AutoReconnectConfig.maxAttempts], and
+     * neither does a handshake that times out or drops in that window, since a BLE link can survive
+     * light sleep; the device counts as asleep until a handshake reaches [Connected]. After the window
+     * the state becomes [Reconnecting].
      *
      * @param since when the link drop was observed
      * @param expectedWakeSeconds the longest the device sleeps before it surfaces again:

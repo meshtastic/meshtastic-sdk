@@ -154,9 +154,9 @@ class DeviceSleepStateTest {
     }
 
     @Test
-    fun dropDuringTheHandshakeAfterWakingIsReconnecting() = runTest {
+    fun aDropMidHandshakeInsideTheWakeWindowStaysSleepingUntilReady() = runTest {
         val transport = SleepTransport(TransportIdentity("ble:AD"), powerSaving = true, lsSecs = 300)
-        val client = buildClient(transport, reconnect)
+        val client = buildClient(transport, reconnect.copy(maxAttempts = 1))
         val states = recordStates(client)
         client.connect()
         runCurrent()
@@ -165,15 +165,46 @@ class DeviceSleepStateTest {
         runCurrent()
         assertIs<ConnectionState.DeviceSleeping>(client.connection.value)
 
-        // The device is back and the link drops again mid-handshake: that is not a sleep.
+        // The link comes back while the radio can still fall asleep mid-handshake: only Ready proves it awake.
         transport.dropOnStage2 = true
-        advanceTimeBy(5_000L)
+        advanceTimeBy(1_500L)
         drain()
 
         val afterWake = states.drop(states.indexOfFirst { it is ConnectionState.DeviceSleeping } + 1)
-        assertTrue(afterWake.any { it is ConnectionState.Configuring }, "the device woke and handshook")
-        assertTrue(afterWake.any { it is ConnectionState.Reconnecting })
-        assertTrue(afterWake.none { it is ConnectionState.DeviceSleeping })
+        assertTrue(afterWake.any { it is ConnectionState.Configuring }, "the link came up and handshook")
+        assertIs<ConnectionState.DeviceSleeping>(client.connection.value, "uncounted, so maxAttempts = 1 is not spent")
+
+        transport.dropOnStage2 = false
+        advanceTimeBy(5_000L)
+        drain()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
+    fun aSilentHandshakeAfterASleepIsRetriedUncountedUntilTheRadioWakes() = runTest {
+        val transport = SleepTransport(TransportIdentity("ble:B9"), powerSaving = true, lsSecs = 300)
+        val client = buildClient(transport, reconnect.copy(maxAttempts = 1, maxHandshakeRecoveries = 0))
+        client.connect()
+        runCurrent()
+
+        // The BLE link survives light sleep: the connect succeeds but the radio sends no PhoneAPI frame.
+        transport.silent = true
+        transport.drop()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drain()
+        assertIs<ConnectionState.Configuring>(client.connection.value)
+        advanceTimeBy(20_000L)
+        drain()
+        assertIs<ConnectionState.DeviceSleeping>(
+            client.connection.value,
+            "a Stage 1 timeout in the window counts nowhere",
+        )
+
+        transport.silent = false
+        advanceTimeBy(5_000L)
+        drain()
+        assertEquals(ConnectionState.Connected, client.connection.value)
     }
 
     @Test
@@ -277,6 +308,49 @@ class DeviceSleepStateTest {
         advanceTimeBy(300L)
         drain()
         assertEquals(ConnectionState.Connected, client.connection.value)
+    }
+
+    @Test
+    fun retryNowIsRefusedWhileASleepAttemptIsInFlight() = runTest {
+        val transport = SleepTransport(TransportIdentity("ble:B7"), powerSaving = true, lsSecs = 300)
+        val client = buildClient(transport, reconnect)
+        client.connect()
+        runCurrent()
+
+        transport.connectGate = CompletableDeferred()
+        transport.drop()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drain()
+
+        assertIs<ConnectionState.DeviceSleeping>(client.connection.value)
+        assertFalse(client.retryNow(), "the attempt is already running")
+        transport.connectGate?.complete(Unit)
+    }
+
+    @Test
+    fun aRadioAwakeShorterThanStableAfterStillStartsItsNextSleepBackoffOver() = runTest {
+        val transport = SleepTransport(TransportIdentity("ble:B8"), powerSaving = true, lsSecs = 300)
+        val client = buildClient(transport, reconnect.copy(stableAfter = 600.seconds))
+        client.connect()
+        runCurrent()
+
+        // Asleep through attempts at 1, 3 and 7 s; awake at the fourth, at 15 s.
+        transport.failReconnects = 3
+        transport.drop()
+        runCurrent()
+        advanceTimeBy(15_000L)
+        drain()
+        advanceTimeBy(300L)
+        drain()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+
+        val before = transport.connectAttempts
+        transport.drop()
+        runCurrent()
+        advanceTimeBy(1_000L)
+        drain()
+        assertEquals(before + 1, transport.connectAttempts, "the next sleep retries after initialBackoff")
     }
 
     @Test
@@ -447,6 +521,9 @@ class DeviceSleepStateTest {
         var dropOnStage2 = false
         var disconnectGate: CompletableDeferred<Unit>? = null
         var failWrites = false
+        var connectGate: CompletableDeferred<Unit>? = null
+
+        // Accepts writes but answers none of them, as a radio asleep behind a live BLE link does.
         var silent = false
         private var connected = false
 
@@ -454,6 +531,7 @@ class DeviceSleepStateTest {
 
         override suspend fun connect() {
             connectAttempts += 1
+            connectGate?.await()
             if (connected && failReconnects > 0) {
                 failReconnects -= 1
                 stateFlow.value = TransportState.Disconnected
