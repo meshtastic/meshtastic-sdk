@@ -109,7 +109,7 @@ Encoded as tests in `core/src/commonTest/kotlin/org/meshtastic/sdk/`; the curren
 - **Lock-based shared state with multiple writers.** Rejected: every Meshtastic client that has tried this has gone through several rounds of races (Android `MeshService` history; early Apple `BLEManager`). The cost of a Mutex per state segment compounds; ordering bugs survive code review.
 - **Per-component coroutines (`HandshakeMachine` as its own actor, `MessageQueue` as another, etc.).** Rejected: introduces N message buses, makes invariants like "ACK arrives strictly after Sent" require cross-actor ordering proofs. One actor with all state is dramatically simpler to reason about, and the protocol's throughput (single device, ~10–100 msgs/sec peak) doesn't justify the parallelism budget.
 - **Reactive Streams / `Flow.scan` over the raw `transport.frames()`.** Rejected: pure-Flow composition can't model timeouts, request/response correlation, or the handshake FSM cleanly. State machines are clearer as state machines.
-- **Coroutine `Mutex` instead of an actor.** Rejected: `Mutex` is FIFO-fair, but it orders only callers that suspend on it. The actor also orders inputs from non-suspending sources (transport callbacks, timers) and gives engine state a single owner.
+- **Coroutine `Mutex` instead of an actor.** Rejected: a Mutex protects state but provides no ordering across operations. The actor enforces both.
 
 ## Consequences
 
