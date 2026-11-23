@@ -53,6 +53,10 @@ Inside a transport module, mutexes / atomics are permitted *only* for:
    guards used to make `disconnect()` idempotent and to prevent late
    inbound frames from being processed after teardown.
 
+> **Amended:** detekt enforces the lock bans on the engine's files only
+> (`ForbiddenImport/engine` in `config/detekt/detekt.yml`), not across all modules.
+> Transport-side locks still carry the `// ADR-012:` comment, which review checks.
+
 They MUST NOT appear in code that runs on the engine dispatcher. The
 detekt `ForbiddenImport` rules added by
 [ADR-008](008-architecture-enforcement.md) are scoped to forbid
