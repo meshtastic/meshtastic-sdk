@@ -280,6 +280,37 @@ class LockdownStatusEventTest {
         assertEquals(ConnectionState.Disconnected, client.connection.value)
     }
 
+    /** A socket that goes half-open right after the lockdown status never answers a heartbeat. */
+    @Test
+    fun aLockedLinkThatNeverAnswersFailsTheConnectAfterTheLivenessTimeout() = runTest {
+        val fake = FakeRadioTransport(TransportIdentity("fake:locked-never-answers"), autoHandshake = true)
+        val transport = object : RadioTransport by fake {
+            override suspend fun send(frame: Frame) {
+                val request = runCatching { ToRadio.ADAPTER.decode(frame.bytes.substring(4)) }.getOrNull()
+                fake.send(frame)
+                if (request?.want_config_id == 69420) fake.reportLockdown(LockdownStatus.State.LOCKED)
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .build()
+        val connecting = async { runCatching { client.connect() } }
+        runCurrent()
+
+        advanceTimeBy(60.seconds)
+        runCurrent()
+        assertFalse(connecting.isCompleted)
+        advanceTimeBy(5.seconds)
+        runCurrent()
+
+        assertTrue(connecting.isCompleted)
+        val error = assertIs<MeshtasticException.Transport>(connecting.await().exceptionOrNull())
+        assertEquals("liveness timeout", error.message)
+    }
+
     private fun FakeRadioTransport.reportLockdown(state: LockdownStatus.State) {
         injectFrame(
             FromRadio.Builder().also {
