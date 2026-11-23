@@ -456,6 +456,13 @@ internal class MeshEngine(
     private var reconnectAttempt: Int = 0
     private var autoReconnectInProgress: Boolean = false
 
+    // A drop judged a by-design sleep: attempts before its wake bound has passed go to
+    // `sleepAttempts`, outside maxAttempts. `terminalSleep` is the state cleanup settles on when
+    // auto-reconnect is off.
+    private var sleeping: ConnectionState.DeviceSleeping? = null
+    private var sleepAttempts: Int = 0
+    private var terminalSleep: ConnectionState.DeviceSleeping? = null
+
     // Dispatcher is engine-actor-owned; mutated only inside processMessage. RPC wire ids share
     // the same allocator as user-facing sends so a getConfig can never collide with a sendText.
     private val dispatcher = CommandDispatcher(logger)
@@ -850,7 +857,8 @@ internal class MeshEngine(
         } catch (_: Exception) {
         }
 
-        supervisorJobRef.compareAndSet(run.job, null)
+        // False when disconnect() took the supervisor first; that caller waits for Disconnected.
+        val ownTeardown = supervisorJobRef.compareAndSet(run.job, null)
         configSaves?.close()
         configSaves = null
         engineScope = null
@@ -887,6 +895,8 @@ internal class MeshEngine(
         reconnectJob?.cancel()
         reconnectJob = null
         reconnectAttempt = 0
+        sleepAttempts = 0
+        sleeping = null
         autoReconnectInProgress = false
         renumberedTo = null
         heldRenumberAck = null
@@ -897,7 +907,12 @@ internal class MeshEngine(
 
         dispatcher.cancelAll(AdminResult.NodeUnreachable)
 
-        connectionState.value = ConnectionState.Disconnected
+        // A disconnect() that found no supervisor has already written Disconnected; the compare keeps it.
+        val sleep = terminalSleep
+        terminalSleep = null
+        if (sleep == null || !ownTeardown || !connectionState.compareAndSet(sleep, sleep)) {
+            connectionState.value = ConnectionState.Disconnected
+        }
         logger.debug(TAG) { "Cleanup complete — session torn down" }
     }
 
@@ -1331,8 +1346,10 @@ internal class MeshEngine(
     // A transport that throws from frames() or send() never publishes TransportState.Error, so
     // this is the only place its failure meets the reconnect policy.
     private fun handleLinkFailure(cause: MeshtasticException) {
+        val sleep = judgeSleepOnDrop(cause, recoverable = true)
         if (!autoReconnectConfig.enabled || disconnecting) {
             handleDisconnect(EngineMessage.Disconnect(cause))
+            sleep?.let(::settleTerminalSleep)
             return
         }
         val tagged = MeshtasticException.tag(cause, transportIdentity = transport.identity, operation = "engine.link")
@@ -1353,6 +1370,8 @@ internal class MeshEngine(
         reconnectJob?.cancel()
         reconnectJob = null
         autoReconnectInProgress = false
+        sleeping = null
+        terminalSleep = null
 
         if (msg.cause != null) {
             // Typed causes (HandshakeTimeout, StorageUnavailable) reach observers as themselves.
@@ -2199,6 +2218,8 @@ internal class MeshEngine(
 
         // failure starts a fresh backoff schedule.
         reconnectAttempt = 0
+        sleepAttempts = 0
+        sleeping = null
         reconnectJob?.cancel()
         reconnectJob = null
         autoReconnectInProgress = false
@@ -3140,10 +3161,14 @@ internal class MeshEngine(
                     s.recoverable &&
                     s.cause !is MeshtasticException.FirmwareTooOld &&
                     !disconnecting
+                // Judged before scheduleReconnect resets the handshake stage and the config bundle.
+                val sleep = judgeSleepOnDrop(s.cause, s.recoverable)
                 if (retriable) {
                     scheduleReconnect(cause)
                 } else {
-                    if (handshakeStage == HandshakeStage.Ready) {
+                    if (sleep != null) {
+                        settleTerminalSleep(sleep)
+                    } else if (handshakeStage == HandshakeStage.Ready) {
                         connectionState.value = ConnectionState.Reconnecting(cause, 1)
                     }
                     supervisorJobRef.value?.cancel()
@@ -3152,6 +3177,21 @@ internal class MeshEngine(
 
             else -> logger.verbose(TAG) { "Transport state → ${msg.state}" }
         }
+    }
+
+    // Every drop out of a Ready session is judged here, whichever way it was noticed: a transport error, a failed
+    // write or read, or the liveness watchdog. A reboot has already reset the stage.
+    private fun judgeSleepOnDrop(cause: Throwable, recoverable: Boolean): ConnectionState.DeviceSleeping? {
+        if (handshakeStage != HandshakeStage.Ready || !recoverable || disconnecting) return null
+        if (cause is MeshtasticException.FirmwareTooOld) return null
+        val expectation = sleepExpectation(transport.identity, configBundleState.value) ?: return null
+        return ConnectionState.DeviceSleeping(clock.now(), expectation.expectedWakeSeconds).also { sleeping = it }
+    }
+
+    // With no reconnect to follow, cleanup settles on this instead of Disconnected.
+    private fun settleTerminalSleep(sleep: ConnectionState.DeviceSleeping) {
+        connectionState.value = sleep
+        terminalSleep = sleep
     }
 
     // Session state a new handshake must not inherit. Engine scope, storage, the supervisor and
@@ -3249,28 +3289,37 @@ internal class MeshEngine(
         sessionReceive?.end()
         frameReaderJob?.cancel()
         val cap = autoReconnectConfig.maxAttempts
-        if (cap != null && reconnectAttempt >= cap) {
+        // A sleep gets attempts outside the cap until its wake bound plus a grace has passed.
+        sleeping?.let { sleep ->
+            if (clock.now() >= sleep.since + sleep.expectedWakeSeconds.seconds + autoReconnectConfig.maxBackoff * 2) {
+                sleeping = null
+            }
+        }
+        val freeAttempt = sleeping != null
+        if (!freeAttempt && cap != null && reconnectAttempt >= cap) {
             logger.warn(TAG, cause) {
                 "Auto-reconnect attempt cap ($cap) exhausted; tearing down session"
             }
+            sleeping = null
             connectionState.value = ConnectionState.Disconnected
             supervisorJobRef.value?.cancel()
             return
         }
-        reconnectAttempt += 1
+        if (freeAttempt) sleepAttempts += 1 else reconnectAttempt += 1
         autoReconnectInProgress = true
         resetSessionState()
 
-        connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
+        connectionState.value = sleeping ?: ConnectionState.Reconnecting(cause, reconnectAttempt)
 
-        val backoff = computeBackoff(reconnectAttempt)
+        val attempt = reconnectAttempt + sleepAttempts
+        val backoff = computeBackoff(attempt)
         logger.info(TAG, cause) {
-            "Auto-reconnect attempt $reconnectAttempt scheduled in ${backoff.inWholeMilliseconds} ms"
+            "Auto-reconnect attempt $attempt scheduled in ${backoff.inWholeMilliseconds} ms"
         }
         reconnectJob?.cancel()
         reconnectJob = engineScope?.launch {
             delay(backoff)
-            inbox.trySend(EngineMessage.ReconnectTick(cause, reconnectAttempt))
+            inbox.trySend(EngineMessage.ReconnectTick(cause, attempt))
         }
     }
 
@@ -3308,7 +3357,8 @@ internal class MeshEngine(
     private fun handleReconnectAttemptResult(msg: EngineMessage.ReconnectAttemptResult) {
         if (!autoReconnectInProgress) return
         if (msg.success) {
-            logger.info(TAG) { "Auto-reconnect attempt $reconnectAttempt succeeded" }
+            logger.info(TAG) { "Auto-reconnect attempt ${reconnectAttempt + sleepAttempts} succeeded" }
+            sleeping = null
             livenessBudgetMs = LIVENESS_TIMEOUT_MS
             startStage1Handshake()
         } else {
@@ -3778,6 +3828,17 @@ internal class MeshEngine(
         if (livenessBudgetMs >= 0) return
         logger.warn(TAG) { "Liveness timeout — no FromRadio for ${LIVENESS_TIMEOUT_MS}ms" }
         val cause = MeshtasticException.Transport("liveness timeout", cause = null)
+        val sleep = judgeSleepOnDrop(cause, recoverable = true)
+        if (sleep != null && autoReconnectConfig.enabled) {
+            val tagged = MeshtasticException.tag(
+                cause,
+                transportIdentity = transport.identity,
+                operation = "engine.liveness",
+            )
+            emitEvent(MeshEvent.TransportError(tagged))
+            scheduleReconnect(tagged)
+            return
+        }
         // A connect() still waiting on a lockdown unlock fails with the same cause.
         pendingConnectDeferred?.let { deferred ->
             pendingConnectDeferred = null
@@ -3786,6 +3847,7 @@ internal class MeshEngine(
         }
         // handleDisconnect emits the TransportError event for us and cancels the supervisor.
         handleDisconnect(EngineMessage.Disconnect(cause))
+        sleep?.let(::settleTerminalSleep)
     }
 
     private fun failHandshakeWithProtocol(reason: String) {

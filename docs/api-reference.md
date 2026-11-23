@@ -118,7 +118,7 @@ Auto-reconnect is off unless the builder receives a config with `enabled = true`
 | `suspend fun RadioClient.awaitInitialNodeDb(): Map<NodeId, NodeInfo>` | Waits for the first node map after the handshake commits. |
 | `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. The same client can `connect()` again afterwards; `sessionEvents` has completed and stays complete. |
 | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T` | Connects, runs `block`, and always disconnects, on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. |
-| `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Connecting → …`. |
+| `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Connecting → …`. A power-saving device that drops its BLE link by design goes to `DeviceSleeping` instead (see [`DeviceSleeping`](#devicesleeping)). |
 | `ownNode: StateFlow<NodeInfo?>` | `null` until `Connected`, then the local node. |
 | `configBundle: StateFlow<ConfigBundle?>` | `null` until `Connected`; cleared on disconnect. `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated by unsolicited config pushes and successful local admin writes. |
 | `channels: StateFlow<List<Channel>?>` | `null` until `Connected`. Updated when `setChannel` succeeds; `admin.listChannels()` re-reads all eight slots. |
@@ -367,16 +367,27 @@ public sealed interface ConnectionState {
     public data class Configuring(val phase: ConfigPhase, val progress: Float) : ConnectionState
     public data object Connected : ConnectionState
     public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
+    public data class DeviceSleeping(val since: Instant, val expectedWakeSeconds: Int) : ConnectionState
 }
 
 public enum class ConfigPhase { Stage1, Settling, Stage2 }
 
 public val ConnectionState.isUsable: Boolean        // Connected
-public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting
+public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting; not DeviceSleeping
 public val ConnectionState.statusMessage: String    // display text
 ```
 
 `progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
+
+### `DeviceSleeping`
+
+Reported instead of `Reconnecting` or `Disconnected` only when a BLE session drops however the engine notices it (a recoverable transport error, a failed write or read, or the liveness watchdog; never `disconnect()`), the session had completed the handshake with no `FromRadio.rebooted`, and the last known config says firmware sleeps the device ([protocol.md, Power-saving sleep](./protocol.md#power-saving-sleep-drops-the-ble-link)):
+
+- tracker or TAK tracker role with `power.is_power_saving`: deep sleep, `expectedWakeSeconds` is `position.position_broadcast_secs`, or 3600 when it is 0;
+- sensor role with `power.is_power_saving` and `telemetry.environment_measurement_enabled`: deep sleep, `expectedWakeSeconds` is `telemetry.environment_update_interval`, or 3600 when it is 0;
+- router or router-late role, or `power.is_power_saving` on another role, with `metadata.hasWifi`, no WiFi SSID configured, no `network.eth_enabled` on a build with `metadata.hasEthernet`, and `power.ls_secs > 0`: light sleep, `expectedWakeSeconds` is `ls_secs` for every role, a router's included (one day by default). Firmware light-sleeps `wait_bluetooth_secs` after the last `ToRadio` write, so the SDK's 30 s heartbeat keeps a radio with the default 60 s awake.
+
+With auto-reconnect on, the engine keeps retrying with the normal backoff. Attempts made before `since + expectedWakeSeconds + 2 × maxBackoff` do not count against `maxAttempts`; after that the state becomes `Reconnecting` and attempts count. With auto-reconnect off the session ends and the state stays `DeviceSleeping` until `connect()` or `disconnect()`. Pending sends fail with `SendFailure.Disconnected` and `sessionEvents` emits `Ended`, as for any drop.
 
 ## Transport specs, identities, and targets
 

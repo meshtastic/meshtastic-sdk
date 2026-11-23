@@ -488,6 +488,19 @@ public final class org/meshtastic/sdk/ConnectionState$Connecting : org/meshtasti
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/ConnectionState$DeviceSleeping : org/meshtastic/sdk/ConnectionState {
+	public fun <init> (Lkotlin/time/Instant;I)V
+	public final fun component1 ()Lkotlin/time/Instant;
+	public final fun component2 ()I
+	public final fun copy (Lkotlin/time/Instant;I)Lorg/meshtastic/sdk/ConnectionState$DeviceSleeping;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConnectionState$DeviceSleeping;Lkotlin/time/Instant;IILjava/lang/Object;)Lorg/meshtastic/sdk/ConnectionState$DeviceSleeping;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpectedWakeSeconds ()I
+	public final fun getSince ()Lkotlin/time/Instant;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/ConnectionState$Disconnected : org/meshtastic/sdk/ConnectionState {
 	public static final field INSTANCE Lorg/meshtastic/sdk/ConnectionState$Disconnected;
 	public fun equals (Ljava/lang/Object;)Z

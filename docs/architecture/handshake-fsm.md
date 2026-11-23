@@ -65,7 +65,7 @@ The SDK sends the four `0x94` resync bytes on stream transports and nothing else
 
 ## Failure transitions and reconnect
 
-A failure always returns to `Idle`. Reconnecting is off by default: the engine projects `Disconnected` and the host decides what to do. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that reconnects after a recoverable `TransportState.Error`, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each attempt is projected as `Reconnecting(cause, attempt)`.
+A failure always returns to `Idle`. Reconnecting is off by default: the engine projects `Disconnected` and the host decides what to do. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that reconnects after a recoverable `TransportState.Error`, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each attempt is projected as `Reconnecting(cause, attempt)`, or as `DeviceSleeping` when the drop was a power-saving device sleeping.
 
 Causes that DO NOT auto-reconnect:
 - `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
@@ -80,6 +80,6 @@ Causes that DO auto-reconnect:
 
 - `protocol.md` §6: the wire-level envelope sequence and the firmware's special nonces (69420, 69421).
 - ADR-002: the actor model that owns this state machine.
-- ADR-005: `ConnectionState` (no `DeviceSleep`); `Reconnecting` carries `cause`.
+- ADR-005: `ConnectionState`; `Reconnecting` carries `cause`.
 - [`protocol.md` §6 host-side rules](../protocol.md#host-side-rules): the 100 ms settle on each side of the inter-stage heartbeat, cited to Android's `HandshakeStateMachine`.
 - [`protocol.md` §16](../protocol.md#16-heartbeat--queue-status): the heartbeat requirement per transport.
