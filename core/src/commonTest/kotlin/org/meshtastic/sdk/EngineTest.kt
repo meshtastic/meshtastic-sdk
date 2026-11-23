@@ -81,6 +81,18 @@ class EngineTest {
     }
 
     @Test
+    fun aRefusedConnectReleasesAdmissionSoTheNextConnectWorks() = runTest {
+        val client = buildClient()
+        client.connect()
+        // Refused inside admission by the live run, not by the admission check itself.
+        assertFailsWith<MeshtasticException.AlreadyConnected> { client.connect() }
+        client.disconnect()
+        client.connect()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        client.disconnect()
+    }
+
+    @Test
     fun testDisconnectBeforeConnectIsIdempotent() = runTest {
         val client = buildClient()
         // Must not throw
