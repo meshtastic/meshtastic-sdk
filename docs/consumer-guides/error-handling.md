@@ -179,7 +179,7 @@ The send calls throw `NotConnected` when the client isn't connected and `Payload
 
 ## Reconnecting
 
-The engine reconnects for you when built with `Builder.autoReconnect(AutoReconnectConfig())`: after a drop it backs off exponentially with jitter and reports each attempt as `ConnectionState.Reconnecting(cause, attempt)`. Cap the attempts with `maxAttempts`, and use `recoveryStep` for work between attempts, such as requesting a USB permission again. Without it, the client goes to `Disconnected` and calling `connect()` again is up to you. [api-reference.md, AutoReconnectConfig](../api-reference.md#autoreconnectconfig) has the parameters.
+The engine reconnects for you when built with `Builder.autoReconnect(AutoReconnectConfig())`: after a drop it backs off exponentially with jitter and reports each attempt as `ConnectionState.Reconnecting(cause, attempt)`. Cap the attempts with `maxAttempts`, and use `recoveryStep` for work between attempts, such as requesting a USB permission again. Without it, the client goes to `Disconnected` and calling `connect()` again is up to you. A power-saving device that drops its BLE link by design reports `DeviceSleeping` in place of `Reconnecting` or `Disconnected`; show it as sleeping rather than as an error ([api-reference.md, DeviceSleeping](../api-reference.md#devicesleeping)). [api-reference.md, AutoReconnectConfig](../api-reference.md#autoreconnectconfig) has the parameters.
 
 ## Decision rules
 
