@@ -23,7 +23,8 @@ public interface RemoteShellApi {
 
     /**
      * Send [frame] to [node], PKI-encrypted with the key stored for [node], on channel `0` with no
-     * `want_ack`.
+     * `want_ack`. Frames go out one at a time behind the paced radio queue, as with
+     * [RadioClient.sendPaced].
      *
      * @throws MeshtasticException.Protocol if no 32-byte public key is stored for [node]
      * @throws MeshtasticException.NotConnected if not currently connected

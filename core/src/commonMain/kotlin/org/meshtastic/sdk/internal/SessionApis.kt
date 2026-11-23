@@ -48,7 +48,9 @@ internal class RemoteShellApiImpl(private val client: RadioClient) : RemoteShell
                 wb.payload = RemoteShell.ADAPTER.encode(frame).toByteString()
             }.build()
         }.build()
-        return client.send(packet)
+        // NimBLE queues three inbound writes and drops the next (NimbleBluetooth.cpp onWrite), so a typed burst
+        // waits for each frame's QueueStatus.
+        return client.sendPaced(packet).message
     }
 
     override fun frames(node: NodeId): Flow<RemoteShell> = client.packets

@@ -664,7 +664,7 @@ public interface RemoteShellApi {
 }
 ```
 
-`send` PKI-encrypts on channel `0` with the key stored for `node`, without `want_ack`, and throws `MeshtasticException.Protocol` when no key is stored. `frames` decodes inbound `REMOTE_SHELL_APP` packets from `node`. Session state and sequencing belong to the caller.
+`send` PKI-encrypts on channel `0` with the key stored for `node`, without `want_ack`, and throws `MeshtasticException.Protocol` when no key is stored. Frames go out one at a time behind the paced radio queue, as `sendPaced` does: NimBLE firmware holds three inbound writes and drops the next. `frames` decodes inbound `REMOTE_SHELL_APP` packets from `node`. Session state and sequencing belong to the caller.
 
 ## `MqttProxyApi`
 

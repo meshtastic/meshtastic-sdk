@@ -25,6 +25,7 @@ import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.Paxcount
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.RemoteShell
 import org.meshtastic.proto.StoreAndForward
 import org.meshtastic.proto.Telemetry
@@ -303,6 +304,48 @@ class SessionApisTest {
             client.disconnect()
         }
     }
+
+    // NimBLE queues three inbound writes and drops the next while they wait (NimbleBluetooth.cpp onWrite,
+    // NIMBLE_BLUETOOTH_FROM_PHONE_QUEUE_SIZE), so a typed burst must wait for each frame's QueueStatus.
+    @Test
+    fun remoteShellFramesGoOutOneAtATimeBehindTheRadioQueue() = runTest {
+        val (transport, client) = connectedClient()
+        try {
+            hearPeer(transport, channel = 0, publicKey = peerKey)
+            val before = shellWrites(transport).size
+            repeat(4) { seq ->
+                client.remoteShell.send(
+                    NodeId(peer),
+                    RemoteShell.Builder().also { wb ->
+                        wb.op = RemoteShell.OpCode.INPUT
+                        wb.session_id = 7
+                        wb.seq = seq
+                    }.build(),
+                )
+            }
+            runCurrent()
+            assertEquals(1, shellWrites(transport).size - before, "one frame on the wire before its receipt")
+
+            repeat(3) {
+                transport.injectFrame(
+                    FromRadio.Builder().also { wb ->
+                        wb.queueStatus = QueueStatus.Builder().also { q ->
+                            q.mesh_packet_id = shellWrites(transport).last().id
+                            q.free = 16
+                            q.maxlen = 16
+                        }.build()
+                    }.build().toFrame(),
+                )
+                runCurrent()
+            }
+            assertEquals(4, shellWrites(transport).size - before)
+        } finally {
+            client.disconnect()
+        }
+    }
+
+    private fun shellWrites(transport: FakeRadioTransport) =
+        transport.outboundPackets().filter { it.decoded?.portnum == PortNum.REMOTE_SHELL_APP }
 
     @Test
     fun remoteShellSendWithoutAStoredKeyThrows() = runTest {
