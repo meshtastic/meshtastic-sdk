@@ -414,6 +414,10 @@ internal class MeshEngine(
     private var stage2ProgressCounter: Long = 0L
     private var stage2WatchdogJob: Job? = null
 
+    // Stage 1 inactivity and total timers.
+    private var stage1WatchdogJob: Job? = null
+    private var stage1CapJob: Job? = null
+
     /** The device's channels in storage when [connect] started, for a handshake that sends none. */
     private var storedChannels: List<org.meshtastic.proto.Channel> = emptyList()
 
@@ -1237,12 +1241,32 @@ internal class MeshEngine(
         // Sent once per session: firmware's handleStartConfig has no re-entry guard (protocol.md §6),
         // so a silent Stage 1 ends in HandshakeTimeout and a fresh session, never an in-session resend.
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
-        engineScope?.launch {
-            delay(STAGE1_TIMEOUT_MS)
+        armStage1Watchdog()
+        stage1CapJob?.cancel()
+        stage1CapJob = engineScope?.launch {
+            delay(STAGE1_HARD_CAP_MS)
             inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining, attempt))
         }
 
         logger.info(TAG) { "Handshake Stage 1 started (want_config_id=$NONCE_STAGE1)" }
+    }
+
+    // Stage 1 fails after STAGE1_TIMEOUT_MS without a frame of its dump, the way Android re-armed its stage guard
+    // on progress (MeshConnectionManagerImpl), and at STAGE1_HARD_CAP_MS however much arrives.
+    private fun armStage1Watchdog() {
+        val attempt = handshakeAttempt
+        stage1WatchdogJob?.cancel()
+        stage1WatchdogJob = engineScope?.launch {
+            delay(STAGE1_TIMEOUT_MS)
+            inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.Stage1Draining, attempt))
+        }
+    }
+
+    private fun clearStage1Timers() {
+        stage1WatchdogJob?.cancel()
+        stage1WatchdogJob = null
+        stage1CapJob?.cancel()
+        stage1CapJob = null
     }
 
     private fun acceptsFramesFrom(generation: Long): Boolean =
@@ -1480,7 +1504,10 @@ internal class MeshEngine(
                 return
             }
 
-            HandshakeStage.Stage1Draining -> processStage1Envelope(fromRadio)
+            HandshakeStage.Stage1Draining -> {
+                if (stage1DumpStarted) armStage1Watchdog()
+                processStage1Envelope(fromRadio)
+            }
 
             HandshakeStage.Stage2Draining -> processStage2Envelope(fromRadio)
 
@@ -1529,6 +1556,7 @@ internal class MeshEngine(
         settleBuffer.clear()
         if (!keepHeldPackets) handshakePacketBuffer.clear()
         clearSessionSeed()
+        clearStage1Timers()
     }
 
     private fun processStage1Envelope(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -1586,6 +1614,7 @@ internal class MeshEngine(
 
             completeId == NONCE_STAGE1 -> {
                 logger.info(TAG) { "Stage 1 complete; entering 100 ms settle" }
+                clearStage1Timers()
                 handshakeStage = HandshakeStage.Stage1Settling
                 connectionState.value = ConnectionState.Configuring(ConfigPhase.Settling, 0.5f)
                 val attempt = handshakeAttempt
@@ -4124,6 +4153,9 @@ internal class MeshEngine(
 
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
+
+        // Android stops re-arming a stage guard after 10 x its budget (STAGE_GUARD_TOTAL_CAP_FACTOR).
+        const val STAGE1_HARD_CAP_MS = STAGE1_TIMEOUT_MS * 10
 
         // Past this a Ready session warns that it has no local passkey; it never fails the session.
         const val SEED_TIMEOUT_MS = 10_000L

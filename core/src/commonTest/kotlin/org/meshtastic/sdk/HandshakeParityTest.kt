@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
@@ -263,7 +264,12 @@ class HandshakeParityTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:heartbeat-reply"), autoHandshake = true)
         val client = buildClient(transport)
         client.connect()
-        transport.inject { it.queueStatus = QueueStatus.Builder().also { q -> q.free = 16; q.maxlen = 16 }.build() }
+        transport.inject {
+            it.queueStatus = QueueStatus.Builder().also { q ->
+                q.free = 16
+                q.maxlen = 16
+            }.build()
+        }
         runCurrent()
 
         advanceTimeBy(LIVENESS_TIMEOUT_MS + LIVENESS_CHECK_MS)
@@ -278,7 +284,12 @@ class HandshakeParityTest {
         val client = buildClient(transport) { disableBleHeartbeat() }
         client.connect()
         // The reply to the inter-stage heartbeat, which is sent on every transport.
-        transport.inject { it.queueStatus = QueueStatus.Builder().also { q -> q.free = 16; q.maxlen = 16 }.build() }
+        transport.inject {
+            it.queueStatus = QueueStatus.Builder().also { q ->
+                q.free = 16
+                q.maxlen = 16
+            }.build()
+        }
         runCurrent()
 
         advanceTimeBy(5 * 60_000L)
@@ -286,6 +297,60 @@ class HandshakeParityTest {
 
         assertEquals(ConnectionState.Connected, client.connection.value)
         client.disconnect()
+    }
+
+    /** Android re-arms its Stage 1 stage guard on every progress frame (MeshConnectionManagerImpl). */
+    @Test
+    fun stage1KeepsDrainingPastTwentySecondsWhileFramesArrive() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:stage1-slow"), autoQueueStatus = true)
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.nodeNum = NODE
+        transport.inject { it.my_info = MyNodeInfo.Builder().also { m -> m.my_node_num = NODE }.build() }
+        // A slow BLE config dump: one channel every 15 s for 90 s, past a fixed 20 s budget.
+        repeat(6) { i ->
+            advanceTimeBy(15_000L)
+            transport.inject { it.channel = Channel.Builder().also { c -> c.index = i }.build() }
+            runCurrent()
+            val state = assertIs<ConnectionState.Configuring>(client.connection.value)
+            assertEquals(ConfigPhase.Stage1, state.phase)
+        }
+        transport.inject { it.config_complete_id = NONCE_STAGE1 }
+        runCurrent()
+        repeat(2) {
+            advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+            runCurrent()
+        }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+
+        assertTrue(connectJob.await().isSuccess)
+        client.disconnect()
+    }
+
+    @Test
+    fun stage1EndsAtItsCapEvenWhileFramesArrive() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:stage1-cap"))
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.inject { it.my_info = MyNodeInfo.Builder().also { m -> m.my_node_num = NODE }.build() }
+        var elapsed = 0L
+        while (elapsed < STAGE1_HARD_CAP_MS - 15_000L) {
+            advanceTimeBy(15_000L)
+            elapsed += 15_000L
+            transport.inject { it.channel = Channel.Builder().also { c -> c.index = 0 }.build() }
+            runCurrent()
+        }
+        assertFalse(connectJob.isCompleted)
+
+        advanceTimeBy(STAGE1_HARD_CAP_MS - elapsed + 1)
+        runCurrent()
+        assertTrue(connectJob.isCompleted, "Stage 1 must end at STAGE1_HARD_CAP_MS")
+        val timeout = assertIs<MeshtasticException.HandshakeTimeout>(connectJob.await().exceptionOrNull())
+        assertEquals("Stage 1", timeout.stage)
     }
 
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->
@@ -308,17 +373,16 @@ class HandshakeParityTest {
         transport: FakeRadioTransport,
         sessionReceive: Boolean = false,
         configure: RadioClient.Builder.() -> Unit = {},
-    ): RadioClient =
-        RadioClient.Builder()
-            .transport(transport)
-            .storage(InMemoryStorageProvider())
-            .autoSyncTimeOnConnect(false)
-            .coroutineContext(backgroundScope.coroutineContext)
-            .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
-            .apply { if (sessionReceive) sessionReceive() }
-            .apply(configure)
-            .build()
+    ): RadioClient = RadioClient.Builder()
+        .transport(transport)
+        .storage(InMemoryStorageProvider())
+        .autoSyncTimeOnConnect(false)
+        .coroutineContext(backgroundScope.coroutineContext)
+        .rpcTimeout(60.seconds)
+        .sendTimeout(60.seconds)
+        .apply { if (sessionReceive) sessionReceive() }
+        .apply(configure)
+        .build()
 
     private fun FakeRadioTransport.inject(block: (FromRadio.Builder) -> Unit) {
         injectFrame(FromRadio.Builder().also(block).build().toFrame())
@@ -359,6 +423,10 @@ class HandshakeParityTest {
         const val NONCE_STAGE1 = 69420
         const val NONCE_STAGE2 = 69421
         const val STAGE1_TIMEOUT_MS = 20_000L
+
+        // Android's stage-guard ceiling: 10 x the budget (MeshConnectionManagerImpl STAGE_GUARD_TOTAL_CAP_FACTOR).
+        const val STAGE1_HARD_CAP_MS = 200_000L
+        const val INTER_STAGE_SETTLE_MS = 100L
         const val SEED_TIMEOUT_MS = 10_000L
         const val SEED_WARNING = "session passkey seed timed out"
         const val LIVENESS_TIMEOUT_MS = 60_000L
