@@ -563,6 +563,104 @@ class SdkOwnedReconnectTest {
         assertEquals(listOf<ConnectionState>(ConnectionState.Disconnected), states)
     }
 
+    @Test
+    fun aDisconnectWhileConnectWaitsForAFailedRunCancelsThatConnect() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        client.connect()
+        val connects = link.connects.size
+        var reconnect: Result<Unit>? = null
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            client.connection.first { it is ConnectionState.Failed }
+            reconnect = runCatching { client.connect() }
+        }
+        // Inside the same publication of Failed, after the connect() above has begun waiting for that run.
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            client.connection.first { it is ConnectionState.Failed }
+            client.disconnect()
+        }
+
+        link.drop(MeshtasticException.Transport("unsupported"), recoverable = false)
+        settle()
+
+        assertTrue(reconnect?.isFailure == true, "the waiting connect() was cancelled: $reconnect")
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals(connects, link.connects.size, "no new run after disconnect()")
+    }
+
+    @Test
+    fun aSecondDisconnectLeavesDisconnectingUntilTheFirstOnesTeardownEnds() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        client.connect()
+        link.disconnectGate = CompletableDeferred()
+
+        val first = backgroundScope.launch { client.disconnect() }
+        runCurrent()
+        client.disconnect()
+
+        assertEquals(ConnectionState.Disconnecting, client.connection.value, "the transport is still closing")
+        link.disconnectGate?.complete(Unit)
+        drain()
+        assertTrue(first.isCompleted)
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun aConnectThatThrowsFirmwareTooOldFailsWithoutRetrying() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        link.connectError = MeshtasticException.FirmwareTooOld(required = 20315, present = 20300)
+        val client = buildClient(link, config())
+
+        assertIs<MeshtasticException.FirmwareTooOld>(runCatching { client.connect() }.exceptionOrNull())
+        advanceTimeBy(60_000L)
+        drain()
+
+        assertIs<MeshtasticException.FirmwareTooOld>(assertIs<ConnectionState.Failed>(client.connection.value).cause)
+        assertEquals(1, link.connects.size)
+    }
+
+    @Test
+    fun aWriteFailureAheadOfATerminalTransportErrorStillFails() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        client.connect()
+        val connects = link.connects.size
+        val fatal = MeshtasticException.Transport("unsupported device")
+
+        link.failSends = fatal
+        client.sendText("hello")
+        drain()
+        advanceTimeBy(30_000L)
+        drain()
+
+        assertSame(fatal, assertIs<ConnectionState.Failed>(client.connection.value).cause)
+        assertEquals(connects, link.connects.size)
+    }
+
+    @Test
+    fun earlierHandshakeTimeoutsDoNotSpendTheDefaultOverflowLimit() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config(maxBackoff = 2.seconds), sessionCapacity = SMALL_QUEUE)
+        stalledCollector(checkNotNull(client.sessionEvents))
+        client.connect()
+        drain()
+
+        // Three Stage 1 timeouts in a row, then a handshake that completes.
+        link.answerHandshake = false
+        link.drop()
+        runCurrent()
+        advanceTimeBy(66_000L)
+        drain()
+        link.answerHandshake = true
+        advanceTimeBy(2_000L)
+        settle()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+
+        flood(link)
+        assertIs<ConnectionState.Reconnecting>(client.connection.value, "the first overflow is restarted")
+    }
+
     // Each packet from a peer queues a Packet and a NodeChanged; nothing collects, so the queue overflows.
     private fun TestScope.flood(link: ScriptLink) {
         repeat(SMALL_QUEUE * 2) { index ->
@@ -652,6 +750,9 @@ class SdkOwnedReconnectTest {
         /** When false the radio never answers `want_config_id`, so Stage 1 times out. */
         var answerHandshake = true
         var failNextConnects = 0
+        var connectError: MeshtasticException? = null
+        var failSends: MeshtasticException? = null
+        var disconnectGate: CompletableDeferred<Unit>? = null
         val connects = mutableListOf<Long>()
         val sent = mutableListOf<ToRadio>()
 
@@ -661,6 +762,7 @@ class SdkOwnedReconnectTest {
         override suspend fun connect() {
             log += "$name.connect"
             connects += nowMs()
+            connectError?.let { throw it }
             if (failNextConnects > 0) {
                 // A BLE connect timeout: the transport publishes its Error, then connect() throws.
                 failNextConnects -= 1
@@ -675,11 +777,17 @@ class SdkOwnedReconnectTest {
 
         override suspend fun disconnect() {
             log += "$name.disconnect"
+            disconnectGate?.await()
             inner.disconnect()
             stateFlow.value = TransportState.Disconnected
         }
 
         override suspend fun send(frame: Frame) {
+            failSends?.let { failure ->
+                // A transport that reports a terminal error and also fails the write in progress.
+                stateFlow.value = TransportState.Error(failure, recoverable = false)
+                throw MeshtasticException.Transport("write failed", failure)
+            }
             val bytes = frame.bytes.toByteArray()
             if (bytes.size > 4) {
                 runCatching { ToRadio.ADAPTER.decode(bytes.copyOfRange(4, bytes.size)) }.onSuccess { sent += it }

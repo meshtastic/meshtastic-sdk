@@ -354,6 +354,30 @@ class DeviceSleepStateTest {
     }
 
     @Test
+    fun repeatedLivenessTimeoutsAfterReadyReachMaxHandshakeRecoveries() = runTest {
+        val transport = SleepTransport(TransportIdentity("ble:BA"), powerSaving = false, lsSecs = 300)
+        val client = buildClient(transport, reconnect.copy(maxHandshakeRecoveries = 1))
+        client.connect()
+        advanceTimeBy(31_000L)
+        drain()
+
+        // Each session reaches Ready, then the radio stops answering heartbeats until it is reconnected.
+        transport.speakOnReconnect = true
+        transport.silent = true
+        advanceTimeBy(70_000L)
+        drain()
+        assertEquals(ConnectionState.Connected, client.connection.value, "the first liveness timeout is restarted")
+        transport.speakOnReconnect = false
+        advanceTimeBy(31_000L)
+        drain()
+
+        transport.silent = true
+        advanceTimeBy(70_000L)
+        drain()
+        assertIs<ConnectionState.Failed>(client.connection.value)
+    }
+
+    @Test
     fun pendingSendsFailDisconnectedWhenLinkDropsIntoSleep() = runTest {
         val transport = SleepTransport(TransportIdentity("ble:B5"), powerSaving = true, lsSecs = 300)
         val client = buildClient(transport, reconnect)
@@ -525,12 +549,16 @@ class DeviceSleepStateTest {
 
         // Accepts writes but answers none of them, as a radio asleep behind a live BLE link does.
         var silent = false
+
+        // Ends [silent] at the next connect, so the restarted session answers.
+        var speakOnReconnect = false
         private var connected = false
 
         override val state: StateFlow<TransportState> = stateFlow
 
         override suspend fun connect() {
             connectAttempts += 1
+            if (speakOnReconnect) silent = false
             connectGate?.await()
             if (connected && failReconnects > 0) {
                 failReconnects -= 1

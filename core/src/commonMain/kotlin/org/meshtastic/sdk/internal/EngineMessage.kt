@@ -244,8 +244,8 @@ internal sealed interface EngineMessage {
     class ReconnectAttemptResult(val token: Long, val transport: RadioTransport?, val cause: MeshtasticException?) :
         EngineMessage
 
-    /** [org.meshtastic.sdk.RadioClient.retryNow]: end the pending backoff wait. */
-    data object RetryNow : EngineMessage
+    /** [org.meshtastic.sdk.RadioClient.retryNow]: end the backoff wait that [tick] ends, if it is still pending. */
+    class RetryNow(val tick: ReconnectTick) : EngineMessage
 
     /** The session receive queue overflowed in session [sessionId]; with auto-reconnect on, the session restarts. */
     data class SessionOverflow(val sessionId: Long) : EngineMessage

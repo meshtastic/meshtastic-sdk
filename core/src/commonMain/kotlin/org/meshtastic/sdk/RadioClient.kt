@@ -402,8 +402,10 @@ public class RadioClient internal constructor(
      * **Idempotency:** throws [MeshtasticException.AlreadyConnected] if already connected.
      *
      * **Auto-reconnect:** with [Builder.autoReconnect] enabled, a failed first attempt is retried
-     * like a later drop, so this suspends until the first session connects, and throws only when the
-     * engine reaches [ConnectionState.Failed] (with that state's cause) or [disconnect] is called.
+     * like a later drop, so this suspends until the first session connects. Once storage has been
+     * activated it throws only when the engine reaches [ConnectionState.Failed] (with that state's
+     * cause) or [disconnect] is called; a storage activation failure still throws
+     * [MeshtasticException.StorageUnavailable] and leaves [ConnectionState.Disconnected], unretried.
      *
      * @throws MeshtasticException.AlreadyConnected if already connected
      * @throws MeshtasticException.Transport if the transport cannot establish a connection
@@ -428,6 +430,8 @@ public class RadioClient internal constructor(
      * transport is fully disconnected, and storage is closed. [connection] shows
      * [ConnectionState.Disconnecting] meanwhile, unless it was already
      * [ConnectionState.Disconnected], and settles on [ConnectionState.Disconnected] before this returns.
+     * A second call while another one's teardown is running returns at once and leaves
+     * [ConnectionState.Disconnecting] in place until that teardown ends.
      *
      * **Cancellation:** the disconnect path runs under
      * [kotlinx.coroutines.NonCancellable] internally for resource release — cancelling the
