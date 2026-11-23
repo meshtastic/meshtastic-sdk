@@ -177,7 +177,8 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 
 | Member | Returns | Throws |
 |---|---|---|
-| `send(packet: MeshPacket)` | `MessageHandle` in `Queued` | `PayloadTooLarge`, `NotConnected` |
+| `send(packet: MeshPacket)` | `MessageHandle` in `Queued`; a nonzero `packet.id` is the handle's `id` | `PayloadTooLarge`, `NotConnected` |
+| `nextPacketId()` | `MessageId`, never `0`, from the counter the SDK numbers its own sends and RPCs with; works before `connect()` | — |
 | `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0, wantAck: Boolean = true)` | `MessageHandle` | same as `send` |
 | `trySendRaw(frame: ToRadio)` | Whether the outbound queue accepted the encoded frame | — |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int)` | `MessageHandle` | same as `send` |
@@ -228,7 +229,9 @@ val handle = client.send {
 
 `sendPaced { … }` takes the same block and returns a `PacedMessageHandle`, as `sendPaced(packet)` does.
 
-`send { … }` configures a `SendBuilder`: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck()`, `wantAck(Boolean)`, `hopLimit(Int?)`.
+`send { … }` configures a `SendBuilder`: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck()`, `wantAck(Boolean)`, `hopLimit(Int?)`, `priority(Priority)`, `id(MessageId)`, `replyTo(MessageId)`, `reaction()`, `reaction(Boolean)`, `pkiEncrypted()`, `pkiEncrypted(ByteString)`.
+
+A durable outbox that stores a row before it sends draws the id with `client.nextPacketId()` and passes it to `id(...)`; the handle carries it, and a send under an id an in-flight send or RPC holds fails with `IdCollision`. `replyTo` sets `Data.reply_id` and `reaction()` sets `Data.emoji = 1`. `pkiEncrypted()` sends on channel 0 with `pki_encrypted` and the recipient's key from the node map, or an empty key when the SDK holds none, which leaves the choice to the firmware's copy; `pkiEncrypted(publicKey)` pins a key the firmware must match, and a broadcast destination throws `IllegalStateException`.
 
 A `hopLimit` left unset, like `hopLimit = null` on the typed `send(portnum, …)` overloads, sends the device's `lora.hop_limit` from `configBundle`, or the firmware default of 3 before the bundle lands. The SDK resolves it on the host because firmware substitutes its default for a `0` only when `want_ack` is set. `send(packet: MeshPacket)` and `proto(...)` go out as given.
 

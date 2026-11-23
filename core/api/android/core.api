@@ -1818,6 +1818,8 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getSessionEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getStoreForward ()Lorg/meshtastic/sdk/StoreForwardApi;
 	public final fun getTelemetry ()Lorg/meshtastic/sdk/TelemetryApi;
+	public final fun nextPacketId ()Lorg/meshtastic/sdk/MessageId;
+	public final fun nextPacketId-dj4h-Jc ()I
 	public final fun nodeSnapshot (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun requestNodeDbRefresh ()Z
 	public final fun requestNodeInfo (Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/MessageHandle;
@@ -2217,9 +2219,17 @@ public final class org/meshtastic/sdk/SendBuilder {
 	public final fun channel-Kwd1L3I (I)V
 	public final fun data (Lorg/meshtastic/proto/PortNum;[B)V
 	public final fun hopLimit (Ljava/lang/Integer;)V
+	public final fun id (Lorg/meshtastic/sdk/MessageId;)V
+	public final fun id-1LxCGqE (I)V
+	public final fun pkiEncrypted ()V
+	public final fun pkiEncrypted (Lokio/ByteString;)V
 	public final fun position (Lorg/meshtastic/sdk/LatLng;)V
 	public final fun priority (Lorg/meshtastic/proto/MeshPacket$Priority;)V
 	public final fun proto (Lorg/meshtastic/proto/MeshPacket;)V
+	public final fun reaction ()V
+	public final fun reaction (Z)V
+	public final fun replyTo (Lorg/meshtastic/sdk/MessageId;)V
+	public final fun replyTo-1LxCGqE (I)V
 	public final fun text (Ljava/lang/String;)V
 	public final fun to (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun to-LO_6HKw (I)V

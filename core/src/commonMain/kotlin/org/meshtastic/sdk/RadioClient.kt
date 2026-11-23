@@ -419,6 +419,7 @@ public class RadioClient internal constructor(
      *
      * Returns **immediately** with a [MessageHandle] tracking the packet's lifecycle. The engine
      * assigns `id` and `from` from the local node's info; callers may override these if needed.
+     * A nonzero `packet.id` becomes the handle's [MessageHandle.id].
      *
      * **Payload size:** enforced client-side against [DATA_PAYLOAD_LEN] (233 bytes).
      * Oversized payloads throw [MeshtasticException.PayloadTooLarge] before enqueue — no handle
@@ -433,7 +434,8 @@ public class RadioClient internal constructor(
     @Throws(MeshtasticException::class)
     public fun send(packet: MeshPacket): MessageHandle {
         checkSendable(packet)
-        val id = engine.nextMessageId()
+        // A caller-chosen wire id is the handle's id, so cancel and the returned id name the packet sent.
+        val id = if (packet.id != 0) MessageId(packet.id) else engine.nextMessageId()
         val stateFlow = MutableStateFlow<SendState>(SendState.Queued)
         val handle = MessageHandle(
             id = id,
@@ -462,6 +464,20 @@ public class RadioClient internal constructor(
             resend = { original -> sendPaced(original.newBuilder().also { it.id = 0 }.build()).message },
         )
     }
+
+    /**
+     * The next packet id from the counter the SDK draws its own send and RPC ids from, for a host that must
+     * know the id before it sends, such as a durable outbox that stores the row first. Pass it to
+     * [SendBuilder.id] or as [MeshPacket.id].
+     *
+     * Never `0`. The counter starts at a random point for each client and steps by one, so an id does not
+     * recur within a client until 2^32 ids have been drawn, and ids from an earlier process are unlikely to.
+     * Works before [connect]. The id is not reserved: a send under an id that an in-flight send or RPC holds
+     * fails with [SendFailure.IdCollision], and an RPC the SDK numbers itself skips ids a caller holds.
+     *
+     * @since 0.3.0
+     */
+    public fun nextPacketId(): MessageId = engine.nextMessageId()
 
     private fun checkSendable(packet: MeshPacket) {
         val payloadSize = packet.decoded?.payload?.size ?: 0

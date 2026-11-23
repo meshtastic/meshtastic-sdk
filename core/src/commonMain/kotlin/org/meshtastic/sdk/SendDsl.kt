@@ -31,9 +31,9 @@ public annotation class MeshSendDsl
  * `build`.
  *
  * When [proto] is used the entire packet is taken as-is; subsequent calls to [to],
- * [channel], [wantAck], or [hopLimit] throw [IllegalStateException] because they would
- * silently overwrite caller-supplied wire fields. Set those on the [MeshPacket] you pass
- * to [proto] instead.
+ * [channel], [wantAck], [hopLimit], [priority], [id], [replyTo], [reaction] or [pkiEncrypted]
+ * throw [IllegalStateException] because they would silently overwrite caller-supplied wire
+ * fields. Set those on the [MeshPacket] you pass to [proto] instead.
  *
  * Example:
  * ```kotlin
@@ -61,6 +61,11 @@ public class SendBuilder internal constructor() {
     private var wantAck: Boolean = false
     private var hopLimit: Int? = null
     private var priority: MeshPacket.Priority = MeshPacket.Priority.UNSET
+    private var id: MessageId? = null
+    private var replyTo: MessageId? = null
+    private var reaction: Boolean = false
+    private var pkiEncrypted: Boolean = false
+    private var pinnedPublicKey: ByteString? = null
 
     /** Set the destination [NodeId]. Defaults to [NodeId.BROADCAST]. */
     public fun to(nodeId: NodeId) {
@@ -101,6 +106,74 @@ public class SendBuilder internal constructor() {
         this.priority = value
     }
 
+    /**
+     * Send under a caller-chosen packet id, for example one from [RadioClient.nextPacketId] that a durable
+     * outbox stored before the send. The returned handle carries it. A send whose id an in-flight send or
+     * RPC still holds fails with [SendFailure.IdCollision]. Without it the SDK assigns the id.
+     *
+     * @throws IllegalArgumentException if [id] is zero, which the wire reserves for "unset"
+     * @since 0.3.0
+     */
+    public fun id(id: MessageId) {
+        checkNotProtoOnly("id(MessageId)")
+        require(id.raw != 0) { "packet id 0 means unset on the wire" }
+        this.id = id
+    }
+
+    /**
+     * Mark this packet as a reply to [message], the packet id of the message it answers (`Data.reply_id`).
+     *
+     * @since 0.3.0
+     */
+    public fun replyTo(message: MessageId) {
+        checkNotProtoOnly("replyTo(MessageId)")
+        this.replyTo = message
+    }
+
+    /**
+     * Mark the payload as a reaction to the message named by [replyTo] rather than a standalone message
+     * (`Data.emoji = 1`). Defaults to `false`.
+     *
+     * @since 0.3.0
+     */
+    public fun reaction(value: Boolean) {
+        checkNotProtoOnly("reaction()")
+        this.reaction = value
+    }
+
+    /**
+     * Shorthand for `reaction(true)`.
+     *
+     * @since 0.3.0
+     */
+    public fun reaction(): Unit = reaction(true)
+
+    /**
+     * Encrypt to the recipient's public key (PKI direct message) instead of a channel key. The packet goes
+     * out on channel 0 with `pki_encrypted` set and `public_key` set to the key the SDK holds for [to], or
+     * empty when it holds none, in which case the firmware uses its own copy or refuses the send with
+     * `PKI_SEND_FAIL_PUBLIC_KEY`. `send { … }` throws [IllegalStateException] for a broadcast destination.
+     *
+     * @since 0.3.0
+     */
+    public fun pkiEncrypted() {
+        checkNotProtoOnly("pkiEncrypted()")
+        this.pkiEncrypted = true
+        this.pinnedPublicKey = null
+    }
+
+    /**
+     * As [pkiEncrypted], pinned to [publicKey]: firmware refuses the send with `PKI_FAILED` when its stored key
+     * for the recipient differs, so a key the host has verified cannot be swapped underneath it.
+     *
+     * @since 0.3.0
+     */
+    public fun pkiEncrypted(publicKey: ByteString) {
+        checkNotProtoOnly("pkiEncrypted(ByteString)")
+        this.pkiEncrypted = true
+        this.pinnedPublicKey = publicKey
+    }
+
     /** Encode [text] as a `TEXT_MESSAGE_APP` payload (UTF-8). Mutually exclusive with the other payload setters. */
     public fun text(text: String) {
         recordPayload()
@@ -133,13 +206,15 @@ public class SendBuilder internal constructor() {
 
     /**
      * Escape hatch — use [packet] verbatim as the entire outbound packet. After calling
-     * [proto], the convenience setters [to], [channel], [wantAck], and [hopLimit] all
-     * throw [IllegalStateException].
+     * [proto], the convenience setters ([to], [channel], [wantAck], [hopLimit], [priority],
+     * [id], [replyTo], [reaction], [pkiEncrypted]) all throw [IllegalStateException].
      */
     public fun proto(packet: MeshPacket) {
         recordPayload()
         this.rawPacket = packet
     }
+
+    internal val needsStoredPublicKey: Boolean get() = pkiEncrypted && pinnedPublicKey == null
 
     private fun recordPayload() {
         payloadCallSites += 1
@@ -152,7 +227,7 @@ public class SendBuilder internal constructor() {
         }
     }
 
-    internal fun build(defaultHopLimit: Int): MeshPacket {
+    internal fun build(defaultHopLimit: Int, storedPublicKey: (NodeId) -> ByteString? = { null }): MeshPacket {
         check(payloadCallSites > 0) {
             "send { ... } requires exactly one of text(), data(), position(), or proto(); none was called."
         }
@@ -162,19 +237,41 @@ public class SendBuilder internal constructor() {
         rawPacket?.let { return it }
         val portnum = checkNotNull(portnum)
         val payload = checkNotNull(payload)
+        check(!pkiEncrypted || to != NodeId.BROADCAST) { "pkiEncrypted() needs a unicast destination" }
         return MeshPacket.Builder().also { wb ->
             wb.to = to.raw
-            wb.channel = channel.raw
+            wb.id = id?.raw ?: 0
             wb.want_ack = wantAck
             wb.hop_limit = hopLimit ?: defaultHopLimit
             wb.priority = priority
+            if (pkiEncrypted) {
+                wb.channel = 0
+                wb.pki_encrypted = true
+                wb.public_key = pinnedPublicKey ?: storedPublicKey(to) ?: ByteString.EMPTY
+            } else {
+                wb.channel = channel.raw
+            }
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = portnum
                 wb.payload = payload
                 wb.want_response = false
+                wb.reply_id = replyTo?.raw ?: 0
+                wb.emoji = if (reaction) EMOJI_INDICATOR else 0
             }.build()
         }.build()
     }
+}
+
+// `Data.emoji` is a boolean carried as fixed32 (mesh.proto); 1 marks a reaction.
+private const val EMOJI_INDICATOR: Int = 1
+
+// Curve25519 public key length, as `User.public_key` carries it.
+private const val PKI_PUBLIC_KEY_SIZE: Int = 32
+
+private suspend fun RadioClient.storedPublicKeys(builder: SendBuilder): (NodeId) -> ByteString? {
+    if (!builder.needsStoredPublicKey) return { null }
+    val nodes = nodeSnapshot()
+    return { node -> nodes[node]?.user?.public_key?.takeIf { it.size == PKI_PUBLIC_KEY_SIZE } }
 }
 
 /**
@@ -196,7 +293,7 @@ public class SendBuilder internal constructor() {
  */
 public suspend fun RadioClient.send(block: SendBuilder.() -> Unit): MessageHandle {
     val builder = SendBuilder().apply(block)
-    return send(builder.build(defaultHopLimit = defaultHopLimit()))
+    return send(builder.build(defaultHopLimit(), storedPublicKeys(builder)))
 }
 
 /**
@@ -208,5 +305,5 @@ public suspend fun RadioClient.send(block: SendBuilder.() -> Unit): MessageHandl
  */
 public suspend fun RadioClient.sendPaced(block: SendBuilder.() -> Unit): PacedMessageHandle {
     val builder = SendBuilder().apply(block)
-    return sendPaced(builder.build(defaultHopLimit = defaultHopLimit()))
+    return sendPaced(builder.build(defaultHopLimit(), storedPublicKeys(builder)))
 }
