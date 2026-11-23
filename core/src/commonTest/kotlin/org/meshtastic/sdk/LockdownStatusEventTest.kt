@@ -261,6 +261,9 @@ class LockdownStatusEventTest {
             .autoSyncTimeOnConnect(false)
             .build()
         val connecting = async { runCatching { client.connect() } }
+        runCurrent()
+        // Sent on entering the wait, before any 30 s tick, so the first reply arms the watchdog at once.
+        assertEquals(1, heartbeats)
         advanceTimeBy(5.minutes)
         assertFalse(connecting.isCompleted)
         assertTrue(heartbeats >= 10, "heartbeats=$heartbeats")
