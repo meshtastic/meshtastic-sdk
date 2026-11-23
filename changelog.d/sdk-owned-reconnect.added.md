@@ -1,7 +1,8 @@
 - `RadioTransportProvider` and `RadioClient.Builder.transport(identity, provider)`: auto-reconnect
   asks the provider for the transport of each attempt, after disconnecting the previous one. It
-  can return the same instance or a fresh one, and can suspend until a connection is possible
-  without using up an attempt.
+  can return the same instance or a fresh one. The attempt is counted before `open()` runs: waiting
+  in `open()` until a connection is possible uses up no further attempt, while throwing from it
+  fails that attempt as a failed `connect()` would.
 - `AutoReconnectConfig.stableAfter`: the attempt count and backoff start over only after a session
   stays connected that long, so a radio that drops right after its handshake keeps backing off.
 - `AutoReconnectConfig.maxHandshakeRecoveries` bounds handshake, liveness, protocol and receive
