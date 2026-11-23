@@ -4,8 +4,8 @@
   without using up an attempt.
 - `AutoReconnectConfig.stableAfter`: the attempt count and backoff start over only after a session
   stays connected that long, so a radio that drops right after its handshake keeps backing off.
-- `AutoReconnectConfig.maxHandshakeRecoveries` bounds handshake, liveness and protocol restarts in
-  a row; a completed handshake resets the count.
+- `AutoReconnectConfig.maxHandshakeRecoveries` bounds handshake, liveness, protocol and receive
+  overflow restarts in a row.
 - `ConnectionState.Reconnecting.retryAt` says when the next attempt starts, and
   `RadioClient.retryNow()` starts it at once, from `Reconnecting` or `DeviceSleeping`.
 - `BleResilience.refreshGattCacheAfterFailures` refreshes Android's GATT cache once per streak of

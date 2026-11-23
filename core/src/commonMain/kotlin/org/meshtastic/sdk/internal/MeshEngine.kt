@@ -159,7 +159,12 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
-    private val sessionReceive = sessionReceiveCapacity?.let { SessionReceive(it) }
+    // With auto-reconnect on, an overflow restarts the session so the consumer resumes on a fresh stream.
+    private val sessionReceive = sessionReceiveCapacity?.let { capacity ->
+        SessionReceive(capacity, restartOnOverflow = autoReconnectConfig.enabled) { sessionId ->
+            inbox.trySend(EngineMessage.SessionOverflow(sessionId))
+        }
+    }
     val sessionEvents = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
@@ -477,8 +482,10 @@ internal class MeshEngine(
     private var attemptToken = 0L
     private var attemptJob: Job? = null
 
-    // Sessions restarted in a row after a handshake or liveness timeout or a handshake protocol error.
+    // Sessions restarted in a row after a handshake or liveness timeout, a handshake protocol error or a
+    // receive overflow. A session that reached Ready and then ended for any other reason resets it.
     private var handshakeRecoveries = 0
+    private var readyThisSession = false
     private var stableJob: Job? = null
 
     // A drop judged a by-design sleep: attempts before its wake bound has passed go to
@@ -932,6 +939,7 @@ internal class MeshEngine(
         attemptJob = null
         stableJob = null
         handshakeRecoveries = 0
+        readyThisSession = false
         reconnectAttempt = 0
         sleepAttempts = 0
         sleeping = null
@@ -1062,6 +1070,8 @@ internal class MeshEngine(
             EngineMessage.RetryNow -> handleRetryNow()
 
             is EngineMessage.LinkStable -> handleLinkStable(msg)
+
+            is EngineMessage.SessionOverflow -> handleSessionOverflow(msg)
         }
     }
 
@@ -1069,6 +1079,16 @@ internal class MeshEngine(
         val tick = pendingTick ?: return
         reconnectJob?.cancel()
         handleReconnectTick(tick)
+    }
+
+    private fun handleSessionOverflow(msg: EngineMessage.SessionOverflow) {
+        // A session that has already ended, or is ending, is restarting anyway.
+        if (!linkUp || handshakeStage == HandshakeStage.Idle || msg.sessionId != sessionReceive?.sessionId) return
+        logger.warn(TAG) { "Session receive overflowed in session ${msg.sessionId}; restarting the session" }
+        recoverSession(
+            MeshtasticException.Transport("Session receive overflowed in session ${msg.sessionId}"),
+            overflow = true,
+        )
     }
 
     private fun handleLinkStable(msg: EngineMessage.LinkStable) {
@@ -2308,8 +2328,8 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Ready
         lockdownLink.value = myNodeNum.takeIf { it != 0 }?.let { LockdownLink(receiveGeneration, it) }
 
-        // A completed handshake ends a run of restarts; the backoff starts over once the session proves stable.
-        handshakeRecoveries = 0
+        // The backoff starts over once the session proves stable; the restart count when it ends without an overflow.
+        readyThisSession = true
         sleeping = null
         reconnectJob?.cancel()
         reconnectJob = null
@@ -3309,14 +3329,18 @@ internal class MeshEngine(
     }
 
     /**
-     * Restarts the session after an engine-detected stall ([cause]: a handshake or liveness timeout or
-     * a handshake protocol error) when auto-reconnect is on. Returns false when it is off, leaving the
+     * Restarts the session after an engine-detected stall ([cause]: a handshake or liveness timeout, a
+     * handshake protocol error or a session receive overflow) when auto-reconnect is on. Returns false when it is off, leaving the
      * teardown to the caller.
      */
-    private fun recoverSession(cause: MeshtasticException): Boolean {
+    private fun recoverSession(cause: MeshtasticException, overflow: Boolean = false): Boolean {
         if (!autoReconnectConfig.enabled || disconnecting) return false
+        // An overflow can follow Ready at once, while the device replays its history, so it does not end the run.
+        if (readyThisSession && !overflow) handshakeRecoveries = 0
+        readyThisSession = false
         val tagged = MeshtasticException.tag(cause, transportIdentity = identity, operation = "engine.recover")
-        val cap = autoReconnectConfig.maxHandshakeRecoveries
+        // A collector that keeps falling behind would otherwise restart the session forever.
+        val cap = autoReconnectConfig.maxHandshakeRecoveries ?: if (overflow) DEFAULT_OVERFLOW_RESTARTS else null
         if (cap != null && handshakeRecoveries >= cap) {
             failSession(tagged)
             return true
@@ -3435,6 +3459,8 @@ internal class MeshEngine(
     }
 
     private fun scheduleReconnect(cause: MeshtasticException) {
+        if (readyThisSession) handshakeRecoveries = 0
+        readyThisSession = false
         linkUp = false
         clearNodeDbRefresh()
         sessionReceive?.end()
@@ -4517,6 +4543,9 @@ internal class MeshEngine(
 
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
+
+        // Overflow restarts in a row when maxHandshakeRecoveries is null: Meshtastic-Android's MAX_RECOVERY_RESTARTS.
+        const val DEFAULT_OVERFLOW_RESTARTS = 3
 
         // Android stops re-arming a stage guard after 10 x its budget (STAGE_GUARD_TOTAL_CAP_FACTOR).
         const val STAGE1_HARD_CAP_MS = STAGE1_TIMEOUT_MS * 10

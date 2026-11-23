@@ -82,7 +82,7 @@ Causes that end in `Disconnected` and are not retried: an explicit `disconnect()
 Causes that auto-reconnect when it is on:
 - A recoverable `TransportState.Error`, a read or write failure on the current link (`MeshtasticException.Transport`), and a failed first `connect()`.
 - `FromRadio.rebooted` (`MeshEvent.DeviceRebooted` is still emitted).
-- Handshake restarts, counted against `maxHandshakeRecoveries` and reset by a completed handshake: `MeshtasticException.HandshakeTimeout(stage)`, the liveness watchdog (`Transport("liveness timeout")`), a node database refresh that stalls, and a handshake protocol error such as a `config_complete_id` matching neither nonce.
+- Session restarts, counted against `maxHandshakeRecoveries`: `MeshtasticException.HandshakeTimeout(stage)`, the liveness watchdog (`Transport("liveness timeout")`), a node database refresh that stalls, a handshake protocol error such as a `config_complete_id` matching neither nonce, and a `sessionEvents` overflow while a collector is running (`Transport("Session receive overflowed in session n")`; three in a row fail when `maxHandshakeRecoveries` is `null`). A session that reached `Ready` and then ended any other way resets the count; an overflow does not. On an overflow the session stream is replaced: its collector gets `RadioSessionOverflowException`, and the next collection starts with that session's `Ended`.
 
 ## Related
 

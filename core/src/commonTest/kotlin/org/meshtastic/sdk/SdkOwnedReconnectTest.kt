@@ -20,6 +20,9 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.meshtastic.proto.Data
+import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import kotlin.test.Test
@@ -236,6 +239,115 @@ class SdkOwnedReconnectTest {
         assertTrue(afterDrop.isNotEmpty() && afterDrop.all { it.sessionId == 2L }, "after the drop: $afterDrop")
     }
 
+    @Test
+    fun aReceiveOverflowRestartsTheSessionAndACollectorResumesOnAFreshStream() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config(), sessionCapacity = SMALL_QUEUE)
+        val stream = checkNotNull(client.sessionEvents)
+        val stalled = stalledCollector(stream)
+        client.connect()
+        drain()
+        val connects = link.connects.size
+
+        flood(link)
+        assertReconnecting(client, attempt = 1, retryInMs = 1_000)
+        advanceTimeBy(1_000L)
+        settle()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        assertEquals(connects + 1, link.connects.size, "the restart reconnects through the provider")
+
+        stalled.release.complete(Unit)
+        drain()
+        assertEquals(1L, assertIs<RadioSessionOverflowException>(stalled.failure.await()).sessionId)
+        val resumed = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { stream.collect { resumed += it } }
+        drain()
+        assertEquals(RadioSessionEvent.Ended(1), resumed.firstOrNull(), "resumed: $resumed")
+        assertEquals(2L, assertIs<RadioSessionEvent.Ready>(resumed[1]).sessionId)
+    }
+
+    @Test
+    fun overflowRestartsCountAgainstMaxHandshakeRecoveriesThoughEachSessionReachedReady() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config(maxHandshakeRecoveries = 1), sessionCapacity = SMALL_QUEUE)
+        stalledCollector(checkNotNull(client.sessionEvents))
+        client.connect()
+        drain()
+
+        flood(link)
+        assertIs<ConnectionState.Reconnecting>(client.connection.value, "the first overflow is restarted")
+        advanceTimeBy(1_000L)
+        settle()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+
+        flood(link)
+        val failed = assertIs<ConnectionState.Failed>(client.connection.value)
+        assertTrue(failed.cause.message.orEmpty().contains("overflowed"), "cause: ${failed.cause}")
+    }
+
+    @Test
+    fun withoutMaxHandshakeRecoveriesTheFourthOverflowInARowFails() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config(), sessionCapacity = SMALL_QUEUE)
+        stalledCollector(checkNotNull(client.sessionEvents))
+        client.connect()
+        drain()
+
+        repeat(3) { round ->
+            flood(link)
+            assertIs<ConnectionState.Reconnecting>(client.connection.value, "overflow ${round + 1} is restarted")
+            advanceTimeBy(1_000L)
+            settle()
+            assertEquals(ConnectionState.Connected, client.connection.value)
+        }
+        flood(link)
+        assertIs<ConnectionState.Failed>(client.connection.value)
+    }
+
+    @Test
+    fun anOverflowWithNoCollectorFailsTheStreamAndKeepsTheSession() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config(), sessionCapacity = SMALL_QUEUE)
+        client.connect()
+        drain()
+        val connects = link.connects.size
+
+        flood(link)
+        advanceTimeBy(5_000L)
+        drain()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        assertEquals(connects, link.connects.size)
+        val overflow = runCatching { checkNotNull(client.sessionEvents).collect { } }.exceptionOrNull()
+        assertIs<RadioSessionOverflowException>(overflow)
+    }
+
+    private class Stalled(val release: CompletableDeferred<Unit>, val failure: CompletableDeferred<Throwable?>)
+
+    // A collector that stops at its first event until released, so the queue fills behind it.
+    private fun TestScope.stalledCollector(stream: Flow<RadioSessionEvent>): Stalled {
+        val stalled = Stalled(CompletableDeferred(), CompletableDeferred())
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            stalled.failure.complete(runCatching { stream.collect { stalled.release.await() } }.exceptionOrNull())
+        }
+        return stalled
+    }
+
+    // Each packet from a peer queues a Packet and a NodeChanged; nothing collects, so the queue overflows.
+    private fun TestScope.flood(link: ScriptLink) {
+        repeat(SMALL_QUEUE * 2) { index ->
+            link.inject(
+                MeshPacket.Builder().also { packet ->
+                    packet.id = PACKET_ID_BASE + index + link.connects.size * SMALL_QUEUE * 2
+                    packet.from = PEER_NODE
+                    packet.to = BROADCAST
+                    packet.decoded = Data.Builder().also { it.portnum = PortNum.TEXT_MESSAGE_APP }.build()
+                }.build(),
+            )
+        }
+        drain()
+    }
+
     private fun config(
         initialBackoff: Duration = 1.seconds,
         maxBackoff: Duration = 30.seconds,
@@ -337,8 +449,17 @@ class SdkOwnedReconnectTest {
 
         override fun frames(): Flow<Frame> = inner.frames().onCompletion { log += "$name.reader-done" }
 
+        fun inject(packet: MeshPacket) = inner.injectPacket(packet)
+
         fun drop(cause: MeshtasticException = MeshtasticException.Transport("link lost"), recoverable: Boolean = true) {
             stateFlow.value = TransportState.Error(cause, recoverable)
         }
+    }
+
+    private companion object {
+        const val SMALL_QUEUE = 4
+        const val PEER_NODE = 0x1234
+        const val BROADCAST = -1
+        const val PACKET_ID_BASE = 500
     }
 }

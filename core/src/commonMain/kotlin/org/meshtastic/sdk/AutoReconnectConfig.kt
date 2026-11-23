@@ -45,9 +45,11 @@ import kotlin.time.Duration.Companion.seconds
  *   count and backoff start over. A radio that drops sooner keeps backing off. [Duration.ZERO] (the
  *   default) starts over as soon as a session connects.
  * @property maxHandshakeRecoveries how many sessions in a row the engine restarts after a handshake
- *   timeout, a liveness timeout or a handshake protocol error before it reports
- *   [ConnectionState.Failed] with that error. A completed handshake resets the count. `null` (the
- *   default) restarts without limit.
+ *   timeout, a liveness timeout, a handshake protocol error or a [RadioClient.sessionEvents] overflow
+ *   before it reports [ConnectionState.Failed] with that error. A session that reaches
+ *   [ConnectionState.Connected] and then ends any other way resets the count; one that ends in an
+ *   overflow does not, since an overflow usually follows the handshake. `null` (the default)
+ *   restarts without limit, except three overflow restarts in a row.
  *
  * @since 0.1.0
  */

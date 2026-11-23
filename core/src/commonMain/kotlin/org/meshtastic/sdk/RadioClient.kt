@@ -228,9 +228,14 @@ public class RadioClient internal constructor(
      * shuts down. Collect it directly for ordered delivery.
      *
      * If the SDK loses receive coverage, the stream drains accepted events and then throws
-     * [RadioSessionOverflowException]. The radio continues processing frames. Create a new
-     * client to restart this stream after overflow or collector cancellation. Delivery
-     * sequences measure SDK coverage. The radio or transport may lose packets upstream.
+     * [RadioSessionOverflowException]. With [Builder.autoReconnect] on and a collector running, the
+     * engine also ends that session and reconnects, counted against
+     * [AutoReconnectConfig.maxHandshakeRecoveries] (three in a row when that is `null`); collect this
+     * property again to resume. The new collection starts with [RadioSessionEvent.Ended] for the
+     * overflowed session when it had reached [RadioSessionEvent.Ready], then the next session's
+     * `Ready`. With auto-reconnect off the radio keeps processing frames and the stream stays failed:
+     * create a new client to restart it. Collector cancellation also ends the stream for good.
+     * Delivery sequences measure SDK coverage. The radio or transport may lose packets upstream.
      *
      * `null` if session receive was left disabled.
      */
