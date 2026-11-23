@@ -73,7 +73,7 @@ val client = RadioClient {
 
 The handshake normally runs in two stages ([protocol.md §6](./protocol.md#6-handshake-state-machine)). Stage 1 (`want_config_id = 69420`) streams `my_info`, `metadata`, device and module config, channels, and the local `NodeInfo`. Stage 2 (`69421`) streams the whole node database, which dominates connect time on a large mesh over BLE.
 
-`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session seeds the admin session passkey and goes to `Connected`. `ConfigPhase.Stage2` never appears on `connection`.
+`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session goes to `Connected` and seeds the admin session passkey. `ConfigPhase.Stage2` never appears on `connection`.
 
 | Still works | Degraded |
 |---|---|
@@ -363,7 +363,7 @@ public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, 
 public val ConnectionState.statusMessage: String    // display text
 ```
 
-`progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached only after the final stage's `config_complete_id` matches and the session passkey is seeded ([handshake-fsm.md](./architecture/handshake-fsm.md)).
+`progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
 
 ## Transport specs, identities, and targets
 

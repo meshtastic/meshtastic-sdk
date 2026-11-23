@@ -16,12 +16,14 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
+import org.meshtastic.proto.Data
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
+import org.meshtastic.proto.Position
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -35,8 +37,8 @@ import kotlin.time.Duration.Companion.seconds
 
 /**
  * Handshake timing that matches the Android app the SDK replaces (`protocol.md` §6): one
- * `want_config_id` per session, a Stage 2 that only fails without progress, and a passkey seed
- * that never fails the connect.
+ * `want_config_id` per session, a Stage 2 that only fails without progress, and Ready at the
+ * Stage 2 completion with the passkey seed answered afterwards.
  */
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class HandshakeParityTest {
@@ -90,7 +92,7 @@ class HandshakeParityTest {
     }
 
     @Test
-    fun seedTimeoutConnectsWithoutPasskeyAndLocalWritesStillWork() = runTest {
+    fun seedTimeoutWarnsAfterReadyAndLocalWritesStillWork() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:seed-lost"), autoQueueStatus = true)
         val client = buildClient(transport)
         val events = mutableListOf<MeshEvent>()
@@ -103,17 +105,17 @@ class HandshakeParityTest {
         transport.inject { it.config_complete_id = NONCE_STAGE2 }
         runCurrent()
         assertTrue(transport.outboundPackets().any { adminOf(it)?.get_owner_request == true })
+        assertTrue(connectJob.isCompleted, "Ready comes at the Stage 2 completion, not at the seed reply")
+        assertTrue(connectJob.await().isSuccess)
 
         advanceTimeBy(SEED_TIMEOUT_MS - 1)
         runCurrent()
-        assertFalse(connectJob.isCompleted, "a seed reply inside the window still lands before Connected")
+        assertFalse(events.any { it is MeshEvent.ProtocolWarning && it.message == SEED_WARNING })
 
         advanceTimeBy(2)
         runCurrent()
-        assertTrue(connectJob.isCompleted, "the seed wait must end at SEED_TIMEOUT_MS")
-        assertTrue(connectJob.await().isSuccess)
         assertEquals(ConnectionState.Connected, client.connection.value)
-        assertTrue(events.any { it is MeshEvent.ProtocolWarning && it.message == "session passkey seed timed out" })
+        assertTrue(events.any { it is MeshEvent.ProtocolWarning && it.message == SEED_WARNING })
 
         // Firmware checks the passkey only when from != 0 and sets from = 0 on every client packet.
         val owner = User.Builder().also { wb ->
@@ -132,14 +134,68 @@ class HandshakeParityTest {
         client.disconnect()
     }
 
-    private fun TestScope.buildClient(transport: FakeRadioTransport): RadioClient = RadioClient.Builder()
-        .transport(transport)
-        .storage(InMemoryStorageProvider())
-        .autoSyncTimeOnConnect(false)
-        .coroutineContext(backgroundScope.coroutineContext)
-        .rpcTimeout(60.seconds)
-        .sendTimeout(60.seconds)
-        .build()
+    /**
+     * Firmware replays each node's stored position, telemetry, environment and status records right
+     * after the Stage 2 `config_complete_id` (`PhoneAPI::sendConfigComplete`, `popReplayPacket`), up to
+     * four per node for `MAX_SATELLITE_NODES` nodes, and unthrottled on a stream link. The seed reply
+     * queues behind them, so none of that replay may wait in the 64-packet handshake buffer.
+     */
+    @Test
+    fun storedReplayBeforeTheSeedReplyIsDeliveredLiveAndTheSeedStillLatches() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:large-replay"), autoQueueStatus = true)
+        val client = buildClient(transport, sessionReceive = true)
+        val session = mutableListOf<RadioSessionEvent>()
+        val sessionJob = backgroundScope.async { runCatching { client.sessionEvents!!.collect { session += it } } }
+        val received = mutableListOf<MeshPacket>()
+        backgroundScope.launch { client.packets.collect { received += it } }
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.completeStage1()
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        repeat(REPLAYED) { i -> transport.injectPacket(replayedPosition(PEER_BASE + i)) }
+        runCurrent()
+
+        assertFalse(sessionJob.isCompleted, "the session stream closed on the replay")
+        assertEquals(REPLAYED, received.count { it.decoded?.portnum == PortNum.POSITION_APP })
+        assertEquals(REPLAYED, session.count { it is RadioSessionEvent.Packet })
+        assertIs<RadioSessionEvent.Ready>(session.first())
+        assertTrue(connectJob.isCompleted && connectJob.await().isSuccess)
+
+        transport.answerSeed()
+        runCurrent()
+        assertIs<AdminSessionStatus.Active>(client.adminSessions.value[NodeId(NODE)])
+        assertFalse(received.any { it.decoded?.portnum == PortNum.ADMIN_APP }, "the seed reply is consumed")
+        client.disconnect()
+    }
+
+    private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->
+        wb.from = from
+        wb.to = BROADCAST
+        wb.id = from
+        wb.transport_mechanism = MeshPacket.TransportMechanism.TRANSPORT_LORA
+        wb.decoded = Data.Builder().also { d ->
+            d.portnum = PortNum.POSITION_APP
+            d.payload = Position.ADAPTER.encode(
+                Position.Builder().also { p ->
+                    p.latitude_i = 1
+                    p.longitude_i = 1
+                }.build(),
+            ).toByteString()
+        }.build()
+    }.build()
+
+    private fun TestScope.buildClient(transport: FakeRadioTransport, sessionReceive: Boolean = false): RadioClient =
+        RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .autoSyncTimeOnConnect(false)
+            .coroutineContext(backgroundScope.coroutineContext)
+            .rpcTimeout(60.seconds)
+            .sendTimeout(60.seconds)
+            .apply { if (sessionReceive) sessionReceive() }
+            .build()
 
     private fun FakeRadioTransport.inject(block: (FromRadio.Builder) -> Unit) {
         injectFrame(FromRadio.Builder().also(block).build().toFrame())
@@ -181,5 +237,11 @@ class HandshakeParityTest {
         const val NONCE_STAGE2 = 69421
         const val STAGE1_TIMEOUT_MS = 20_000L
         const val SEED_TIMEOUT_MS = 10_000L
+        const val SEED_WARNING = "session passkey seed timed out"
+        const val BROADCAST = -1
+        const val PEER_BASE = 0x2000
+
+        // MAX_NUM_NODES (120) peers with a stored position: more than HANDSHAKE_PACKET_BUFFER_CAP (64).
+        const val REPLAYED = 120
     }
 }

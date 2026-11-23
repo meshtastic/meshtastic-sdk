@@ -345,11 +345,10 @@ sequenceDiagram
     Device-->>Phone: FromRadio.node_info × N
     Device-->>Phone: FromRadio(config_complete_id = 69421)
 
-    Note over Phone,Device: Seeding session: admin session key
+    Note over Phone,Device: Connected: replayed history, then normal FromRadio.packet, queue_status, …
     Phone->>Device: AdminMessage(get_owner_request, want_response = true)
+    Device-->>Phone: FromRadio.packet × replayed history
     Device-->>Phone: AdminMessage(get_owner_response, session_passkey)
-
-    Note over Phone,Device: Connected: normal FromRadio.packet, queue_status, …
 ```
 
 
@@ -382,7 +381,7 @@ Under `69421`, Stage 2 sends rows 1 to 3, then row 9 (`OTHER_NODEINFOS` × N), t
    - A client that never requests the NodeDB can stop after the Stage 1 sentinel: firmware enters `STATE_SEND_PACKETS` once it emits `config_complete_id = 69420`, so normal traffic flows without Stage 2. Such a session knows only the node's own `NodeInfo` (row 3) until peers are heard live. The SDK exposes this as `RadioClient.Builder.skipNodeDb()`.
 2. Frames that arrive before the client sends `want_config_id` belong to an earlier session and are discarded, on every transport. Mesh packets that arrive during the handshake are held and delivered once the session is `Connected`; the SDK holds up to 64, dropping the oldest and emitting `MeshEvent.PacketsDropped`.
 3. Between the Stage 1 sentinel and the Stage 2 trigger the client must send `ToRadio.heartbeat` and should wait about 100 ms on each side of it (Android `HandshakeStateMachine`: `delay(100); heartbeatSender.send(); delay(100)`). The wait lets the node's task queue drain before NodeDB streaming starts.
-4. After Stage 2 the client should send `AdminMessage(get_owner_request, want_response = true)`. The reply carries the `session_passkey` that state-changing admin requests need (§13). The SDK waits up to 10 s (`SEED_TIMEOUT_MS`) for it and then goes `Connected` without it, emitting `ProtocolWarning("session passkey seed timed out")`; the Android app sends the request after `Connected` and never fails the connection on it. Local admin writes need no passkey, and a remote node's key is seeded when it first answers `ADMIN_BAD_SESSION_KEY`.
+4. After Stage 2 the client should send `AdminMessage(get_owner_request, want_response = true)`. The reply carries the `session_passkey` that state-changing admin requests need (§13). The SDK sends it at the Stage 2 completion and goes `Connected` without waiting, as the Android app does: firmware replays its stored history right after that completion ("Replayed history" below), and the reply queues behind it. A reply whose `request_id` is the seed's packet id (`MeshModule::setReplyTo`) latches the key whenever it arrives; with none in 10 s (`SEED_TIMEOUT_MS`) the SDK emits `ProtocolWarning("session passkey seed timed out")`. Local admin writes need no passkey (`AdminModule.cpp` checks it only when `from != 0`), and a remote node's key is seeded when it first answers `ADMIN_BAD_SESSION_KEY`.
 5. `FromRadio.rebooted = true` is a forced disconnect: clear session state and run both stages again.
 6. When a TCP or serial client disconnects, the node resets its `config_nonce` to `0` and clears session state, so a reconnect runs both stages. The SDK treats TCP peer EOF as a transport failure.
 7. Outbound packets queued in the node's router during the handshake are sent after `config_complete_id`. Incoming `MqttClientProxyMessage` from the client is dropped with a warning log during the handshake.

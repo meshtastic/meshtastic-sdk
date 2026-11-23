@@ -43,8 +43,9 @@ private const val FAKE_QUEUE_SIZE = 16
  * Allows tests to replay captured frames and control connection state deterministically.
  *
  * When [autoHandshake] is `true`, the transport automatically responds to the two-stage
- * Meshtastic handshake (want_config_id 69420 / 69421) and the get_owner_request admin message,
- * enabling [RadioClient.connect] to complete without a real radio. The synthesized
+ * Meshtastic handshake (want_config_id 69420 / 69421) and to the first get_owner_request of each
+ * [connect], the engine's session passkey seed, enabling [RadioClient.connect] to complete without
+ * a real radio. The synthesized
  * `MyNodeInfo.my_node_num` defaults to `1`; pass [nodeNum] to simulate a different identity
  * (e.g. for identity-rebind tests).
  */
@@ -78,6 +79,7 @@ public class FakeRadioTransport(
 
     private val _state = MutableStateFlow<TransportState>(TransportState.Disconnected)
     private val outboundFramesList = mutableListOf<Frame>()
+    private var seedAnswered = false
     private var inboundChannel = Channel<Frame>(Channel.UNLIMITED)
 
     override val state: StateFlow<TransportState> = _state.asStateFlow()
@@ -257,6 +259,7 @@ public class FakeRadioTransport(
     }
 
     override suspend fun connect() {
+        seedAnswered = false
         inboundChannel = Channel(Channel.UNLIMITED)
         _state.value = TransportState.Connecting
         for (frame in frames) inboundChannel.trySend(frame)
@@ -353,7 +356,8 @@ public class FakeRadioTransport(
         } catch (_: Exception) {
             return
         }
-        if (admin.get_owner_request == true) {
+        if (admin.get_owner_request == true && !seedAnswered) {
+            seedAnswered = true
             val user = User.Builder().also { wb ->
                 wb.id = "!00000001"
                 wb.long_name = "FakeNode"
@@ -372,6 +376,8 @@ public class FakeRadioTransport(
                 wb.decoded = Data.Builder().also { wb ->
                     wb.portnum = PortNum.ADMIN_APP
                     wb.payload = responsePayload
+                    // Firmware's MeshModule::setReplyTo.
+                    wb.request_id = packet.id
                 }.build()
             }.build()
             injectFromRadio(FromRadio.Builder().also { wb -> wb.packet = responsePacket }.build())

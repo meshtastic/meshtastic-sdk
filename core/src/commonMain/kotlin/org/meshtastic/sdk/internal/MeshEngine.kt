@@ -411,6 +411,13 @@ internal class MeshEngine(
     private var stage2ProgressCounter: Long = 0L
     private var stage2WatchdogJob: Job? = null
 
+    /** The device's channels in storage when [connect] started, for a handshake that sends none. */
+    private var storedChannels: List<org.meshtastic.proto.Channel> = emptyList()
+
+    /** Packet id of the unanswered `get_owner_request` that seeds the local passkey after Ready; 0 when none. */
+    private var seedRequestId = 0
+    private var seedTimeoutJob: Job? = null
+
     /** rate-limit clock for the encrypted-packet ACK-skip warning. */
     private var lastEncryptedSkipWarningAtMs: Long = 0L
 
@@ -815,6 +822,7 @@ internal class MeshEngine(
         myNodeNum = 0
         previousMyNodeNum = null
         previousDeviceId = null
+        storedChannels = emptyList()
         clearSessionPasskeys()
         clearPendingHandshake()
         preSendQueue.clear()
@@ -908,12 +916,7 @@ internal class MeshEngine(
                 if (msg.generation == receiveGeneration && channelsState.value == null) {
                     channelsState.value = msg.channels
                     meshState = meshState.withChannels(msg.channels)
-                    // Before Ready the session consumer gets them in the Ready snapshot, not as a change.
-                    if (handshakeStage == HandshakeStage.Ready) {
-                        sessionReceive?.channelsChanged(msg.channels)
-                    } else if (handshakeStage == HandshakeStage.SeedingSession && pendingChannels.isEmpty()) {
-                        pendingChannels.addAll(msg.channels)
-                    }
+                    if (handshakeStage == HandshakeStage.Ready) sessionReceive?.channelsChanged(msg.channels)
                 }
             }
 
@@ -938,6 +941,8 @@ internal class MeshEngine(
             EngineMessage.PresenceCheckTick -> handlePresenceCheckTick()
 
             is EngineMessage.HandshakeTimeout -> handleHandshakeTimeout(msg)
+
+            is EngineMessage.SessionSeedTimeout -> handleSessionSeedTimeout(msg)
 
             is EngineMessage.HandshakeStage1SettleComplete -> if (msg.attempt ==
                 handshakeAttempt
@@ -1151,6 +1156,14 @@ internal class MeshEngine(
         } catch (e: Exception) {
             logger.warn(TAG, e) { "Failed to load previous device id for rebind detection" }
             null
+        }
+        storedChannels = try {
+            storage?.loadChannels().orEmpty()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.warn(TAG, e) { "Failed to load stored channels" }
+            emptyList()
         }
 
         // hydrate in-memory heartbeat map so subscribers don't see every previously-known
@@ -1465,8 +1478,6 @@ internal class MeshEngine(
 
             HandshakeStage.Stage2Draining -> processStage2Envelope(fromRadio)
 
-            HandshakeStage.SeedingSession -> processSeedingEnvelope(fromRadio)
-
             HandshakeStage.Ready -> {
                 handleNodeDbRefreshFrame(fromRadio)
                 routeNormalEnvelope(fromRadio)
@@ -1511,6 +1522,7 @@ internal class MeshEngine(
         pendingRegionPresets = null
         settleBuffer.clear()
         if (!keepHeldPackets) handshakePacketBuffer.clear()
+        clearSessionSeed()
     }
 
     private fun processStage1Envelope(fromRadio: org.meshtastic.proto.FromRadio) {
@@ -1749,8 +1761,7 @@ internal class MeshEngine(
             handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.Stage2Draining) -> Unit
 
             completeId == NONCE_STAGE2 -> {
-                logger.info(TAG) { "Stage 2 complete; seeding session passkey" }
-                handshakeStage = HandshakeStage.SeedingSession
+                logger.info(TAG) { "Stage 2 complete" }
                 // leaving Stage2Draining — cancel the sliding watchdog so it doesn't
                 // post a stale HandshakeTimeout message after we've already advanced.
                 stage2WatchdogJob?.cancel()
@@ -1758,6 +1769,7 @@ internal class MeshEngine(
 
                 // Commit accumulated handshake state.
                 val myInfo = pendingMyInfo
+                var keepsStoredState = true
                 if (myInfo != null) {
                     // R-9: detect identity rebind synchronously on the actor, BEFORE we mutate
                     // any consumer-observable state (NodeChange.Snapshot below) and BEFORE the
@@ -1766,6 +1778,7 @@ internal class MeshEngine(
                     val incomingDeviceId = trustedDeviceIdOrNull(myInfo.device_id)
                     if (prev != null && prev != myInfo.my_node_num) {
                         val renumbered = incomingDeviceId != null && incomingDeviceId == previousDeviceId
+                        keepsStoredState = renumbered
                         logger.warn(TAG) {
                             "Identity rebind detected — previous=0x${prev.toString(
                                 16,
@@ -1800,6 +1813,11 @@ internal class MeshEngine(
                         regionPresets = pendingRegionPresets,
                     )
                     meshState = meshState.withConfig(bundle)
+                }
+                // A handshake without channels falls back to the device's stored ones, read before Ready
+                // because the Ready snapshot is published here.
+                if (pendingChannels.isEmpty() && keepsStoredState) {
+                    pendingChannels.addAll(channelsState.value ?: storedChannels)
                 }
                 if (pendingChannels.isNotEmpty()) {
                     meshState = meshState.withChannels(pendingChannels.toList())
@@ -1878,23 +1896,10 @@ internal class MeshEngine(
                     }
                 }
 
-                // Send get_owner_request to seed the session passkey.
-                if (myNodeNum != 0) {
-                    sendAdminPacket(
-                        AdminMessage.Builder().also { wb ->
-                            wb.get_owner_request = true
-                        }.build(),
-                        wantResponse = true,
-                    )
-                    val attempt = handshakeAttempt
-                    engineScope?.launch {
-                        delay(SEED_TIMEOUT_MS)
-                        inbox.trySend(EngineMessage.HandshakeTimeout(HandshakeStage.SeedingSession, attempt))
-                    }
-                } else {
-                    // No myInfo: skip seeding and go Ready.
-                    transitionToReady()
-                }
+                // Ready here, before the seed reply: firmware starts its stored-packet replay right after this
+                // completion (PhoneAPI::sendConfigComplete), more packets than the handshake buffer holds.
+                if (myNodeNum != 0) sendSessionSeed()
+                transitionToReady()
             }
 
             // see Stage 1 comment above — only a *set* mismatching completion nonce is a
@@ -1907,40 +1912,47 @@ internal class MeshEngine(
         }
     }
 
-    private fun processSeedingEnvelope(fromRadio: org.meshtastic.proto.FromRadio) {
-        val packet = fromRadio.packet ?: run {
-            // Non-packet variants during the seeding window get the same no-silent-loss
-            // treatment as Stage 1/2: node_info merges into the DB (Stage-2 commit already
-            // happened, so the live path is correct), everything else routes through the
-            // shared auxiliary handler.
-            fromRadio.node_info?.let {
-                processInboundNodeInfo(it)
-                if (sessionReceive != null) pendingNodes[NodeId(it.num)] = it
-                return
-            }
-            handleAuxiliaryFromRadioVariant(fromRadio, HandshakeStage.SeedingSession)
-            return
+    /** Local admin needs no passkey (firmware checks it only when `from != 0`); remote keys are seeded on demand. */
+    private fun sendSessionSeed() {
+        val id = allocateFreeWireId()
+        sendAdminPacket(
+            AdminMessage.Builder().also { wb -> wb.get_owner_request = true }.build(),
+            wantResponse = true,
+            id = id,
+        )
+        seedRequestId = id
+        seedTimeoutJob?.cancel()
+        seedTimeoutJob = engineScope?.launch {
+            delay(SEED_TIMEOUT_MS)
+            inbox.trySend(EngineMessage.SessionSeedTimeout(id))
         }
-        val decoded = packet.decoded ?: return
-        if (decoded.portnum != PortNum.ADMIN_APP) {
-            // live mesh traffic during the seeding window — same treatment as Stage 1/2.
-            bufferHandshakePacket(packet)
-            return
-        }
+    }
 
-        val adminMsg = try {
-            AdminMessage.ADAPTER.decode(decoded.payload)
-        } catch (_: Exception) {
-            return
+    // Firmware answers with request_id = the seed's packet id (MeshModule::setReplyTo).
+    private fun consumeSessionSeedReply(packet: MeshPacket): Boolean {
+        val decoded = packet.decoded ?: return false
+        if (seedRequestId == 0 || decoded.portnum != PortNum.ADMIN_APP || decoded.request_id != seedRequestId) {
+            return false
         }
+        if (packet.from != 0 && packet.from != myNodeNum) return false
+        val adminMsg = runCatching { AdminMessage.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return false
+        if (adminMsg.get_owner_response == null) return false
+        clearSessionSeed()
+        latchSessionPasskey(myNodeNum, adminMsg)
+        return true
+    }
 
-        if (adminMsg.get_owner_response != null && (packet.from == 0 || packet.from == myNodeNum)) {
-            latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg)
-            transitionToReady()
-        } else {
-            // unsolicited admin traffic (e.g. external config change) — deliver post-Ready.
-            bufferHandshakePacket(packet)
-        }
+    private fun handleSessionSeedTimeout(msg: EngineMessage.SessionSeedTimeout) {
+        if (seedRequestId == 0 || msg.requestId != seedRequestId) return
+        clearSessionSeed()
+        logger.warn(TAG) { "No get_owner_response within ${SEED_TIMEOUT_MS}ms; the session has no local passkey" }
+        emitEvent(MeshEvent.ProtocolWarning("session passkey seed timed out"))
+    }
+
+    private fun clearSessionSeed() {
+        seedRequestId = 0
+        seedTimeoutJob?.cancel()
+        seedTimeoutJob = null
     }
 
     /**
@@ -2240,7 +2252,7 @@ internal class MeshEngine(
         val queueStatus = fromRadio.queueStatus
 
         when {
-            packet != null -> processInboundMeshPacket(packet)
+            packet != null -> if (!consumeSessionSeedReply(packet)) processInboundMeshPacket(packet)
 
             nodeInfo != null -> {
                 if (heldRenumberAck != null && nodeInfo.num == heldRenumberAckFrom) beginRenumber(nodeInfo.num)
@@ -2312,8 +2324,7 @@ internal class MeshEngine(
 
     /**
      * Merge an unsolicited `FromRadio.node_info` into the node DB and emit the matching
-     * delta. Called for live frames in [routeNormalEnvelope] and for frames that arrive
-     * during the seeding window in [processSeedingEnvelope].
+     * delta. Called for live frames in [routeNormalEnvelope].
      */
     private fun processInboundNodeInfo(nodeInfo: NodeInfo) {
         val nodeId = NodeId(nodeInfo.num)
@@ -3577,19 +3588,6 @@ internal class MeshEngine(
         if (handshakeStage == HandshakeStage.Ready) return // already succeeded
         // Stale timer from a stage we've already advanced past — ignore.
         if (msg.attempt != handshakeAttempt || handshakeStage != msg.stage) return
-        if (msg.stage == HandshakeStage.SeedingSession) {
-            // Local admin writes need no passkey (firmware checks it only when from != 0), so a lost
-            // seed reply must not cost the connection; remote keys are seeded on demand.
-            logger.warn(TAG) { "No get_owner_response within ${SEED_TIMEOUT_MS}ms; Ready without the session passkey" }
-            emitEvent(
-                MeshEvent.ProtocolWarning(
-                    "session passkey seed timed out",
-                    details = mapOf("stage" to msg.stage.toDisplayName()),
-                ),
-            )
-            transitionToReady()
-            return
-        }
         logger.error(TAG) { "Handshake timeout at stage ${msg.stage.toDisplayName()}" }
 
         // The thrown HandshakeTimeout carries the stage, but only callers awaiting connect() see it;
@@ -3737,12 +3735,18 @@ internal class MeshEngine(
         sendToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
     }
 
-    private fun sendAdminPacket(adminMsg: AdminMessage, wantResponse: Boolean = false, to: Int = myNodeNum) {
+    private fun sendAdminPacket(
+        adminMsg: AdminMessage,
+        wantResponse: Boolean = false,
+        to: Int = myNodeNum,
+        id: Int = 0,
+    ) {
         if (myNodeNum == 0) return
         val payload = AdminMessage.ADAPTER.encode(adminMsg).toByteString()
         val packet = MeshPacket.Builder().also { wb ->
             wb.to = to
             wb.from = myNodeNum
+            wb.id = id
             wb.decoded = Data.Builder().also { wb ->
                 wb.portnum = PortNum.ADMIN_APP
                 wb.payload = payload
@@ -4098,7 +4102,7 @@ internal class MeshEngine(
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
 
-        // Past this the session goes Ready without the local passkey; it never fails the connect.
+        // Past this a Ready session warns that it has no local passkey; it never fails the session.
         const val SEED_TIMEOUT_MS = 10_000L
         const val INTER_STAGE_SETTLE_MS = 100L
         const val HEARTBEAT_INTERVAL_MS = 30_000L

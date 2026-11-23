@@ -233,7 +233,7 @@ class SessionTypedEventsTest {
     }
 
     @Test
-    fun channelsRestoredFromStorageDuringSeedingArriveInTheReadySnapshot() = runTest {
+    fun storedChannelsFillAReadySnapshotWhoseHandshakeHasNone() = runTest {
         val stored = listOf(
             Channel.Builder().also { wb ->
                 wb.role = Channel.Role.PRIMARY

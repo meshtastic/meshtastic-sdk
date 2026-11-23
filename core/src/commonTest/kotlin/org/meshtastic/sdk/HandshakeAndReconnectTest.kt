@@ -1299,7 +1299,7 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun packetsAndStrayAdminDuringSeedingAreBufferedUntilOwnerResponse() = runTest {
+    fun packetsAfterStage2CompletionFlowBeforeTheSeedReply() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:seeding-buffer"),
             nowMs = { currentTime },
@@ -1309,14 +1309,16 @@ class HandshakeAndReconnectTest {
         val connectJob = backgroundScope.async { client.connect() }
         drainCurrent()
         // Walk the virtual-time settle windows (Stage-1 settle + heartbeat settle) so the
-        // engine reaches the seeding stage and sends its get_owner_request.
+        // engine completes Stage 2 and sends its get_owner_request.
         repeat(3) {
             advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
             drainCurrent()
         }
 
         client.packets.test {
-            // Live traffic + a stray (request-shaped) admin packet during the seeding window.
+            connectJob.await()
+            assertEquals(ConnectionState.Connected, client.connection.value)
+            // Live traffic and a stray admin packet before the seed reply go out as they arrive.
             transport.injectAlivePacket(packetId = 555)
             transport.injectFromRadio(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
@@ -1341,11 +1343,10 @@ class HandshakeAndReconnectTest {
                 }.build(),
             )
             drainCurrent()
-            expectNoEvents()
-            assertIs<ConnectionState.Configuring>(client.connection.value)
-            assertFalse(connectJob.isCompleted, "Stray admin must not complete the seeding stage")
+            assertEquals(555, awaitItem().id)
+            assertEquals(PortNum.ADMIN_APP, awaitItem().decoded?.portnum)
 
-            // Answer the seed; both buffered packets flush through the Ready pipeline.
+            // The seed reply latches the passkey and is not offered as a packet.
             val seedRequest = transport.outboundPackets().first { adminOf(it)?.get_owner_request == true }
             transport.injectAdminResponse(
                 requestId = seedRequest.id,
@@ -1360,9 +1361,8 @@ class HandshakeAndReconnectTest {
                 fromNode = transport.nodeNum,
             )
             drainCurrent()
-            connectJob.await()
-            assertEquals(555, awaitItem().id)
-            assertEquals(PortNum.ADMIN_APP, awaitItem().decoded?.portnum)
+            expectNoEvents()
+            assertIs<AdminSessionStatus.Active>(client.adminSessions.value[NodeId(transport.nodeNum)])
             cancelAndIgnoreRemainingEvents()
         }
     }
