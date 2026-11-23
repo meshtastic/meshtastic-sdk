@@ -148,13 +148,14 @@ A node that sends a session passkey has at least 150 s of validity left on it. A
 | `packets: Flow<MeshPacket>` | Decoded inbound mesh packets | 128 | The new packet is discarded and `events` gets `PacketsDropped(DroppedFlow.Packets, 1)` |
 | `events: Flow<MeshEvent>` | Advisory events | 64 | The oldest event is dropped, unreported |
 | `fromRadio: Flow<FromRadio>` | Every decoded inbound envelope, unredacted: handshake frames, config, channels, `log_record`, and packets | 256 | The oldest envelope is dropped, unreported |
+| `outboundPackets: Flow<MeshPacket>` | Each mesh packet queued for the radio, as written: sends, paced sends, RPC requests and admin writes, with the id, `from`, passkey and PKI fields the SDK filled in; never lockdown credentials | 256 | The oldest packet is dropped, unreported |
 | `sessionEvents: Flow<RadioSessionEvent>?` | Optional single-consumer queue | Bounded by `Builder.sessionReceive(capacity)` |
 | `deviceLogs: Flow<LogRecord>` | `FromRadio.log_record`, handshake included | 64 | The oldest record is dropped, unreported |
 | `displayFrames: Flow<DisplayMirrorFrame>` | Reassembled display mirror frames | 2 | The oldest frame is dropped, unreported |
 
-The engine never waits for a collector. All five are hot: collectors share one upstream and see only what is emitted while they collect. `nodes` is the exception for the baseline: each subscription first receives a `NodeChange.Snapshot` of the current node map, so a late subscriber never misses it. The handshake also emits a live `Snapshot` when it commits, after every reconnect, which existing subscribers treat as a full replacement. `Flow<NodeChange>.asNodeMap()` is the fold behind `nodeMap()`.
+The engine never waits for a collector. All but `sessionEvents` are hot: collectors share one upstream and see only what is emitted while they collect. `nodes` is the exception for the baseline: each subscription first receives a `NodeChange.Snapshot` of the current node map, so a late subscriber never misses it. The handshake also emits a live `Snapshot` when it commits, after every reconnect, which existing subscribers treat as a full replacement. `Flow<NodeChange>.asNodeMap()` is the fold behind `nodeMap()`.
 
-`fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. `deviceLogs` carries `FromRadio.log_record` (device logs over the phone API) on its own, so a log stream cannot push rare events out of `events`; firmware sends them on serial and TCP while `security.debug_log_api_enabled` is set, and the SDK never sets it. See [observability.md](./observability.md#device-logs).
+`outboundPackets` is the sending half for a packet log: emission means the packet was queued for the transport, not that the radio accepted it, and a packet with id `0` (the handshake clock set) is numbered by the firmware. `fromRadio` is for recorders and protocol analyzers. Envelopes can carry channel pre-shared keys (PSKs) and node positions, and the SDK doesn't redact or persist them. `deviceLogs` carries `FromRadio.log_record` (device logs over the phone API) on its own, so a log stream cannot push rare events out of `events`; firmware sends them on serial and TCP while `security.debug_log_api_enabled` is set, and the SDK never sets it. See [observability.md](./observability.md#device-logs).
 
 #### Display mirror
 
@@ -177,7 +178,8 @@ Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admiss
 
 | Member | Returns | Throws |
 |---|---|---|
-| `send(packet: MeshPacket)` | `MessageHandle` in `Queued` | `PayloadTooLarge`, `NotConnected` |
+| `send(packet: MeshPacket)` | `MessageHandle` in `Queued`; a nonzero `packet.id` is the handle's `id` | `PayloadTooLarge`, `NotConnected` |
+| `nextPacketId()` | `MessageId`, never `0`, from the counter the SDK numbers its own sends and RPCs with; works before `connect()` | — |
 | `sendText(text: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int = 0, wantAck: Boolean = true)` | `MessageHandle` | same as `send` |
 | `trySendRaw(frame: ToRadio)` | Whether the outbound queue accepted the encoded frame | — |
 | `sendReaction(emoji: String, to: NodeId = NodeId.BROADCAST, channel: ChannelIndex = ChannelIndex(0), replyId: Int)` | `MessageHandle` | same as `send` |
@@ -228,7 +230,9 @@ val handle = client.send {
 
 `sendPaced { … }` takes the same block and returns a `PacedMessageHandle`, as `sendPaced(packet)` does.
 
-`send { … }` configures a `SendBuilder`: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck()`, `wantAck(Boolean)`, `hopLimit(Int?)`.
+`send { … }` configures a `SendBuilder`: `text(String)`, `data(PortNum, ByteArray)`, `position(LatLng)`, `proto(MeshPacket)`, `to(NodeId)`, `channel(ChannelIndex)`, `wantAck()`, `wantAck(Boolean)`, `hopLimit(Int?)`, `priority(Priority)`, `id(MessageId)`, `replyTo(MessageId)`, `reaction()`, `reaction(Boolean)`, `pkiEncrypted()`, `pkiEncrypted(ByteString)`.
+
+A durable outbox that stores a row before it sends draws the id with `client.nextPacketId()` and passes it to `id(...)`; the handle carries it, and a send under an id an in-flight send or RPC holds fails with `IdCollision`. `replyTo` sets `Data.reply_id` and `reaction()` sets `Data.emoji = 1`. `pkiEncrypted()` sends on channel 0 with `pki_encrypted` and the recipient's key from the node map, or an empty key when the SDK holds none, which leaves the choice to the firmware's copy; `pkiEncrypted(publicKey)` pins a key the firmware must match, and a broadcast destination throws `IllegalStateException`.
 
 A `hopLimit` left unset, like `hopLimit = null` on the typed `send(portnum, …)` overloads, sends the device's `lora.hop_limit` from `configBundle`, or the firmware default of 3 before the bundle lands. The SDK resolves it on the host because firmware substitutes its default for a `0` only when `want_ack` is set. `send(packet: MeshPacket)` and `proto(...)` go out as given.
 
@@ -318,12 +322,21 @@ public sealed interface MeshEvent {
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
     public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
     public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
+    public data class RoutingReport(
+        val requestId: MessageId, val from: NodeId, val error: Routing.Error, val fromLocalRadio: Boolean,
+        val relayNode: Int?, val ackProof: MeshPacket.AckProofStatus,
+    ) : MeshEvent {
+        public val isAck: Boolean
+        public fun isImplicitAckFor(destination: NodeId): Boolean
+    }
 }
-public enum class DroppedFlow { Packets, Events }
+public enum class DroppedFlow { Packets, Events, Nodes }
 public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 ```
 
 When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference).
+
+`RoutingReport` fires for each routing ACK or NAK addressed to us whose `Data.request_id` is nonzero, whether or not a live handle or RPC holds that id, so a host can settle messages it sent in an earlier session or process. It follows its `ROUTING_APP` packet on `sessionEvents`, after the SDK has settled any handle holding the id. `from` is the node that produced it, the connected node's number when its own radio did (`fromLocalRadio`): an implicit ACK from an overheard rebroadcast, the ACK of a packet to ourselves, or a local failure such as `MAX_RETRANSMIT`. `isImplicitAckFor(destination)` is true for an ACK from our radio for a packet sent elsewhere. `relayNode` is the last byte of the relaying node, or null when no relay is recorded or the byte only names the sender (heard with no hops used, or bridged from MQTT). Only `ackProof == ACK_PROOF_VALID` proves the addressed node received the packet.
 
 ## `NodeChange`
 

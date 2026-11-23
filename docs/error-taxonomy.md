@@ -165,6 +165,7 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 | `MqttConnected` | A local `getDeviceConnectionStatus()` response shows the device's own broker connection up, and the previous one on this connection did not. The device never pushes MQTT state, and client-proxied MQTT reads as down. | Refresh MQTT status UI. |
 | `MqttDisconnected(reason)` | A local `getDeviceConnectionStatus()` response shows the broker connection down after one on this connection showed it up. `reason` is always null. | Refresh MQTT status UI. |
 | `KeyVerification(prompt)` | One step of the device's key-verification exchange (`protocol.md` §10): `EnterSecurityNumber`, `ShowSecurityNumber` or `ConfirmVerification`. | Show the number or the comparison UI; answer with `AdminApi.keyVerification` and the prompt's `nonce`. |
+| `RoutingReport(requestId, from, error, fromLocalRadio, relayNode, ackProof)` | A routing ACK or NAK addressed to us arrives with a nonzero `Data.request_id`, whether or not a live handle or RPC holds that id, including a packet sent in an earlier session or process. On `sessionEvents` it follows its `ROUTING_APP` packet, after the SDK has settled any handle holding the id. | Settle stored messages by `requestId`; `isImplicitAckFor(destination)` separates an overheard relay from a delivery, and only `ackProof == ACK_PROOF_VALID` proves the recipient got it. |
 
 ### Identity rebind
 

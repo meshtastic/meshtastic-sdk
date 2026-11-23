@@ -1,0 +1,1 @@
+- `MeshEvent.RoutingReport` is a new case, so an exhaustive `when` over `MeshEvent` needs a branch.

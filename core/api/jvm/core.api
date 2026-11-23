@@ -1164,6 +1164,36 @@ public final class org/meshtastic/sdk/MeshEvent$QueueStatusChanged : org/meshtas
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/MeshEvent$RoutingReport : org/meshtastic/sdk/MeshEvent {
+	public synthetic fun <init> (IILorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/sdk/MessageId;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/MessageId;
+	public final fun component1-dj4h-Jc ()I
+	public final fun component2 ()Lorg/meshtastic/sdk/NodeId;
+	public final fun component2-Unx0hic ()I
+	public final fun component3 ()Lorg/meshtastic/proto/Routing$Error;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Lorg/meshtastic/proto/MeshPacket$AckProofStatus;
+	public final fun copy (Lorg/meshtastic/sdk/MessageId;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;)Lorg/meshtastic/sdk/MeshEvent$RoutingReport;
+	public final fun copy-zt0n7j8 (IILorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;)Lorg/meshtastic/sdk/MeshEvent$RoutingReport;
+	public static synthetic fun copy-zt0n7j8$default (Lorg/meshtastic/sdk/MeshEvent$RoutingReport;IILorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$RoutingReport;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAckProof ()Lorg/meshtastic/proto/MeshPacket$AckProofStatus;
+	public final fun getError ()Lorg/meshtastic/proto/Routing$Error;
+	public final fun getFrom ()Lorg/meshtastic/sdk/NodeId;
+	public final fun getFrom-Unx0hic ()I
+	public final fun getFromLocalRadio ()Z
+	public final fun getRelayNode ()Ljava/lang/Integer;
+	public final fun getRequestId ()Lorg/meshtastic/sdk/MessageId;
+	public final fun getRequestId-dj4h-Jc ()I
+	public fun hashCode ()I
+	public final fun isAck ()Z
+	public final fun isImplicitAckFor (Lorg/meshtastic/sdk/NodeId;)Z
+	public final fun isImplicitAckFor-LO_6HKw (I)Z
+	public fun toString ()Ljava/lang/String;
+}
+
 public abstract interface class org/meshtastic/sdk/MeshEvent$SecurityWarning : org/meshtastic/sdk/MeshEvent {
 }
 
@@ -1811,6 +1841,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getFromRadio ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getMqttProxy ()Lorg/meshtastic/sdk/MqttProxyApi;
 	public final fun getNodes ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getOutboundPackets ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getOwnNode ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getPackets ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getRemoteShell ()Lorg/meshtastic/sdk/RemoteShellApi;
@@ -1818,6 +1849,8 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getSessionEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getStoreForward ()Lorg/meshtastic/sdk/StoreForwardApi;
 	public final fun getTelemetry ()Lorg/meshtastic/sdk/TelemetryApi;
+	public final fun nextPacketId ()Lorg/meshtastic/sdk/MessageId;
+	public final fun nextPacketId-dj4h-Jc ()I
 	public final fun nodeSnapshot (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun requestNodeDbRefresh ()Z
 	public final fun requestNodeInfo (Lorg/meshtastic/sdk/NodeId;)Lorg/meshtastic/sdk/MessageHandle;
@@ -2217,9 +2250,17 @@ public final class org/meshtastic/sdk/SendBuilder {
 	public final fun channel-Kwd1L3I (I)V
 	public final fun data (Lorg/meshtastic/proto/PortNum;[B)V
 	public final fun hopLimit (Ljava/lang/Integer;)V
+	public final fun id (Lorg/meshtastic/sdk/MessageId;)V
+	public final fun id-1LxCGqE (I)V
+	public final fun pkiEncrypted ()V
+	public final fun pkiEncrypted (Lokio/ByteString;)V
 	public final fun position (Lorg/meshtastic/sdk/LatLng;)V
 	public final fun priority (Lorg/meshtastic/proto/MeshPacket$Priority;)V
 	public final fun proto (Lorg/meshtastic/proto/MeshPacket;)V
+	public final fun reaction ()V
+	public final fun reaction (Z)V
+	public final fun replyTo (Lorg/meshtastic/sdk/MessageId;)V
+	public final fun replyTo-1LxCGqE (I)V
 	public final fun text (Ljava/lang/String;)V
 	public final fun to (Lorg/meshtastic/sdk/NodeId;)V
 	public final fun to-LO_6HKw (I)V

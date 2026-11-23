@@ -196,6 +196,34 @@ class LiveNodeDbMergeTest {
     }
 
     @Test
+    fun `a zero-hop packet carrying the bitfield marks a direct neighbor`() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        transport.injectPacket(
+            packet(peer, PortNum.TEXT_MESSAGE_APP, "a".encodeToByteArray(), rxTime = 1_700_000_300) {
+                hop_start = 3
+                hop_limit = 1
+            },
+        )
+        runCurrent()
+
+        // Firmware 2.5+ stamps Data.bitfield on every packet it originates (Router.cpp perhapsEncode), so
+        // getHopsAway trusts its hop_start of 0: a zero-hop packet, such as range test sends, came direct.
+        transport.injectPacket(
+            packet(peer, PortNum.TEXT_MESSAGE_APP, "b".encodeToByteArray(), rxTime = 1_700_000_400) {
+                hop_start = 0
+                hop_limit = 0
+                decoded = decoded!!.newBuilder().also { d -> d.bitfield = 0 }.build()
+            },
+        )
+        runCurrent()
+
+        assertEquals(0, client.nodeSnapshot()[NodeId(peer)]?.hops_away)
+        client.disconnect()
+    }
+
+    @Test
     fun `packet without rx_rssi does not record snr`() = runTest {
         val (transport, client) = connectedClient()
         client.connect()

@@ -191,6 +191,12 @@ internal class MeshEngine(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
+    /** Every mesh packet queued for the radio, as written. Lossy for the same reason as [rawFromRadio]. */
+    val outboundPackets = MutableSharedFlow<MeshPacket>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     // ADR-002 exception: cleanup() closes both channels, and connect() opens fresh ones for the next run.
     private val inboxRef = atomic(Channel<EngineMessage>(Channel.UNLIMITED))
     private val inbox: Channel<EngineMessage> get() = inboxRef.value
@@ -1025,12 +1031,7 @@ internal class MeshEngine(
         rememberAdminRequest(sent)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = retargetRenumbered(prepareOutboundAdminPacket(packet))
-        val encoded = WireCodec.encodeToRadio(
-            ToRadio.Builder().also { wb ->
-                wb.packet = outboundPacket
-            }.build(),
-        )
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
+        trySendToRadio(ToRadio.Builder().also { wb -> wb.packet = outboundPacket }.build())
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
         val job = scope.launch {
@@ -2485,7 +2486,9 @@ internal class MeshEngine(
                 wb.snr = packet.rx_snr
             }
             wb.via_mqtt = packet.via_mqtt
-            if (packet.hop_start != 0 && packet.hop_start >= packet.hop_limit) {
+            // NodeDB.cpp getHopsAway: hop_start 0 is trustworthy only from a sender stamping the 2.5+ bitfield.
+            val hopStartKnown = packet.hop_start != 0 || decoded.bitfield != null
+            if (hopStartKnown && packet.hop_start >= packet.hop_limit) {
                 wb.hops_away = packet.hop_start - packet.hop_limit
             }
         }
@@ -2636,6 +2639,7 @@ internal class MeshEngine(
         }
         if (!unauthenticatedAdminReply) dispatcher.tryComplete(response)
         processRoutingAck(packet)
+        emitRoutingReport(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
         maybeMergeDeviceMetrics(packet)
@@ -2923,6 +2927,29 @@ internal class MeshEngine(
                 logger.debug(TAG) { "Routing payload with no oneof variant for id=$messageId" }
             }
         }
+    }
+
+    // Firmware stamps a first transmission with the sender's own relay byte (FloodingRouter::send), so one
+    // heard with no hops used, or bridged from MQTT, names no relay. An implicit ACK copies the relayer's
+    // byte from the overheard rebroadcast (MeshModule::allocAckNak); 0 is NO_RELAY_NODE (MeshTypes.h).
+    private fun emitRoutingReport(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.portnum != PortNum.ROUTING_APP || decoded.request_id == 0) return
+        if (packet.to != 0 && !isConnectedNodeNum(packet.to)) return
+        val routing = runCatching { Routing.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
+        val error = routing.error_reason ?: return
+        val local = packet.from == 0 || isConnectedNodeNum(packet.from)
+        val heardDirect = packet.hop_start != 0 && packet.hop_limit == packet.hop_start
+        emitEvent(
+            MeshEvent.RoutingReport(
+                requestId = MessageId(decoded.request_id),
+                from = NodeId(packet.from.takeIf { it != 0 } ?: myNodeNum),
+                error = error,
+                fromLocalRadio = local,
+                relayNode = packet.relay_node.takeUnless { it == 0 || heardDirect || packet.via_mqtt },
+                ackProof = packet.ack_proof_status,
+            ),
+        )
     }
 
     /**
@@ -3612,12 +3639,7 @@ internal class MeshEngine(
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
 
-        val encoded = WireCodec.encodeToRadio(
-            ToRadio.Builder().also { wb ->
-                wb.packet = packet
-            }.build(),
-        )
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
+        trySendToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
@@ -3800,7 +3822,11 @@ internal class MeshEngine(
         pacedSend: EngineMessage.PacedSend? = null,
     ): Boolean = try {
         val encoded = WireCodec.encodeToRadio(msg)
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
+        val queued =
+            outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
+        // A lockdown command carries the radio's credential, so it stays off the tap.
+        if (queued && link == null) msg.packet?.let { outboundPackets.tryEmit(it) }
+        queued
     } catch (e: Exception) {
         logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
         false
