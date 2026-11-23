@@ -323,7 +323,6 @@ public class BleTransport internal constructor(
             throw e
         } catch (e: Exception) {
             val current = publishConnectFailure(generation, e)
-            if (current) failureStreak.incrementAndGet()
             try {
                 peripheral.disconnect()
             } catch (_: Exception) { /* idempotent */ }
@@ -346,6 +345,7 @@ public class BleTransport internal constructor(
             current = connectGeneration.value == generation
             if (current) TransportState.Error(failure, recoverable = true) else state
         }
+        if (current) failureStreak.incrementAndGet()
         return current
     }
 

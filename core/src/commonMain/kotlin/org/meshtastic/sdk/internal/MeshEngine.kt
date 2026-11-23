@@ -1059,17 +1059,20 @@ internal class MeshEngine(
 
             is EngineMessage.ReconnectAttemptResult -> handleReconnectAttemptResult(msg)
 
-            EngineMessage.RetryNow -> pendingTick?.let { tick ->
-                reconnectJob?.cancel()
-                handleReconnectTick(tick)
-            }
+            EngineMessage.RetryNow -> handleRetryNow()
 
-            is EngineMessage.LinkStable -> if (
-                handshakeStage == HandshakeStage.Ready && msg.generation == receiveGeneration
-            ) {
-                resetFailureStreak()
-            }
+            is EngineMessage.LinkStable -> handleLinkStable(msg)
         }
+    }
+
+    private fun handleRetryNow() {
+        val tick = pendingTick ?: return
+        reconnectJob?.cancel()
+        handleReconnectTick(tick)
+    }
+
+    private fun handleLinkStable(msg: EngineMessage.LinkStable) {
+        if (handshakeStage == HandshakeStage.Ready && msg.generation == receiveGeneration) resetFailureStreak()
     }
 
     private fun handlePostRpc(msg: EngineMessage.PostRpc) {
@@ -1278,11 +1281,19 @@ internal class MeshEngine(
             offlineNodes.clear()
         }
 
+        if (!openFirstTransport(msg.deferred)) return
+        linkUp = true
+        startStage1Handshake()
+    }
+
+    /** Opens and connects the transport for the attempt [connect] starts; false when it failed and was handled. */
+    private suspend fun openFirstTransport(deferred: CompletableDeferred<Unit>): Boolean {
         var opened: RadioTransport? = null
         try {
             opened = transportProvider.open(0, null)
             installTransport(opened)
             opened.connect()
+            return true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -1297,15 +1308,12 @@ internal class MeshEngine(
 
                 else -> {
                     connectionState.value = ConnectionState.Disconnected
-                    msg.deferred.completeExceptionally(ex)
+                    deferred.completeExceptionally(ex)
                     pendingConnectDeferred = null
                 }
             }
-            return
+            return false
         }
-
-        linkUp = true
-        startStage1Handshake()
     }
 
     // A failed connect on a transport that also reports a non-recoverable error cannot succeed by retrying.
