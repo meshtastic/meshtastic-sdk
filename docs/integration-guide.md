@@ -89,7 +89,7 @@ On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` finds the radio by a s
 
 On the JVM, `BleTransport(address = ...)` takes the `DiscoveredRadio.address` saved from a scan on the same host, or a MAC on Linux and Windows. Kable's identifier is BlueZ's device path wrapped in JSON on Linux (`{"object_path":"/org/bluez/hci0/dev_C2_5D_2D_C4_E5_6E"}`), the MAC on Windows and a CoreBluetooth UUID on macOS, which exposes no MAC. A valid identifier for the host is used directly; anything else makes `connect()` scan for up to 15 seconds and connect to the first radio whose identifier matches, exactly or by MAC, or fail with `MeshtasticException.Transport`.
 
-For a firmware update, pass `refreshGattCacheOnConnect` to the Android address factory, or to `BleTransport(radio, resilience, refreshGattCacheOnConnect, builderAction)` for a radio you scanned yourself. The callback can consume a pending refresh for that radio after its next successful link, before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic.
+After a firmware update, call `BleTransport.refreshGattCacheOnNextConnect()` on Android: the next connect that reaches the radio refreshes the GATT cache before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic. `BleResilience(refreshGattCacheAfterFailures = 6)` also refreshes once when reconnects keep failing, for a cache that went stale while the radio was away.
 
 Platform requirements:
 

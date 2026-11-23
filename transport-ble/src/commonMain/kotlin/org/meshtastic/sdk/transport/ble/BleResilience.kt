@@ -29,23 +29,38 @@ package org.meshtastic.sdk.transport.ble
  *   characteristics missing from discovery, refresh Android's cached GATT table (a hidden
  *   `BluetoothGatt` method reached by reflection into Kable 0.45 internals) and reconnect once to
  *   rediscover. Best-effort: when the platform refuses the refresh the connect proceeds unchanged.
+ * @property refreshGattCacheAfterFailures after this many failures in a row (a connect that throws,
+ *   or a link that drops within 5 s of connecting), refresh the cached GATT table on the next
+ *   connect that reaches the radio, the same way as [refreshStaleGattCache]. Once per failure
+ *   streak: a link that stays up for 5 s ends the streak and re-arms it, and a refresh the platform
+ *   refuses does not use it up. A stale cache after a radio was away for a long time otherwise
+ *   fails every reconnect until the user unpairs. `null` (the default) turns it off.
  * @since 0.3.0
  */
 public class BleResilience(
     public val bondFirst: Boolean = false,
     public val autoConnectFallback: Boolean = false,
     public val refreshStaleGattCache: Boolean = false,
+    public val refreshGattCacheAfterFailures: Int? = null,
 ) {
+    init {
+        require(refreshGattCacheAfterFailures == null || refreshGattCacheAfterFailures > 0) {
+            "refreshGattCacheAfterFailures must be > 0 when set"
+        }
+    }
+
     override fun equals(other: Any?): Boolean = other is BleResilience &&
         other.bondFirst == bondFirst &&
         other.autoConnectFallback == autoConnectFallback &&
-        other.refreshStaleGattCache == refreshStaleGattCache
+        other.refreshStaleGattCache == refreshStaleGattCache &&
+        other.refreshGattCacheAfterFailures == refreshGattCacheAfterFailures
 
     override fun hashCode(): Int =
-        (bondFirst.hashCode() * 31 + autoConnectFallback.hashCode()) * 31 + refreshStaleGattCache.hashCode()
+        ((bondFirst.hashCode() * 31 + autoConnectFallback.hashCode()) * 31 + refreshStaleGattCache.hashCode()) * 31 +
+            (refreshGattCacheAfterFailures ?: 0)
 
     override fun toString(): String = "BleResilience(bondFirst=$bondFirst, autoConnectFallback=$autoConnectFallback, " +
-        "refreshStaleGattCache=$refreshStaleGattCache)"
+        "refreshStaleGattCache=$refreshStaleGattCache, refreshGattCacheAfterFailures=$refreshGattCacheAfterFailures)"
 
     public companion object {
         /** Every mechanism off. */
