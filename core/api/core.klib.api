@@ -2592,7 +2592,7 @@ sealed class org.meshtastic.sdk/MeshtasticException : kotlin/Exception { // org.
         constructor <init>(kotlin/String = ..., kotlin/Throwable? = ...) // org.meshtastic.sdk/MeshtasticException.StorageUnavailable.<init>|<init>(kotlin.String;kotlin.Throwable?){}[0]
     }
 
-    final class Transport : org.meshtastic.sdk/MeshtasticException { // org.meshtastic.sdk/MeshtasticException.Transport|null[0]
+    open class Transport : org.meshtastic.sdk/MeshtasticException { // org.meshtastic.sdk/MeshtasticException.Transport|null[0]
         constructor <init>(kotlin/String, kotlin/Throwable? = ...) // org.meshtastic.sdk/MeshtasticException.Transport.<init>|<init>(kotlin.String;kotlin.Throwable?){}[0]
     }
 

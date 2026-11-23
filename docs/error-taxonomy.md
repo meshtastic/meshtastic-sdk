@@ -24,7 +24,7 @@ Source: [`MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/
 
 ```text
 MeshtasticException                     sealed
-├── Transport(reason, cause?)
+├── Transport(reason, cause?)            open; WebSocketTransportException extends it
 ├── Protocol(reason, cause?)
 ├── HandshakeTimeout(stage)
 ├── StorageUnavailable(message?, cause?)
@@ -37,6 +37,7 @@ MeshtasticException                     sealed
 - `cause` keeps the underlying `Throwable`: a Kable exception, a Ktor or socket I/O error, a jSerialComm error.
 - `transportIdentity` and `operation` attribute a failure without parsing the message. The SDK sets them; callers read them.
 - Recoverability isn't on the exception. A transport reports it through `TransportState.Error.recoverable`; for example, `WebSocketTransport` reports close code 4001 (displaced by another client) and 1009 as not recoverable.
+- `Transport` is open so a transport module can carry typed detail in a subclass without adding a case to the hierarchy. `WebSocketTransportException` carries `closeCode`, `closeReason`, `httpStatus` (a refused upgrade) and `slotContested`; read those, not the message.
 - Adding a subclass is a SemVer-major change after 1.0, since consumers may `when` over the hierarchy exhaustively.
 
 ### When each is thrown

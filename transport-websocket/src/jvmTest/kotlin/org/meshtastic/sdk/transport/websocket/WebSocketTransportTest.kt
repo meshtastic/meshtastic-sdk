@@ -266,11 +266,17 @@ class WebSocketTransportTest {
         return error
     }
 
+    private val TransportState.Error.typed: WebSocketTransportException
+        get() = assertIs<WebSocketTransportException>(cause)
+
     @Test
     fun close4001IsNotRecoverable() = run {
         val e = closeCodeCase(4001)
         assertFalse(e.recoverable)
         assertTrue(e.cause.message!!.contains("another client took the node's only WebSocket slot"))
+        assertEquals(4001, e.typed.closeCode)
+        assertEquals("bye", e.typed.closeReason)
+        assertFalse(e.typed.slotContested)
     }
 
     @Test
@@ -278,13 +284,23 @@ class WebSocketTransportTest {
         val e = closeCodeCase(1009)
         assertFalse(e.recoverable)
         assertTrue(e.cause.message!!.contains("512"))
+        assertEquals(1009, e.typed.closeCode)
     }
 
     @Test
-    fun close1000IsRecoverable() = run { assertTrue(closeCodeCase(1000).recoverable) }
+    fun close1000IsRecoverable() = run {
+        val e = closeCodeCase(1000)
+        assertTrue(e.recoverable)
+        assertEquals(1000, e.typed.closeCode)
+    }
 
     @Test
-    fun close1013IsRecoverable() = run { assertTrue(closeCodeCase(1013).recoverable) }
+    fun close1013IsRecoverable() = run {
+        val e = closeCodeCase(1013)
+        assertTrue(e.recoverable)
+        assertEquals(1013, e.typed.closeCode)
+        assertEquals("bye", e.typed.closeReason)
+    }
 
     @Test
     fun abruptSocketDropIsRecoverable() = run {
@@ -294,6 +310,8 @@ class WebSocketTransportTest {
         val e = t.awaitError()
         assertTrue(e.recoverable)
         assertTrue(e.cause.message!!.contains("without a close frame") || e.cause.message!!.contains("closed"))
+        assertTrue(e.typed.closeCode == null || e.typed.closeCode == 1006, "closeCode=${e.typed.closeCode}")
+        assertNull(e.typed.httpStatus)
         t.disconnect()
     }
 
@@ -303,7 +321,9 @@ class WebSocketTransportTest {
         val t = transportFor(s.port)
         val ex = assertFailsWith<MeshtasticException.Transport> { t.connect() }
         assertTrue(ex.message!!.contains("404"), ex.message)
-        assertIs<TransportState.Error>(t.state.value)
+        assertEquals(404, assertIs<WebSocketTransportException>(ex).httpStatus)
+        assertNull(ex.closeCode)
+        assertEquals(ex, assertIs<TransportState.Error>(t.state.value).cause)
     }
 
     @Test
@@ -312,6 +332,7 @@ class WebSocketTransportTest {
         val t = transportFor(port)
         val ex = assertFailsWith<MeshtasticException.Transport> { t.connect() }
         assertTrue(ex.message!!.contains("could not reach"), ex.message)
+        assertNull(assertIs<WebSocketTransportException>(ex).httpStatus)
     }
 
     @Test
@@ -465,6 +486,7 @@ class WebSocketTransportTest {
         val e = t.awaitError()
         assertFalse(e.recoverable)
         assertTrue(e.cause.message!!.contains("512"))
+        assertEquals(1009, e.typed.closeCode)
         assertTrue(t.frames().let { withTimeoutOrNull(300) { it.first() } } == null)
         t.disconnect()
     }
@@ -645,10 +667,15 @@ class WebSocketTransportTest {
     @Test
     fun fiveQuickDropsInARowAreNotRecoverableAndFourAre() = run {
         val r = rig("drop", "drop", "drop", "drop", "drop")
-        repeat(4) { assertTrue(r.session().recoverable) }
+        repeat(4) {
+            val e = r.session()
+            assertTrue(e.recoverable)
+            assertFalse(e.typed.slotContested)
+        }
         val fifth = r.session()
         assertFalse(fifth.recoverable)
         assertTrue(fifth.cause.message!!.contains("only WebSocket slot"))
+        assertTrue(fifth.typed.slotContested)
         r.transport.disconnect()
     }
 

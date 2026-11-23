@@ -37,8 +37,13 @@ public sealed class MeshtasticException(message: String, cause: Throwable?) : Ex
         return this
     }
 
-    /** Transport-level error: connection refused, network unreachable, I/O failure, etc. */
-    public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
+    /**
+     * Transport-level error: connection refused, network unreachable, I/O failure, etc.
+     *
+     * Open so a transport module can add typed detail in a subclass, as `WebSocketTransportException`
+     * does; a subclass is still a [Transport], so a `when` over [MeshtasticException] stays exhaustive.
+     */
+    public open class Transport(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
 
     /** Protocol violation: malformed wire data, handshake failure, unexpected packet structure. */
     public class Protocol(reason: String, cause: Throwable? = null) : MeshtasticException(reason, cause)
