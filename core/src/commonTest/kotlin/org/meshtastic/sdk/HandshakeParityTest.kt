@@ -25,6 +25,7 @@ import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.Position
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.proto.User
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -234,6 +235,59 @@ class HandshakeParityTest {
         client.disconnect()
     }
 
+    /**
+     * Firmware answers a heartbeat with a `QueueStatus` for packet id 0 only since 2.7.4
+     * (`PhoneAPI::getFromRadio`, #7506); 2.5.14 to 2.7.3 send nothing back, so a quiet mesh leaves
+     * a healthy link silent.
+     */
+    @Test
+    fun aQuietLinkToFirmwareThatNeverAnswersHeartbeatsStaysConnected() = runTest {
+        // Firmware of every supported version answers each phone packet with a QueueStatus for that packet's id.
+        val transport = FakeRadioTransport(
+            TransportIdentity("fake:no-heartbeat-reply"),
+            autoHandshake = true,
+            autoQueueStatus = true,
+        )
+        val client = buildClient(transport)
+        client.connect()
+
+        advanceTimeBy(5 * 60_000L)
+        runCurrent()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        client.disconnect()
+    }
+
+    @Test
+    fun aQuietLinkAfterAHeartbeatReplyFailsLiveness() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:heartbeat-reply"), autoHandshake = true)
+        val client = buildClient(transport)
+        client.connect()
+        transport.inject { it.queueStatus = QueueStatus.Builder().also { q -> q.free = 16; q.maxlen = 16 }.build() }
+        runCurrent()
+
+        advanceTimeBy(LIVENESS_TIMEOUT_MS + LIVENESS_CHECK_MS)
+        runCurrent()
+
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun aBleLinkWithoutPeriodicHeartbeatsHasNoLivenessWatchdog() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("ble:AA:BB:CC:DD:EE:FF"), autoHandshake = true)
+        val client = buildClient(transport) { disableBleHeartbeat() }
+        client.connect()
+        // The reply to the inter-stage heartbeat, which is sent on every transport.
+        transport.inject { it.queueStatus = QueueStatus.Builder().also { q -> q.free = 16; q.maxlen = 16 }.build() }
+        runCurrent()
+
+        advanceTimeBy(5 * 60_000L)
+        runCurrent()
+
+        assertEquals(ConnectionState.Connected, client.connection.value)
+        client.disconnect()
+    }
+
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->
         wb.from = from
         wb.to = BROADCAST
@@ -250,7 +304,11 @@ class HandshakeParityTest {
         }.build()
     }.build()
 
-    private fun TestScope.buildClient(transport: FakeRadioTransport, sessionReceive: Boolean = false): RadioClient =
+    private fun TestScope.buildClient(
+        transport: FakeRadioTransport,
+        sessionReceive: Boolean = false,
+        configure: RadioClient.Builder.() -> Unit = {},
+    ): RadioClient =
         RadioClient.Builder()
             .transport(transport)
             .storage(InMemoryStorageProvider())
@@ -259,6 +317,7 @@ class HandshakeParityTest {
             .rpcTimeout(60.seconds)
             .sendTimeout(60.seconds)
             .apply { if (sessionReceive) sessionReceive() }
+            .apply(configure)
             .build()
 
     private fun FakeRadioTransport.inject(block: (FromRadio.Builder) -> Unit) {
@@ -302,6 +361,8 @@ class HandshakeParityTest {
         const val STAGE1_TIMEOUT_MS = 20_000L
         const val SEED_TIMEOUT_MS = 10_000L
         const val SEED_WARNING = "session passkey seed timed out"
+        const val LIVENESS_TIMEOUT_MS = 60_000L
+        const val LIVENESS_CHECK_MS = 30_000L
         const val BROADCAST = -1
         const val PEER_BASE = 0x2000
 

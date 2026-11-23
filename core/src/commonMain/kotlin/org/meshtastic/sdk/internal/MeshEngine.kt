@@ -370,6 +370,9 @@ internal class MeshEngine(
     private var livenessBudgetMs: Long = 0L
     private var livenessWatchdogJob: Job? = null
 
+    /** This link's firmware has answered a heartbeat, so the liveness watchdog may act on silence. */
+    private var heartbeatAnswered = false
+
     // One heartbeat and one presence loop per Ready session.
     private var heartbeatJob: Job? = null
     private var presenceJob: Job? = null
@@ -1209,6 +1212,7 @@ internal class MeshEngine(
         val generation = ++receiveGeneration
         // Each session, a reconnect included, warns once about firmware below the recommended version.
         firmwareUpdateAdvised = false
+        heartbeatAnswered = false
         writeGeneration.value = generation
         sessionReceive?.begin()
         startFrameReader(generation)
@@ -1395,6 +1399,8 @@ internal class MeshEngine(
         // not raw-byte arrivals. A stuck framer on a half-open socket could still deliver
         // resync garbage; that must not look like "the link is healthy" to the watchdog.
         livenessBudgetMs = LIVENESS_TIMEOUT_MS
+        // Firmware 2.7.4 and later answer a heartbeat with a QueueStatus for packet id 0 (PhoneAPI::getFromRadio).
+        if (fromRadio.queueStatus?.mesh_packet_id == 0) heartbeatAnswered = true
 
         // Firmware answers a 69420 want_config with my_info first (PhoneAPI handleStartConfig). A reboot
         // or completion seen before it in Stage 1 was queued before the request and would end the new
@@ -3552,13 +3558,15 @@ internal class MeshEngine(
     private fun handleHeartbeatTick() {
         publishAdminSessions()
         if (handshakeStage != HandshakeStage.Ready) return
-        if (!bleHeartbeatEnabled && transport.identity.raw.startsWith("ble:")) return
+        if (!sendsPeriodicHeartbeats()) return
         val nonce = sendKeepaliveHeartbeat()
         logger.verbose(TAG) { "Heartbeat sent nonce=$nonce" }
         // piggy-back heartbeat persistence on the 30 s heartbeat tick so we write at most
         // a bounded number of rows per session tick, even on busy meshes.
         flushDirtyHeartbeats()
     }
+
+    private fun sendsPeriodicHeartbeats(): Boolean = bleHeartbeatEnabled || !transport.identity.raw.startsWith("ble:")
 
     private fun sendKeepaliveHeartbeat(): Int {
         val nonce = heartbeatNonce
@@ -3620,11 +3628,14 @@ internal class MeshEngine(
      * budget is exhausted we emit a `TransportError` (via `handleDisconnect`) explaining
      * **why** the session is dropping, then run the normal teardown path. Gated on
      * [disconnecting] and `handshakeStage == Ready` so ticks arriving mid-teardown or pre-Ready
-     * can't double-fire with a user-initiated disconnect or the TCP read timeout.
+     * can't double-fire with a user-initiated disconnect or the TCP read timeout. Silence proves
+     * nothing until the firmware has answered a heartbeat and the engine keeps sending them: firmware
+     * before 2.7.4 never replies, so a quiet mesh leaves a healthy link silent.
      */
     private fun handleLivenessTick() {
         if (disconnecting) return
         if (handshakeStage != HandshakeStage.Ready) return
+        if (!heartbeatAnswered || !sendsPeriodicHeartbeats()) return
         livenessBudgetMs -= LIVENESS_CHECK_INTERVAL_MS
         if (livenessBudgetMs > 0) return
         logger.warn(TAG) { "Liveness timeout — no FromRadio for ${LIVENESS_TIMEOUT_MS}ms" }

@@ -1080,7 +1080,7 @@ The reference clients' cadence by transport (`Meshtastic-Apple:Transport.swift`,
 
 The SDK sends one every 30 s on every transport once the session is `Connected`, plus the inter-stage heartbeat of §6. `RadioClient.Builder.disableBleHeartbeat()` stops the periodic one on BLE. Apple also restarts its timer on every received packet, which is an optimization; a fixed interval is conformant.
 
-If no `FromRadio` arrives for 60 s (`LIVENESS_TIMEOUT_MS`, twice the heartbeat interval) while `Connected`, the SDK treats the link as stale on any transport: it emits `MeshEvent.TransportError` carrying `MeshtasticException.Transport("liveness timeout")` and moves the session to `Disconnected`. TCP also has a 65 s transport-level read timeout, which covers the handshake, before the engine watchdog starts.
+Firmware answers a heartbeat with a `QueueStatus` whose `mesh_packet_id` is 0 since 2.7.4 (`getFromRadio` in `firmware:src/mesh/PhoneAPI.cpp`, #7506); older firmware sends nothing, so a quiet mesh leaves a healthy link silent. The SDK arms its liveness watchdog once the session has seen such a reply and only while it sends periodic heartbeats on the link. Then, if no `FromRadio` arrives for 60 s (`LIVENESS_TIMEOUT_MS`, twice the heartbeat interval) while `Connected`, the SDK treats the link as stale: it emits `MeshEvent.TransportError` carrying `MeshtasticException.Transport("liveness timeout")` and moves the session to `Disconnected`. TCP also has a 65 s transport-level read timeout, which covers the handshake, before the engine watchdog starts.
 
 Queue status, the node's reply to a heartbeat and to every send, is covered in §12.
 

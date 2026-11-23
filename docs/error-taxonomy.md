@@ -16,7 +16,7 @@ Every observable failure, mapped to the Kotlin type that carries it. Per [ADR-00
 | Slow collector on `packets` or `nodes` | `MeshEvent.PacketsDropped(flow, count)` | Loss is reported, not silent. |
 | Storage write failure mid-session | `MeshEvent.StorageDegraded(reason)`; writes stop for the session | A storage outage doesn't end a live session. |
 
-The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after 60 s (two heartbeat intervals) without a decoded `FromRadio`, and from `TcpTransport`, which fails a read with `Transport("TCP read timeout after 65000ms")` so the window before the handshake completes is covered too.
+The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after 60 s (two heartbeat intervals) without a decoded `FromRadio` once the firmware has answered a heartbeat (2.7.4 and later, see [protocol.md](protocol.md#16-heartbeat--queue-status)), and from `TcpTransport`, which fails a read with `Transport("TCP read timeout after 65000ms")` so the window before the handshake completes is covered too.
 
 ## `MeshtasticException` hierarchy
 
