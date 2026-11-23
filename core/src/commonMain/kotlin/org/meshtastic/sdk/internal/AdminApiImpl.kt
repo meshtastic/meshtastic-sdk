@@ -99,9 +99,11 @@ internal class AdminApiImpl(
      * are routed into the mesh untouched — the target's own admin-key config authorizes them —
      * so remote admin must NOT be short-circuited by the local device's managed flag
      * (managed-fleet deployments administer remote managed nodes from a managed local node).
+     * Firmware built with PhoneAPI access control skips that refusal for a link it has authorized,
+     * and such firmware reports a lockdown status on every link.
      */
     private fun isLocalTargetManaged(): Boolean {
-        if (!isLocalTarget()) return false
+        if (!isLocalTarget() || engine.localAdminGatedByLink.value) return false
         val bundle = engine.configBundleState.value ?: return false
         return bundle.configs.any { config ->
             config.security?.is_managed == true

@@ -134,7 +134,7 @@ A remote read whose `MAX_RETRANSMIT` comes from the connected radio keeps waitin
 
 Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute`, `MaxRetransmit` and `DutyCycleLimit` become `Failed` with that error; `Disconnected`, `HandshakeFailed`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` with a `Routing.Error` below 32 or above 35 follows the table, as for an RPC, `QueueRejected` with 33 or 34 becomes `Failed(NO_INTERFACE)`, and any other `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table. `NodeUnreachable` therefore means the link was lost or the send never left. Over BLE, a restart-class command to the connected node that the transport wrote before the link dropped returns `Success` (see [protocol.md](protocol.md), edit transactions).
 
-`lockdown` on an `AdminApi` from `forNode(…)` returns `Unauthorized`; it works on the local node only. When the local node's `security.is_managed` is set, most admin calls on the local node, `setTime` among them, return `Unauthorized` without sending.
+`lockdown` on an `AdminApi` from `forNode(…)` returns `Unauthorized`; it works on the local node only. When the local node's `security.is_managed` is set, most admin calls on the local node, `setTime` among them, return `Unauthorized` without sending, unless the link reported a lockdown status: such firmware is built with PhoneAPI access control and accepts local admin on a link it has authorized.
 
 ### Timeouts
 

@@ -371,6 +371,12 @@ internal class MeshEngine(
     private var livenessBudgetMs: Long = 0L
     private var livenessWatchdogJob: Job? = null
 
+    /**
+     * The link's firmware reported a lockdown status, so it was built with PhoneAPI access control and
+     * authorizes local admin per link, `is_managed` or not (AdminModule.cpp, MESHTASTIC_PHONEAPI_ACCESS_CONTROL).
+     */
+    val localAdminGatedByLink = MutableStateFlow(false)
+
     /** This link's firmware has answered a heartbeat, so the liveness watchdog may act on silence. */
     private var heartbeatAnswered = false
 
@@ -1221,6 +1227,7 @@ internal class MeshEngine(
         // Each session, a reconnect included, warns once about firmware below the recommended version.
         firmwareUpdateAdvised = false
         heartbeatAnswered = false
+        localAdminGatedByLink.value = false
         writeGeneration.value = generation
         sessionReceive?.begin()
         startFrameReader(generation)
@@ -1466,6 +1473,7 @@ internal class MeshEngine(
 
         val lockdownStatus = fromRadio.lockdown_status
         if (lockdownStatus != null) {
+            localAdminGatedByLink.value = true
             if (handshakeStage != HandshakeStage.Ready) handleHandshakeLockdown(lockdownStatus)
             emitEvent(MeshEvent.LockdownStatusChanged(lockdownStatus))
             sessionReceive?.lockdown(lockdownStatus)

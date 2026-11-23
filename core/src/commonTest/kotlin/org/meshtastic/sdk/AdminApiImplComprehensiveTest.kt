@@ -24,6 +24,7 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.DeviceUIConfig
 import org.meshtastic.proto.HamParameters
 import org.meshtastic.proto.KeyVerificationAdmin
+import org.meshtastic.proto.LockdownStatus
 import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.NodeRemoteHardwarePinsResponse
@@ -972,6 +973,44 @@ class AdminApiImplComprehensiveTest {
             val outboundBefore = transport.outboundPackets().size
             assertEquals(AdminResult.Unauthorized, client.admin.enterDfuMode())
             assertEquals(outboundBefore, transport.outboundPackets().size)
+        } finally {
+            runCatching { client.disconnect() }
+        }
+    }
+
+    // Firmware built with PhoneAPI access control skips the is_managed refusal for an authorized link
+    // (AdminModule.cpp, MESHTASTIC_PHONEAPI_ACCESS_CONTROL) and reports a lockdown status on every link
+    // (PhoneAPI::sendConfigComplete queues DISABLED when lockdown is off).
+    @Test
+    fun enterDfuModeManagedDeviceWithLinkAccessControlIsSent() = runTest {
+        val (transport, client) = connectedClient(
+            frames = handshakeFrames(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.config = Config.Builder().also { wb ->
+                        wb.security = Config.SecurityConfig.Builder().also { wb -> wb.is_managed = true }.build()
+                    }.build()
+                }.build(),
+            ),
+        )
+        client.connect()
+        runCurrent()
+        transport.injectFrame(
+            fromRadioFrame(
+                org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                    wb.lockdown_status = LockdownStatus.Builder().also { wb ->
+                        wb.state = LockdownStatus.State.DISABLED
+                    }.build()
+                }.build(),
+            ),
+        )
+        runCurrent()
+        try {
+            val outboundBefore = transport.outboundPackets().size
+            assertEquals(AdminResult.Success(Unit), client.admin.enterDfuMode())
+            runCurrent()
+            assertTrue(
+                transport.outboundPackets().drop(outboundBefore).any { adminOf(it)?.enter_dfu_mode_request == true },
+            )
         } finally {
             runCatching { client.disconnect() }
         }

@@ -915,7 +915,7 @@ The SDK exposes this as `AdminApi.editSettings { }` and `AdminApi.batch { }`. Si
 
 ### Managed mode (`is_managed`)
 
-When `Config.SecurityConfig.is_managed` is `true`, firmware ignores admin requests from a local client (`from = 0`) without replying, unless it was built with `MESHTASTIC_PHONEAPI_ACCESS_CONTROL`; a managed node is administered over PKI from an authorized key. The SDK reads the flag from the handshake config and returns `AdminResult.Unauthorized` at once for calls to the local node instead of waiting for a timeout.
+When `Config.SecurityConfig.is_managed` is `true`, firmware ignores admin requests from a local client (`from = 0`) without replying, unless it was built with `MESHTASTIC_PHONEAPI_ACCESS_CONTROL`; a managed node is administered over PKI from an authorized key. The SDK reads the flag from the handshake config and returns `AdminResult.Unauthorized` at once for calls to the local node instead of waiting for a timeout. Firmware built with that flag sends a `lockdown_status` on every link (`PhoneAPI::sendConfigComplete` queues `DISABLED` when lockdown is off), so after one the SDK sends local admin and leaves the decision to the firmware.
 
 ### Admin routing
 
