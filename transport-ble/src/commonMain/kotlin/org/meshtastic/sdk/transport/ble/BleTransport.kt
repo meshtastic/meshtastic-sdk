@@ -94,7 +94,10 @@ public class BleTransport internal constructor(
         peripheral: Peripheral,
         address: String,
         parentContext: CoroutineContext = EmptyCoroutineContext,
-    ) : this(peripheral, address, parentContext, null)
+    ) : this(peripheral, address, parentContext, null) {
+        // Installs Android's GATT refresher, so refreshGattCacheOnNextConnect() works here as on a factory transport.
+        applyPlatformResilience(this, peripheral, BleResilience.None)
+    }
 
     // ADR-012: native-handle ownership — set by the constructor, or by the first connect() that
     // resolves it through resolvePeripheral; shutdown() takes an owned one back to close it.
@@ -192,7 +195,8 @@ public class BleTransport internal constructor(
     /**
      * Refreshes Android's cached GATT table on the next [connect] that reaches the radio, once, for
      * example after a firmware update that changed the GATT layout. The request stays pending
-     * through connects that fail before the link is up. A no-op off Android.
+     * through connects that fail before the link is up. Works for a transport from any factory or
+     * constructor; a no-op off Android.
      *
      * @since 0.3.0
      */
