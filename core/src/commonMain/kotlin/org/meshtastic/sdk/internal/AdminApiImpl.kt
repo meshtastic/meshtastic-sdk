@@ -778,21 +778,24 @@ private fun mapSendFailureToAdminResult(reason: SendFailure): AdminResult<Unit> 
 
     SendFailure.MaxRetransmit -> AdminResult.Failed(Routing.Error.MAX_RETRANSMIT)
 
-    SendFailure.Disconnected, SendFailure.HandshakeFailed, SendFailure.DutyCycleLimit -> AdminResult.NodeUnreachable
+    SendFailure.Disconnected, SendFailure.HandshakeFailed -> AdminResult.NodeUnreachable
+
+    // The device refused for its hourly TX budget (Router.cpp); the link is up, as the RPC mapping says.
+    SendFailure.DutyCycleLimit -> AdminResult.Failed(Routing.Error.DUTY_CYCLE_LIMIT)
 
     SendFailure.Timeout, SendFailure.AckTimeout -> AdminResult.Timeout
 
     SendFailure.Cancelled, SendFailure.IdCollision -> AdminResult.NodeUnreachable
 
     // ERRNO_NO_INTERFACES and ERRNO_DISABLED (firmware MeshTypes.h): no radio to send on, so retrying cannot help.
-    // ERRNO_* ends at 35; above it the result is a Routing.Error that Router::send returned, such as
-    // PKI_SEND_FAIL_PUBLIC_KEY.
+    // ERRNO_* spans 32 to 35; outside it the result is a Routing.Error that Router::send returned, such as
+    // DUTY_CYCLE_LIMIT or PKI_SEND_FAIL_PUBLIC_KEY.
     is SendFailure.QueueRejected -> when {
         reason.res == ERRNO_NO_INTERFACES || reason.res == ERRNO_DISABLED -> AdminResult.Failed(
             Routing.Error.NO_INTERFACE,
         )
 
-        reason.res > ERRNO_SHOULD_RELEASE ->
+        reason.res < ERRNO_UNKNOWN || reason.res > ERRNO_SHOULD_RELEASE ->
             Routing.Error.fromValue(reason.res)?.let(::mapRoutingErrorToAdminResult) ?: AdminResult.RateLimited
 
         else -> AdminResult.RateLimited
@@ -821,6 +824,7 @@ private fun mapRoutingErrorToAdminResult(error: Routing.Error): AdminResult<Unit
 @Suppress("UNCHECKED_CAST")
 private fun <T> AdminResult<*>.cast(): AdminResult<T> = this as AdminResult<T>
 
+private const val ERRNO_UNKNOWN = 32
 private const val ERRNO_NO_INTERFACES = 33
 private const val ERRNO_DISABLED = 34
 private const val ERRNO_SHOULD_RELEASE = 35
