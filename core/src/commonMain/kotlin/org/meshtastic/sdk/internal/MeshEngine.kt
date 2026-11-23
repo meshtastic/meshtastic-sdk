@@ -377,8 +377,8 @@ internal class MeshEngine(
 
     /**
      * Frames received while in [HandshakeStage.Stage1Settling]. They are decoded and
-     * buffered here, then replayed through [processStage1Envelope] in
-     * [handleStage1SettleComplete] before the inter-stage heartbeat goes out. Drop-oldest at
+     * buffered here, then replayed through [processStage1Envelope] at the end of each settle
+     * window, before the inter-stage heartbeat and before the Stage 2 request. Drop-oldest at
      * [SETTLE_BUFFER_CAP].
      */
     private val settleBuffer = ArrayDeque<FromRadio>(SETTLE_BUFFER_CAP)
@@ -1642,32 +1642,32 @@ internal class MeshEngine(
         supervisorJobRef.value?.cancel()
     }
 
+    /**
+     * Replays [settleBuffer] through [processStage1Envelope]. Returns false when a replayed
+     * frame re-armed the settle (a duplicate Stage 1 completion, whose unprocessed successors are
+     * re-buffered for the next replay) or ended the handshake; the caller must then stop.
+     */
+    private fun replaySettleBuffer(): Boolean {
+        if (settleBuffer.isEmpty()) return true
+        val pending = settleBuffer.toList()
+        settleBuffer.clear()
+        handshakeStage = HandshakeStage.Stage1Draining
+        for ((index, env) in pending.withIndex()) {
+            processStage1Envelope(env)
+            if (handshakeStage != HandshakeStage.Stage1Draining) {
+                if (handshakeStage == HandshakeStage.Stage1Settling) {
+                    settleBuffer.addAll(pending.subList(index + 1, pending.size))
+                }
+                return false
+            }
+        }
+        handshakeStage = HandshakeStage.Stage1Settling
+        return true
+    }
+
     private fun handleStage1SettleComplete() {
         if (handshakeStage != HandshakeStage.Stage1Settling) return
-
-        // replay any frames that arrived during the settle window through the normal
-        // Stage1 envelope handler. We temporarily flip back to Stage1Draining so the handler
-        // accepts the buffered frames; if a replayed frame contains another `config_complete_id`
-        // matching NONCE_STAGE1, processStage1Envelope will re-arm Stage1Settling and we bail
-        // out without sending the inter-stage heartbeat.
-        if (settleBuffer.isNotEmpty()) {
-            val pending = settleBuffer.toList()
-            settleBuffer.clear()
-            handshakeStage = HandshakeStage.Stage1Draining
-            for ((index, env) in pending.withIndex()) {
-                processStage1Envelope(env)
-                if (handshakeStage == HandshakeStage.Stage1Settling) {
-                    // A replayed frame re-armed the settle timer — re-buffer the frames we
-                    // haven't processed yet (they were already removed from settleBuffer)
-                    // so the next HandshakeStage1SettleComplete replays them instead of
-                    // silently dropping them, then abort this handler.
-                    settleBuffer.addAll(pending.subList(index + 1, pending.size))
-                    return
-                }
-            }
-            // No re-arm; resume the normal post-settle flow.
-            handshakeStage = HandshakeStage.Stage1Settling
-        }
+        if (!replaySettleBuffer()) return
 
         val nonce = sendKeepaliveHeartbeat()
         logger.debug(TAG) { "Sent inter-stage heartbeat nonce=$nonce" }
@@ -1680,6 +1680,9 @@ internal class MeshEngine(
 
     private fun handleHeartbeatSettleComplete() {
         if (handshakeStage != HandshakeStage.Stage1Settling) return
+        // Frames from the window after the heartbeat sit in settleBuffer too; a reconnecting
+        // radio delivers its queued phone packets there.
+        if (!replaySettleBuffer()) return
         val attempt = handshakeAttempt
         // Config-only: finish after Stage 1 via a synthetic Stage-2 completion; no NodeDB request (§6).
         if (skipNodeDb) {

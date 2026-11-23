@@ -1416,6 +1416,47 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
+    fun aPacketAfterTheReconnectHeartbeatReachesTheNewSessionOnce() = runTest {
+        val transport = ScriptedTransport(
+            TransportIdentity("fake:heartbeat-window"),
+            nowMs = { currentTime },
+            replaceInboundOnConnect = true,
+        )
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0),
+            sessionReceiveCapacity = 16,
+        )
+
+        assertNotNull(client.sessionEvents).test {
+            client.connect()
+            val first = assertIs<RadioSessionEvent.Ready>(awaitItem())
+
+            // A reconnecting radio hands over its queued phone packets right after Stage 1
+            // completes, so one lands between the inter-stage heartbeat and the Stage 2 request.
+            transport.packetAfterNextHeartbeat = 4242
+            transport.simulateRecoverableError("link drop")
+            runCurrent()
+            advanceTimeBy(1_000)
+            runCurrent()
+            awaitConnected(client)
+            assertEquals(null, transport.packetAfterNextHeartbeat, "the reconnect handshake sent its heartbeat")
+            transport.injectAlivePacket(4243)
+            drainCurrent()
+
+            assertIs<MeshEvent.TransportError>(assertIs<RadioSessionEvent.Event>(awaitSkippingNodes()).event)
+            assertEquals(RadioSessionEvent.Ended(first.sessionId), awaitItem())
+            val second = assertIs<RadioSessionEvent.Ready>(awaitItem())
+            val held = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
+            assertEquals(second.sessionId to 4242, held.sessionId to held.packet.id)
+            val live = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
+            assertEquals(4243, live.packet.id, "the held packet is delivered exactly once")
+            client.disconnect()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun logRecordsDuringTheSettleWindowDoNotEvictAHeldPacket() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:settle-logs"),
@@ -1849,6 +1890,9 @@ class HandshakeAndReconnectTest {
         var dropStage1OnNextHandshake: Boolean = false
         var dropStage2OnNextHandshake: Boolean = false
 
+        // One-shot: answers the next heartbeat with this live packet id.
+        var packetAfterNextHeartbeat: Int? = null
+
         override val state: StateFlow<TransportState> = stateFlow
 
         override suspend fun connect() {
@@ -1882,6 +1926,12 @@ class HandshakeAndReconnectTest {
                 NONCE_STAGE2 -> handleStage2Request()
             }
             toRadio.packet?.let(::handleAdminPacket)
+            if (toRadio.heartbeat != null) {
+                packetAfterNextHeartbeat?.let { packetId ->
+                    packetAfterNextHeartbeat = null
+                    injectAlivePacket(packetId)
+                }
+            }
         }
 
         override fun frames(): Flow<Frame> = if (!failableReader) {

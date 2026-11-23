@@ -13,9 +13,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.ByteString.Companion.encodeUtf8
 import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
@@ -143,6 +146,21 @@ class ConfigOnlyHandshakeTest {
     }
 
     @Test
+    fun configOnlyDeliversAPacketThatArrivesAfterTheSettleHeartbeat() = runTest {
+        val transport = ScriptedDevice(TransportIdentity("fake:config-only-heartbeat-packet"))
+        transport.packetAfterHeartbeat = 77
+        val client = buildClient(transport, skipNodeDb = true)
+        val received = mutableListOf<Int>()
+        backgroundScope.launch { client.packets.collect { received += it.id } }
+        runCurrent()
+
+        client.connect()
+        runCurrent()
+
+        assertEquals(listOf(77), received)
+    }
+
+    @Test
     fun defaultBuilderStillDownloadsTheNodeDb() = runTest {
         val transport = ScriptedDevice(TransportIdentity("fake:two-stage-default"))
         val client = buildClient(transport, skipNodeDb = false)
@@ -263,6 +281,31 @@ class ConfigOnlyHandshakeTest {
                 NONCE_STAGE2 -> streamStage2()
             }
             toRadio.packet?.let(::answerGetOwner)
+            if (toRadio.heartbeat != null) {
+                packetAfterHeartbeat?.let { packetId ->
+                    packetAfterHeartbeat = null
+                    emitPeerText(packetId)
+                }
+            }
+        }
+
+        // One-shot: answers the next heartbeat with a peer text packet carrying this id.
+        var packetAfterHeartbeat: Int? = null
+
+        private fun emitPeerText(packetId: Int) {
+            emit(
+                FromRadio.Builder().also { wb ->
+                    wb.packet = MeshPacket.Builder().also { wb ->
+                        wb.id = packetId
+                        wb.from = PEER_NODE_NUMS.first()
+                        wb.to = DEVICE_NODE_NUM
+                        wb.decoded = Data.Builder().also { wb ->
+                            wb.portnum = PortNum.TEXT_MESSAGE_APP
+                            wb.payload = "hi".encodeUtf8()
+                        }.build()
+                    }.build()
+                }.build(),
+            )
         }
 
         override fun frames(): Flow<Frame> = inbound
