@@ -1,0 +1,13 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:BleTransport.kt:BleTransport$current is TransportState.Connected || current is TransportState.Bonding || (current is TransportState.Connecting &amp;&amp; warmupComplete.value)</ID>
+    <ID>FunctionNaming:MeshtasticBleConformanceTest.kt:MeshtasticBleConformanceTest$@Test fun conformance_scanConnectAdminSendReconnect</ID>
+    <ID>LongMethod:BleTransport.kt:BleTransport$override suspend fun connect</ID>
+    <ID>LongMethod:MeshtasticBleConformanceTest.kt:MeshtasticBleConformanceTest$@Test fun conformance_scanConnectAdminSendReconnect</ID>
+    <ID>LoopWithTooManyJumpStatements:DrainCoordinator.kt:DrainCoordinator$while</ID>
+    <ID>ThrowsCount:BleTransport.kt:BleTransport$override suspend fun connect</ID>
+    <ID>ThrowsCount:BleTransport.kt:BleTransport$override suspend fun send</ID>
+  </CurrentIssues>
+</SmellBaseline>

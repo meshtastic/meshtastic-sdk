@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>FunctionNaming:MainViewController.kt:@Suppress("ktlint:standard:function-naming") fun MainViewController: UIViewController</ID>
+    <ID>LongMethod:App.kt:@Composable fun App</ID>
+    <ID>ModifierMissing:App.kt:@Composable fun App</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>FunctionNaming:UsbSerialConformanceTest.kt:UsbSerialConformanceTest$@Test fun conformance_listOpenHandshakeSendDisconnect</ID>
+    <ID>ThrowsCount:AndroidUsbSerialPorts.kt:AndroidUsbSerialPorts$private fun openTransport: RadioTransport</ID>
+    <ID>ThrowsCount:JSerialCommTransport.kt:JSerialCommTransport$override suspend fun connect</ID>
+    <ID>ThrowsCount:UsbSerialForAndroidTransport.kt:UsbSerialForAndroidTransport$override suspend fun connect</ID>
+    <ID>TooManyFunctions:UsbSerialForAndroidTransportTest.kt:UsbSerialForAndroidTransportTest$FakePort : UsbSerialPort</ID>
+  </CurrentIssues>
+</SmellBaseline>

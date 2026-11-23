@@ -1,0 +1,133 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:CommandDispatcher.kt:CommandDispatcher$entry.expectedSender != null &amp;&amp; (entry.expectedSender != packet.from || (entry.kind.isAdmin &amp;&amp; decoded.portnum != PortNum.ADMIN_APP))</ID>
+    <ID>ComplexCondition:DeviceProfiles.kt:currentUser != null &amp;&amp; (profile.long_name != null || profile.short_name != null || profile.is_unmessagable != null)</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$!success &amp;&amp; (error == null || (!isLocal &amp;&amp; packet.from != destination))</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$error == Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY &amp;&amp; send.packet.to == myNodeNum &amp;&amp; packet.from != 0 &amp;&amp; packet.from != myNodeNum &amp;&amp; packet.to == packet.from</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$errorReason != null &amp;&amp; errorReason != Routing.Error.NONE &amp;&amp; dispatcher.ownsRoutingFailure(messageId.raw, packet.from, myNodeNum) &amp;&amp; dispatcher.tryFailFromRouting(messageId.raw, errorReason, packet.from, myNodeNum)</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$packet.from == 0 || packet.from == myNodeNum || packet.from == renumberedTo || packet.pki_encrypted</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$pendingMetadata != null || pendingConfigs.isNotEmpty() || pendingModuleConfigs.isNotEmpty() || pendingDeviceUIConfig != null</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$success &amp;&amp; !broadcast &amp;&amp; packet.from != destination &amp;&amp; !(destination == myNodeNum &amp;&amp; isLocal) &amp;&amp; !renumberAck</ID>
+    <ID>ComplexCondition:MeshEngine.kt:MeshEngine$targetKey != null &amp;&amp; targetKey.size > 0 &amp;&amp; ownKey != null &amp;&amp; ownKey.size > 0</ID>
+    <ID>ComplexCondition:NodeDiff.kt:previous.is_favorite != current.is_favorite || previous.is_ignored != current.is_ignored || previous.is_muted != current.is_muted || previous.is_key_manually_verified != current.is_key_manually_verified</ID>
+    <ID>ConstructorParameterNaming:MessageHandle.kt:MessageHandle$internal val _state: MutableStateFlow&lt;SendState></ID>
+    <ID>CyclomaticComplexMethod:CommandDispatcher.kt:CommandDispatcher$fun tryComplete: Boolean</ID>
+    <ID>CyclomaticComplexMethod:ConfigBuildersTest.kt:ConfigBuildersTest$@Test fun moduleConfigBuildersWrapExpectedSections</ID>
+    <ID>CyclomaticComplexMethod:DeviceProfileTest.kt:DeviceProfileTest$private fun allModules: List&lt;ModuleConfig></ID>
+    <ID>CyclomaticComplexMethod:DeviceProfiles.kt:internal fun LocalModuleConfig.toModuleConfigSections: List&lt;ModuleConfig></ID>
+    <ID>CyclomaticComplexMethod:DeviceProfiles.kt:internal fun planProfileInstall: ProfileInstallPlan?</ID>
+    <ID>CyclomaticComplexMethod:FileTransferApiTest.kt:FirmwareXModem$fun handle: XModem?</ID>
+    <ID>CyclomaticComplexMethod:LoRaFrequency.kt:LoRaFrequency$private fun bandwidthCodeForKHz: Int</ID>
+    <ID>CyclomaticComplexMethod:LoRaFrequency.kt:public fun ModemPreset.modemParams: ModemParams</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun handleAuxiliaryFromRadioVariant: Boolean</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun handleFrameRx</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun handlePacedRouting</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun mergeLivePacketIntoNodeDb</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun mergeNodeWrite</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun prepareOutboundAdminPacket: MeshPacket</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun processInboundMeshPacket</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun processRoutingAck</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun processStage2Envelope</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private fun routeNormalEnvelope</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private suspend fun cleanup</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$private suspend fun processMessage</ID>
+    <ID>CyclomaticComplexMethod:MeshEngine.kt:MeshEngine$suspend fun connect</ID>
+    <ID>CyclomaticComplexMethod:ProtocolLog.kt:internal fun summarizeFromRadio: String</ID>
+    <ID>CyclomaticComplexMethod:ProtocolLoggingTest.kt:ProtocolLoggingTest$@Test fun everyEnvelopeArmIsNamed</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:MeshEngine.kt:MeshEngine$(frame, link, paced, generation)</ID>
+    <ID>EmptyFunctionBlock:StorageResilienceTest.kt:StorageResilienceTest.ThrowingWriteStorage${}</ID>
+    <ID>ForbiddenComment:StoreForwardProtocolTest.kt:StoreForwardProtocolTest$// TODO: Implement S&amp;F server staleness sweep and re-enable this test.</ID>
+    <ID>ForbiddenImport/engine:MeshEngine.kt:import kotlinx.coroutines.sync.Mutex</ID>
+    <ID>InvalidPackageDeclaration:BatteryStatusTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:ChannelHelpersTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:ChannelUrlsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:CongestionEmissionTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:CongestionTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:ConnectionStateTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:FirmwareTimeTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:HandshakeAwaitTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:IdToStringTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:LatLngTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:MessageHelpersTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:MqttEventsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:NeighborInfoTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:NodeChangePresenceTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:NodeIdsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:NodeInfosTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:PayloadAccessorsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:PortPayloadAccessorsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:PresenceTimerTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:ProtoBytesAndDecodeTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:RadioMetricsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:RetryPolicyTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:RouteDiscoveryResultTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:RoutingErrorsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:SendDslTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:SharedContactUrlTest.kt:package org.meshtastic.sdk</ID>
+    <ID>InvalidPackageDeclaration:TelemetryReadingsTest.kt:package org.meshtastic.sdk</ID>
+    <ID>LargeClass:AdminApiImplComprehensiveTest.kt:AdminApiImplComprehensiveTest</ID>
+    <ID>LargeClass:ConfigBuildersTest.kt:ConfigBuildersTest</ID>
+    <ID>LargeClass:FileTransferApiTest.kt:FileTransferApiTest</ID>
+    <ID>LargeClass:HandshakeAndReconnectTest.kt:HandshakeAndReconnectTest</ID>
+    <ID>LargeClass:MeshEngine.kt:MeshEngine</ID>
+    <ID>LargeClass:MeshEngineEdgeCasesTest.kt:MeshEngineEdgeCasesTest</ID>
+    <ID>LargeClass:P2AdminRpcTest.kt:P2AdminRpcTest</ID>
+    <ID>LargeClass:StoreForwardProtocolTest.kt:StoreForwardProtocolTest</ID>
+    <ID>LargeClass:XModemMachineTest.kt:XModemMachineTest</ID>
+    <ID>LongMethod:ConfigBuildersTest.kt:ConfigBuildersTest$@Test fun configBuildersAllowOutOfRangeScalarValuesWithoutCrashing</ID>
+    <ID>LongMethod:ConfigBuildersTest.kt:ConfigBuildersTest$@Test fun moduleConfigBuildersWrapExpectedSections</ID>
+    <ID>LongMethod:MeshEngine.kt:MeshEngine$private fun handleAuxiliaryFromRadioVariant: Boolean</ID>
+    <ID>LongMethod:MeshEngine.kt:MeshEngine$private fun handleFrameRx</ID>
+    <ID>LongMethod:MeshEngine.kt:MeshEngine$private fun processStage2Envelope</ID>
+    <ID>LongMethod:MeshEngine.kt:MeshEngine$private suspend fun cleanup</ID>
+    <ID>LongMethod:MeshEngine.kt:MeshEngine$suspend fun connect</ID>
+    <ID>LongMethod:P2AdminRpcTest.kt:P2AdminRpcTest$@Test fun batchSupportsGettersAndSettersAndReturnsBlockValue</ID>
+    <ID>LoopWithTooManyJumpStatements:MeshEngine.kt:MeshEngine$for</ID>
+    <ID>MatchingDeclarationName:LoRaRegions.kt:LoRaRegionInfo</ID>
+    <ID>MatchingDeclarationName:TelemetryReadings.kt:TelemetryReading</ID>
+    <ID>MaxLineLength:HandshakeFsmTest.kt:HandshakeFsmTest$"Expected disconnect() to send at least one additional ToRadio (handshake=$handshakeFrames, total=${all.size})"</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ANZ_433, 433.05f, 434.79f, 100f, 14, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.BR_902, 902.0f, 907.5f, 100f, 30, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.EU_433, 433.0f, 434.0f, 10f, 10, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.EU_866, 865.6f, 867.6f, 2.5f, 27, false, false, 0.4f, 0.0375f, false, false, ModemPreset.LITE_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.EU_868, 869.4f, 869.65f, 10f, 27, false, false, 0f, 0f, false, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.EU_N_868, 869.4f, 869.65f, 10f, 27, false, false, 0f, 0.0104f, true, false, ModemPreset.NARROW_SLOW, 1)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU1_2M, 144.0f, 146.0f, 100f, 30, false, false, 0f, 0.0022f, false, true, ModemPreset.TINY_FAST, 26)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU1_70CM, 430.0f, 440.0f, 100f, 30, false, false, 0f, 0.01875f, false, true, ModemPreset.NARROW_SLOW, 37)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU2_125CM, 220.0f, 225.0f, 100f, 30, false, false, 0f, 0.01875f, false, true, ModemPreset.NARROW_SLOW, 37)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU2_2M, 144.0f, 148.0f, 100f, 30, false, false, 0f, 0.0022f, false, true, ModemPreset.TINY_FAST, 51)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU2_70CM, 420.0f, 450.0f, 100f, 30, false, false, 0f, 0.01875f, false, true, ModemPreset.NARROW_SLOW, 137)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU3_2M, 144.0f, 148.0f, 100f, 30, false, false, 0f, 0.0022f, false, true, ModemPreset.TINY_FAST, 33)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.ITU3_70CM, 430.0f, 450.0f, 100f, 30, false, false, 0f, 0.01875f, false, true, ModemPreset.NARROW_SLOW, 37)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.KZ_433, 433.075f, 434.775f, 100f, 10, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.KZ_863, 863.0f, 868.0f, 100f, 30, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.LORA_24, 2400.0f, 2483.5f, 100f, 10, false, true, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.MY_433, 433.0f, 435.0f, 100f, 20, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.MY_919, 919.0f, 924.0f, 100f, 27, true, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.NP_865, 865.0f, 868.0f, 100f, 30, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.NZ_865, 864.0f, 868.0f, 100f, 36, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.PH_433, 433.0f, 434.7f, 100f, 10, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.PH_868, 868.0f, 869.4f, 100f, 14, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.PH_915, 915.0f, 918.0f, 100f, 24, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.SG_923, 917.0f, 925.0f, 100f, 20, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.UA_433, 433.0f, 434.7f, 10f, 10, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:LoRaFrequencyTest.kt:FirmwareRow(RegionCode.UNSET, 902.0f, 928.0f, 100f, 30, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0)</ID>
+    <ID>MaxLineLength:SendDsl.kt:SendBuilder$"send { ... } requires exactly one of text(), data(), position(), or proto(); $payloadCallSites were called."</ID>
+    <ID>NestedBlockDepth:MeshEngine.kt:MeshEngine$private suspend fun cleanup</ID>
+    <ID>ReturnCount:DisplayReassembly.kt:DisplayFrameReassembler$fun accept: Outcome</ID>
+    <ID>ReturnCount:FileTransferApiTest.kt:FirmwareXModem$fun handle: XModem?</ID>
+    <ID>ReturnCount:MeshEngine.kt:MeshEngine$private fun handleFrameRx</ID>
+    <ID>SwallowedException:WireCodec.kt:WireCodec$e: Exception</ID>
+    <ID>SwallowedException:WireCodec.kt:WireCodec.FrameDecoder$e: MeshtasticException</ID>
+    <ID>ThrowsCount:MeshEngine.kt:MeshEngine$private suspend fun handleConnect</ID>
+    <ID>ThrowsCount:MeshEngine.kt:MeshEngine$suspend fun connect</ID>
+    <ID>TooManyFunctions:AdminApi.kt:AdminApi</ID>
+    <ID>TooManyFunctions:AdminApiImpl.kt:AdminApiImpl : AdminApi</ID>
+    <ID>TooManyFunctions:ConfigBuilders.kt:org.meshtastic.sdk.ConfigBuilders.kt</ID>
+    <ID>TooManyFunctions:MeshEngine.kt:MeshEngine</ID>
+    <ID>TooManyFunctions:PayloadAccessors.kt:org.meshtastic.sdk.PayloadAccessors.kt</ID>
+    <ID>TooManyFunctions:PortPayloadAccessors.kt:org.meshtastic.sdk.PortPayloadAccessors.kt</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LoopWithTooManyJumpStatements:StorageIndex.kt:for</ID>
+    <ID>MaxLineLength:BrowserRoundTripTest.kt:BrowserRoundTripTest.Companion$"psk_index INTEGER, uplink INTEGER NOT NULL DEFAULT 0, downlink INTEGER NOT NULL DEFAULT 0, settings_raw BLOB)"</ID>
+    <ID>MaxLineLength:StorageDriverTest.kt:StorageDriverTest.Companion$"psk_index INTEGER, uplink INTEGER NOT NULL DEFAULT 0, downlink INTEGER NOT NULL DEFAULT 0, settings_raw BLOB)"</ID>
+  </CurrentIssues>
+</SmellBaseline>
