@@ -75,10 +75,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Dispatchers.IO.limitedParallelism(4)`, which compiles to a `$default` call 1.8.x lacks, and
   no longer depends on `sqldelight:coroutines-extensions`, which it never used and which pulled
   coroutines 1.11 into the storage POM.
-- `AdminApi.lockdown` and `MeshEvent.LockdownStatusChanged` document the lockdown surface that
-  protobufs 2.8.1 carries: `LockdownAuth.disable` turns the feature off on a provisioned device,
-  `LockdownAuth.max_session_seconds` bounds the issued session token, and
-  `LockdownStatus.State.DISABLED` reports the feature off.
 
 ### Fixed
 
