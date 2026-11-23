@@ -414,9 +414,10 @@ internal class MeshEngine(
     private var stage2ProgressCounter: Long = 0L
     private var stage2WatchdogJob: Job? = null
 
-    // Stage 1 inactivity and total timers.
+    // Stage 1 inactivity and total timers, and the wait for a dump after a boot-time `rebooted`.
     private var stage1WatchdogJob: Job? = null
     private var stage1CapJob: Job? = null
+    private var stage1RebootGraceJob: Job? = null
 
     /** The device's channels in storage when [connect] started, for a handshake that sends none. */
     private var storedChannels: List<org.meshtastic.proto.Channel> = emptyList()
@@ -951,6 +952,8 @@ internal class MeshEngine(
 
             is EngineMessage.SessionSeedTimeout -> handleSessionSeedTimeout(msg)
 
+            is EngineMessage.Stage1RebootGrace -> handleStage1RebootGrace(msg)
+
             is EngineMessage.HandshakeStage1SettleComplete -> if (msg.attempt ==
                 handshakeAttempt
             ) {
@@ -1267,6 +1270,8 @@ internal class MeshEngine(
         stage1WatchdogJob = null
         stage1CapJob?.cancel()
         stage1CapJob = null
+        stage1RebootGraceJob?.cancel()
+        stage1RebootGraceJob = null
     }
 
     private fun acceptsFramesFrom(generation: Long): Boolean =
@@ -1426,14 +1431,18 @@ internal class MeshEngine(
         // Firmware 2.7.4 and later answer a heartbeat with a QueueStatus for packet id 0 (PhoneAPI::getFromRadio).
         if (fromRadio.queueStatus?.mesh_packet_id == 0) heartbeatAnswered = true
 
-        // Firmware answers a 69420 want_config with my_info first (PhoneAPI handleStartConfig). A reboot
-        // or completion seen before it in Stage 1 was queued before the request and would end the new
-        // handshake, so it is dropped.
+        // Firmware answers a 69420 want_config with my_info first (PhoneAPI handleStartConfig). A completion
+        // seen before it in Stage 1 was queued before the request and would end the new handshake, so it is
+        // dropped. Firmware before 2.8 writes `rebooted` at boot before it reads input (SerialConsole), so the
+        // request went to the previous boot: the attempt ends unless my_info follows within the grace.
         if (handshakeStage == HandshakeStage.Stage1Draining && !stage1DumpStarted) {
             if (fromRadio.my_info != null) {
                 stage1DumpStarted = true
-            } else if (fromRadio.rebooted == true || fromRadio.config_complete_id != null) {
-                logger.debug(TAG) { "Dropping a reboot or completion from before the Stage 1 dump" }
+            } else if (fromRadio.rebooted == true) {
+                armStage1RebootGrace()
+                return
+            } else if (fromRadio.config_complete_id != null) {
+                logger.debug(TAG) { "Dropping a completion from before the Stage 1 dump" }
                 return
             }
         }
@@ -1450,20 +1459,7 @@ internal class MeshEngine(
         //   4. Cancel the supervisor → cleanup() runs, polite-goodbye is sent, transport
         //      disconnects, and `ConnectionState.Disconnected` is emitted.
         if (fromRadio.rebooted == true) {
-            logger.warn(TAG) { "Device rebooted — forcing disconnect" }
-            emitEvent(MeshEvent.DeviceRebooted())
-            handshakeStage = HandshakeStage.Idle
-            lockdownLink.value = null
-            readySendGeneration.value = null
-            stage2WatchdogJob?.cancel()
-            stage2WatchdogJob = null
-            val deferred = pendingConnectDeferred
-            if (deferred != null) {
-                pendingConnectDeferred = null
-                failPreSendQueueWith(SendFailure.HandshakeFailed)
-                deferred.completeExceptionally(MeshtasticException.Transport("Device rebooted mid-handshake"))
-            }
-            supervisorJobRef.value?.cancel()
+            handleDeviceRebooted()
             return
         }
 
@@ -1516,6 +1512,39 @@ internal class MeshEngine(
                 routeNormalEnvelope(fromRadio)
             }
         }
+    }
+
+    private fun handleDeviceRebooted() {
+        logger.warn(TAG) { "Device rebooted — forcing disconnect" }
+        emitEvent(MeshEvent.DeviceRebooted())
+        handshakeStage = HandshakeStage.Idle
+        lockdownLink.value = null
+        readySendGeneration.value = null
+        stage2WatchdogJob?.cancel()
+        stage2WatchdogJob = null
+        val deferred = pendingConnectDeferred
+        if (deferred != null) {
+            pendingConnectDeferred = null
+            failPreSendQueueWith(SendFailure.HandshakeFailed)
+            deferred.completeExceptionally(MeshtasticException.Transport("Device rebooted mid-handshake"))
+        }
+        supervisorJobRef.value?.cancel()
+    }
+
+    private fun armStage1RebootGrace() {
+        if (stage1RebootGraceJob?.isActive == true) return
+        val attempt = handshakeAttempt
+        stage1RebootGraceJob = engineScope?.launch {
+            delay(STAGE1_REBOOT_GRACE_MS)
+            inbox.trySend(EngineMessage.Stage1RebootGrace(attempt))
+        }
+    }
+
+    private fun handleStage1RebootGrace(msg: EngineMessage.Stage1RebootGrace) {
+        if (msg.attempt != handshakeAttempt || handshakeStage != HandshakeStage.Stage1Draining || stage1DumpStarted) {
+            return
+        }
+        handleDeviceRebooted()
     }
 
     private fun handleHandshakeLockdown(status: LockdownStatus) {
@@ -4156,6 +4185,9 @@ internal class MeshEngine(
 
         // Android stops re-arming a stage guard after 10 x its budget (STAGE_GUARD_TOTAL_CAP_FACTOR).
         const val STAGE1_HARD_CAP_MS = STAGE1_TIMEOUT_MS * 10
+
+        // A boot-time `rebooted` ends Stage 1 unless the dump starts this soon after it.
+        const val STAGE1_REBOOT_GRACE_MS = 2_000L
 
         // Past this a Ready session warns that it has no local passkey; it never fails the session.
         const val SEED_TIMEOUT_MS = 10_000L

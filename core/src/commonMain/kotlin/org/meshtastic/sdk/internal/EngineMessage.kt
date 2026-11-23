@@ -178,6 +178,9 @@ internal sealed interface EngineMessage {
      */
     data class HandshakeTimeout(val stage: HandshakeStage, val attempt: Long) : EngineMessage
 
+    /** The grace after a pre-dump `rebooted` in Stage 1 attempt [attempt] has elapsed. */
+    data class Stage1RebootGrace(val attempt: Long) : EngineMessage
+
     /** No reply to the session passkey seed sent with packet id [requestId]. */
     data class SessionSeedTimeout(val requestId: Int) : EngineMessage
 

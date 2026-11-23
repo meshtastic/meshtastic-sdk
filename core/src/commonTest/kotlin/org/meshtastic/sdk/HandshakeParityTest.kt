@@ -353,6 +353,35 @@ class HandshakeParityTest {
         assertEquals("Stage 1", timeout.stage)
     }
 
+    /**
+     * Firmware before 2.8 writes `rebooted` from the `SerialConsole` constructor at boot, before the
+     * PhoneAPI reads input (`SerialConsole.cpp`, `StreamAPI::emitRebooted`), so a `want_config_id`
+     * answered only by it went to the previous boot and no dump follows.
+     */
+    @Test
+    fun aRebootBeforeTheStage1DumpEndsTheAttemptWithoutWaitingOutStage1() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:boot-reboot"))
+        val client = buildClient(transport)
+        val events = mutableListOf<MeshEvent>()
+        backgroundScope.launch { client.events.collect { events += it } }
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.inject { it.rebooted = true }
+        runCurrent()
+
+        advanceTimeBy(STAGE1_REBOOT_GRACE_MS - 1)
+        runCurrent()
+        assertFalse(connectJob.isCompleted, "a my_info inside the grace still continues the dump")
+
+        advanceTimeBy(2)
+        runCurrent()
+        assertTrue(connectJob.isCompleted, "the attempt must end at the reboot grace, not at STAGE1_TIMEOUT_MS")
+        val failure = assertIs<MeshtasticException.Transport>(connectJob.await().exceptionOrNull())
+        assertTrue(failure.message!!.contains("rebooted"))
+        assertTrue(events.any { it is MeshEvent.DeviceRebooted })
+        assertEquals(1, transport.stage1Requests(), "no in-session want_config_id resend")
+    }
+
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->
         wb.from = from
         wb.to = BROADCAST
@@ -427,6 +456,7 @@ class HandshakeParityTest {
         // Android's stage-guard ceiling: 10 x the budget (MeshConnectionManagerImpl STAGE_GUARD_TOTAL_CAP_FACTOR).
         const val STAGE1_HARD_CAP_MS = 200_000L
         const val INTER_STAGE_SETTLE_MS = 100L
+        const val STAGE1_REBOOT_GRACE_MS = 2_000L
         const val SEED_TIMEOUT_MS = 10_000L
         const val SEED_WARNING = "session passkey seed timed out"
         const val LIVENESS_TIMEOUT_MS = 60_000L
