@@ -79,6 +79,10 @@ class RadioConnectionService : Service() {
 - [Android Foreground Services (system documentation)](https://developer.android.com/develop/background-work/services/foreground-services)
 - [Integration guide: Bluetooth setup](../integration-guide.md#bluetooth)
 
+## BLE scan before connect
+
+Android's direct connect to a `BluetoothDevice` made from a bare MAC fails while the stack's device cache is empty, as it is after Bluetooth restarts, until an `autoConnect` attempt finds the radio. So `BleTransport(address)` scans with a native address filter in every `connect()` and connects from the advertisement. A bonded radio gets one 5 s scan, which keeps a reconnect to one scanner registration under Android's scan-frequency throttle, then falls back to its bonded handle; an unbonded radio gets three 5 s scans 1 s apart, then the connect fails. The rule matches Meshtastic-Android's `BleDeviceLocator`. A transport built from a scanned `DiscoveredRadio` connects from that advertisement and does not scan again.
+
 ## BLE link recovery (opt-in)
 
 Optional and off by default. `BleResilience` carries three Android-only mechanisms for nodes that fail to reconnect on a bare `BluetoothGatt` connect. The SDK still never prompts or manages lifecycle; the host decides whether to enable them.

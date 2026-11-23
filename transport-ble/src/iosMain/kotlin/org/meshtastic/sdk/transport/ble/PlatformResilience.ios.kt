@@ -7,8 +7,13 @@
  */
 package org.meshtastic.sdk.transport.ble
 
+import com.juul.kable.Peripheral
 import com.juul.kable.PeripheralBuilder
 
-internal actual fun applyPlatformResilience(transport: BleTransport, resilience: BleResilience) = Unit
+internal actual fun applyPlatformResilience(
+    transport: BleTransport,
+    peripheral: Peripheral,
+    resilience: BleResilience,
+) = Unit
 
 internal actual fun PeripheralBuilder.installAutoConnect(switch: AutoConnectSwitch) = Unit

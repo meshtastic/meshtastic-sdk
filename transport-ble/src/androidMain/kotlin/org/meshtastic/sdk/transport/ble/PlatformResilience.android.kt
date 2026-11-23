@@ -21,12 +21,16 @@ internal actual fun PeripheralBuilder.installAutoConnect(switch: AutoConnectSwit
 
 // bluetoothDevice is Kable's only Context-free route to the BluetoothDevice; Kable is pinned exactly.
 @OptIn(InternalKableApi::class)
-internal actual fun applyPlatformResilience(transport: BleTransport, resilience: BleResilience) {
-    val android = transport.peripheral as? AndroidPeripheral ?: return
+internal actual fun applyPlatformResilience(
+    transport: BleTransport,
+    peripheral: Peripheral,
+    resilience: BleResilience,
+) {
+    val android = peripheral as? AndroidPeripheral ?: return
     if (resilience.bondFirst) transport.bondControl = AndroidBondControl(android.bluetoothDevice)
     if (resilience.refreshStaleGattCache) {
-        transport.gattCacheRefresher =
-            GattCacheRefresher { android.refreshGattCacheOrFalse() }
+        // Reads the current peripheral: a scan-first transport replaces it on every connect.
+        transport.gattCacheRefresher = GattCacheRefresher { transport.peripheral.refreshGattCacheOrFalse() }
     }
 }
 

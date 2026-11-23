@@ -85,11 +85,11 @@ val transport = BleTransport(radio)
 
 `BleScanner.scan()` filters on the Meshtastic service UUID; `DiscoveredRadio` carries `name`, `rssi`, and `address`. To pick a radio from a user-typed `ble:NEEDLE`, filter with `bleAdvertisementMatches`.
 
-On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` connects by MAC address without a fresh scan, and `bondedBleDevices(context)` lists the host's bonded devices for a picker. `BleResilience(bondFirst = true, autoConnectFallback = true, refreshStaleGattCache = true)` turns on link recovery for difficult radios. `BleTransport.deviceLogs()` streams the radio's log ([observability.md](./observability.md#device-logs)).
+On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` finds the radio by a scan filtered on that address in each `connect()` and connects from its advertisement: a bonded radio gets one 5-second scan and then its bonded handle, an unbonded one three 5-second scans a second apart, then `connect()` fails with `MeshtasticException.Transport`. The scan needs `BLUETOOTH_SCAN`. `bondedBleDevices(context)` lists the host's bonded devices for a picker. `BleResilience(bondFirst = true, autoConnectFallback = true, refreshStaleGattCache = true)` turns on link recovery for difficult radios. `BleTransport.deviceLogs()` streams the radio's log ([observability.md](./observability.md#device-logs)).
 
 On the JVM, `BleTransport(address = ...)` takes the `DiscoveredRadio.address` saved from a scan on the same host, or a MAC on Linux and Windows. Kable's identifier is BlueZ's device path wrapped in JSON on Linux (`{"object_path":"/org/bluez/hci0/dev_C2_5D_2D_C4_E5_6E"}`), the MAC on Windows and a CoreBluetooth UUID on macOS, which exposes no MAC. A valid identifier for the host is used directly; anything else makes `connect()` scan for up to 15 seconds and connect to the first radio whose identifier matches, exactly or by MAC, or fail with `MeshtasticException.Transport`.
 
-For a firmware update, pass `refreshGattCacheOnConnect` to the Android address factory. The callback can consume a pending refresh for that radio after its next successful link, before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic.
+For a firmware update, pass `refreshGattCacheOnConnect` to the Android address factory, or to `BleTransport(radio, resilience, refreshGattCacheOnConnect, builderAction)` for a radio you scanned yourself. The callback can consume a pending refresh for that radio after its next successful link, before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic.
 
 Platform requirements:
 

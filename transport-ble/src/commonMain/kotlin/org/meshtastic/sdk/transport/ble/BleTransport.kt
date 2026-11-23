@@ -77,6 +77,7 @@ public class BleTransport internal constructor(
     address: String,
     parentContext: CoroutineContext,
     private val resolvePeripheral: (suspend () -> Peripheral)?,
+    private val resolveOnEveryConnect: Boolean = false,
 ) : RadioTransport {
 
     /**
@@ -287,20 +288,28 @@ public class BleTransport internal constructor(
     }
 
     /**
-     * Resolves a deferred peripheral once; a later connect reuses it. Fails if [disconnect] ran
-     * since this connect began as [generation], so a late resolution never opens a link.
+     * Resolves a deferred peripheral, once or (with [resolveOnEveryConnect]) on every connect,
+     * replacing and closing the previous one. Fails if [disconnect] ran since this connect began
+     * as [generation], so a late resolution never opens a link.
      */
     private suspend fun ensurePeripheral(generation: Int) {
-        if (resolvedPeripheral.value == null) resolvePeripheralOnce()
+        val resolve = resolvePeripheral
+        if (resolvedPeripheral.value == null || (resolve != null && resolveOnEveryConnect)) {
+            resolveAndStore(checkNotNull(resolve) { "BleTransport has neither a peripheral nor a resolver" })
+        }
         if (connectGeneration.value != generation) {
             throw CancellationException("BleTransport disconnected during connect")
         }
     }
 
-    private suspend fun resolvePeripheralOnce() {
-        val resolve = checkNotNull(resolvePeripheral) { "BleTransport has neither a peripheral nor a resolver" }
+    private suspend fun resolveAndStore(resolve: suspend () -> Peripheral) {
         val resolved = resolve()
-        resolvedPeripheral.value = resolved
+        val previous = resolvedPeripheral.getAndSet(resolved)
+        if (previous != null && previous !== resolved) {
+            // A previous cycle's children still hold the old peripheral; stop them before closing it.
+            cancelJobs()
+            previous.close()
+        }
         if (shuttingDown.value) {
             // shutdown() may have run before the store, when it had nothing to close.
             if (resolvedPeripheral.compareAndSet(resolved, null)) resolved.close()
@@ -644,7 +653,13 @@ public class BleTransport internal constructor(
         internal const val DIRECT_CONNECT_TIMEOUT_MS: Long = 15_000L
         internal const val AUTO_CONNECT_TIMEOUT_MS: Long = 60_000L
         private const val AUTO_CONNECT_SETTLE_MS: Long = 1_000L
-        private const val GATT_REFRESH_SETTLE_MS: Long = 1_000L
+
+        /**
+         * Pause between the refresh disconnect and the rediscovery connect, for the firmware to
+         * release its GATT session. Meshtastic-Android's `BleReconnectPolicy.DEFAULT_SETTLE_DELAY`
+         * (3 s) records 1.5 s failing 3-4 of 5 handshakes mid-drain, and its refresh reconnect reuses it.
+         */
+        private const val GATT_REFRESH_SETTLE_MS: Long = 3_000L
 
         /** Total connect attempts (1 initial + N-1 retries) for transient GATT errors. */
         internal const val GATT_RETRY_ATTEMPTS: Int = 3

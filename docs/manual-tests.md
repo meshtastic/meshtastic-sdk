@@ -435,15 +435,15 @@ Each test gives the transport, steps, expected result, how to verify it, and any
   5. On Android, run `./gradlew :transport-ble:connectedAndroidTest` (`BleScannerDeviceTest`).
 - **Expected:** the node is emitted repeatedly with a current RSSI (on BlueZ, a device known at scan start can first appear with a `null` RSSI); `Connected` within 30 s; scanning stops on cancel; with Bluetooth off or a missing permission the flow fails with `MeshtasticException.Transport`.
 
-#### I4: `bondedBleDevices()` lists a paired node and connects without a scan
+#### I4: `bondedBleDevices()` lists a paired node and connects to it
 - **Transport:** BLE (Android)
-- **Pre-req:** a node already bonded in Android's Bluetooth settings; `BLUETOOTH_CONNECT` granted.
+- **Pre-req:** a node already bonded in Android's Bluetooth settings; `BLUETOOTH_CONNECT` granted, plus `BLUETOOTH_SCAN` on Android 12+ or location on earlier versions (without it the address scan fails and the connect falls back to the bonded handle, so step 2 would not exercise the scan).
 - **Steps:**
   1. Call `bondedBleDevices(context)` and confirm the node is listed with its name and MAC.
   2. Build `BleTransport(device)` from it and call `client.connect()` with the node in range.
   3. Power the node off and repeat step 2.
   4. Revoke `BLUETOOTH_CONNECT` and repeat step 1; then unbond the node in settings and repeat step 1.
-- **Expected:** the bonded node is listed with no scan running; `Connected` within 30 s when in range; with the node off, the connect fails with `MeshtasticException.Transport` while the list still shows it; a missing permission throws `MeshtasticException.Transport`; an unbonded node is no longer listed.
+- **Expected:** the bonded node is listed with no scan running; the connect runs one 5 s address scan, then `Connected` within 30 s when in range; with the node off, the connect fails with `MeshtasticException.Transport` while the list still shows it; a missing permission throws `MeshtasticException.Transport`; an unbonded node is no longer listed.
 
 #### I5: `BleResilience` recovers a node a plain connect cannot
 - **Transport:** BLE (Android; iOS and JVM must behave exactly as without it)
