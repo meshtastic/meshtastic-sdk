@@ -133,13 +133,22 @@ internal class SessionReceive(
         overflow(RadioSessionOverflowException(sessionId, firstMissedSequence = null))
     }
 
-    private fun overflow(error: RadioSessionOverflowException) {
+    // [pending] is an Ended that could not be queued; it opens the replacement stream instead.
+    private fun overflow(error: RadioSessionOverflowException, pending: RadioSessionEvent.Ended? = null) {
         if (lost) return
-        channel.close(error)
-        if (!restartOnOverflow || collectors.value == 0) return
+        if (!restartOnOverflow || collectors.value == 0) {
+            channel.close(error)
+            return
+        }
         lost = true
         delivering = false
-        stream.value = Stream(Channel(capacity))
+        // The replacement is published before the close, so a collector that sees the error and collects
+        // again, or stops and drops the count, finds it.
+        val failed = channel
+        val replacement = Stream(Channel(capacity))
+        pending?.let { replacement.channel.trySend(it) }
+        stream.value = replacement
+        failed.close(error)
         onOverflow(sessionId)
     }
 
@@ -156,7 +165,7 @@ internal class SessionReceive(
                 is RadioSessionEvent.NodeDbRefreshed -> event.sequence
                 is RadioSessionEvent.Ready, is RadioSessionEvent.Ended -> null
             }
-            overflow(RadioSessionOverflowException(sessionId, missed))
+            overflow(RadioSessionOverflowException(sessionId, missed), event as? RadioSessionEvent.Ended)
         }
         return result.isSuccess
     }
