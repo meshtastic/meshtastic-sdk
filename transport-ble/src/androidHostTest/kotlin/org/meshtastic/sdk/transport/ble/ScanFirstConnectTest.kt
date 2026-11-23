@@ -113,10 +113,14 @@ class ScanFirstConnectTest {
     }
 
     @Test
-    fun refreshCallbackRefreshesAScanFirstLinkAndSettlesThreeSeconds() = runTest {
+    fun refreshCallbackRefreshesAScanFirstLinkAndWaitsThreeSecondsBeforeReconnecting() = runTest {
         var scans = 0
-        var refreshes = 0
-        val peripheral = FakeBlePeripheral(servicesAfterConnect = { meshtasticServices() })
+        var refreshedAt = -1L
+        val connectedAt = mutableListOf<Long>()
+        val peripheral = FakeBlePeripheral(
+            connectBehavior = { connectedAt += testScheduler.currentTime },
+            servicesAfterConnect = { meshtasticServices() },
+        )
         val transport = createScanFirstBleTransport(
             address = ADDRESS,
             resilience = BleResilience.None,
@@ -127,18 +131,19 @@ class ScanFirstConnectTest {
             resilience = BleResilience.None,
             refreshGattCacheOnConnect = { true },
             refresher = GattCacheRefresher {
-                refreshes++
+                refreshedAt = testScheduler.currentTime
                 true
             },
         )
 
         transport.connect()
 
-        assertEquals(1, refreshes)
         assertEquals(listOf("connect#1", "disconnect", "connect#2"), peripheral.events)
         assertEquals(1, scans)
+        assertEquals(2, connectedAt.size)
         // Meshtastic-Android settles 3 s before the rediscovery connect (BleReconnectPolicy.DEFAULT_SETTLE_DELAY).
-        assertTrue(testScheduler.currentTime >= 3_000L, "settled ${testScheduler.currentTime} ms")
+        val settled = connectedAt[1] - refreshedAt
+        assertTrue(refreshedAt >= 0 && settled >= 3_000L, "rediscovery connect started $settled ms after the refresh")
         transport.shutdown()
     }
 
