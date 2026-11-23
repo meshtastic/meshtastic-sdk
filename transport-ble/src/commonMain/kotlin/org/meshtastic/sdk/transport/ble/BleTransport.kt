@@ -704,7 +704,7 @@ public class BleTransport internal constructor(
      * because the engine reconnects only on an error. An error already published stays, so a
      * following Kable state cannot replace it before the engine reads it.
      */
-    private fun linkLost(current: TransportState, status: State.Disconnected.Status?): TransportState  {
+    private fun linkLost(current: TransportState, status: State.Disconnected.Status?): TransportState {
         if (current is TransportState.Error) return current
         val linkUp = current is TransportState.Connected ||
             current is TransportState.Bonding ||

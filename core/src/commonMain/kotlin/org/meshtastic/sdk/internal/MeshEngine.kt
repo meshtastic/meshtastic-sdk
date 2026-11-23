@@ -3617,7 +3617,8 @@ internal class MeshEngine(
      */
     private fun inSleepWindow(): Boolean {
         val sleep = sleeping ?: return false
-        if (clock.now() < sleep.since + sleep.expectedWakeSeconds.seconds + autoReconnectConfig.maxBackoff * 2) return true
+        val windowEnd = sleep.since + sleep.expectedWakeSeconds.seconds + autoReconnectConfig.maxBackoff * 2
+        if (clock.now() < windowEnd) return true
         sleeping = null
         return false
     }
