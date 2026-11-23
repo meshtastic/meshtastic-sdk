@@ -43,6 +43,10 @@ Disconnected → Connecting → Bonding → Connected
 
 After the link-layer connect, the transport reads the encrypted `fromradio` characteristic once. On Apple platforms, and on firmware that requires encryption, that read raises the OS pairing dialog. While it is outstanding the state is `Bonding`, so a UI can ask the reader to confirm pairing on the device. The engine's handshake clock starts only at `Connected`. The read times out after 120 seconds; the transport then moves to `Connected` anyway, so a stuck bond surfaces as a handshake failure rather than a silent stall. The Android 14 foreground-service requirement is in [`docs/integration-guide.md`](../docs/integration-guide.md#android-background-work), and the transport and engine threading contract in [ADR-012](../docs/decisions/012-transport-threading.md).
 
+## Link loss and connect limits
+
+When Kable reports `Disconnecting` or `Disconnected` for a link that is up, the transport publishes a recoverable `TransportState.Error` once per connect cycle, so the engine sees the drop without its heartbeat watchdog. Each connect attempt is bounded to 15 seconds and retried twice; the last failure surfaces as `MeshtasticException.Transport`. With `autoConnectFallback` on Android, the stalled direct attempt falls back to `autoConnect` instead.
+
 ## Key packages
 
 - `org.meshtastic.sdk.transport.ble`: `BleTransport(peripheral: Peripheral, address: String, parentContext = EmptyCoroutineContext)`. `address` is the storage identity (Android MAC address, iOS CoreBluetooth UUID).
