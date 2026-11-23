@@ -57,21 +57,40 @@ internal fun createBleTransport(
     transport.ownsPeripheral = true
     transport.autoConnectSwitch = switch
     applyPlatformTuning(transport)
-    applyPlatformResilience(transport, resilience)
+    applyPlatformResilience(transport, peripheral, resilience)
     return transport
 }
 
 /**
- * Like [createBleTransport] without resilience, but [resolvePeripheral] runs in the first
- * [BleTransport.connect] instead of here, for a peripheral that has to be found first.
+ * Like [createBleTransport], but [resolvePeripheral] runs in [BleTransport.connect] instead of
+ * here, for a peripheral that has to be found first: in the first connect only, or in every
+ * connect when [resolveOnEveryConnect] is set. [resilience] is wired onto each resolved peripheral.
  */
 internal fun createDeferredBleTransport(
     address: String,
     builderAction: PeripheralBuilder.() -> Unit,
+    resilience: BleResilience = BleResilience.None,
+    resolveOnEveryConnect: Boolean = false,
     resolvePeripheral: suspend (PeripheralBuilder.() -> Unit) -> Peripheral,
 ): BleTransport {
-    val transport = BleTransport(null, address, EmptyCoroutineContext) { resolvePeripheral(builderAction) }
+    val switch = if (resilience.autoConnectFallback) AutoConnectSwitch() else null
+    val configure: PeripheralBuilder.() -> Unit = {
+        // The caller's builderAction runs last so its own autoConnectIf wins.
+        switch?.let { installAutoConnect(it) }
+        builderAction()
+    }
+    lateinit var transport: BleTransport
+    transport = BleTransport(
+        peripheral = null,
+        address = address,
+        parentContext = EmptyCoroutineContext,
+        resolvePeripheral = {
+            resolvePeripheral(configure).also { applyPlatformResilience(transport, it, resilience) }
+        },
+        resolveOnEveryConnect = resolveOnEveryConnect,
+    )
     transport.ownsPeripheral = true
+    transport.autoConnectSwitch = switch
     applyPlatformTuning(transport)
     return transport
 }

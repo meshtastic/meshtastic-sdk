@@ -61,6 +61,7 @@ public final class org/meshtastic/sdk/transport/ble/BleTransport_androidKt {
 	public static final fun BleTransport (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static final fun BleTransport (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static final fun BleTransport (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
+	public static final fun BleTransport (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static synthetic fun BleTransport$default (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static synthetic fun BleTransport$default (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 }
