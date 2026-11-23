@@ -9,14 +9,14 @@ Every observable failure, mapped to the Kotlin type that carries it. Per [ADR-00
 | Programmer error: send before connect, payload over the limit, second `connect()` | `throw MeshtasticException` | Retrying without changing the input is futile. |
 | Transport failure at connect: Bluetooth GATT error, socket refused, USB unavailable, WebSocket refused | `throw MeshtasticException.Transport` from `connect()` | Connect callers expect a throw. |
 | Handshake failure: a stage times out, malformed envelope | `throw MeshtasticException` from `connect()` | Connect fails before the session exists. |
-| Session drop after `Connected`: transport closed, liveness watchdog, TCP read timeout | `MeshEvent.TransportError(error)`, then `ConnectionState.Reconnecting` when auto-reconnect is on, else `Disconnected` | The caller is past `connect()`; the state flow is the channel. |
+| Session drop after `Connected`: transport closed, liveness watchdog | `MeshEvent.TransportError(error)`, then `ConnectionState.Reconnecting` when auto-reconnect is on, else `Disconnected` | The caller is past `connect()`; the state flow is the channel. |
 | Mesh send outcome: NAK, no route, retransmits exhausted, duty cycle, rate limit, queue rejection, disconnect | `MessageHandle.state` reaches `Failed(SendFailure)` | Routine on a busy mesh. |
 | Admin, telemetry, routing, or store-and-forward call outcome | `AdminResult` | Routine; handlers want an exhaustive `when`. |
 | File transfer outcome | `FileTransferResult.Failure(FileTransferFailure)` | Routine. |
 | Slow collector on `packets` or `nodes` | `MeshEvent.PacketsDropped(flow, count)` | Loss is reported, not silent. |
 | Storage write failure mid-session | `MeshEvent.StorageDegraded(reason)`; writes stop for the session | A storage outage doesn't end a live session. |
 
-The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after 60 s (two heartbeat intervals) without a decoded `FromRadio` once the firmware has answered a heartbeat (2.7.4 and later, see [protocol.md](protocol.md#16-heartbeat--queue-status)), and from `TcpTransport`, which fails a read with `Transport("TCP read timeout after 65000ms")` so the window before the handshake completes is covered too.
+The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after 60 s (two heartbeat intervals) without a decoded `FromRadio` once the firmware has answered a heartbeat (2.7.4 and later, see [protocol.md](protocol.md#16-heartbeat--queue-status)), and from the transport when the link closes. Before `Connected` the handshake stage timers bound the wait. `TcpTransport` has no read timeout of its own: silence from firmware that never answers heartbeats is not a dead link, and SO_KEEPALIVE stays on.
 
 ## `MeshtasticException` hierarchy
 
