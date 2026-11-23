@@ -8,6 +8,7 @@
 package org.meshtastic.sdk.transport.ble
 
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
@@ -239,15 +240,22 @@ class BleResilienceTest {
             failing = false
         }
 
+        // The radio drops a link at once, and the engine disconnects only after its backoff.
+        suspend fun dropAfterBackoff() {
+            peripheral.dropLink()
+            transport.state.first { it is TransportState.Error }
+            advanceTimeBy(BleTransport.LINK_STABLE_MS + 3_000L)
+            transport.disconnect()
+        }
+
         failConnects(1)
         transport.connect()
         assertEquals(0, refreshes, "one failure is below the threshold of two")
-        transport.disconnect()
+        dropAfterBackoff()
 
-        // The link above dropped at once: the second failure in the streak.
         transport.connect()
-        assertEquals(1, refreshes)
-        transport.disconnect()
+        assertEquals(1, refreshes, "the dropped link was the second failure, however late the disconnect")
+        dropAfterBackoff()
         transport.connect()
         assertEquals(1, refreshes, "once per streak")
 

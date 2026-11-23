@@ -84,6 +84,11 @@ internal class FakeBlePeripheral(
         stateFlow.value = state
     }
 
+    /** The radio drops the link on its own, as going out of range does. */
+    fun dropLink() {
+        stateFlow.value = State.Disconnected()
+    }
+
     override suspend fun maximumWriteValueLengthForType(writeType: WriteType): Int = 512
 
     override suspend fun rssi(): Int = throw UnsupportedOperationException("not used by BleTransport")

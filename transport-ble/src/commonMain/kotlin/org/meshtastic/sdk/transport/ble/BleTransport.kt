@@ -200,7 +200,8 @@ public class BleTransport internal constructor(
         refreshRequested.value = true
     }
 
-    // A link that stayed up for LINK_STABLE_MS ends the failure streak and re-arms its refresh.
+    // A link that stayed up for LINK_STABLE_MS ends the failure streak and re-arms its refresh. Runs at the
+    // drop, or at connect()/disconnect() when no drop was seen; whichever runs first takes the mark.
     private fun endLink() {
         val since = linkUpSince.getAndSet(null) ?: return
         if (since.elapsedNow().inWholeMilliseconds >= LINK_STABLE_MS) {
@@ -420,6 +421,7 @@ public class BleTransport internal constructor(
     private fun publishScopeFailure(cause: Throwable) {
         if (shuttingDown.value) return
         if (!errorPublished.compareAndSet(expect = false, update = true)) return
+        endLink()
         _state.value = TransportState.Error(
             cause = MeshtasticException.Transport("BLE transport failure: ${cause.message}", cause),
             recoverable = true,
@@ -437,6 +439,7 @@ public class BleTransport internal constructor(
             current is TransportState.Bonding ||
             current is TransportState.Connecting
         ) {
+            endLink()
             val cause = lastDrainFailure.getAndSet(null)
             _state.value = TransportState.Error(
                 cause = MeshtasticException.Transport(
@@ -701,13 +704,15 @@ public class BleTransport internal constructor(
      * because the engine reconnects only on an error. An error already published stays, so a
      * following Kable state cannot replace it before the engine reads it.
      */
-    private fun linkLost(current: TransportState, status: State.Disconnected.Status?): TransportState {
+    private fun linkLost(current: TransportState, status: State.Disconnected.Status?): TransportState  {
         if (current is TransportState.Error) return current
         val linkUp = current is TransportState.Connected ||
             current is TransportState.Bonding ||
             (current is TransportState.Connecting && warmupComplete.value)
         if (!linkUp) return TransportState.Disconnected
         return if (errorPublished.compareAndSet(expect = false, update = true)) {
+            // The link's age is taken at the drop, not at the engine's later disconnect().
+            endLink()
             TransportState.Error(cause = buildDisconnectError(status), recoverable = true)
         } else {
             current
