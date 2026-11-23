@@ -42,6 +42,7 @@ kotlin {
             implementation(libs.ktorClientJs)
         }
         jvmTest.dependencies {
+            implementation(project(":testing"))
             implementation(libs.ktorServerCio)
             implementation(libs.ktorServerWebsockets)
         }

@@ -71,7 +71,8 @@ import io.ktor.websocket.Frame as WsFrame
  * may never arrive: after five sessions in a row that open and then end without a close frame
  * within 30 seconds, the end is reported with `recoverable = false` instead of fighting the other
  * client. After a 1013 the next [connect] waits until 30 seconds have passed since that session
- * ended. [disconnect] resets the drop count. On JVM, Android and iOS the SDK-created client times
+ * ended. [disconnect] resets the drop count unless the session had already ended with an error, as
+ * it has when the engine disconnects before reconnecting. On JVM, Android and iOS the SDK-created client times
  * out a connect after 30 seconds.
  *
  * **Identity:** `ws:<scheme>://<host lowercased>:<port><path>` with the default port made explicit
@@ -206,7 +207,8 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
         withContext(NonCancellable) {
             val detached = lock.withLock {
                 generation++
-                quickDrops = 0
+                // The engine disconnects an ended session before its next attempt; only ending a live one starts over.
+                if (_state.value !is TransportState.Error) quickDrops = 0
                 _state.value = TransportState.Disconnected
                 detachLocked()
             }

@@ -710,12 +710,27 @@ class WebSocketTransportTest {
     }
 
     @Test
-    fun hostDisconnectResetsTheDropCount() = run {
-        val r = rig("drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop")
+    fun hostDisconnectOfALiveSessionResetsTheDropCount() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop")
         repeat(4) { assertTrue(r.session().recoverable) }
+        r.transport.connect()
         r.transport.disconnect()
+        r.server.permits.release()
         repeat(4) { assertTrue(r.session().recoverable) }
         assertFalse(r.session().recoverable)
+        r.transport.disconnect()
+    }
+
+    @Test
+    fun disconnectAfterAnEndedSessionKeepsTheDropCountAsTheEngineReconnects() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop")
+        repeat(4) {
+            assertTrue(r.session().recoverable)
+            r.transport.disconnect()
+        }
+        val fifth = r.session()
+        assertFalse(fifth.recoverable)
+        assertTrue(fifth.typed.slotContested)
         r.transport.disconnect()
     }
 
