@@ -49,7 +49,7 @@ stateDiagram-v2
 
 ### Stale frames (per protocol.md §6)
 
-While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during either settle window, before or after the inter-stage heartbeat, are buffered (up to 64) and replayed when that window ends, and mesh packets that arrive during the handshake are held (up to 64) until `Ready`. `queue_status` frames are discarded and `log_record` frames go straight to `RadioClient.deviceLogs`; neither is buffered.
+While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during either settle window, before or after the inter-stage heartbeat, are buffered (up to 128) and replayed when that window ends, and mesh packets that arrive during the handshake are held (up to 128) until `Ready`. Both hold a full firmware to-phone queue: meshtasticd keeps 100 packets by default (`PortduinoGlue.h`), radios 8 to 32 (`mesh-pb-constants.h`). `queue_status` frames are discarded and `log_record` frames go straight to `RadioClient.deviceLogs`; neither is buffered.
 
 ### Heartbeat in handshake
 

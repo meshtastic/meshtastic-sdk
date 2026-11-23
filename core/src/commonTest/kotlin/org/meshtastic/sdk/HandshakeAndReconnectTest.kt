@@ -1275,12 +1275,17 @@ class HandshakeAndReconnectTest {
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
 
         client.events.test {
-            // Two past the 64-packet cap: the two oldest are dropped, each observably.
-            repeat(66) { index -> transport.injectAlivePacket(packetId = 1000 + index) }
+            // Two past the cap: the two oldest are dropped, each observably. The fake's inbound buffer holds 128.
+            repeat(HANDSHAKE_PACKET_CAP + 2) { index ->
+                transport.injectAlivePacket(packetId = 1000 + index)
+                if (index % 64 == 63) drainCurrent()
+            }
             drainCurrent()
-            repeat(2) {
-                val dropped = assertIs<MeshEvent.PacketsDropped>(awaitItem())
+            var drops = 0
+            while (drops < 2) {
+                val dropped = awaitItem() as? MeshEvent.PacketsDropped ?: continue
                 assertEquals(DroppedFlow.Packets, dropped.flow)
+                drops++
             }
             cancelAndIgnoreRemainingEvents()
         }
@@ -1771,7 +1776,7 @@ class HandshakeAndReconnectTest {
             advanceTimeBy(1_000)
             runCurrent()
             assertEquals(ConfigPhase.Stage2, assertIs<ConnectionState.Configuring>(client.connection.value).phase)
-            repeat(160) { index ->
+            repeat(HANDSHAKE_PACKET_CAP + 1) { index ->
                 transport.injectAlivePacket(1_000 + index)
                 runCurrent()
             }
@@ -2133,10 +2138,10 @@ class HandshakeAndReconnectTest {
         const val NONCE_STAGE1 = 69420
 
         // MeshEngine.HANDSHAKE_PACKET_BUFFER_CAP
-        const val HANDSHAKE_PACKET_CAP = 64
+        const val HANDSHAKE_PACKET_CAP = 128
 
         // MeshEngine.SETTLE_BUFFER_CAP
-        const val SETTLE_BUFFER_CAP = 64
+        const val SETTLE_BUFFER_CAP = 128
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L

@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -170,6 +171,69 @@ class HandshakeParityTest {
         client.disconnect()
     }
 
+    /**
+     * Firmware hands out its whole to-phone queue once Stage 1 completes, and meshtasticd keeps 100
+     * packets there by default (`PortduinoGlue.h` `maxtophone`), so a reconnect delivers up to 100
+     * held packets inside the settle window.
+     */
+    @Test
+    fun aFullMeshtasticdQueueFlushedAfterStage1IsHeldUntilReady() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:meshtasticd-backlog"), autoQueueStatus = true)
+        val client = buildClient(transport, sessionReceive = true)
+        val session = mutableListOf<RadioSessionEvent>()
+        val sessionJob = backgroundScope.async { runCatching { client.sessionEvents!!.collect { session += it } } }
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.completeStage1()
+        runCurrent()
+        repeat(MESHTASTICD_TO_PHONE_QUEUE) { i -> transport.injectPacket(replayedPosition(PEER_BASE + i)) }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+
+        assertFalse(sessionJob.isCompleted, "the session stream closed on the backlog")
+        assertEquals(MESHTASTICD_TO_PHONE_QUEUE, session.count { it is RadioSessionEvent.Packet })
+        assertTrue(connectJob.await().isSuccess)
+        client.disconnect()
+    }
+
+    /**
+     * A collector busy installing the Ready snapshot reads nothing while the replay arrives: up to
+     * four packets for each of `MAX_SATELLITE_NODES` (250 on large-memory radios,
+     * `mesh-pb-constants.h`), and a packet from a node not yet in the map brings a `NodeChanged`.
+     */
+    @Test
+    fun theDefaultSessionCapacityHoldsAFullReplayWhileTheCollectorIsBusy() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:busy-collector"), autoQueueStatus = true)
+        val client = buildClient(transport, sessionReceive = true)
+        val installed = CompletableDeferred<Unit>()
+        var packets = 0
+        val sessionJob = backgroundScope.async {
+            runCatching {
+                client.sessionEvents!!.collect { event ->
+                    if (event is RadioSessionEvent.Ready) installed.await()
+                    if (event is RadioSessionEvent.Packet) packets++
+                }
+            }
+        }
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.completeStage1()
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        repeat(FULL_REPLAY) { i -> transport.injectPacket(replayedPosition(PEER_BASE + i)) }
+        runCurrent()
+        assertTrue(connectJob.await().isSuccess)
+
+        installed.complete(Unit)
+        runCurrent()
+        assertFalse(sessionJob.isCompleted, "the session stream overflowed")
+        assertEquals(FULL_REPLAY, packets)
+        client.disconnect()
+    }
+
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->
         wb.from = from
         wb.to = BROADCAST
@@ -243,5 +307,12 @@ class HandshakeParityTest {
 
         // MAX_NUM_NODES (120) peers with a stored position: more than HANDSHAKE_PACKET_BUFFER_CAP (64).
         const val REPLAYED = 120
+
+        // PortduinoGlue.h maxtophone default.
+        const val MESHTASTICD_TO_PHONE_QUEUE = 100
+
+        // Four replay phases (PhoneAPI::popReplayPacket) x MAX_SATELLITE_NODES 250; one packet per new node here,
+        // the worst case of two session events per packet.
+        const val FULL_REPLAY = 1000
     }
 }

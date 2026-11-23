@@ -4138,11 +4138,12 @@ internal class MeshEngine(
         // (node, offered key) pairs remembered so a repeated mismatch is reported once.
         const val MAX_REPORTED_KEY_MISMATCHES = 256
 
-        // maximum frames buffered during the inter-stage settle window.
-        const val SETTLE_BUFFER_CAP = 64
+        // Frames buffered during the settle windows. Firmware flushes its whole to-phone queue once
+        // Stage 1 completes: meshtasticd holds 100 by default (PortduinoGlue.h maxtophone), radios 8 to 32.
+        const val SETTLE_BUFFER_CAP = 128
 
-        // maximum mesh packets buffered while the handshake is in flight (flushed at Ready).
-        const val HANDSHAKE_PACKET_BUFFER_CAP = 64
+        // Mesh packets held until Ready, flushed in one pass; the packets flow buffers as many (128).
+        const val HANDSHAKE_PACKET_BUFFER_CAP = 128
 
         // How long one transport write may take before the link counts as failed. Separate from
         // sendTimeout, which bounds the wait for a routing ACK.
