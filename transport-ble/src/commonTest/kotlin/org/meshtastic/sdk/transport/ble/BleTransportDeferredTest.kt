@@ -117,6 +117,26 @@ class BleTransportDeferredTest {
         transport.shutdown()
     }
 
+    @Test
+    fun aLinkFailureAfterDisconnectLeavesTheTransportDisconnected() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val peripheral = FakeBlePeripheral(connectBehavior = {
+            release.await()
+            throw MeshtasticException.Transport("GATT connect failed")
+        })
+        val transport = BleTransport(peripheral, address = ADDRESS)
+
+        val connecting = async { runCatching { transport.connect() } }
+        yield()
+        transport.disconnect()
+        release.complete(Unit)
+        val outcome = connecting.await().exceptionOrNull()
+
+        assertIs<CancellationException>(outcome)
+        assertEquals(TransportState.Disconnected, transport.state.value)
+        transport.shutdown()
+    }
+
     private companion object {
         const val ADDRESS = "AA:BB:CC:DD:EE:FF"
     }

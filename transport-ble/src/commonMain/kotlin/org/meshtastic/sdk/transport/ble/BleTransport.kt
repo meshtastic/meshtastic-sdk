@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okio.ByteString
@@ -276,15 +277,30 @@ public class BleTransport internal constructor(
             } catch (_: Exception) { /* idempotent */ }
             throw e
         } catch (e: Exception) {
-            _state.value = TransportState.Error(e, recoverable = true)
+            val current = publishConnectFailure(generation, e)
             try {
                 peripheral.disconnect()
             } catch (_: Exception) { /* idempotent */ }
-            throw MeshtasticException.Transport(
-                "BLE connect to ${identity.raw} failed: ${e.message}",
-                e,
-            )
+            throw if (current) {
+                MeshtasticException.Transport("BLE connect to ${identity.raw} failed: ${e.message}", e)
+            } else {
+                CancellationException("BleTransport disconnected during connect", e)
+            }
         }
+    }
+
+    /**
+     * Publishes [failure] as a recoverable error unless [disconnect] ran since this connect began as
+     * [generation]; returns whether it did. disconnect() advances the generation before it publishes
+     * Disconnected, so the compare-and-set retry sees either the new generation or its own state.
+     */
+    private fun publishConnectFailure(generation: Int, failure: Exception): Boolean {
+        var current = false
+        _state.update { state ->
+            current = connectGeneration.value == generation
+            if (current) TransportState.Error(failure, recoverable = true) else state
+        }
+        return current
     }
 
     /**
