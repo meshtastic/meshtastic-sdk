@@ -1164,6 +1164,36 @@ public final class org/meshtastic/sdk/MeshEvent$QueueStatusChanged : org/meshtas
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/MeshEvent$RoutingReport : org/meshtastic/sdk/MeshEvent {
+	public synthetic fun <init> (IILorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/sdk/MessageId;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/MessageId;
+	public final fun component1-dj4h-Jc ()I
+	public final fun component2 ()Lorg/meshtastic/sdk/NodeId;
+	public final fun component2-Unx0hic ()I
+	public final fun component3 ()Lorg/meshtastic/proto/Routing$Error;
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Lorg/meshtastic/proto/MeshPacket$AckProofStatus;
+	public final fun copy (Lorg/meshtastic/sdk/MessageId;Lorg/meshtastic/sdk/NodeId;Lorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;)Lorg/meshtastic/sdk/MeshEvent$RoutingReport;
+	public final fun copy-zt0n7j8 (IILorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;)Lorg/meshtastic/sdk/MeshEvent$RoutingReport;
+	public static synthetic fun copy-zt0n7j8$default (Lorg/meshtastic/sdk/MeshEvent$RoutingReport;IILorg/meshtastic/proto/Routing$Error;ZLjava/lang/Integer;Lorg/meshtastic/proto/MeshPacket$AckProofStatus;ILjava/lang/Object;)Lorg/meshtastic/sdk/MeshEvent$RoutingReport;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAckProof ()Lorg/meshtastic/proto/MeshPacket$AckProofStatus;
+	public final fun getError ()Lorg/meshtastic/proto/Routing$Error;
+	public final fun getFrom ()Lorg/meshtastic/sdk/NodeId;
+	public final fun getFrom-Unx0hic ()I
+	public final fun getFromLocalRadio ()Z
+	public final fun getRelayNode ()Ljava/lang/Integer;
+	public final fun getRequestId ()Lorg/meshtastic/sdk/MessageId;
+	public final fun getRequestId-dj4h-Jc ()I
+	public fun hashCode ()I
+	public final fun isAck ()Z
+	public final fun isImplicitAckFor (Lorg/meshtastic/sdk/NodeId;)Z
+	public final fun isImplicitAckFor-LO_6HKw (I)Z
+	public fun toString ()Ljava/lang/String;
+}
+
 public abstract interface class org/meshtastic/sdk/MeshEvent$SecurityWarning : org/meshtastic/sdk/MeshEvent {
 }
 

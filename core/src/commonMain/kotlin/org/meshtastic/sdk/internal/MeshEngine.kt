@@ -2606,6 +2606,7 @@ internal class MeshEngine(
         }
         if (!unauthenticatedAdminReply) dispatcher.tryComplete(response)
         processRoutingAck(packet)
+        emitRoutingReport(packet)
         // Telemetry → node update: merge device_metrics into the node DB so that
         // NodeChange subscribers see battery/telemetry changes without calling TelemetryApi.
         maybeMergeDeviceMetrics(packet)
@@ -2893,6 +2894,29 @@ internal class MeshEngine(
                 logger.debug(TAG) { "Routing payload with no oneof variant for id=$messageId" }
             }
         }
+    }
+
+    // Firmware stamps a first transmission with the sender's own relay byte (FloodingRouter::send), so one
+    // heard with no hops used, or bridged from MQTT, names no relay. An implicit ACK copies the relayer's
+    // byte from the overheard rebroadcast (MeshModule::allocAckNak); 0 is NO_RELAY_NODE (MeshTypes.h).
+    private fun emitRoutingReport(packet: MeshPacket) {
+        val decoded = packet.decoded ?: return
+        if (decoded.portnum != PortNum.ROUTING_APP || decoded.request_id == 0) return
+        if (packet.to != 0 && !isConnectedNodeNum(packet.to)) return
+        val routing = runCatching { Routing.ADAPTER.decode(decoded.payload) }.getOrNull() ?: return
+        val error = routing.error_reason ?: return
+        val local = packet.from == 0 || isConnectedNodeNum(packet.from)
+        val heardDirect = packet.hop_start != 0 && packet.hop_limit == packet.hop_start
+        emitEvent(
+            MeshEvent.RoutingReport(
+                requestId = MessageId(decoded.request_id),
+                from = NodeId(packet.from.takeIf { it != 0 } ?: myNodeNum),
+                error = error,
+                fromLocalRadio = local,
+                relayNode = packet.relay_node.takeUnless { it == 0 || heardDirect || packet.via_mqtt },
+                ackProof = packet.ack_proof_status,
+            ),
+        )
     }
 
     /**

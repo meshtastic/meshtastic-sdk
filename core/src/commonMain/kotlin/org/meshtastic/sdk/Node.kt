@@ -8,7 +8,9 @@
 package org.meshtastic.sdk
 
 import okio.ByteString
+import org.meshtastic.proto.MeshPacket
 import org.meshtastic.proto.NodeInfo
+import org.meshtastic.proto.Routing
 
 /**
  * Fields that may change in a [NodeInfo].
@@ -378,6 +380,41 @@ public sealed interface MeshEvent {
      * @since 0.1.0
      */
     public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
+
+    /**
+     * A routing ACK or NAK addressed to us, for any packet id: a live handle's, an RPC's, or one sent in an
+     * earlier session or process. It follows its `ROUTING_APP` packet on the session stream, after the SDK
+     * has settled any handle that holds [requestId].
+     *
+     * @property requestId the packet the result is about (`Data.request_id`)
+     * @property from the node that produced it; the connected node's number when its own radio did
+     * @property error [Routing.Error.NONE] for an ACK, else the failure
+     * @property fromLocalRadio the connected radio produced it: an implicit ACK from an overheard rebroadcast,
+     *   the ACK of a packet to ourselves, or a local failure such as `MAX_RETRANSMIT`
+     * @property relayNode last byte of the node number that relayed it to us, or null when no relay is recorded
+     *   or the byte only names the sender, because it was heard with no hops used or bridged from MQTT
+     * @property ackProof the firmware's check of `Routing.ack_proof`; only `ACK_PROOF_VALID` proves the
+     *   addressed node received the packet
+     * @since 0.3.0
+     */
+    public data class RoutingReport(
+        val requestId: MessageId,
+        val from: NodeId,
+        val error: Routing.Error,
+        val fromLocalRadio: Boolean,
+        val relayNode: Int?,
+        val ackProof: MeshPacket.AckProofStatus,
+    ) : MeshEvent {
+        /** Whether this is an ACK rather than a NAK. */
+        public val isAck: Boolean get() = error == Routing.Error.NONE
+
+        /**
+         * Whether this ACK, for a packet sent to [destination], only shows a node relayed it: the connected
+         * radio overheard the rebroadcast. An ACK our radio sends for a packet addressed to itself is the
+         * delivery, as is any ACK from another node.
+         */
+        public fun isImplicitAckFor(destination: NodeId): Boolean = isAck && fromLocalRadio && destination != from
+    }
 }
 
 /**

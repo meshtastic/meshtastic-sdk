@@ -322,12 +322,21 @@ public sealed interface MeshEvent {
     public data class PacketsDropped(val flow: DroppedFlow, val count: Int) : MeshEvent
     public data class DeviceRebooted(val reason: String = "device reported reboot") : MeshEvent
     public data class ExternalConfigChange(val kind: ExternalChangeKind) : MeshEvent
+    public data class RoutingReport(
+        val requestId: MessageId, val from: NodeId, val error: Routing.Error, val fromLocalRadio: Boolean,
+        val relayNode: Int?, val ackProof: MeshPacket.AckProofStatus,
+    ) : MeshEvent {
+        public val isAck: Boolean
+        public fun isImplicitAckFor(destination: NodeId): Boolean
+    }
 }
-public enum class DroppedFlow { Packets, Events }
+public enum class DroppedFlow { Packets, Events, Nodes }
 public enum class ExternalChangeKind { CHANNEL, CONFIG, MODULE_CONFIG }
 ```
 
 When each variant fires and what to do about it is in [error-taxonomy.md](./error-taxonomy.md#meshevent-reference).
+
+`RoutingReport` fires for each routing ACK or NAK addressed to us whose `Data.request_id` is nonzero, whether or not a live handle or RPC holds that id, so a host can settle messages it sent in an earlier session or process. It follows its `ROUTING_APP` packet on `sessionEvents`, after the SDK has settled any handle holding the id. `from` is the node that produced it, the connected node's number when its own radio did (`fromLocalRadio`): an implicit ACK from an overheard rebroadcast, the ACK of a packet to ourselves, or a local failure such as `MAX_RETRANSMIT`. `isImplicitAckFor(destination)` is true for an ACK from our radio for a packet sent elsewhere. `relayNode` is the last byte of the relaying node, or null when no relay is recorded or the byte only names the sender (heard with no hops used, or bridged from MQTT). Only `ackProof == ACK_PROOF_VALID` proves the addressed node received the packet.
 
 ## `NodeChange`
 
