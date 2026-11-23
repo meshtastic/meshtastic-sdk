@@ -85,6 +85,7 @@ import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.SessionPasskey
 import org.meshtastic.sdk.StorageProvider
+import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireCodec
 import org.meshtastic.sdk.WireFraming
@@ -1130,7 +1131,7 @@ internal class MeshEngine(
         connectionState.value = ConnectionState.Connecting(1)
         // reset watchdog gate so a prior session's `disconnecting = true` doesn't stick.
         disconnecting = false
-        logger.info(TAG) { "Connect requested (transport=${transport.identity})" }
+        logger.info(TAG) { "Connect requested (transport=${transport.identity.forLog()})" }
 
         try {
             storage = storageProvider.activate(transport.identity)
@@ -1492,7 +1493,8 @@ internal class MeshEngine(
                     sessionReceive?.handshakeOverflow()
                     val dropped = settleBuffer.removeFirst()
                     logger.warn(TAG) {
-                        "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropping oldest frame ($dropped)"
+                        "Stage1 settle buffer full (cap=$SETTLE_BUFFER_CAP) — dropping oldest frame " +
+                            "(${summarizeFromRadio(dropped)})"
                     }
                     emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
                 }
@@ -3875,7 +3877,7 @@ internal class MeshEngine(
     private fun emitNodeChangeOrLog(change: NodeChange) {
         if (change !is NodeChange.Snapshot) sessionReceive?.nodeChanged(change)
         if (!nodes.tryEmit(change)) {
-            logger.warn(TAG) { "nodes flow rejected emit ($change); reporting drop" }
+            logger.warn(TAG) { "nodes flow rejected emit (${change::class.simpleName}); reporting drop" }
             emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Nodes, count = 1))
         }
     }
@@ -4279,6 +4281,10 @@ internal class MeshEngine(
     private class SessionPasskeyEntry(val bytes: ByteArray, val refreshedAt: Instant, val generation: Int)
 
     /** A mid-handshake packet with the instant it arrived. */
+    // Apps forward SDK logs to crash and analytics backends: name the transport kind, never the MAC or host.
+    private fun TransportIdentity.forLog(): String =
+        raw.substringBefore(':') + ":#" + (raw.hashCode() and 0xFFFF).toString(16).padStart(4, '0')
+
     private sealed interface HeldItem {
         class Packet(val packet: MeshPacket, val receivedAt: Instant) : HeldItem
 

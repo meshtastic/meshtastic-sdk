@@ -37,7 +37,9 @@ so credentials cannot leak via a casual `Debug` setting.
 > **Note:** the hook is `RadioClient.Builder.protocolLogging(level, redactor)`, off by default
 > (`LogLevel.NONE`). It writes every `FromRadio` and `ToRadio` to the configured `LogSink` under
 > the tag `Protocol`, through a `PayloadRedactor`; `PayloadRedactor.Default` never prints payload
-> content. The `LogSink.log` parameter is named `cause`.
+> content. The `LogSink.log` parameter is named `cause`. Engine lines outside that log never carry
+> payload content or the transport address: the connect line names the transport kind and a 4-hex
+> digest, since apps forward SDK logs to crash and analytics backends.
 
 ## Rationale
 

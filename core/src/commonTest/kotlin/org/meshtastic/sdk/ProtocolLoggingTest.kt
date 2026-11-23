@@ -8,6 +8,7 @@
 package org.meshtastic.sdk
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -41,6 +42,9 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+// MeshEngine.SETTLE_BUFFER_CAP
+private const val SETTLE_BUFFER_CAP = 128
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class ProtocolLoggingTest {
@@ -85,6 +89,60 @@ class ProtocolLoggingTest {
         client.connect()
         runCurrent()
         return client
+    }
+
+    // Apps forward SDK logs to Crashlytics and Datadog, so no line at any level may name the radio's address.
+    @Test
+    fun logsNameTheTransportKindButNotItsAddress() = runTest {
+        for (address in listOf("ble:C2:5D:11:22:33:44", "tcp:192.168.1.42:4403")) {
+            val sink = RecordingSink()
+            val transport = FakeRadioTransport(identity = TransportIdentity(address), autoHandshake = true, nodeNum = 1)
+            val client = RadioClient.Builder()
+                .transport(transport)
+                .storage(InMemoryStorageProvider())
+                .coroutineContext(backgroundScope.coroutineContext)
+                .logger(sink)
+                .build()
+            client.connect()
+            runCurrent()
+            client.disconnect()
+
+            val leaked = sink.entries.filter { it.message.contains(address.substringAfter(':')) }
+            assertTrue(leaked.isEmpty(), "address in logs: ${leaked.map { it.message }}")
+            val kind = address.substringBefore(':')
+            assertTrue(sink.entries.any { it.message.contains("transport=$kind:#") }, "no connect line")
+        }
+    }
+
+    // More frames than the settle buffer holds arrive inside the settle window; the drop warning must not
+    // print the dropped frame's text.
+    @Test
+    fun aSettleBufferDropLogsNoPayload() = runTest {
+        val sink = RecordingSink()
+        val transport = FakeRadioTransport(identity = TransportIdentity("fake:settle-drop"), nodeNum = 1)
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .logger(sink)
+            .build()
+        backgroundScope.launch { runCatching { client.connect() } }
+        runCurrent()
+        transport.injectFrame(
+            FromRadio.Builder().also {
+                it.my_info =
+                    MyNodeInfo.Builder().also { m -> m.my_node_num = 1 }.build()
+            }.build().toFrame(),
+        )
+        transport.injectFrame(FromRadio.Builder().also { it.config_complete_id = 69420 }.build().toFrame())
+        runCurrent()
+        repeat(SETTLE_BUFFER_CAP + 1) { transport.injectFrame(textPacket("correct horse battery staple").toFrame()) }
+        runCurrent()
+
+        assertTrue(sink.entries.any { it.level == LogLevel.WARN && it.message.contains("settle buffer full") })
+        assertFalse(sink.entries.any { it.message.contains("correct horse") }, "payload in logs")
+        client.disconnect()
     }
 
     @Test
