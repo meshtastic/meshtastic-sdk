@@ -232,6 +232,8 @@ private fun Header(state: ConnectionState, label: String) {
     val (statusLabel, color) = when (state) {
         ConnectionState.Disconnected -> "DISCONNECTED" to Color.Red
 
+        ConnectionState.Disconnecting -> "DISCONNECTING" to Color.Yellow
+
         is ConnectionState.Connecting -> "CONNECTING (#${state.attempt})" to Color.Yellow
 
         is ConnectionState.Configuring ->

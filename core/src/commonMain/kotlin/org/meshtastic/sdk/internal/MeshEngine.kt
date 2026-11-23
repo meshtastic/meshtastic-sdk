@@ -639,6 +639,8 @@ internal class MeshEngine(
 
     suspend fun disconnect() {
         disconnectRequested.value = true
+        // Engine writes stop here (publishState), so teardown shows Disconnecting until cleanup ends it.
+        if (connectionState.value != ConnectionState.Disconnected) connectionState.value = ConnectionState.Disconnecting
         // complete any in-flight connect() awaiter BEFORE we cancel the supervisor.
         // was cancelled first), cleanup() runs but its `pendingConnectDeferred` was never
         // assigned, so the awaiter would otherwise hang forever.
@@ -653,14 +655,14 @@ internal class MeshEngine(
         }
         job.cancel()
         // Cleanup runs as the run's child, so this returns after it. A run cancelled before connect()
-        // launched it has no cleanup, and a terminal state from the run before must not outlive the call.
+        // launched it has no cleanup to end Disconnecting.
         job.join()
-        when (val state = connectionState.value) {
-            is ConnectionState.Failed, is ConnectionState.DeviceSleeping ->
-                connectionState.compareAndSet(state, ConnectionState.Disconnected)
+        connectionState.compareAndSet(ConnectionState.Disconnecting, ConnectionState.Disconnected)
+    }
 
-            else -> Unit
-        }
+    // Once disconnect() has published Disconnecting, a message the actor is still draining must not replace it.
+    private fun publishState(state: ConnectionState) {
+        if (!disconnectRequested.value) connectionState.value = state
     }
 
     // Only a backoff wait can be cut short; an attempt in flight, Reconnecting or DeviceSleeping, cannot.
@@ -1259,7 +1261,7 @@ internal class MeshEngine(
     private suspend fun handleConnect(msg: EngineMessage.Connect) {
         connectionGeneration.incrementAndGet()
         pendingConnectDeferred = msg.deferred
-        connectionState.value = ConnectionState.Connecting(1)
+        publishState(ConnectionState.Connecting(1))
         // reset watchdog gate so a prior session's `disconnecting = true` doesn't stick.
         disconnecting = false
         logger.info(TAG) { "Connect requested (transport=${identity.forLog()})" }
@@ -1269,13 +1271,13 @@ internal class MeshEngine(
         } catch (e: CancellationException) {
             throw e
         } catch (e: MeshtasticException) {
-            connectionState.value = ConnectionState.Disconnected
+            publishState(ConnectionState.Disconnected)
             msg.deferred.completeExceptionally(e)
             pendingConnectDeferred = null
             return
         } catch (e: Exception) {
             val ex = MeshtasticException.StorageUnavailable(e.message ?: "storage activation failed", e)
-            connectionState.value = ConnectionState.Disconnected
+            publishState(ConnectionState.Disconnected)
             msg.deferred.completeExceptionally(ex)
             pendingConnectDeferred = null
             return
@@ -1349,7 +1351,7 @@ internal class MeshEngine(
                 autoReconnectConfig.enabled -> scheduleReconnect(tagged)
 
                 else -> {
-                    connectionState.value = ConnectionState.Disconnected
+                    publishState(ConnectionState.Disconnected)
                     deferred.completeExceptionally(ex)
                     pendingConnectDeferred = null
                 }
@@ -1405,7 +1407,7 @@ internal class MeshEngine(
         stage1DumpStarted = false
         lockdownLink.value = null
         handshakeStage = HandshakeStage.Stage1Draining
-        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+        publishState(ConnectionState.Configuring(ConfigPhase.Stage1, 0f))
         // Sent once per session: firmware's handleStartConfig has no re-entry guard (protocol.md §6),
         // so a silent Stage 1 ends in HandshakeTimeout and a fresh session, never an in-session resend.
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
@@ -1837,7 +1839,7 @@ internal class MeshEngine(
                 logger.info(TAG) { "Stage 1 complete; entering 100 ms settle" }
                 clearStage1Timers()
                 handshakeStage = HandshakeStage.Stage1Settling
-                connectionState.value = ConnectionState.Configuring(ConfigPhase.Settling, 0.5f)
+                publishState(ConnectionState.Configuring(ConfigPhase.Settling, 0.5f))
                 val attempt = handshakeAttempt
                 engineScope?.launch {
                     delay(INTER_STAGE_SETTLE_MS)
@@ -1958,7 +1960,7 @@ internal class MeshEngine(
             logger.info(TAG) { "Handshake ended after Stage 1 (config-only; NodeDB skipped)" }
             return
         }
-        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f)
+        publishState(ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f))
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE2 }.build())
         handshakeStage = HandshakeStage.Stage2Draining
 
@@ -2382,7 +2384,7 @@ internal class MeshEngine(
         preSendQueue.clear()
 
         readySendGeneration.value = receiveGeneration
-        connectionState.value = ConnectionState.Connected
+        publishState(ConnectionState.Connected)
         sessionReceive?.let { receive ->
             receive.ready(
                 RadioSessionEvent.Ready(
@@ -3347,7 +3349,7 @@ internal class MeshEngine(
         val failed = ConnectionState.Failed(cause)
         terminalState = failed
         // Published before connect() is released, so a caller that catches its throw already reads Failed.
-        connectionState.value = failed
+        publishState(failed)
         val deferred = pendingConnectDeferred
         pendingConnectDeferred = null
         deferred?.completeExceptionally(cause)
@@ -3391,7 +3393,7 @@ internal class MeshEngine(
 
     // With no reconnect to follow, cleanup settles on this instead of Disconnected.
     private fun settleTerminalSleep(sleep: ConnectionState.DeviceSleeping) {
-        connectionState.value = sleep
+        publishState(sleep)
         terminalState = sleep
     }
 
@@ -3510,7 +3512,7 @@ internal class MeshEngine(
 
         val attempt = reconnectAttempt + sleepAttempts
         val backoff = computeBackoff(attempt)
-        connectionState.value = sleeping ?: ConnectionState.Reconnecting(cause, reconnectAttempt, clock.now() + backoff)
+        publishState(sleeping ?: ConnectionState.Reconnecting(cause, reconnectAttempt, clock.now() + backoff))
         logger.info(TAG, cause) {
             "Auto-reconnect attempt $attempt scheduled in ${backoff.inWholeMilliseconds} ms"
         }
@@ -3528,7 +3530,7 @@ internal class MeshEngine(
         val scope = engineScope ?: return
         pendingTick = null
         reconnectJob = null
-        if (sleeping == null) connectionState.value = ConnectionState.Reconnecting(msg.cause, reconnectAttempt)
+        if (sleeping == null) publishState(ConnectionState.Reconnecting(msg.cause, reconnectAttempt))
         val previous = transport
         val previousReader = frameReaderJob
         val token = ++attemptToken

@@ -2,6 +2,9 @@
   `Reconnecting`, for a non-recoverable transport error, `FirmwareTooOld`, and an exhausted
   `maxAttempts` or `maxHandshakeRecoveries`, and stays there until `connect()` or `disconnect()`.
   An exhaustive `when` over `ConnectionState` needs the new branch.
+- `ConnectionState.Disconnecting` is a new case, published by `disconnect()` from any state but
+  `Disconnected` while the engine tears the session down, then `Disconnected`. A link loss never
+  shows it. An exhaustive `when` over `ConnectionState` needs the new branch.
 - `AutoReconnectConfig.recoveryStep` and `ReconnectRecoveryStep` are removed before release; pass a
   `RadioTransportProvider` to `RadioClient.Builder.transport(identity, provider)` instead, which
   can also return a fresh transport per attempt.

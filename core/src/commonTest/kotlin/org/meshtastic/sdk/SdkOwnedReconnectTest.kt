@@ -484,6 +484,85 @@ class SdkOwnedReconnectTest {
         assertTrue("link1.disconnect" in log, "log: $log")
     }
 
+    @Test
+    fun disconnectFromConnectedShowsDisconnectingThenDisconnected() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        client.connect()
+        val states = recordStates(client)
+
+        client.disconnect()
+
+        assertEquals(
+            listOf(ConnectionState.Connected, ConnectionState.Disconnecting, ConnectionState.Disconnected),
+            states,
+        )
+    }
+
+    @Test
+    fun disconnectInABackoffWaitShowsDisconnectingThenDisconnected() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config(initialBackoff = 30.seconds, maxBackoff = 30.seconds))
+        client.connect()
+        link.drop()
+        runCurrent()
+        val states = recordStates(client)
+
+        client.disconnect()
+
+        assertIs<ConnectionState.Reconnecting>(states.first())
+        assertEquals(listOf(ConnectionState.Disconnecting, ConnectionState.Disconnected), states.drop(1))
+    }
+
+    @Test
+    fun disconnectMidHandlerHoldsDisconnectingThoughTheHandlerPublishesOn() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        val states = recordStates(client)
+        // Unconfined: disconnect() runs inside the actor's publication of Connecting, which then goes on to
+        // connect the transport and publish Configuring.
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            client.connection.first { it is ConnectionState.Connecting }
+            client.disconnect()
+        }
+
+        runCatching { client.connect() }
+        drain()
+
+        val after = states.drop(states.indexOf(ConnectionState.Disconnecting))
+        assertEquals(listOf(ConnectionState.Disconnecting, ConnectionState.Disconnected), after, "states: $states")
+    }
+
+    @Test
+    fun aLinkLossNeverShowsDisconnecting() = runTest {
+        for (enabled in listOf(true, false)) {
+            val link = ScriptLink("a", mutableListOf(), { currentTime })
+            val client = buildClient(link, config().copy(enabled = enabled))
+            client.connect()
+            val states = recordStates(client)
+
+            link.drop()
+            runCurrent()
+            advanceTimeBy(1_000L)
+            settle()
+            link.drop(MeshtasticException.Transport("unsupported"), recoverable = false)
+            settle()
+
+            assertTrue(states.none { it == ConnectionState.Disconnecting }, "auto-reconnect $enabled: $states")
+        }
+    }
+
+    @Test
+    fun disconnectWhileDisconnectedPublishesNothing() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config())
+        val states = recordStates(client)
+
+        client.disconnect()
+
+        assertEquals(listOf<ConnectionState>(ConnectionState.Disconnected), states)
+    }
+
     // Each packet from a peer queues a Packet and a NodeChanged; nothing collects, so the queue overflows.
     private fun TestScope.flood(link: ScriptLink) {
         repeat(SMALL_QUEUE * 2) { index ->

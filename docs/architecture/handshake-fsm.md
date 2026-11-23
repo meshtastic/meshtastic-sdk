@@ -8,7 +8,7 @@ The internal `HandshakeStage` enum has six values, `AwaitingLockdown` among them
 
 | `HandshakeStage` | Meaning | Public projection |
 |---|---|---|
-| `Idle` | No connection attempted, or post-disconnect | `Disconnected` |
+| `Idle` | No connection attempted, or post-disconnect | `Disconnected`; `Disconnecting` while a `disconnect()` tears the session down |
 | `Stage1Draining` | `want_config_id = SPECIAL_NONCE_ONLY_CONFIG (69420)` posted; receiving the Stage 1 response stream (configs, channels, file_info, **no** nodes) | `Configuring(ConfigPhase.Stage1, p)` |
 | `Stage1Settling` | `config_complete_id == 69420` received; settle window elapsing before the inter-stage heartbeat | `Configuring(ConfigPhase.Settling, 0.5f)` |
 | `Stage2Draining` | Inter-stage `Heartbeat` flushed and `want_config_id = SPECIAL_NONCE_ONLY_NODES (69421)` posted; receiving Stage 2 (`OWN_NODEINFO` then `OTHER_NODEINFOS`; `FILEMANIFEST` short-circuits to empty) | `Configuring(ConfigPhase.Stage2, p)` |

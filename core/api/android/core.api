@@ -512,6 +512,13 @@ public final class org/meshtastic/sdk/ConnectionState$Disconnected : org/meshtas
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/ConnectionState$Disconnecting : org/meshtastic/sdk/ConnectionState {
+	public static final field INSTANCE Lorg/meshtastic/sdk/ConnectionState$Disconnecting;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/ConnectionState$Failed : org/meshtastic/sdk/ConnectionState {
 	public fun <init> (Lorg/meshtastic/sdk/MeshtasticException;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/MeshtasticException;

@@ -380,6 +380,7 @@ public enum class NodeField { Name, Position, SignalQuality, Battery, Telemetry,
 ```kotlin
 public sealed interface ConnectionState {
     public data object Disconnected : ConnectionState
+    public data object Disconnecting : ConnectionState
     public data class Connecting(val attempt: Int) : ConnectionState
     public data class Configuring(val phase: ConfigPhase, val progress: Float) : ConnectionState
     public data object Connected : ConnectionState
@@ -391,11 +392,11 @@ public sealed interface ConnectionState {
 public enum class ConfigPhase { Stage1, Settling, Stage2 }
 
 public val ConnectionState.isUsable: Boolean        // Connected
-public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting; not DeviceSleeping
+public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting; not DeviceSleeping or Disconnecting
 public val ConnectionState.statusMessage: String    // display text
 ```
 
-`Failed` is terminal until `connect()` or `disconnect()`: a non-recoverable transport error or `FirmwareTooOld` with auto-reconnect on or off, or an exhausted cap with it on. `cause` keeps its type, so a `WebSocketTransportException` arrives with its `closeCode`. `progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
+`Disconnecting` is published by `disconnect()` from any state but `Disconnected` (a backoff wait, a suspended provider, `DeviceSleeping` and `Failed` included) and holds while the engine cancels the attempt, ends the reader and closes the transport; `Disconnected` follows before `disconnect()` returns. A link loss never shows it, and `disconnect()` while `Disconnected` publishes nothing. `Failed` is terminal until `connect()` or `disconnect()`: a non-recoverable transport error or `FirmwareTooOld` with auto-reconnect on or off, or an exhausted cap with it on. `cause` keeps its type, so a `WebSocketTransportException` arrives with its `closeCode`. `progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
 
 ### `DeviceSleeping`
 

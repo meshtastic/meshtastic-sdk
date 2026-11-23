@@ -174,6 +174,8 @@ private fun describe(state: ConnectionState): String = when (state) {
 
     ConnectionState.Disconnected -> "Disconnected"
 
+    ConnectionState.Disconnecting -> "Disconnecting"
+
     is ConnectionState.Connecting -> "Connecting(attempt=${state.attempt})"
 
     is ConnectionState.Configuring -> "Configuring(${state.phase}, ${state.progress})"

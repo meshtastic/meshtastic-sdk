@@ -196,6 +196,16 @@ public sealed interface ConnectionState {
     public data object Disconnected : ConnectionState
 
     /**
+     * [RadioClient.disconnect] was called and the engine is tearing the session down: cancelling a
+     * pending attempt or backoff, ending the frame reader and closing the transport. [Disconnected]
+     * follows. An unplanned link loss never shows this state, and a [RadioClient.disconnect] while
+     * already [Disconnected] publishes nothing.
+     *
+     * @since 0.3.0
+     */
+    public data object Disconnecting : ConnectionState
+
+    /**
      * Attempting to establish a connection.
      *
      * @param attempt the attempt count (1-indexed)
@@ -271,7 +281,7 @@ public sealed interface ConnectionState {
 public val ConnectionState.isUsable: Boolean
     get() = this is ConnectionState.Connected
 
-/** Whether a connection attempt is actively in progress. */
+/** Whether a connection attempt is actively in progress; `false` for [ConnectionState.Disconnecting], which ends one. */
 public val ConnectionState.isInProgress: Boolean
     get() =
         this is ConnectionState.Connecting ||
@@ -282,6 +292,7 @@ public val ConnectionState.isInProgress: Boolean
 public val ConnectionState.statusMessage: String
     get() = when (this) {
         is ConnectionState.Disconnected -> "Disconnected"
+        is ConnectionState.Disconnecting -> "Disconnecting"
         is ConnectionState.Connecting -> "Connecting (attempt $attempt)"
         is ConnectionState.Configuring -> "Configuring: ${phase.name} (${(progress * 100).toInt()}%)"
         is ConnectionState.Connected -> "Connected"

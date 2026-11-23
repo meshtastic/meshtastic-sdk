@@ -425,8 +425,9 @@ public class RadioClient internal constructor(
      * has completed and stays complete.
      *
      * **Suspend semantics:** suspends until the engine has drained pending failures, the
-     * transport is fully disconnected, and storage is closed. Returns when [connection]
-     * settles on [ConnectionState.Disconnected].
+     * transport is fully disconnected, and storage is closed. [connection] shows
+     * [ConnectionState.Disconnecting] meanwhile, unless it was already
+     * [ConnectionState.Disconnected], and settles on [ConnectionState.Disconnected] before this returns.
      *
      * **Cancellation:** the disconnect path runs under
      * [kotlinx.coroutines.NonCancellable] internally for resource release — cancelling the
