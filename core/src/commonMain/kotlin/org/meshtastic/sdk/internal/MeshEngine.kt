@@ -2455,7 +2455,9 @@ internal class MeshEngine(
                 wb.snr = packet.rx_snr
             }
             wb.via_mqtt = packet.via_mqtt
-            if (packet.hop_start != 0 && packet.hop_start >= packet.hop_limit) {
+            // NodeDB.cpp getHopsAway: hop_start 0 is trustworthy only from a sender stamping the 2.5+ bitfield.
+            val hopStartKnown = packet.hop_start != 0 || decoded.bitfield != null
+            if (hopStartKnown && packet.hop_start >= packet.hop_limit) {
                 wb.hops_away = packet.hop_start - packet.hop_limit
             }
         }
