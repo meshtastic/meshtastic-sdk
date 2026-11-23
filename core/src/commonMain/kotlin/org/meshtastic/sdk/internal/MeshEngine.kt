@@ -191,6 +191,12 @@ internal class MeshEngine(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
+    /** Every mesh packet queued for the radio, as written. Lossy for the same reason as [rawFromRadio]. */
+    val outboundPackets = MutableSharedFlow<MeshPacket>(
+        extraBufferCapacity = 256,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     // ADR-002 exception: cleanup() closes both channels, and connect() opens fresh ones for the next run.
     private val inboxRef = atomic(Channel<EngineMessage>(Channel.UNLIMITED))
     private val inbox: Channel<EngineMessage> get() = inboxRef.value
@@ -1009,12 +1015,7 @@ internal class MeshEngine(
         rememberAdminRequest(sent)
         // Outbound: stamp the target's session passkey + PKC routing for remote-admin, then enqueue.
         val outboundPacket = retargetRenumbered(prepareOutboundAdminPacket(packet))
-        val encoded = WireCodec.encodeToRadio(
-            ToRadio.Builder().also { wb ->
-                wb.packet = outboundPacket
-            }.build(),
-        )
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
+        trySendToRadio(ToRadio.Builder().also { wb -> wb.packet = outboundPacket }.build())
         // Arm the timeout last so the timer fires even if dispatch path errors above.
         val scope = engineScope ?: return
         val job = scope.launch {
@@ -3581,12 +3582,7 @@ internal class MeshEngine(
         pendingSends.remove(msg.id)
         pendingSends[wireKey] = msg.stateFlow
 
-        val encoded = WireCodec.encodeToRadio(
-            ToRadio.Builder().also { wb ->
-                wb.packet = packet
-            }.build(),
-        )
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), generation = receiveGeneration))
+        trySendToRadio(ToRadio.Builder().also { wb -> wb.packet = packet }.build())
         // Transition Queued → Sent; the device will confirm with QueueStatus.
         msg.stateFlow.value = SendState.Sent
         logger.debug(TAG) { "Send dispatched id=${msg.id}" }
@@ -3759,7 +3755,11 @@ internal class MeshEngine(
         pacedSend: EngineMessage.PacedSend? = null,
     ): Boolean = try {
         val encoded = WireCodec.encodeToRadio(msg)
-        outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
+        val queued =
+            outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
+        // A lockdown command carries the radio's credential, so it stays off the tap.
+        if (queued && link == null) msg.packet?.let { outboundPackets.tryEmit(it) }
+        queued
     } catch (e: Exception) {
         logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
         false

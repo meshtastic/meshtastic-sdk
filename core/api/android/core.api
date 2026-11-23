@@ -1811,6 +1811,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getFromRadio ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getMqttProxy ()Lorg/meshtastic/sdk/MqttProxyApi;
 	public final fun getNodes ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getOutboundPackets ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getOwnNode ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getPackets ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getRemoteShell ()Lorg/meshtastic/sdk/RemoteShellApi;

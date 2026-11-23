@@ -2282,6 +2282,8 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun <get-mqttProxy>(): org.meshtastic.sdk/MqttProxyApi // org.meshtastic.sdk/RadioClient.mqttProxy.<get-mqttProxy>|<get-mqttProxy>(){}[0]
     final val nodes // org.meshtastic.sdk/RadioClient.nodes|{}nodes[0]
         final fun <get-nodes>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/NodeChange> // org.meshtastic.sdk/RadioClient.nodes.<get-nodes>|<get-nodes>(){}[0]
+    final val outboundPackets // org.meshtastic.sdk/RadioClient.outboundPackets|{}outboundPackets[0]
+        final fun <get-outboundPackets>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/MeshPacket> // org.meshtastic.sdk/RadioClient.outboundPackets.<get-outboundPackets>|<get-outboundPackets>(){}[0]
     final val ownNode // org.meshtastic.sdk/RadioClient.ownNode|{}ownNode[0]
         final fun <get-ownNode>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.proto/NodeInfo?> // org.meshtastic.sdk/RadioClient.ownNode.<get-ownNode>|<get-ownNode>(){}[0]
     final val packets // org.meshtastic.sdk/RadioClient.packets|{}packets[0]

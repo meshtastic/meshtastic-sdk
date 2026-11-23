@@ -204,6 +204,21 @@ public class RadioClient internal constructor(
     public val packets: Flow<MeshPacket> = engine.packets.hide()
 
     /**
+     * Every [MeshPacket] the client queues for the radio, as written: sends, paced sends, RPC requests and
+     * admin writes, carrying the packet id, `from`, session passkey and PKI fields the SDK filled in, so a
+     * host can log what it sent without rebuilding it. A packet with id `0`, the clock set during the
+     * handshake, is numbered by the firmware.
+     *
+     * Hot, no replay, and lossy: a collector that falls more than 256 packets behind loses the oldest, so
+     * the engine never waits on it. Emission means the packet was queued for the transport, not that the
+     * radio accepted it. Admin packets carry session passkeys and the SDK does not redact them; lockdown
+     * credentials never appear.
+     *
+     * @since 0.3.0
+     */
+    public val outboundPackets: Flow<MeshPacket> = engine.outboundPackets.hide()
+
+    /**
      * Ordered handshake snapshots, packets and session boundaries for one consumer.
      *
      * Enable this stream with [Builder.sessionReceive] and start collecting before [connect].
