@@ -1853,6 +1853,12 @@ internal class MeshEngine(
                     if (prev != null && prev != myInfo.my_node_num) {
                         val renumbered = incomingDeviceId != null && incomingDeviceId == previousDeviceId
                         keepsStoredState = renumbered
+                        if (!renumbered) {
+                            // Another device: the cached channels are the old one's, and a reconnect skips handleConnect.
+                            storedChannels = emptyList()
+                            channelsState.value = null
+                            meshState = meshState.withChannels(emptyList())
+                        }
                         logger.warn(TAG) {
                             "Identity rebind detected — previous=0x${prev.toString(
                                 16,
@@ -2018,7 +2024,8 @@ internal class MeshEngine(
 
     private fun handleSessionSeedTimeout(msg: EngineMessage.SessionSeedTimeout) {
         if (seedRequestId == 0 || msg.requestId != seedRequestId) return
-        clearSessionSeed()
+        // Only the warning is due: the reply still latches the passkey if it comes later.
+        seedTimeoutJob = null
         logger.warn(TAG) { "No get_owner_response within ${SEED_TIMEOUT_MS}ms; the session has no local passkey" }
         emitEvent(MeshEvent.ProtocolWarning("session passkey seed timed out"))
     }
@@ -3720,6 +3727,8 @@ internal class MeshEngine(
 
     private fun failHandshakeWithProtocol(reason: String) {
         logger.error(TAG) { reason }
+        // Terminal before the cancel lands, so a settle replay stops instead of carrying the handshake on.
+        handshakeStage = HandshakeStage.Idle
         failPreSendQueueWith(SendFailure.HandshakeFailed)
         val cause = MeshtasticException.Protocol(reason)
         val deferred = pendingConnectDeferred

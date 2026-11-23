@@ -325,6 +325,59 @@ class SessionTypedEventsTest {
         client.disconnect()
     }
 
+    // A reconnect skips handleConnect, so channels read for the old device must not outlive its replacement.
+    @Test
+    fun anotherDeviceOnTheTransportNeverInheritsTheStoredChannels() = runTest {
+        val stored = listOf(
+            Channel.Builder().also { wb ->
+                wb.role = Channel.Role.PRIMARY
+                wb.settings = ChannelSettings.Builder().also { it.name = "stored" }.build()
+            }.build(),
+        )
+        val storage = InMemoryStorage()
+        storage.recordOwnNode(NodeId(LOCAL), "2.7.0", null)
+        storage.saveChannels(stored)
+        // The engine saves the bundle with the channels after each handshake; its my_info names the old device.
+        storage.saveConfig(
+            ConfigBundle(
+                myInfo = MyNodeInfo.Builder().also { it.my_node_num = LOCAL }.build(),
+                metadata = DeviceMetadata.Builder().build(),
+                configs = emptyList(),
+                moduleConfigs = emptyList(),
+            ),
+        )
+        // A different radio on the same transport, whose handshakes report no channels.
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity("fake:replaced-device"),
+            autoHandshake = true,
+            nodeNum = OTHER_DEVICE,
+        )
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(PreloadedStorageProvider(storage))
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .autoReconnect(AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0))
+            .sessionReceive()
+            .build()
+        val events = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        client.connect()
+        runCurrent()
+        assertEquals(null, client.channels.value)
+
+        transport.simulateError(IllegalStateException("link lost"))
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        val readies = events.filterIsInstance<RadioSessionEvent.Ready>()
+        assertEquals(2, readies.size, "the reconnect reached Ready: $events")
+        assertEquals(null, readies.last().channels)
+        assertEquals(null, client.channels.value)
+        client.disconnect()
+    }
+
     private class PreloadedStorageProvider(private val storage: DeviceStorage) : StorageProvider {
         override suspend fun activate(identity: TransportIdentity): DeviceStorage = storage
     }
@@ -438,6 +491,7 @@ class SessionTypedEventsTest {
     private companion object {
         const val LOCAL = 1
         const val PEER = 0x2222
+        const val OTHER_DEVICE = 0x3333
         const val NONCE_STAGE1 = 69420
         const val NONCE_STAGE2 = 69421
         const val INTER_STAGE_SETTLE_MS = 100L

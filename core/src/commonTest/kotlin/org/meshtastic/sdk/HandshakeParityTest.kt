@@ -437,6 +437,60 @@ class HandshakeParityTest {
         client.disconnect()
     }
 
+    // A completion for neither nonce fails the connect (protocol.md section 6); replaying it from the settle buffer
+    // must stop the handshake there, not carry it on to Ready.
+    @Test
+    fun aMismatchedCompletionInTheSettleBufferNeverReachesReady() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:settle-mismatch"), autoQueueStatus = true)
+        val client = buildClient(transport, sessionReceive = true) { skipNodeDb() }
+        val session = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { runCatching { client.sessionEvents!!.collect { session += it } } }
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.completeStage1()
+        runCurrent()
+        advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+        runCurrent()
+        // Inside the window after the inter-stage heartbeat.
+        transport.inject { it.config_complete_id = 4242 }
+        runCurrent()
+        advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+        runCurrent()
+
+        assertIs<MeshtasticException.Protocol>(connectJob.await().exceptionOrNull())
+        runCurrent()
+        assertTrue(session.none { it is RadioSessionEvent.Ready }, "a failed handshake published Ready: $session")
+    }
+
+    // The 10 s deadline is only a warning: MeshModule::setReplyTo still matches a later reply to the seed.
+    @Test
+    fun aSeedReplyAfterTheWarningStillLatches() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:late-seed"), autoQueueStatus = true)
+        val client = buildClient(transport)
+        val events = mutableListOf<MeshEvent>()
+        backgroundScope.launch { client.events.collect { events += it } }
+        val received = mutableListOf<MeshPacket>()
+        backgroundScope.launch { client.packets.collect { received += it } }
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.completeStage1()
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+        assertTrue(connectJob.await().isSuccess)
+
+        advanceTimeBy(SEED_TIMEOUT_MS + 5_000)
+        runCurrent()
+        assertTrue(events.any { it is MeshEvent.ProtocolWarning && it.message == SEED_WARNING })
+
+        transport.answerSeed()
+        runCurrent()
+        assertIs<AdminSessionStatus.Active>(client.adminSessions.value[NodeId(NODE)])
+        assertFalse(received.any { it.decoded?.portnum == PortNum.ADMIN_APP }, "the late seed reply is consumed")
+        client.disconnect()
+    }
+
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->
         wb.from = from
         wb.to = BROADCAST
