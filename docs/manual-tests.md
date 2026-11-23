@@ -172,11 +172,11 @@ Each test gives the transport, steps, expected result, how to verify it, and any
 - **Transport:** TCP (easiest to simulate)
 - **Context:** on firmware 2.7.4 or later, which answers heartbeats, the engine liveness watchdog (`MeshEngine.LIVENESS_TIMEOUT_MS = 60 s`) makes a half-open socket (firewall state dropped, Wi-Fi access point gone, NAT entry evicted) surface as a `TransportError` within about 60 to 90 s instead of hanging.
 - **Steps:**
-  1. Connect over TCP, reach `Connected`, and confirm traffic flows.
+  1. Connect over TCP, reach `Connected`, and wait for a heartbeat reply: a `QueueStatus` with `mesh_packet_id` 0 in the protocol log or on `RadioClient.fromRadio`, within 30 s of `Connected`. Other traffic does not arm the watchdog.
   2. Without closing the session, cut the node off: pull its network, or drop its packets at the host firewall (on macOS, `sudo pfctl -E` and a `block drop from any to <NODE_IP>` rule).
   3. Watch `client.events` and `client.connection`.
 - **Expected:**
-  - Within about 60 s of the last `FromRadio`, one `MeshEvent.TransportError` arrives whose message contains `liveness timeout`, or a `HandshakeTimeout` if the handshake stalled before `Connected`.
+  - 60 to 90 s after the last `FromRadio` (the watchdog checks every 30 s and fires once 60 s have passed without one), one `MeshEvent.TransportError` arrives whose message contains `liveness timeout`, or a `HandshakeTimeout` if the handshake stalled before `Connected`.
   - `client.connection` goes to `Disconnected`, or to `Reconnecting` first when `Builder.autoReconnect(...)` is on.
   - `client.connect()` succeeds once the node is reachable again.
 - **Regression:** a session that sits in `Connected` for minutes after the cut means the watchdog is not running or something other than a decoded `FromRadio` resets its budget.
