@@ -394,7 +394,7 @@ internal class MeshEngine(
      * [HANDSHAKE_PACKET_BUFFER_CAP] (with a [MeshEvent.PacketsDropped] signal) and flushed
      * through the normal Ready packet pipeline in [transitionToReady].
      */
-    private val handshakePacketBuffer = ArrayDeque<BufferedPacket>(HANDSHAKE_PACKET_BUFFER_CAP)
+    private val handshakePacketBuffer = ArrayDeque<HeldItem>(HANDSHAKE_PACKET_BUFFER_CAP)
 
     /**
      * Per-send ACK timeout jobs. Keyed by the wire packet `id`. Touched only by the
@@ -2079,16 +2079,19 @@ internal class MeshEngine(
     }
 
     /** Buffer a mid-handshake `FromRadio.packet` for delivery once the session reaches Ready. */
-    private fun bufferHandshakePacket(packet: MeshPacket) {
+    private fun bufferHandshakePacket(packet: MeshPacket) = holdUntilReady(HeldItem.Packet(packet, clock.now()))
+
+    private fun holdUntilReady(item: HeldItem) {
         if (handshakePacketBuffer.size >= HANDSHAKE_PACKET_BUFFER_CAP) {
             sessionReceive?.handshakeOverflow()
-            handshakePacketBuffer.removeFirst()
+            val dropped = handshakePacketBuffer.removeFirst()
             logger.warn(TAG) {
                 "Handshake packet buffer full (cap=$HANDSHAKE_PACKET_BUFFER_CAP) — dropping oldest"
             }
-            emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
+            // A held event already reached RadioClient.events; only the session stream loses it.
+            if (dropped is HeldItem.Packet) emitEvent(MeshEvent.PacketsDropped(DroppedFlow.Packets, count = 1))
         }
-        handshakePacketBuffer.addLast(BufferedPacket(packet, clock.now()))
+        handshakePacketBuffer.addLast(item)
     }
 
     private fun transitionToReady() {
@@ -2166,12 +2169,15 @@ internal class MeshEngine(
         }
 
         // Flush mesh packets that arrived mid-handshake through the normal Ready pipeline
-        // (presence, dedup, packets flow, RPC/ACK correlation) before draining queued sends.
+        // (presence, dedup, packets flow, RPC/ACK correlation) before draining queued sends,
+        // with the session copies of handshake events in receive order between them.
         if (handshakePacketBuffer.isNotEmpty()) {
-            logger.info(TAG) { "Flushing ${handshakePacketBuffer.size} packets received during handshake" }
+            logger.info(TAG) { "Flushing ${handshakePacketBuffer.size} frames received during handshake" }
             while (handshakePacketBuffer.isNotEmpty()) {
-                val buffered = handshakePacketBuffer.removeFirst()
-                processInboundMeshPacket(buffered.packet, buffered.receivedAt)
+                when (val held = handshakePacketBuffer.removeFirst()) {
+                    is HeldItem.Packet -> processInboundMeshPacket(held.packet, held.receivedAt)
+                    is HeldItem.Event -> sessionReceive?.event(held.event)
+                }
             }
         }
 
@@ -3783,8 +3789,14 @@ internal class MeshEngine(
         val sessionVisible = event !is MeshEvent.LockdownStatusChanged &&
             event !is MeshEvent.QueueStatusChanged &&
             event !is MeshEvent.PacketsDropped
-        if (sessionVisible) {
-            sessionReceive?.event(event)
+        when {
+            !sessionVisible -> Unit
+
+            // The session stream starts at Ready, so a handshake event follows the snapshot with the held packets.
+            sessionReceive != null && handshakeStage != HandshakeStage.Ready && handshakeStage != HandshakeStage.Idle ->
+                holdUntilReady(HeldItem.Event(event))
+
+            else -> sessionReceive?.event(event)
         }
     }
 
@@ -4203,5 +4215,9 @@ internal class MeshEngine(
     private class SessionPasskeyEntry(val bytes: ByteArray, val refreshedAt: Instant, val generation: Int)
 
     /** A mid-handshake packet with the instant it arrived. */
-    private class BufferedPacket(val packet: MeshPacket, val receivedAt: Instant)
+    private sealed interface HeldItem {
+        class Packet(val packet: MeshPacket, val receivedAt: Instant) : HeldItem
+
+        class Event(val event: MeshEvent) : HeldItem
+    }
 }
