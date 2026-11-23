@@ -437,7 +437,7 @@ Each test gives the transport, steps, expected result, how to verify it, and any
 
 #### I4: `bondedBleDevices()` lists a paired node and connects to it
 - **Transport:** BLE (Android)
-- **Pre-req:** a node already bonded in Android's Bluetooth settings; `BLUETOOTH_CONNECT` granted.
+- **Pre-req:** a node already bonded in Android's Bluetooth settings; `BLUETOOTH_CONNECT` granted, plus `BLUETOOTH_SCAN` on Android 12+ or location on earlier versions (without it the address scan fails and the connect falls back to the bonded handle, so step 2 would not exercise the scan).
 - **Steps:**
   1. Call `bondedBleDevices(context)` and confirm the node is listed with its name and MAC.
   2. Build `BleTransport(device)` from it and call `client.connect()` with the node in range.
