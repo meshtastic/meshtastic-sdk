@@ -19,3 +19,14 @@ final class org.meshtastic.sdk.transport.websocket/WebSocketTransport : org.mesh
     final suspend fun disconnect() // org.meshtastic.sdk.transport.websocket/WebSocketTransport.disconnect|disconnect(){}[0]
     final suspend fun send(org.meshtastic.sdk/Frame) // org.meshtastic.sdk.transport.websocket/WebSocketTransport.send|send(org.meshtastic.sdk.Frame){}[0]
 }
+
+final class org.meshtastic.sdk.transport.websocket/WebSocketTransportException : org.meshtastic.sdk/MeshtasticException.Transport { // org.meshtastic.sdk.transport.websocket/WebSocketTransportException|null[0]
+    final val closeCode // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.closeCode|{}closeCode[0]
+        final fun <get-closeCode>(): kotlin/Int? // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.closeCode.<get-closeCode>|<get-closeCode>(){}[0]
+    final val closeReason // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.closeReason|{}closeReason[0]
+        final fun <get-closeReason>(): kotlin/String? // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.closeReason.<get-closeReason>|<get-closeReason>(){}[0]
+    final val httpStatus // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.httpStatus|{}httpStatus[0]
+        final fun <get-httpStatus>(): kotlin/Int? // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.httpStatus.<get-httpStatus>|<get-httpStatus>(){}[0]
+    final val slotContested // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.slotContested|{}slotContested[0]
+        final fun <get-slotContested>(): kotlin/Boolean // org.meshtastic.sdk.transport.websocket/WebSocketTransportException.slotContested.<get-slotContested>|<get-slotContested>(){}[0]
+}

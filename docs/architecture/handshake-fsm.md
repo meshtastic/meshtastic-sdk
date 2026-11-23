@@ -53,7 +53,7 @@ While `Idle`, which covers the gap between `transport.connect()` reaching `Conne
 
 ### Heartbeat in handshake
 
-One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`. Its reply, a `QueueStatus` for packet id 0 from firmware 2.7.4 on, arms the liveness watchdog ([`protocol.md` §16](../protocol.md#16-heartbeat--queue-status)).
+One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`, or to `AwaitingLockdown`, which also sends one at once. Its reply, a `QueueStatus` for packet id 0 from firmware 2.7.4 on, arms the liveness watchdog ([`protocol.md` §16](../protocol.md#16-heartbeat--queue-status)).
 
 ### Clock sync in handshake
 

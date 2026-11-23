@@ -62,7 +62,8 @@ import io.ktor.websocket.Frame as WsFrame
  * The node serves one client at a time. A newer client takes the slot and the old one is closed
  * with code 4001, which surfaces as [TransportState.Error] with `recoverable = false`. Close
  * code 1009 (message over 512 bytes) is not recoverable either; 1000, 1013 (node out of memory)
- * and a drop without a close frame are.
+ * and a drop without a close frame are. The error's cause is a [WebSocketTransportException], which
+ * carries the close code, reason and refused upgrade status as fields.
  *
  * This transport does not reconnect: it reports [state] and errors and lets the engine's
  * `AutoReconnectConfig` decide. Two firmware behaviors are tracked across [connect] calls on one
@@ -161,7 +162,11 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
             currentCoroutineContext().ensureActive()
             throw MeshtasticException.Transport("WebSocket connect was interrupted by disconnect()")
         } catch (e: Exception) {
-            val failure = MeshtasticException.Transport(describeConnectFailure(endpoint, e), e)
+            val failure = WebSocketTransportException(
+                describeConnectFailure(endpoint, e),
+                httpStatus = refusedUpgradeStatus(e),
+                cause = e,
+            )
             if (!abandon(gen, TransportState.Error(failure, recoverable = true))) {
                 throw MeshtasticException.Transport("WebSocket connect was interrupted by disconnect()")
             }
@@ -328,8 +333,9 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
             withTimeoutOrNull(CLOSE_TIMEOUT_MS) {
                 runCatching { open.close(CloseReason(CloseReason.Codes.TOO_BIG, "")) }
             }
-            val failure = MeshtasticException.Transport(
+            val failure = WebSocketTransportException(
                 "WebSocket message of $oversize bytes exceeds ${WireFraming.MAX_PAYLOAD_SIZE}; closed with 1009",
+                closeCode = CLOSE_TOO_BIG,
             )
             ended = TransportState.Error(failure, recoverable = false)
         } else {
@@ -342,7 +348,13 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
             code = reason?.code?.toInt()
             val (message, recoverable) = describeSessionEnd(code, reason?.message, dropped)
             val cause = dropped?.takeUnless { it is CancellationException }
-            ended = TransportState.Error(MeshtasticException.Transport(message, cause), recoverable)
+            val failure = WebSocketTransportException(
+                message,
+                closeCode = code,
+                closeReason = reason?.message?.takeIf { it.isNotBlank() },
+                cause = cause,
+            )
+            ended = TransportState.Error(failure, recoverable)
         }
         pumpProbe?.invoke("ending")
         try {
@@ -357,9 +369,11 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                     if (quickDrops >= MAX_QUICK_DROPS) {
                         quickDrops = 0
                         ended = TransportState.Error(
-                            MeshtasticException.Transport(
+                            WebSocketTransportException(
                                 "WebSocket dropped $MAX_QUICK_DROPS times in a row right after opening: " +
                                     "another client keeps taking the node's only WebSocket slot",
+                                closeCode = code,
+                                slotContested = true,
                             ),
                             recoverable = false,
                         )
@@ -386,6 +400,7 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
         const val CLOSE_TOO_BIG: Int = 1009
         const val CLOSE_TRY_AGAIN_LATER: Int = 1013
         const val CLOSE_REPLACED: Int = 4001
+        private const val HTTP_SWITCHING_PROTOCOLS = 101
 
         fun withHeader(payload: ByteArray): ByteString {
             val out = ByteArray(WireFraming.HEADER_SIZE + payload.size)
@@ -413,14 +428,23 @@ public class WebSocketTransport @JvmOverloads constructor(url: String, private v
                 true
         }
 
+        /** The status the node refused the upgrade with; Ktor reports it only in its exception message. */
+        fun refusedUpgradeStatus(error: Throwable): Int? = STATUS_PATTERN.find(failureChainText(error))
+            ?.groupValues
+            ?.get(1)
+            ?.toInt()
+            ?.takeIf { it != HTTP_SWITCHING_PROTOCOLS }
+
+        private fun failureChainText(error: Throwable): String = generateSequence(error) { it.cause }
+            .take(8)
+            .joinToString(" | ") { "${it::class.simpleName}: ${it.message}" }
+
         fun describeConnectFailure(endpoint: WebSocketEndpoint, error: Throwable): String {
-            val chain = generateSequence(error) { it.cause }.take(8).toList()
-            val text = chain.joinToString(" | ") { "${it::class.simpleName}: ${it.message}" }
-            val lower = text.lowercase()
-            val status = STATUS_PATTERN.find(text)?.groupValues?.get(1)
+            val lower = failureChainText(error).lowercase()
+            val status = refusedUpgradeStatus(error)
             val target = "${endpoint.host}:${endpoint.port}"
             return when {
-                status != null && status != "101" ->
+                status != null ->
                     "WebSocket upgrade refused by $target with HTTP $status; " +
                         "the node's firmware may not support the WebSocket phone API at ${endpoint.path}"
 

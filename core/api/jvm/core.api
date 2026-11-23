@@ -1371,7 +1371,7 @@ public final class org/meshtastic/sdk/MeshtasticException$StorageUnavailable : o
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 }
 
-public final class org/meshtastic/sdk/MeshtasticException$Transport : org/meshtastic/sdk/MeshtasticException {
+public class org/meshtastic/sdk/MeshtasticException$Transport : org/meshtastic/sdk/MeshtasticException {
 	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 }

@@ -16,7 +16,7 @@ Every observable failure, mapped to the Kotlin type that carries it. Per [ADR-00
 | Slow collector on `packets` or `nodes` | `MeshEvent.PacketsDropped(flow, count)` | Loss is reported, not silent. |
 | Storage write failure mid-session | `MeshEvent.StorageDegraded(reason)`; writes stop for the session | A storage outage doesn't end a live session. |
 
-The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after 60 s (two heartbeat intervals) without a decoded `FromRadio` once the firmware has answered a heartbeat (2.7.4 and later, see [protocol.md](protocol.md#16-heartbeat--queue-status)), and from the transport when the link closes. Before `Connected` the handshake stage timers bound the wait. `TcpTransport` has no read timeout of its own: silence from firmware that never answers heartbeats is not a dead link, and SO_KEEPALIVE stays on.
+The session-drop signals come from the engine's liveness watchdog, which fails the session with `Transport("liveness timeout")` after more than 60 s (two heartbeat intervals; at most 65 s) without any decoded `FromRadio` once the firmware has answered a heartbeat (2.7.4 and later, see [protocol.md](protocol.md#16-heartbeat--queue-status)), and from the transport when the link closes. Before `Connected` the handshake stage timers bound the wait, except while a lockdown handshake waits for its unlock: there the heartbeat and watchdog run from the lockdown status on, without waiting for a heartbeat reply, and a silent link fails the waiting `connect()` with `Transport("liveness timeout")`. `TcpTransport` has no read timeout of its own: silence from firmware that never answers heartbeats is not a dead link, and SO_KEEPALIVE stays on.
 
 ## `MeshtasticException` hierarchy
 
@@ -24,7 +24,7 @@ Source: [`MeshtasticException.kt`](../core/src/commonMain/kotlin/org/meshtastic/
 
 ```text
 MeshtasticException                     sealed
-├── Transport(reason, cause?)
+├── Transport(reason, cause?)            open; WebSocketTransportException extends it
 ├── Protocol(reason, cause?)
 ├── HandshakeTimeout(stage)
 ├── StorageUnavailable(message?, cause?)
@@ -37,6 +37,7 @@ MeshtasticException                     sealed
 - `cause` keeps the underlying `Throwable`: a Kable exception, a Ktor or socket I/O error, a jSerialComm error.
 - `transportIdentity` and `operation` attribute a failure without parsing the message. The SDK sets them; callers read them.
 - Recoverability isn't on the exception. A transport reports it through `TransportState.Error.recoverable`; for example, `WebSocketTransport` reports close code 4001 (displaced by another client) and 1009 as not recoverable.
+- `Transport` is open so a transport module can carry typed detail in a subclass without adding a case to the hierarchy. `WebSocketTransportException` carries `closeCode`, `closeReason`, `httpStatus` (a refused upgrade) and `slotContested`; read those, not the message.
 - Adding a subclass is a SemVer-major change after 1.0, since consumers may `when` over the hierarchy exhaustively.
 
 ### When each is thrown
@@ -49,7 +50,7 @@ MeshtasticException                     sealed
 | `StorageUnavailable` | `connect()` | `StorageProvider.activate()` failed. Mid-session failures surface as `StorageDegraded` instead. | Default `"Storage unavailable"` |
 | `FirmwareTooOld` | `connect()` | `DeviceMetadata.firmware_version` in Stage 1 parses below `DeviceVersion.ABS_MIN_SUPPORTED` (2.3.15). `required` and `present` are `DeviceVersion.asInt` values (2.3.15 is 20315). From 2.3.15 up to 2.5.13 the connect succeeds and one `MeshEvent.ProtocolWarning` ("firmware should be updated", `present`, `recommended` = 2.5.14) is emitted per session. A blank or unparseable version does not fail the connect. The session ends `Disconnected`, a `MeshEvent.TransportError` carries the exception, and auto-reconnect does not retry. | `"Firmware requires newer client (need 20315, have 20300)"` |
 | `NotConnected` | `send()`, `sendText()`, `sendReaction()`, `send(portnum, …)`, `sendRaw()`, `requestNodeInfo()`, `nodeSnapshot()` | The client isn't `Connected`. The sub-APIs report failure as a result instead. | `"Client not connected"` |
-| `AlreadyConnected` | `connect()` | `connect()` while connected. A silent no-op would hide reconnect-loop bugs. | `"Client already connected"` |
+| `AlreadyConnected` | `connect()` | `connect()` while connected, or while another `connect()` is still starting its run. A silent no-op would hide reconnect-loop bugs. After `disconnect()`, the next `connect()` waits for the previous run's cleanup instead. | `"Client already connected"` |
 | `PayloadTooLarge` | `send()` and the convenience senders | `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). | `"Payload exceeds 233 bytes"` |
 
 ## `SendFailure` (inside `SendState.Failed`)

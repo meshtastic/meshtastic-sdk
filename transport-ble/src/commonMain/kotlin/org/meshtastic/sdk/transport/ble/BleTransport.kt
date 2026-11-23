@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import okio.ByteString
@@ -276,30 +277,59 @@ public class BleTransport internal constructor(
             } catch (_: Exception) { /* idempotent */ }
             throw e
         } catch (e: Exception) {
-            _state.value = TransportState.Error(e, recoverable = true)
+            val current = publishConnectFailure(generation, e)
             try {
                 peripheral.disconnect()
             } catch (_: Exception) { /* idempotent */ }
-            throw MeshtasticException.Transport(
-                "BLE connect to ${identity.raw} failed: ${e.message}",
-                e,
-            )
+            throw if (current) {
+                MeshtasticException.Transport("BLE connect to ${identity.raw} failed: ${e.message}", e)
+            } else {
+                CancellationException("BleTransport disconnected during connect", e)
+            }
         }
+    }
+
+    /**
+     * Publishes [failure] as a recoverable error unless [disconnect] ran since this connect began as
+     * [generation]; returns whether it did. disconnect() advances the generation before it publishes
+     * Disconnected, so the compare-and-set retry sees either the new generation or its own state.
+     */
+    private fun publishConnectFailure(generation: Int, failure: Exception): Boolean {
+        var current = false
+        _state.update { state ->
+            current = connectGeneration.value == generation
+            if (current) TransportState.Error(failure, recoverable = true) else state
+        }
+        return current
     }
 
     /**
      * Resolves a deferred peripheral, once or (with [resolveOnEveryConnect]) on every connect,
      * replacing and closing the previous one. Fails if [disconnect] ran since this connect began
-     * as [generation], so a late resolution never opens a link.
+     * as [generation], so a late resolution never opens a link and a late resolution failure (a
+     * desktop scan timing out) leaves the state [TransportState.Disconnected] rather than an error.
      */
     private suspend fun ensurePeripheral(generation: Int) {
         val resolve = resolvePeripheral
-        if (resolvedPeripheral.value == null || (resolve != null && resolveOnEveryConnect)) {
-            resolveAndStore(checkNotNull(resolve) { "BleTransport has neither a peripheral nor a resolver" })
+        val failure = if (resolvedPeripheral.value == null || (resolve != null && resolveOnEveryConnect)) {
+            resolveCatching(checkNotNull(resolve) { "BleTransport has neither a peripheral nor a resolver" })
+        } else {
+            null
         }
         if (connectGeneration.value != generation) {
-            throw CancellationException("BleTransport disconnected during connect")
+            throw CancellationException("BleTransport disconnected during connect", failure)
         }
+        if (failure != null) throw failure
+    }
+
+    /** Resolves and stores the peripheral, returning the failure instead of throwing it; rethrows cancellation. */
+    private suspend fun resolveCatching(resolve: suspend () -> Peripheral): Exception? = try {
+        resolveAndStore(resolve)
+        null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        e
     }
 
     private suspend fun resolveAndStore(resolve: suspend () -> Peripheral) {

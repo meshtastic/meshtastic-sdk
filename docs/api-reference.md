@@ -420,7 +420,7 @@ public sealed class MeshtasticException(message: String, cause: Throwable?) : Ex
     public var operation: String?                       // set by the SDK; read-only to callers
     public fun <T : MeshtasticException> T.withContext(transportIdentity: TransportIdentity? = null, operation: String? = null): T
 
-    public class Transport(reason: String, cause: Throwable? = null) : MeshtasticException
+    public open class Transport(reason: String, cause: Throwable? = null) : MeshtasticException  // open for typed transport detail
     public class Protocol(reason: String, cause: Throwable? = null) : MeshtasticException
     public class HandshakeTimeout(public val stage: String) : MeshtasticException
     public class StorageUnavailable(message: String = "Storage unavailable", cause: Throwable? = null) : MeshtasticException

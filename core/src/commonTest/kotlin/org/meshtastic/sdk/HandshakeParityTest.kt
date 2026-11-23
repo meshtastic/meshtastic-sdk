@@ -300,6 +300,54 @@ class HandshakeParityTest {
         assertEquals(ConnectionState.Disconnected, client.connection.value)
     }
 
+    // The 60 s runs from the last decoded frame, not from the watchdog's tick phase.
+    @Test
+    fun aFrameAt29SecondsKeepsTheLinkUntil89Seconds() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:liveness-phase"), autoHandshake = true)
+        val client = buildClient(transport)
+        client.connect()
+        transport.inject {
+            it.queueStatus = QueueStatus.Builder().also { q ->
+                q.free = 16
+                q.maxlen = 16
+            }.build()
+        }
+        runCurrent()
+        advanceTimeBy(29_000L)
+        transport.injectPacket(replayedPosition(PEER_BASE))
+        runCurrent()
+
+        advanceTimeBy(LIVENESS_TIMEOUT_MS)
+        runCurrent()
+        assertEquals(ConnectionState.Connected, client.connection.value)
+
+        advanceTimeBy(LIVENESS_CHECK_MS + 1_000L)
+        runCurrent()
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
+    @Test
+    fun silenceAfterAFrameFailsWithinOneCheckOfTheTimeout() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:liveness-bound"), autoHandshake = true)
+        val client = buildClient(transport)
+        client.connect()
+        transport.inject {
+            it.queueStatus = QueueStatus.Builder().also { q ->
+                q.free = 16
+                q.maxlen = 16
+            }.build()
+        }
+        runCurrent()
+        advanceTimeBy(1_000L)
+        transport.injectPacket(replayedPosition(PEER_BASE))
+        runCurrent()
+
+        advanceTimeBy(LIVENESS_TIMEOUT_MS + LIVENESS_CHECK_MS)
+        runCurrent()
+
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
     @Test
     fun aBleLinkWithoutPeriodicHeartbeatsHasNoLivenessWatchdog() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("ble:AA:BB:CC:DD:EE:FF"), autoHandshake = true)
@@ -569,7 +617,7 @@ class HandshakeParityTest {
         const val SEED_TIMEOUT_MS = 10_000L
         const val SEED_WARNING = "session passkey seed timed out"
         const val LIVENESS_TIMEOUT_MS = 60_000L
-        const val LIVENESS_CHECK_MS = 30_000L
+        const val LIVENESS_CHECK_MS = 5_000L
         const val BROADCAST = -1
         const val PEER_BASE = 0x2000
 

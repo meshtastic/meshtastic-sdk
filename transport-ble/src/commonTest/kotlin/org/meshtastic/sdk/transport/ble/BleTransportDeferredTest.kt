@@ -7,6 +7,7 @@
  */
 package org.meshtastic.sdk.transport.ble
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -16,6 +17,7 @@ import org.meshtastic.sdk.TransportState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -93,6 +95,45 @@ class BleTransportDeferredTest {
 
         assertEquals(1, peripheral.connectCalls)
         assertEquals(TransportState.Connected, transport.state.value)
+        transport.shutdown()
+    }
+
+    @Test
+    fun aResolutionThatFailsAfterDisconnectLeavesTheTransportDisconnected() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val transport = createDeferredBleTransport(ADDRESS, builderAction = {}) {
+            release.await()
+            throw MeshtasticException.Transport("no BLE radio advertising $ADDRESS within 15s")
+        }
+
+        val connecting = async { runCatching { transport.connect() } }
+        yield()
+        transport.disconnect()
+        release.complete(Unit)
+        val outcome = connecting.await().exceptionOrNull()
+
+        assertIs<CancellationException>(outcome)
+        assertEquals(TransportState.Disconnected, transport.state.value)
+        transport.shutdown()
+    }
+
+    @Test
+    fun aLinkFailureAfterDisconnectLeavesTheTransportDisconnected() = runTest {
+        val release = CompletableDeferred<Unit>()
+        val peripheral = FakeBlePeripheral(connectBehavior = {
+            release.await()
+            throw MeshtasticException.Transport("GATT connect failed")
+        })
+        val transport = BleTransport(peripheral, address = ADDRESS)
+
+        val connecting = async { runCatching { transport.connect() } }
+        yield()
+        transport.disconnect()
+        release.complete(Unit)
+        val outcome = connecting.await().exceptionOrNull()
+
+        assertIs<CancellationException>(outcome)
+        assertEquals(TransportState.Disconnected, transport.state.value)
         transport.shutdown()
     }
 
