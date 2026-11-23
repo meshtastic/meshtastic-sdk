@@ -22,14 +22,17 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.LockdownStatus
+import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
 import org.meshtastic.sdk.testing.toFrame
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 
 /**
@@ -219,6 +222,59 @@ class LockdownStatusEventTest {
             },
         )
         client.disconnect()
+    }
+
+    /**
+     * Firmware answers a heartbeat with a QueueStatus for packet id 0 whether or not the link is
+     * authorized (PhoneAPI::handleToRadio takes the heartbeat case outside the access-control gate), so
+     * a locked link that stops answering is dead and fails the connect after the 60 s liveness bound.
+     */
+    @Test
+    fun aLockedLinkThatGoesSilentFailsTheConnectAfterTheLivenessTimeout() = runTest {
+        val fake = FakeRadioTransport(TransportIdentity("fake:locked-half-open"), autoHandshake = true)
+        var answering = true
+        var heartbeats = 0
+        val transport = object : RadioTransport by fake {
+            override suspend fun send(frame: Frame) {
+                val request = runCatching { ToRadio.ADAPTER.decode(frame.bytes.substring(4)) }.getOrNull()
+                fake.send(frame)
+                if (request?.want_config_id == 69420) fake.reportLockdown(LockdownStatus.State.LOCKED)
+                if (request?.heartbeat != null) {
+                    heartbeats++
+                    if (answering) {
+                        fake.injectFrame(
+                            FromRadio.Builder().also {
+                                it.queueStatus = QueueStatus.Builder().also { status ->
+                                    status.free = 16
+                                    status.maxlen = 16
+                                }.build()
+                            }.build().toFrame(),
+                        )
+                    }
+                }
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .build()
+        val connecting = async { runCatching { client.connect() } }
+        advanceTimeBy(5.minutes)
+        assertFalse(connecting.isCompleted)
+        assertTrue(heartbeats >= 10, "heartbeats=$heartbeats")
+
+        answering = false
+        advanceTimeBy(29.seconds)
+        assertFalse(connecting.isCompleted)
+        advanceTimeBy(32.seconds)
+        runCurrent()
+
+        assertTrue(connecting.isCompleted)
+        val error = assertIs<MeshtasticException.Transport>(connecting.await().exceptionOrNull())
+        assertEquals("liveness timeout", error.message)
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
     }
 
     private fun FakeRadioTransport.reportLockdown(state: LockdownStatus.State) {

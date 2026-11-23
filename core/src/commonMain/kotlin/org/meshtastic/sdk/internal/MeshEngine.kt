@@ -1576,12 +1576,19 @@ internal class MeshEngine(
     private fun handleHandshakeLockdown(status: LockdownStatus) {
         when (status.state) {
             LockdownStatus.State.LOCKED, LockdownStatus.State.NEEDS_PROVISION -> {
+                val entering = handshakeStage != HandshakeStage.AwaitingLockdown
                 handshakeStage = HandshakeStage.AwaitingLockdown
                 lockdownLink.value = pendingMyInfo?.my_node_num?.takeIf { it != 0 }?.let {
                     LockdownLink(receiveGeneration, it)
                 }
                 stage2WatchdogJob?.cancel()
                 stage2WatchdogJob = null
+                // Firmware answers a heartbeat on a link it has not authorized (PhoneAPI::handleToRadio), so the
+                // first reply arms the liveness watchdog for the wait, however long the unlock takes.
+                if (entering && sendsPeriodicHeartbeats()) {
+                    sendKeepaliveHeartbeat()
+                    startKeepalive()
+                }
             }
 
             LockdownStatus.State.UNLOCKED, LockdownStatus.State.DISABLED -> if (
@@ -2223,29 +2230,7 @@ internal class MeshEngine(
             )
         }
 
-        // Start the 30 s periodic heartbeat scheduler.
-        heartbeatJob?.cancel()
-        heartbeatJob = engineScope?.launch {
-            while (true) {
-                delay(HEARTBEAT_INTERVAL_MS)
-                inbox.trySend(EngineMessage.HeartbeatTick)
-            }
-        }
-
-        // liveness watchdog. Prime the budget and spawn a ticker coroutine
-        // that posts `LivenessTick` messages into the engine inbox every
-        // `LIVENESS_CHECK_INTERVAL_MS`. The budget is decremented on each tick (on the actor)
-        // and reset in `handleFrameRx` when a decoded envelope arrives — keeping all mutations
-        // single-writer per ADR-002. Using `delay()` instead of wall-clock arithmetic means the
-        // watchdog is correct under both real time and `runTest`'s virtual time.
-        livenessBudgetMs = LIVENESS_TIMEOUT_MS
-        livenessWatchdogJob?.cancel()
-        livenessWatchdogJob = engineScope?.launch {
-            while (true) {
-                delay(LIVENESS_CHECK_INTERVAL_MS)
-                inbox.trySend(EngineMessage.LivenessTick)
-            }
-        }
+        startKeepalive()
 
         // Presence check: scan nodes for offline transitions every 30s (piggybacks on heartbeat interval).
         presenceJob?.cancel()
@@ -2285,6 +2270,36 @@ internal class MeshEngine(
 
         logger.info(TAG) { "Session Ready — myNodeNum=0x${myNodeNum.toString(16)}" }
     }
+
+    /** Starts the 30 s heartbeat and the liveness watchdog, for a Ready session or one awaiting lockdown. */
+    private fun startKeepalive() {
+        heartbeatJob?.cancel()
+        heartbeatJob = engineScope?.launch {
+            while (true) {
+                delay(HEARTBEAT_INTERVAL_MS)
+                inbox.trySend(EngineMessage.HeartbeatTick)
+            }
+        }
+
+        // liveness watchdog. Prime the budget and spawn a ticker coroutine
+        // that posts `LivenessTick` messages into the engine inbox every
+        // `LIVENESS_CHECK_INTERVAL_MS`. The budget is decremented on each tick (on the actor)
+        // and reset in `handleFrameRx` when a decoded envelope arrives — keeping all mutations
+        // single-writer per ADR-002. Using `delay()` instead of wall-clock arithmetic means the
+        // watchdog is correct under both real time and `runTest`'s virtual time.
+        livenessBudgetMs = LIVENESS_TIMEOUT_MS
+        livenessWatchdogJob?.cancel()
+        livenessWatchdogJob = engineScope?.launch {
+            while (true) {
+                delay(LIVENESS_CHECK_INTERVAL_MS)
+                inbox.trySend(EngineMessage.LivenessTick)
+            }
+        }
+    }
+
+    // A session awaiting lockdown has a live link but no Ready deadline, so it keeps the Ready keepalive.
+    private fun keepsLinkAlive(): Boolean =
+        handshakeStage == HandshakeStage.Ready || handshakeStage == HandshakeStage.AwaitingLockdown
 
     private fun startNodeDbRefresh() {
         if (nodeDbRefresh != null) {
@@ -3654,7 +3669,7 @@ internal class MeshEngine(
 
     private fun handleHeartbeatTick() {
         publishAdminSessions()
-        if (handshakeStage != HandshakeStage.Ready) return
+        if (!keepsLinkAlive()) return
         if (!sendsPeriodicHeartbeats()) return
         val nonce = sendKeepaliveHeartbeat()
         logger.verbose(TAG) { "Heartbeat sent nonce=$nonce" }
@@ -3724,19 +3739,25 @@ internal class MeshEngine(
      * [livenessBudgetMs] with [handleFrameRx] is safe per ADR-002 (single-writer). When the
      * budget is exhausted we emit a `TransportError` (via `handleDisconnect`) explaining
      * **why** the session is dropping, then run the normal teardown path. Gated on
-     * [disconnecting] and `handshakeStage == Ready` so ticks arriving mid-teardown or pre-Ready
-     * can't double-fire with a user-initiated disconnect or the TCP read timeout. Silence proves
+     * [disconnecting] and on Ready or AwaitingLockdown, so ticks arriving mid-teardown or during a
+     * handshake stage, which has its own timers, can't double-fire. Silence proves
      * nothing until the firmware has answered a heartbeat and the engine keeps sending them: firmware
      * before 2.7.4 never replies, so a quiet mesh leaves a healthy link silent.
      */
     private fun handleLivenessTick() {
         if (disconnecting) return
-        if (handshakeStage != HandshakeStage.Ready) return
+        if (!keepsLinkAlive()) return
         if (!heartbeatAnswered || !sendsPeriodicHeartbeats()) return
         livenessBudgetMs -= LIVENESS_CHECK_INTERVAL_MS
         if (livenessBudgetMs > 0) return
         logger.warn(TAG) { "Liveness timeout — no FromRadio for ${LIVENESS_TIMEOUT_MS}ms" }
         val cause = MeshtasticException.Transport("liveness timeout", cause = null)
+        // A connect() still waiting on a lockdown unlock fails with the same cause.
+        pendingConnectDeferred?.let { deferred ->
+            pendingConnectDeferred = null
+            failPreSendQueueWith(SendFailure.HandshakeFailed)
+            deferred.completeExceptionally(cause)
+        }
         // handleDisconnect emits the TransportError event for us and cancels the supervisor.
         handleDisconnect(EngineMessage.Disconnect(cause))
     }
