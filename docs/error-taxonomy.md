@@ -50,7 +50,7 @@ MeshtasticException                     sealed
 | `StorageUnavailable` | `connect()` | `StorageProvider.activate()` failed. Mid-session failures surface as `StorageDegraded` instead. | Default `"Storage unavailable"` |
 | `FirmwareTooOld` | `connect()` | `DeviceMetadata.firmware_version` in Stage 1 parses below `DeviceVersion.ABS_MIN_SUPPORTED` (2.3.15). `required` and `present` are `DeviceVersion.asInt` values (2.3.15 is 20315). From 2.3.15 up to 2.5.13 the connect succeeds and one `MeshEvent.ProtocolWarning` ("firmware should be updated", `present`, `recommended` = 2.5.14) is emitted per session. A blank or unparseable version does not fail the connect. The session ends `Disconnected`, a `MeshEvent.TransportError` carries the exception, and auto-reconnect does not retry. | `"Firmware requires newer client (need 20315, have 20300)"` |
 | `NotConnected` | `send()`, `sendText()`, `sendReaction()`, `send(portnum, …)`, `sendRaw()`, `requestNodeInfo()`, `nodeSnapshot()` | The client isn't `Connected`. The sub-APIs report failure as a result instead. | `"Client not connected"` |
-| `AlreadyConnected` | `connect()` | `connect()` while connected. A silent no-op would hide reconnect-loop bugs. | `"Client already connected"` |
+| `AlreadyConnected` | `connect()` | `connect()` while connected, or while another `connect()` is still starting its run. A silent no-op would hide reconnect-loop bugs. After `disconnect()`, the next `connect()` waits for the previous run's cleanup instead. | `"Client already connected"` |
 | `PayloadTooLarge` | `send()` and the convenience senders | `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). | `"Payload exceeds 233 bytes"` |
 
 ## `SendFailure` (inside `SendState.Failed`)

@@ -461,6 +461,15 @@ internal class MeshEngine(
     // randomize the starting packet id. Caught on hardware by MeshtasticBleConformanceTest.
     private val nextWireId = atomic(Random.nextInt())
 
+    /** Test seam: runs once a connect() is admitted, before it installs its run. */
+    internal var runStartProbe: (() -> Unit)? = null
+
+    /**
+     * Admission is held from the check below until this run's scope, config-save channel and children
+     * are installed, so a disconnect() in that window cancels this run alone. A concurrent connect()
+     * throws [MeshtasticException.AlreadyConnected] while admission is held or a run is live; after a
+     * disconnect() it waits for the previous run's cleanup before starting its own.
+     */
     suspend fun connect() {
         // One connect() at a time is admitted, so lastRun read below is the run current at admission.
         if (!admitting.compareAndSet(false, true)) throw MeshtasticException.AlreadyConnected()
@@ -487,16 +496,35 @@ internal class MeshEngine(
                 inboxRef.value = Channel(Channel.UNLIMITED)
                 outboundRef.value = Channel(Channel.UNLIMITED)
             }
+            runStartProbe?.invoke()
+            startRun(RunHandles(sup, connectDeferred, inboxRef.value, outboundRef.value))
             admitted = true
         } finally {
             if (!admitted) {
+                supervisorJobRef.compareAndSet(sup, null)
                 sup.cancel()
                 activeConnectDeferred.compareAndSet(connectDeferred, null)
             }
             admitting.value = false
         }
-        val run = RunHandles(sup, connectDeferred, inboxRef.value, outboundRef.value)
-        val scope = CoroutineScope(parentContext + sup)
+
+        try {
+            connectDeferred.await()
+        } catch (e: Exception) {
+            // Clean up on failure so a subsequent connect() can start fresh
+            supervisorJobRef.compareAndSet(sup, null)
+            sup.cancel()
+            throw e
+        } finally {
+            // clear the awaiter slot so a subsequent disconnect() doesn't try to fail
+            // an already-completed deferred.
+            activeConnectDeferred.compareAndSet(connectDeferred, null)
+        }
+    }
+
+    /** Installs [run]'s scope and config-save channel and launches its children; called under admission. */
+    private fun startRun(run: RunHandles) {
+        val scope = CoroutineScope(parentContext + run.job)
         engineScope = scope
         val saves = Channel<ConfigBundle>(Channel.CONFLATED)
         configSaves = saves
@@ -546,20 +574,8 @@ internal class MeshEngine(
             }
         }
 
-        inbox.send(EngineMessage.Connect(connectDeferred))
-
-        try {
-            connectDeferred.await()
-        } catch (e: Exception) {
-            // Clean up on failure so a subsequent connect() can start fresh
-            supervisorJobRef.compareAndSet(sup, null)
-            sup.cancel()
-            throw e
-        } finally {
-            // clear the awaiter slot so a subsequent disconnect() doesn't try to fail
-            // an already-completed deferred.
-            activeConnectDeferred.compareAndSet(connectDeferred, null)
-        }
+        // A disconnect() that already ran closed or abandoned this inbox; it also failed the awaiter.
+        run.inbox.trySend(EngineMessage.Connect(run.connected))
     }
 
     suspend fun disconnect() {
