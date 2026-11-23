@@ -8,13 +8,13 @@ The internal `HandshakeStage` enum has six values, `AwaitingLockdown` among them
 
 | `HandshakeStage` | Meaning | Public projection |
 |---|---|---|
-| `Idle` | No connection attempted, or post-disconnect | `Disconnected` |
+| `Idle` | No connection attempted, or post-disconnect | `Disconnected`; `Disconnecting` while a `disconnect()` tears the session down |
 | `Stage1Draining` | `want_config_id = SPECIAL_NONCE_ONLY_CONFIG (69420)` posted; receiving the Stage 1 response stream (configs, channels, file_info, **no** nodes) | `Configuring(ConfigPhase.Stage1, p)` |
 | `Stage1Settling` | `config_complete_id == 69420` received; settle window elapsing before the inter-stage heartbeat | `Configuring(ConfigPhase.Settling, 0.5f)` |
 | `Stage2Draining` | Inter-stage `Heartbeat` flushed and `want_config_id = SPECIAL_NONCE_ONLY_NODES (69421)` posted; receiving Stage 2 (`OWN_NODEINFO` then `OTHER_NODEINFOS`; `FILEMANIFEST` short-circuits to empty) | `Configuring(ConfigPhase.Stage2, p)` |
 | `Ready` | All flows live; heartbeat scheduler started; `get_owner_request` sent to seed `session_passkey` | `Connected` |
 
-A failure (`MeshtasticException.HandshakeTimeout`, a transport drop) resets `HandshakeStage` to `Idle`; the engine then projects `Reconnecting(cause, attempt)` or `Disconnected`. `progress` never decreases within one connect attempt and comes from received over expected envelope counts.
+A failure (`MeshtasticException.HandshakeTimeout`, a transport drop) resets `HandshakeStage` to `Idle`; the engine then projects `Reconnecting(cause, attempt, retryAt)`, `Failed(cause)` or `Disconnected`. `progress` never decreases within one connect attempt and comes from received over expected envelope counts.
 
 Timers: Stage 1 sends `want_config_id = 69420` once and never resends in-session (`protocol.md` §6 host-side rule 8). It times out after 20 s without a frame of its dump (`STAGE1_TIMEOUT_MS`), measured from the request and re-armed by every frame from `my_info` on, or at 200 s in total (`STAGE1_HARD_CAP_MS`). A `rebooted` frame before `my_info` ends the attempt like a reboot mid-handshake unless `my_info` follows within 2 s (`STAGE1_REBOOT_GRACE_MS`): firmware before 2.8 writes it from the serial console at boot, before it reads input, so the request went to the previous boot. A completion before `my_info` is stale and dropped. The settle waits are 100 ms each (`INTER_STAGE_SETTLE_MS`). Stage 2 times out when no frame arrives between two 30 s checks, or at 600 s in total (`STAGE2_PROGRESS_TICK_MS`, `STAGE2_HARD_CAP_MS`). The passkey seed goes out at the Stage 2 completion and the session is `Ready` at once: firmware starts replaying stored positions and telemetry right after that completion, more packets than the handshake buffer holds. A `get_owner_response` whose `request_id` is the seed's packet id latches the local passkey whenever it arrives and is not offered on `packets`; with none in 10 s (`SEED_TIMEOUT_MS`) the engine emits `ProtocolWarning("session passkey seed timed out")`. Local admin writes need no passkey.
 
@@ -65,21 +65,29 @@ The SDK sends the four `0x94` resync bytes on stream transports and nothing else
 
 ## Failure transitions and reconnect
 
-A failure always returns to `Idle`. Reconnecting is off by default: the engine projects `Disconnected` and the host decides what to do. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that reconnects after a recoverable `TransportState.Error`, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each attempt is projected as `Reconnecting(cause, attempt)`, or as `DeviceSleeping` when the drop was a power-saving device sleeping.
+A failure always returns to `Idle`. Reconnecting is off by default: after a recoverable failure the engine projects `Disconnected` and the host decides what to do, while `FirmwareTooOld` and a non-recoverable transport error still end in `Failed`. `RadioClient.Builder.autoReconnect(...)` turns on a supervisor that owns reconnecting, with exponential backoff (by default 1 s initial, factor 2, capped at 60 s, ±20 % jitter, unlimited attempts; see `AutoReconnectConfig`). Each wait is projected as `Reconnecting(cause, attempt, retryAt)`, or as `DeviceSleeping` when the drop was a power-saving device sleeping; `retryAt` is `null` while the attempt runs.
 
-Causes that DO NOT auto-reconnect:
-- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it, the transport closes, and `ConnectionState` ends `Disconnected`.
-- A non-recoverable transport error and an explicit `disconnect()`.
-- `MeshtasticException.HandshakeTimeout(stage)`: the engine tears the session down; the host connects again.
-- `MeshtasticException.StorageUnavailable(...)` from `StorageProvider.activate()`, which runs once per client before the handshake.
+An attempt runs off the actor: it disconnects the previous transport, waits for its frame reader to finish, asks the `RadioTransportProvider` for a transport, may wait there, and calls `connect()`, holding the lockdown write lock throughout so a queued credential write never reaches the next link. The actor installs what the provider returned as the transport for that attempt, with a state observer of its own; the outbound writer sends only on the transport of the current `receiveGeneration`, so nothing queued for one link reaches the next. A failed `connect()` on a transport that also reports `TransportState.Error(recoverable = false)` is terminal. Transport state errors count only while a link is up: a failed attempt reports through its outcome, and a replaced transport's late updates are ignored.
 
-Causes that DO auto-reconnect:
-- A recoverable `TransportState.Error`, and a read or write failure on the current link (`MeshtasticException.Transport`).
+`attempt` and the backoff reset once a session has stayed `Connected` for `stableAfter` (at once with the default `Duration.ZERO`). `sessionEvents` emits `Ended` for the old session before the engine publishes `Reconnecting`; the next session's `Ready` carries the next `sessionId`.
+
+Causes that end in `Failed(cause)` and are not retried, with auto-reconnect on or off:
+- `MeshtasticException.FirmwareTooOld` (`DeviceMetadata.firmware_version` below `DeviceVersion.ABS_MIN_SUPPORTED`, 2.3.15; checked when the Stage 1 `metadata` frame arrives; firmware below `DeviceVersion.MIN_SUPPORTED`, 2.5.14, connects and emits one `MeshEvent.ProtocolWarning` per session; a blank or unparseable version only logs a warning). The connect throws it and the transport closes.
+- A `TransportState.Error` with `recoverable = false`, from a live link or reported alongside a failed `connect()`.
+
+With auto-reconnect on, also `maxAttempts` attempts since the last stable session, and `maxHandshakeRecoveries` handshake restarts in a row; `Failed` carries the last cause.
+
+Causes that end in `Disconnected` and are not retried: an explicit `disconnect()`, `MeshtasticException.StorageUnavailable(...)` from `StorageProvider.activate()`, which runs once per `connect()` before the handshake, and, with auto-reconnect off, everything below.
+
+Causes that auto-reconnect when it is on:
+- A recoverable `TransportState.Error`, a read or write failure on the current link (`MeshtasticException.Transport`), and a failed first `connect()`.
+- `FromRadio.rebooted` (`MeshEvent.DeviceRebooted` is still emitted).
+- Session restarts, counted against `maxHandshakeRecoveries`: `MeshtasticException.HandshakeTimeout(stage)`, the liveness watchdog (`Transport("liveness timeout")`), a node database refresh that stalls, a handshake protocol error such as a `config_complete_id` matching neither nonce, and a `sessionEvents` overflow while a collector is running (`Transport("Session receive overflowed in session n")`; three in a row fail when `maxHandshakeRecoveries` is `null`). A session that reached `Ready` and then ended any other way resets the count; an overflow does not. On an overflow the session stream is replaced: its collector gets `RadioSessionOverflowException`, and the next collection starts with that session's `Ended`.
 
 ## Related
 
 - `protocol.md` §6: the wire-level envelope sequence and the firmware's special nonces (69420, 69421).
 - ADR-002: the actor model that owns this state machine.
-- ADR-005: `ConnectionState`; `Reconnecting` carries `cause`.
+- ADR-005: `ConnectionState`; `Reconnecting` carries `cause`, `Failed` carries the terminal cause.
 - [`protocol.md` §6 host-side rules](../protocol.md#host-side-rules): the 100 ms settle on each side of the inter-stage heartbeat, cited to Android's `HandshakeStateMachine`.
 - [`protocol.md` §16](../protocol.md#16-heartbeat--queue-status): the heartbeat requirement per transport.

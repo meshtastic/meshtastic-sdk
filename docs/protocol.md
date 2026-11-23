@@ -1053,9 +1053,9 @@ Download (device to host) and upload (host to device):
 
 When the node reboots (`AdminMessage.reboot_seconds`, a power cycle) or enters DFU mode (`enter_dfu_mode_request`, `ota_request`), the PhoneAPI connection is lost and has to be re-established from scratch.
 
-- On TCP, the node can be unreachable for 5 to 30 s. `connect()` fails until it is back; with `RadioClient.Builder.autoReconnect(...)` enabled the engine retries with exponential backoff and jitter.
+- On TCP, the node can be unreachable for 5 to 30 s. `connect()` fails until it is back; with `RadioClient.Builder.autoReconnect(...)` enabled the engine retries with exponential backoff and jitter, and treats `FromRadio.rebooted` and the drop that follows as one reconnect attempt. The radio session still ends: `sessionEvents` emits `Ended` for it, then `Ready` with a new `sessionId`, and consumers process that boundary as for any reconnect.
 - On serial, boot text before the node re-enters PhoneAPI mode is absorbed by the resync state machine (§2). The SDK sends wake bytes on every TCP and serial connect, so a framer left mid-frame is reset.
-- On BLE, the node drops the GATT connection and the peripheral disappears for a while. A new `connect()` re-establishes GATT and drains `fromradio` from the top; no other resync is needed.
+- On BLE, the node drops the GATT connection and the peripheral disappears for a while. A new `connect()` re-establishes GATT and drains `fromradio` from the top; no other resync is needed. A firmware update can change the GATT table Android has cached; call `BleTransport.refreshGattCacheOnNextConnect()` before reconnecting after one.
 
 The first connection after a reboot is indistinguishable from a cold connect, so both handshake stages run. A client that persisted the NodeDB can compare the incoming `node_info` stream with its stored view to spot changes. Firmware clears its last-write dedup buffer on connect; the SDK's heartbeat counter keeps counting for the life of the engine.
 

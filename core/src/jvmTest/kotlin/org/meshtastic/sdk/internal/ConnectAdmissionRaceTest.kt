@@ -14,6 +14,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.newSingleThreadContext
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.selects.select
@@ -61,7 +63,8 @@ class ConnectAdmissionRaceTest {
         )
         val parent = SupervisorJob()
         val engine = MeshEngine(
-            transport = transport,
+            identity = transport.identity,
+            transportProvider = { _, _ -> transport },
             storageProvider = InMemoryStorageProvider(),
             logger = LogSink.Silent,
             bleHeartbeatEnabled = false,
@@ -109,6 +112,48 @@ class ConnectAdmissionRaceTest {
             parent.cancel()
             threadA.close()
             threadC.close()
+        }
+    }
+
+    @Test
+    fun disconnectDuringStartupAfterAFailedRunReturnsDisconnected() = runBlocking {
+        val transport = FakeRadioTransport(TransportIdentity("fake:failed-then-startup"), autoHandshake = true)
+        val parent = SupervisorJob()
+        val engine = MeshEngine(
+            identity = transport.identity,
+            transportProvider = { _, _ -> transport },
+            storageProvider = InMemoryStorageProvider(),
+            logger = LogSink.Silent,
+            bleHeartbeatEnabled = false,
+            parentContext = parent + Dispatchers.Default,
+        )
+        val threadA = newSingleThreadContext("connect-after-failed")
+        val paused = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        try {
+            withTimeout(10_000) { engine.connect() }
+            transport.simulateError(IllegalStateException("unsupported"), recoverable = false)
+            withTimeout(5_000) { engine.connectionState.first { it is ConnectionState.Failed } }
+            // Let the failed run's cleanup finish before the next run is admitted.
+            delay(200)
+            engine.runStartProbe = {
+                paused.countDown()
+                resume.await(10, TimeUnit.SECONDS)
+            }
+            val a = async(threadA) { runCatching { engine.connect() } }
+            assertTrue(paused.await(5, TimeUnit.SECONDS), "connect() never reached run start")
+
+            // The run disconnect() cancels has not started, so it has no cleanup to publish Disconnected.
+            withTimeout(5_000) { engine.disconnect() }
+            assertEquals(ConnectionState.Disconnected, engine.connectionState.value)
+            resume.countDown()
+            assertTrue(withTimeout(5_000) { a.await() }.isFailure)
+        } finally {
+            resume.countDown()
+            engine.runStartProbe = null
+            withTimeout(5_000) { engine.disconnect() }
+            parent.cancel()
+            threadA.close()
         }
     }
 }

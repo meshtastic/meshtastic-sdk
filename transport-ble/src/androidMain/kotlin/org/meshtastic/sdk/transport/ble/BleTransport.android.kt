@@ -69,66 +69,6 @@ public fun BleTransport(
     builderAction: PeripheralBuilder.() -> Unit = {},
 ): BleTransport = createAndroidScanFirstBleTransport(address, resilience, builderAction)
 
-/**
- * Creates a transport that can refresh Android's GATT cache after a firmware update, even when
- * discovery returns all required characteristics. It finds the radio by scan first, like
- * `BleTransport(address, resilience, builderAction)`.
- *
- * [refreshGattCacheOnConnect] is called once after the link connects and before PhoneAPI I/O
- * begins. Return true to attempt an immediate cache refresh and reconnect for rediscovery. A
- * failed initial link leaves the callback unread, and a platform refusal keeps the existing link.
- * If stale-cache repair is also enabled in [resilience], both triggers share one refresh per
- * link. The callback must return promptly and must not perform I/O.
- */
-public fun BleTransport(
-    address: String,
-    resilience: BleResilience,
-    refreshGattCacheOnConnect: () -> Boolean,
-    builderAction: PeripheralBuilder.() -> Unit,
-): BleTransport = BleTransport(address, resilience, builderAction).withGattRefreshCallback(
-    resilience,
-    refreshGattCacheOnConnect,
-)
-
-/**
- * Creates a transport for a radio found by [BleScanner.scan] that can refresh Android's GATT cache
- * after a firmware update: `BleTransport(radio, resilience = resilience, builderAction =
- * builderAction)` plus the [refreshGattCacheOnConnect] callback of the address factory, which it
- * reads the same way. It connects from the scanned advertisement and does not scan again.
- *
- * @param radio a radio emitted by [BleScanner.scan].
- * @param resilience opt-in link-recovery mechanisms, see [BleResilience].
- * @param refreshGattCacheOnConnect called once after each link connects and before PhoneAPI I/O;
- *   true asks for one cache refresh and reconnect. Must return promptly and must not perform I/O.
- * @param builderAction [PeripheralBuilder] configuration; runs after the resilience wiring.
- * @throws IllegalArgumentException if [radio] was not produced by [BleScanner.scan].
- * @since 0.3.0
- */
-public fun BleTransport(
-    radio: DiscoveredRadio,
-    resilience: BleResilience,
-    refreshGattCacheOnConnect: () -> Boolean,
-    builderAction: PeripheralBuilder.() -> Unit,
-): BleTransport = BleTransport(radio, EmptyCoroutineContext, resilience, builderAction).withGattRefreshCallback(
-    resilience,
-    refreshGattCacheOnConnect,
-)
-
-/**
- * Wires the app's post-update refresh request into this transport: [refresher] repairs the cache,
- * and [refreshGattCacheOnConnect] or, with stale-cache repair on, incomplete discovery asks for it.
- */
-internal fun BleTransport.withGattRefreshCallback(
-    resilience: BleResilience,
-    refreshGattCacheOnConnect: () -> Boolean,
-    refresher: GattCacheRefresher = GattCacheRefresher { peripheral.refreshGattCacheOrFalse() },
-): BleTransport = apply {
-    gattCacheRefresher = refresher
-    shouldRefreshGattCache = { discoveryIncomplete ->
-        refreshGattCacheOnConnect() || (resilience.refreshStaleGattCache && discoveryIncomplete)
-    }
-}
-
 internal actual fun applyPlatformTuning(transport: BleTransport) {
     transport.postConnectHook = { connected ->
         val android = connected as? AndroidPeripheral

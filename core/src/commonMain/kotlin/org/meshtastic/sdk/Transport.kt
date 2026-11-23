@@ -254,3 +254,37 @@ public interface RadioTransport {
      */
     public val state: StateFlow<TransportState>
 }
+
+/**
+ * Supplies the [RadioTransport] for each connection attempt; pass one to
+ * [RadioClient.Builder.transport].
+ *
+ * The engine calls [open] when [RadioClient.connect] starts (`attempt = 0`, `cause = null`) and
+ * before every auto-reconnect attempt (`attempt` is the number shown in
+ * [ConnectionState.Reconnecting], `cause` the failure being recovered from). By then the previous
+ * transport has been disconnected and its frame reader has finished. The engine then calls
+ * `connect()` on what [open] returned.
+ *
+ * Return the same instance every time when the transport keeps state across attempts
+ * (`BleTransport`, `WebSocketTransport`), or a fresh one when a link cannot be reused, such as a
+ * USB serial port that re-enumerated. The engine disconnects an instance it stops using but never
+ * closes or shuts it down; that stays with the provider.
+ *
+ * [open] may suspend until the environment allows a connection, for example until Bluetooth is on
+ * or a USB permission is granted. While it is suspended the state is [ConnectionState.Reconnecting]
+ * with `retryAt = null` ([ConnectionState.Connecting] for `attempt = 0`, [ConnectionState.DeviceSleeping]
+ * while a sleeping device is retried), and waiting does not use up an attempt. Throwing fails the
+ * attempt like a failed `connect()`, a [kotlinx.coroutines.CancellationException] from the
+ * provider's own timeout included; only cancelling the client ends it.
+ *
+ * @since 0.3.0
+ */
+public fun interface RadioTransportProvider {
+    /**
+     * Returns the transport for this attempt.
+     *
+     * @param attempt `0` for the attempt [RadioClient.connect] starts, then the 1-based reconnect attempt
+     * @param cause the failure that started this reconnect attempt; `null` for `attempt = 0`
+     */
+    public suspend fun open(attempt: Int, cause: MeshtasticException?): RadioTransport
+}

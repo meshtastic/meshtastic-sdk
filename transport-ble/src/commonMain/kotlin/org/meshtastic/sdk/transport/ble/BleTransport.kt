@@ -61,6 +61,8 @@ import org.meshtastic.sdk.transport.ble.internal.gattStatusCodeOrNull
 import org.meshtastic.sdk.transport.ble.internal.retryTransient
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 
 /**
  * BLE transport for Meshtastic radios using JuulLabs Kable.
@@ -92,7 +94,10 @@ public class BleTransport internal constructor(
         peripheral: Peripheral,
         address: String,
         parentContext: CoroutineContext = EmptyCoroutineContext,
-    ) : this(peripheral, address, parentContext, null)
+    ) : this(peripheral, address, parentContext, null) {
+        // Installs Android's GATT refresher, so refreshGattCacheOnNextConnect() works here as on a factory transport.
+        applyPlatformResilience(this, peripheral, BleResilience.None)
+    }
 
     // ADR-012: native-handle ownership — set by the constructor, or by the first connect() that
     // resolves it through resolvePeripheral; shutdown() takes an owned one back to close it.
@@ -173,6 +178,49 @@ public class BleTransport internal constructor(
     internal var shouldRefreshGattCache: (discoveryIncomplete: Boolean) -> Boolean = { it }
     internal var ownsPeripheral: Boolean = false
 
+    // BleResilience.refreshGattCacheAfterFailures; null leaves the failure streak unused.
+    internal var refreshGattCacheAfterFailures: Int? = null
+    internal var linkClock: TimeSource = TimeSource.Monotonic
+
+    // ADR-012: lifecycle idempotency — the one-shot request from refreshGattCacheOnNextConnect().
+    private val refreshRequested = atomic(false)
+
+    // ADR-012: lifecycle idempotency — failed connects and short links in a row, and whether this streak refreshed.
+    private val failureStreak = atomic(0)
+    private val streakRefreshed = atomic(false)
+
+    // ADR-012: lifecycle idempotency — when the current link came up; taken by whichever of connect/disconnect ends it.
+    private val linkUpSince = atomic<TimeMark?>(null)
+
+    /**
+     * Refreshes Android's cached GATT table on the next [connect] that reaches the radio, once, for
+     * example after a firmware update that changed the GATT layout. The request stays pending
+     * through connects that fail before the link is up. Works for a transport from any factory or
+     * constructor; a no-op off Android.
+     *
+     * @since 0.3.0
+     */
+    public fun refreshGattCacheOnNextConnect() {
+        refreshRequested.value = true
+    }
+
+    // A link that stayed up for LINK_STABLE_MS ends the failure streak and re-arms its refresh. Runs at the
+    // drop, or at connect()/disconnect() when no drop was seen; whichever runs first takes the mark.
+    private fun endLink() {
+        val since = linkUpSince.getAndSet(null) ?: return
+        if (since.elapsedNow().inWholeMilliseconds >= LINK_STABLE_MS) {
+            failureStreak.value = 0
+            streakRefreshed.value = false
+        } else {
+            failureStreak.incrementAndGet()
+        }
+    }
+
+    private fun streakWantsRefresh(): Boolean {
+        val threshold = refreshGattCacheAfterFailures ?: return false
+        return !streakRefreshed.value && failureStreak.value >= threshold
+    }
+
     override suspend fun connect() {
         check(!shuttingDown.value) { "BleTransport has been shut down; construct a new instance" }
         autoConnectSwitch?.reset()
@@ -185,6 +233,7 @@ public class BleTransport internal constructor(
         // are launched later in connect(), and prior-cycle senders were cancelled by
         // disconnect().
         frameChannel = Channel(capacity = 64)
+        endLink()
         _state.value = TransportState.Connecting
         val generation = connectGeneration.incrementAndGet()
         try {
@@ -271,6 +320,7 @@ public class BleTransport internal constructor(
                 throw MeshtasticException.Transport("BLE transport child failed during connect")
             }
             _state.value = TransportState.Connected
+            linkUpSince.value = linkClock.markNow()
         } catch (e: CancellationException) {
             try {
                 peripheral.disconnect()
@@ -300,6 +350,7 @@ public class BleTransport internal constructor(
             current = connectGeneration.value == generation
             if (current) TransportState.Error(failure, recoverable = true) else state
         }
+        if (current) failureStreak.incrementAndGet()
         return current
     }
 
@@ -374,6 +425,7 @@ public class BleTransport internal constructor(
     private fun publishScopeFailure(cause: Throwable) {
         if (shuttingDown.value) return
         if (!errorPublished.compareAndSet(expect = false, update = true)) return
+        endLink()
         _state.value = TransportState.Error(
             cause = MeshtasticException.Transport("BLE transport failure: ${cause.message}", cause),
             recoverable = true,
@@ -391,6 +443,7 @@ public class BleTransport internal constructor(
             current is TransportState.Bonding ||
             current is TransportState.Connecting
         ) {
+            endLink()
             val cause = lastDrainFailure.getAndSet(null)
             _state.value = TransportState.Error(
                 cause = MeshtasticException.Transport(
@@ -408,6 +461,7 @@ public class BleTransport internal constructor(
         // window between the two would otherwise overwrite Disconnected with Error.
         errorPublished.value = true
         connectGeneration.incrementAndGet()
+        endLink()
         _state.value = TransportState.Disconnected
         warmupComplete.value = false
         cancelJobs()
@@ -595,11 +649,22 @@ public class BleTransport internal constructor(
         }
     }
 
-    /** At most one cache refresh and rediscovery before exposing this link to the engine. */
+    /**
+     * At most one cache refresh and rediscovery before exposing this link to the engine: on request,
+     * after [refreshGattCacheAfterFailures] failures in a row (once per streak), or for incomplete discovery.
+     */
     private suspend fun refreshGattCacheIfNeeded() {
         val refresher = gattCacheRefresher ?: return
-        if (!shouldRefreshGattCache(peripheral.services.value.isMissingMeshtasticGatt())) return
+        val requested = refreshRequested.getAndSet(false)
+        val afterFailures = streakWantsRefresh()
+        if (!requested && !afterFailures &&
+            !shouldRefreshGattCache(peripheral.services.value.isMissingMeshtasticGatt())
+        ) {
+            return
+        }
+        // A refused refresh costs nothing, so it leaves the streak's allowance for a later attempt.
         if (!refresher.refresh()) return
+        if (afterFailures) streakRefreshed.value = true
         try {
             peripheral.disconnect()
         } catch (e: CancellationException) {
@@ -650,6 +715,8 @@ public class BleTransport internal constructor(
             (current is TransportState.Connecting && warmupComplete.value)
         if (!linkUp) return TransportState.Disconnected
         return if (errorPublished.compareAndSet(expect = false, update = true)) {
+            // The link's age is taken at the drop, not at the engine's later disconnect().
+            endLink()
             TransportState.Error(cause = buildDisconnectError(status), recoverable = true)
         } else {
             current
@@ -706,6 +773,12 @@ public class BleTransport internal constructor(
          * (3 s) records 1.5 s failing 3-4 of 5 handshakes mid-drain, and its refresh reconnect reuses it.
          */
         private const val GATT_REFRESH_SETTLE_MS: Long = 3_000L
+
+        /**
+         * How long a link must stay up to end a failure streak: Meshtastic-Android's
+         * `BleReconnectPolicy.DEFAULT_MIN_STABLE_CONNECTION`.
+         */
+        internal const val LINK_STABLE_MS: Long = 5_000L
 
         /** Total connect attempts (1 initial + N-1 retries) for transient GATT errors. */
         internal const val GATT_RETRY_ATTEMPTS: Int = 3

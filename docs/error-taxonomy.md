@@ -7,9 +7,10 @@ Every observable failure, mapped to the Kotlin type that carries it. Per [ADR-00
 | Failure | Carrier | Why |
 |---|---|---|
 | Programmer error: send before connect, payload over the limit, second `connect()` | `throw MeshtasticException` | Retrying without changing the input is futile. |
-| Transport failure at connect: Bluetooth GATT error, socket refused, USB unavailable, WebSocket refused | `throw MeshtasticException.Transport` from `connect()` | Connect callers expect a throw. |
-| Handshake failure: a stage times out, malformed envelope | `throw MeshtasticException` from `connect()` | Connect fails before the session exists. |
-| Session drop after `Connected`: transport closed, liveness watchdog | `MeshEvent.TransportError(error)`, then `ConnectionState.Reconnecting` when auto-reconnect is on, else `Disconnected`; `ConnectionState.DeviceSleeping` instead when a power-saving device drops its BLE link by design ([api-reference.md](./api-reference.md#devicesleeping)) | The caller is past `connect()`; the state flow is the channel. |
+| Transport failure at connect: Bluetooth GATT error, socket refused, USB unavailable, WebSocket refused | `throw MeshtasticException.Transport` from `connect()`; with auto-reconnect on, `ConnectionState.Reconnecting` and another attempt | Connect callers expect a throw. |
+| Handshake failure: a stage times out, malformed envelope | `throw MeshtasticException` from `connect()`; with auto-reconnect on, a restart counted against `maxHandshakeRecoveries` | Connect fails before the session exists. |
+| Session drop after `Connected`: transport closed, liveness watchdog, `FromRadio.rebooted` | `MeshEvent.TransportError(error)` (`DeviceRebooted` for a reboot), then `ConnectionState.Reconnecting` when auto-reconnect is on, else `Disconnected`; `ConnectionState.DeviceSleeping` instead when a power-saving device drops its BLE link by design ([api-reference.md](./api-reference.md#devicesleeping)) | The caller is past `connect()`; the state flow is the channel. |
+| A failure retrying cannot fix: `TransportState.Error(recoverable = false)`, `FirmwareTooOld`, an exhausted `maxAttempts` or `maxHandshakeRecoveries` | `ConnectionState.Failed(cause)` until `connect()` or `disconnect()`; a pending `connect()` throws `cause` | Never shown as `Reconnecting`, so a UI can tell "trying" from "gave up". |
 | Mesh send outcome: NAK, no route, retransmits exhausted, duty cycle, rate limit, queue rejection, disconnect | `MessageHandle.state` reaches `Failed(SendFailure)` | Routine on a busy mesh. |
 | Admin, telemetry, routing, or store-and-forward call outcome | `AdminResult` | Routine; handlers want an exhaustive `when`. |
 | File transfer outcome | `FileTransferResult.Failure(FileTransferFailure)` | Routine. |
@@ -36,7 +37,7 @@ MeshtasticException                     sealed
 
 - `cause` keeps the underlying `Throwable`: a Kable exception, a Ktor or socket I/O error, a jSerialComm error.
 - `transportIdentity` and `operation` attribute a failure without parsing the message. The SDK sets them; callers read them.
-- Recoverability isn't on the exception. A transport reports it through `TransportState.Error.recoverable`; for example, `WebSocketTransport` reports close code 4001 (displaced by another client) and 1009 as not recoverable.
+- Recoverability isn't on the exception. A transport reports it through `TransportState.Error.recoverable`; for example, `WebSocketTransport` reports close code 4001 (displaced by another client), 1009 and a contested slot as not recoverable, and the engine ends those in `ConnectionState.Failed` with the `WebSocketTransportException` as `cause`.
 - `Transport` is open so a transport module can carry typed detail in a subclass without adding a case to the hierarchy. `WebSocketTransportException` carries `closeCode`, `closeReason`, `httpStatus` (a refused upgrade) and `slotContested`; read those, not the message.
 - Adding a subclass is a SemVer-major change after 1.0, since consumers may `when` over the hierarchy exhaustively.
 
@@ -44,11 +45,11 @@ MeshtasticException                     sealed
 
 | Subclass | Thrown from | Trigger | `message` |
 |---|---|---|---|
-| `Transport` | `connect()`; `RadioTransport.send()`; `bondedBleDevices()`; `AndroidUsbSerialPorts.open()` | The transport couldn't connect or write: Bluetooth bond or GATT failure, socket refused, USB device gone or not permitted, WebSocket handshake refused or interrupted by `disconnect()`. `connect()` also throws `"Device rebooted mid-handshake"` when the device sends `FromRadio.rebooted` before `Connected`. | Set by the transport, for example `"WebSocket connect was interrupted by disconnect()"` |
+| `Transport` | `connect()`; `RadioTransport.send()`; `bondedBleDevices()`; `AndroidUsbSerialPorts.open()` | The transport couldn't connect or write: Bluetooth bond or GATT failure, socket refused, USB device gone or not permitted, WebSocket handshake refused or interrupted by `disconnect()`. With auto-reconnect off, `connect()` also throws `"Device rebooted mid-handshake"` when the device sends `FromRadio.rebooted` before `Connected`. | Set by the transport, for example `"WebSocket connect was interrupted by disconnect()"` |
 | `Protocol` | `connect()`; `WireCodec`; `MessageHandle.retry()` | The handshake failed. `WireCodec` couldn't encode a `ToRadio` or decode a `FromRadio`. `retry()` got a handle not produced by `send()`. | Describes the failure |
 | `HandshakeTimeout` | `connect()`; `connectAndAwaitReady()` | Stage 1 got no frame for 20 s, or no `config_complete_id` within 200 s. Stage 2 received no frame for 30 s, or ran past 600 s in total. `connectAndAwaitReady` timed out. The passkey seed is sent after `Connected`; a lost reply emits `ProtocolWarning("session passkey seed timed out")`. | `"Handshake timed out during stage: Stage 1"`; `stage` is `Stage 1`, `Stage 2`, or `connectAndAwaitReady` |
 | `StorageUnavailable` | `connect()` | `StorageProvider.activate()` failed. Mid-session failures surface as `StorageDegraded` instead. | Default `"Storage unavailable"` |
-| `FirmwareTooOld` | `connect()` | `DeviceMetadata.firmware_version` in Stage 1 parses below `DeviceVersion.ABS_MIN_SUPPORTED` (2.3.15). `required` and `present` are `DeviceVersion.asInt` values (2.3.15 is 20315). From 2.3.15 up to 2.5.13 the connect succeeds and one `MeshEvent.ProtocolWarning` ("firmware should be updated", `present`, `recommended` = 2.5.14) is emitted per session. A blank or unparseable version does not fail the connect. The session ends `Disconnected`, a `MeshEvent.TransportError` carries the exception, and auto-reconnect does not retry. | `"Firmware requires newer client (need 20315, have 20300)"` |
+| `FirmwareTooOld` | `connect()` | `DeviceMetadata.firmware_version` in Stage 1 parses below `DeviceVersion.ABS_MIN_SUPPORTED` (2.3.15). `required` and `present` are `DeviceVersion.asInt` values (2.3.15 is 20315). From 2.3.15 up to 2.5.13 the connect succeeds and one `MeshEvent.ProtocolWarning` ("firmware should be updated", `present`, `recommended` = 2.5.14) is emitted per session. A blank or unparseable version does not fail the connect. The session ends `Failed(FirmwareTooOld)`, a `MeshEvent.TransportError` carries the exception, and auto-reconnect does not retry. | `"Firmware requires newer client (need 20315, have 20300)"` |
 | `NotConnected` | `send()`, `sendText()`, `sendReaction()`, `send(portnum, …)`, `sendRaw()`, `requestNodeInfo()`, `nodeSnapshot()` | The client isn't `Connected`. The sub-APIs report failure as a result instead. | `"Client not connected"` |
 | `AlreadyConnected` | `connect()` | `connect()` while connected, or while another `connect()` is still starting its run. A silent no-op would hide reconnect-loop bugs. After `disconnect()`, the next `connect()` waits for the previous run's cleanup instead. | `"Client already connected"` |
 | `PayloadTooLarge` | `send()` and the convenience senders | `decoded.payload` exceeds `DATA_PAYLOAD_LEN` (233 bytes). | `"Payload exceeds 233 bytes"` |
@@ -149,10 +150,10 @@ Every admin, telemetry, routing, and store-and-forward RPC waits up to `Builder.
 | `SecurityWarning.DuplicatedPublicKey` | Firmware saw another node broadcast a public key already in its node database: a cloned node or an impersonation attempt. | Surface it prominently. |
 | `SecurityWarning.LowEntropyKey` | Firmware reports the private key was generated with too little entropy. | Prompt the user to regenerate keys. |
 | `SecurityWarning.PublicKeyMismatch(node, offeredKey)` | A `NODEINFO_APP` offered a key that differs from the stored one, and the engine dropped it. Once per node and offered key. | Warn that the contact's key changed; DMs still use the stored key. |
-| `TransportError(error)` | The session dropped while connected. `error` is the typed cause: `Transport` for link failures and the liveness watchdog, `HandshakeTimeout` or `StorageUnavailable` when those end a session. Match on type, not on `message`. | Inform the user; with auto-reconnect on, watch `ConnectionState.Reconnecting`. A `DeviceSleeping` state after it is expected behavior, not a fault. |
+| `TransportError(error)` | The session dropped while connected. `error` is the typed cause: `Transport` for link failures and the liveness watchdog, `HandshakeTimeout` or `StorageUnavailable` when those end a session. Match on type, not on `message`. | Inform the user; with auto-reconnect on, watch `ConnectionState.Reconnecting` and `Failed`. A `DeviceSleeping` state after it is expected behavior, not a fault. |
 | `ProtocolWarning(message, details)` | A non-fatal anomaly: an undecodable envelope, a `FromRadio` variant the SDK doesn't surface. `details` carries structured context. | Log it; show it in developer tooling. |
 | `IdentityRebound(previousNodeNum, newNodeNum, reason)` | The device reports a different NodeNum than the one stored for this transport identity. See [Identity rebind](#identity-rebind). | Snapshot in-memory state if needed; optionally tell the user the radio changed. |
-| `DeviceRebooted(reason)` | The device sent `FromRadio.rebooted`. The engine tears the session down: pending sends fail, and the state goes to `Disconnected`. | Show "device restarted"; connect again, or let auto-reconnect do it. |
+| `DeviceRebooted(reason)` | The device sent `FromRadio.rebooted`. The engine ends the session and pending sends fail; with auto-reconnect on it reconnects (`Reconnecting`), otherwise the state goes to `Disconnected`. | Show "device restarted"; with auto-reconnect off, connect again. |
 | `StorageDegraded(reason)` | A storage write failed. The engine stops writing for the rest of the session and keeps running from memory. At most once per session. | Warn that the session isn't being saved; the next `connect()` retries storage. |
 | `CongestionWarning(metrics)` | A node's reported channel or airtime utilization crosses into a different `CongestionLevel`. | Delay non-urgent sends while `metrics.canSendNonUrgent` is false. |
 | `ExternalConfigChange(kind)` | Another admin client changed the device's channels, config, or module config; local state is already updated. | Refresh config-dependent UI. |
@@ -185,7 +186,7 @@ Once no paced write is left in flight the engine ends the session and runs a new
 ## Putting it together
 
 ```kotlin
-scope.launch { client.connection.collect { state -> /* connecting, connected, reconnecting */ } }
+scope.launch { client.connection.collect { state -> /* connecting, connected, reconnecting, failed */ } }
 scope.launch { client.events.collect { event -> /* warnings, drops, notifications */ } }
 
 client.sendText("hello").state.collect { /* Queued, Sent, then Acked, Delivered, or Failed */ }

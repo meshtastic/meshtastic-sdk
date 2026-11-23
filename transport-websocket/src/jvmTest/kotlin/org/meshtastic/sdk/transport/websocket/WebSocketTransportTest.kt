@@ -40,8 +40,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import okio.ByteString.Companion.toByteString
+import org.meshtastic.sdk.AutoReconnectConfig
+import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.Frame
+import org.meshtastic.sdk.InMemoryStorageProvider
 import org.meshtastic.sdk.MeshtasticException
+import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.TransportState
 import org.meshtastic.sdk.WireFraming
 import java.net.ServerSocket
@@ -57,6 +61,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 import io.ktor.server.cio.CIO as ServerCIO
 import io.ktor.server.websocket.WebSockets as ServerWebSockets
 import io.ktor.websocket.Frame as WsFrame
@@ -277,6 +282,27 @@ class WebSocketTransportTest {
         assertEquals(4001, e.typed.closeCode)
         assertEquals("bye", e.typed.closeReason)
         assertFalse(e.typed.slotContested)
+    }
+
+    @Test
+    fun aClientWhoseNodeClosesWith4001EndsFailedWithTheCloseCode() = run {
+        val s = server {
+            delay(100)
+            close(CloseReason(4001, "bye"))
+        }
+        val client = RadioClient.Builder()
+            .transport(transportFor(s.port))
+            .storage(InMemoryStorageProvider())
+            .autoSyncTimeOnConnect(false)
+            .autoReconnect(AutoReconnectConfig(initialBackoff = 1.seconds, jitter = 0.0))
+            .build()
+
+        val thrown = assertFailsWith<WebSocketTransportException> { client.connect() }
+
+        assertEquals(4001, thrown.closeCode)
+        val failed = assertIs<ConnectionState.Failed>(client.connection.value)
+        assertEquals(4001, assertIs<WebSocketTransportException>(failed.cause).closeCode)
+        client.disconnect()
     }
 
     @Test
@@ -710,12 +736,27 @@ class WebSocketTransportTest {
     }
 
     @Test
-    fun hostDisconnectResetsTheDropCount() = run {
-        val r = rig("drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop")
+    fun hostDisconnectOfALiveSessionResetsTheDropCount() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop", "drop")
         repeat(4) { assertTrue(r.session().recoverable) }
+        r.transport.connect()
         r.transport.disconnect()
+        r.server.permits.release()
         repeat(4) { assertTrue(r.session().recoverable) }
         assertFalse(r.session().recoverable)
+        r.transport.disconnect()
+    }
+
+    @Test
+    fun disconnectAfterAnEndedSessionKeepsTheDropCountAsTheEngineReconnects() = run {
+        val r = rig("drop", "drop", "drop", "drop", "drop")
+        repeat(4) {
+            assertTrue(r.session().recoverable)
+            r.transport.disconnect()
+        }
+        val fifth = r.session()
+        assertFalse(fifth.recoverable)
+        assertTrue(fifth.typed.slotContested)
         r.transport.disconnect()
     }
 

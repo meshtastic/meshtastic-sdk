@@ -28,10 +28,11 @@ internal actual fun applyPlatformResilience(
 ) {
     val android = peripheral as? AndroidPeripheral ?: return
     if (resilience.bondFirst) transport.bondControl = AndroidBondControl(android.bluetoothDevice)
-    if (resilience.refreshStaleGattCache) {
-        // Reads the current peripheral: a scan-first transport replaces it on every connect.
-        transport.gattCacheRefresher = GattCacheRefresher { transport.peripheral.refreshGattCacheOrFalse() }
-    }
+    // Always wired, for refreshGattCacheOnNextConnect(). Reads the current peripheral: a scan-first
+    // transport replaces it on every connect.
+    transport.gattCacheRefresher = GattCacheRefresher { transport.peripheral.refreshGattCacheOrFalse() }
+    transport.shouldRefreshGattCache = { incomplete -> resilience.refreshStaleGattCache && incomplete }
+    transport.refreshGattCacheAfterFailures = resilience.refreshGattCacheAfterFailures
 }
 
 private class AndroidBondControl(private val device: BluetoothDevice) : BondControl {

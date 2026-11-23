@@ -232,6 +232,8 @@ private fun Header(state: ConnectionState, label: String) {
     val (statusLabel, color) = when (state) {
         ConnectionState.Disconnected -> "DISCONNECTED" to Color.Red
 
+        ConnectionState.Disconnecting -> "DISCONNECTING" to Color.Yellow
+
         is ConnectionState.Connecting -> "CONNECTING (#${state.attempt})" to Color.Yellow
 
         is ConnectionState.Configuring ->
@@ -242,6 +244,8 @@ private fun Header(state: ConnectionState, label: String) {
         is ConnectionState.Reconnecting -> "RECONNECTING" to Color.Yellow
 
         is ConnectionState.DeviceSleeping -> "SLEEPING" to Color.Yellow
+
+        is ConnectionState.Failed -> "FAILED" to Color.Red
     }
     Column {
         Text("Meshtastic @ $label", color = Color.White, textStyle = TextStyle.Bold)

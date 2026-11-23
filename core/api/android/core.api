@@ -230,9 +230,9 @@ public final class org/meshtastic/sdk/AdminSessionStatus$Stale : org/meshtastic/
 public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public static final field Companion Lorg/meshtastic/sdk/AutoReconnectConfig$Companion;
 	public fun <init> ()V
-	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;Lkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public fun <init> (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)V
+	public synthetic fun <init> (ZJJLjava/lang/Integer;DDJLjava/lang/Integer;Lkotlin/jvm/internal/BoxingConstructorMarker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (ZJJLjava/lang/Integer;DDJLjava/lang/Integer;Lkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLkotlin/time/Duration;Ljava/lang/Integer;)V
 	public final fun component1 ()Z
 	public final fun component2 ()Lkotlin/time/Duration;
 	public final fun component2-UwyO8pc ()J
@@ -241,10 +241,12 @@ public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public final fun component4 ()Ljava/lang/Integer;
 	public final fun component5 ()D
 	public final fun component6 ()D
-	public final fun component7 ()Lorg/meshtastic/sdk/ReconnectRecoveryStep;
-	public final fun copy (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/AutoReconnectConfig;
-	public final fun copy-G6guFE4 (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/AutoReconnectConfig;
-	public static synthetic fun copy-G6guFE4$default (Lorg/meshtastic/sdk/AutoReconnectConfig;ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;ILjava/lang/Object;)Lorg/meshtastic/sdk/AutoReconnectConfig;
+	public final fun component7 ()Lkotlin/time/Duration;
+	public final fun component7-UwyO8pc ()J
+	public final fun component8 ()Ljava/lang/Integer;
+	public final fun copy (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLkotlin/time/Duration;Ljava/lang/Integer;)Lorg/meshtastic/sdk/AutoReconnectConfig;
+	public final fun copy-ZIP-zzg (ZJJLjava/lang/Integer;DDJLjava/lang/Integer;)Lorg/meshtastic/sdk/AutoReconnectConfig;
+	public static synthetic fun copy-ZIP-zzg$default (Lorg/meshtastic/sdk/AutoReconnectConfig;ZJJLjava/lang/Integer;DDJLjava/lang/Integer;ILjava/lang/Object;)Lorg/meshtastic/sdk/AutoReconnectConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getBackoffMultiplier ()D
 	public final fun getEnabled ()Z
@@ -254,7 +256,9 @@ public final class org/meshtastic/sdk/AutoReconnectConfig {
 	public final fun getMaxAttempts ()Ljava/lang/Integer;
 	public final fun getMaxBackoff ()Lkotlin/time/Duration;
 	public final fun getMaxBackoff-UwyO8pc ()J
-	public final fun getRecoveryStep ()Lorg/meshtastic/sdk/ReconnectRecoveryStep;
+	public final fun getMaxHandshakeRecoveries ()Ljava/lang/Integer;
+	public final fun getStableAfter ()Lkotlin/time/Duration;
+	public final fun getStableAfter-UwyO8pc ()J
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -508,15 +512,36 @@ public final class org/meshtastic/sdk/ConnectionState$Disconnected : org/meshtas
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/ConnectionState$Disconnecting : org/meshtastic/sdk/ConnectionState {
+	public static final field INSTANCE Lorg/meshtastic/sdk/ConnectionState$Disconnecting;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class org/meshtastic/sdk/ConnectionState$Failed : org/meshtastic/sdk/ConnectionState {
+	public fun <init> (Lorg/meshtastic/sdk/MeshtasticException;)V
+	public final fun component1 ()Lorg/meshtastic/sdk/MeshtasticException;
+	public final fun copy (Lorg/meshtastic/sdk/MeshtasticException;)Lorg/meshtastic/sdk/ConnectionState$Failed;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConnectionState$Failed;Lorg/meshtastic/sdk/MeshtasticException;ILjava/lang/Object;)Lorg/meshtastic/sdk/ConnectionState$Failed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Lorg/meshtastic/sdk/MeshtasticException;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/ConnectionState$Reconnecting : org/meshtastic/sdk/ConnectionState {
-	public fun <init> (Lorg/meshtastic/sdk/MeshtasticException;I)V
+	public fun <init> (Lorg/meshtastic/sdk/MeshtasticException;ILkotlin/time/Instant;)V
+	public synthetic fun <init> (Lorg/meshtastic/sdk/MeshtasticException;ILkotlin/time/Instant;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lorg/meshtastic/sdk/MeshtasticException;
 	public final fun component2 ()I
-	public final fun copy (Lorg/meshtastic/sdk/MeshtasticException;I)Lorg/meshtastic/sdk/ConnectionState$Reconnecting;
-	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConnectionState$Reconnecting;Lorg/meshtastic/sdk/MeshtasticException;IILjava/lang/Object;)Lorg/meshtastic/sdk/ConnectionState$Reconnecting;
+	public final fun component3 ()Lkotlin/time/Instant;
+	public final fun copy (Lorg/meshtastic/sdk/MeshtasticException;ILkotlin/time/Instant;)Lorg/meshtastic/sdk/ConnectionState$Reconnecting;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/ConnectionState$Reconnecting;Lorg/meshtastic/sdk/MeshtasticException;ILkotlin/time/Instant;ILjava/lang/Object;)Lorg/meshtastic/sdk/ConnectionState$Reconnecting;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAttempt ()I
 	public final fun getCause ()Lorg/meshtastic/sdk/MeshtasticException;
+	public final fun getRetryAt ()Lkotlin/time/Instant;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -1871,6 +1896,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun requestNodeInfo-LO_6HKw (I)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun requestNodeInfo-QbL9mVs (IILorg/meshtastic/proto/User;)Lorg/meshtastic/sdk/MessageHandle;
 	public static synthetic fun requestNodeInfo-QbL9mVs$default (Lorg/meshtastic/sdk/RadioClient;IILorg/meshtastic/proto/User;ILjava/lang/Object;)Lorg/meshtastic/sdk/MessageHandle;
+	public final fun retryNow ()Z
 	public final fun send (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/sdk/MessageHandle;
 	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;Lokio/ByteString;IIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun send-IJD_lpo (Lorg/meshtastic/proto/PortNum;[BIIZLjava/lang/Integer;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
@@ -1894,9 +1920,9 @@ public final class org/meshtastic/sdk/RadioClient {
 public final class org/meshtastic/sdk/RadioClient$Builder {
 	public fun <init> ()V
 	public final fun autoReconnect (Lorg/meshtastic/sdk/AutoReconnectConfig;)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public final fun autoReconnect (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public final fun autoReconnect-G6guFE4 (ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public static synthetic fun autoReconnect-G6guFE4$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZJJLjava/lang/Integer;DDLorg/meshtastic/sdk/ReconnectRecoveryStep;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun autoReconnect (ZLkotlin/time/Duration;Lkotlin/time/Duration;Ljava/lang/Integer;DDLkotlin/time/Duration;Ljava/lang/Integer;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun autoReconnect-ZIP-zzg (ZJJLjava/lang/Integer;DDJLjava/lang/Integer;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public static synthetic fun autoReconnect-ZIP-zzg$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZJJLjava/lang/Integer;DDJLjava/lang/Integer;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun autoSyncTimeOnConnect (Z)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun build ()Lorg/meshtastic/sdk/RadioClient;
 	public final fun clock (Lkotlin/time/Clock;)Lorg/meshtastic/sdk/RadioClient$Builder;
@@ -1917,6 +1943,8 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public static synthetic fun skipNodeDb$default (Lorg/meshtastic/sdk/RadioClient$Builder;ZILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun storage (Lorg/meshtastic/sdk/StorageProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun transport (Lorg/meshtastic/sdk/RadioTransport;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun transport (Lorg/meshtastic/sdk/TransportIdentity;Lorg/meshtastic/sdk/RadioTransportProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun transport-153iwNM (Ljava/lang/String;Lorg/meshtastic/sdk/RadioTransportProvider;)Lorg/meshtastic/sdk/RadioClient$Builder;
 }
 
 public final class org/meshtastic/sdk/RadioClient$Companion {
@@ -2116,8 +2144,8 @@ public final class org/meshtastic/sdk/RadioTransport$DefaultImpls {
 	public static fun getLinkDropsOnRestartCommands (Lorg/meshtastic/sdk/RadioTransport;)Z
 }
 
-public abstract interface class org/meshtastic/sdk/ReconnectRecoveryStep {
-	public abstract fun recover (ILorg/meshtastic/sdk/MeshtasticException;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+public abstract interface class org/meshtastic/sdk/RadioTransportProvider {
+	public abstract fun open (ILorg/meshtastic/sdk/MeshtasticException;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
 public abstract interface class org/meshtastic/sdk/RemoteShellApi {

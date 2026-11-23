@@ -95,30 +95,47 @@ public data class AutoReconnectConfig(
     val maxAttempts: Int? = null,
     val backoffMultiplier: Double = 2.0,
     val jitter: Double = 0.2,
-    val recoveryStep: ReconnectRecoveryStep? = null,
+    val stableAfter: Duration = Duration.ZERO,
+    val maxHandshakeRecoveries: Int? = null,
 ) {
     public companion object { public val Disabled: AutoReconnectConfig }
 }
 
-public fun interface ReconnectRecoveryStep {
-    public suspend fun recover(attempt: Int, cause: MeshtasticException)
+public fun interface RadioTransportProvider {
+    public suspend fun open(attempt: Int, cause: MeshtasticException?): RadioTransport
 }
+
+// RadioClient.Builder
+public fun transport(transport: RadioTransport): Builder
+public fun transport(identity: TransportIdentity, provider: RadioTransportProvider): Builder
+
+// RadioClient
+public fun retryNow(): Boolean
 ```
 
-Auto-reconnect is off unless the builder receives a config with `enabled = true`; the builder's default is `AutoReconnectConfig.Disabled`. When on, the engine reconnects after a transport drop and reports `ConnectionState.Reconnecting(cause, attempt)`. The 1.0 release turns it on by default; pass `AutoReconnectConfig.Disabled` to keep it off.
+Auto-reconnect is off unless the builder receives a config with `enabled = true`; the builder's default is `AutoReconnectConfig.Disabled`. The 1.0 release turns it on by default; pass `AutoReconnectConfig.Disabled` to keep it off.
 
-`recoveryStep` runs after each backoff delay and before `transport.connect()`, for work such as requesting a USB permission again, power-cycling a radio, or waiting for the Bluetooth adapter. Throwing counts as a failed attempt. It prepares the transport the client was built with and can't swap in another.
+When on, the engine owns reconnecting. A transport drop, a failed first attempt, a handshake timeout, the liveness watchdog, a handshake protocol error, a `sessionEvents` overflow and `FromRadio.rebooted` all end the session (`sessionEvents` emits `Ended` at once) and lead to `Reconnecting(cause, attempt, retryAt)`, then a new session. `connect()` returns at the first `Connected`; once storage is activated it throws only on `Failed` or `disconnect()`, while a storage activation failure throws `StorageUnavailable`, leaves `Disconnected` and is not retried. These end in `ConnectionState.Failed(cause)` and are not retried: a `TransportState.Error` with `recoverable = false` (a WebSocket 4001, 1009 or contested slot among them), `FirmwareTooOld`, `maxAttempts` running out, and `maxHandshakeRecoveries` handshake, liveness, protocol or overflow restarts in a row (the cause is the last of them). `Failed` holds until `connect()` or `disconnect()`.
+
+- The backoff is `initialBackoff × backoffMultiplier^(attempt - 1)`, capped at `maxBackoff`, with `jitter`. `attempt` and `maxAttempts` count from the last session that stayed `Connected` for `stableAfter`, so a radio that crashes right after its handshake keeps backing off; the default `Duration.ZERO` starts over at every `Connected`.
+- `retryAt` is when the next attempt starts, from the client's clock, and `null` while an attempt is in flight. `retryNow()` ends a backoff wait and returns `true` when the client was `Reconnecting` with a `retryAt` or `DeviceSleeping` between attempts; otherwise, an attempt in flight included, it returns `false` and changes nothing.
+- `maxHandshakeRecoveries = null` restarts without limit, except three `sessionEvents` overflow restarts in a row. A session that reaches `Connected` and then ends any other way resets the `maxHandshakeRecoveries` count; one that ends in a `sessionEvents` overflow does not, since an overflow usually follows the handshake while the device replays its history.
+
+`transport(transport)` reuses one instance for every attempt. `transport(identity, provider)` calls the provider before each attempt: `attempt = 0` and `cause = null` for the attempt `connect()` starts, then the reconnect attempt number and its cause. The previous transport has been disconnected and its frame reader has finished by then. The provider returns the same instance (BLE, WebSocket: both keep state across attempts) or a fresh one (a USB serial port that re-enumerated), and the engine disconnects but never shuts down an instance it stops using. It may suspend until a connection is possible (Bluetooth on, USB permission granted): the state stays `Reconnecting` with `retryAt = null` and no attempt is used up. Throwing fails the attempt, a `CancellationException` from the provider's own timeout included; only cancelling the client ends it. On `attempt = 0` a suspended provider shows `Connecting(1)`, and while a sleeping device is retried, `DeviceSleeping`. `identity` keys storage for every transport it returns.
+
+Suggested policy for an app: `initialBackoff` 1 s (3 s for BLE, which needs the time to release the firmware's GATT session), `maxBackoff` 30 s, `stableAfter` 5 s for BLE and 30 s otherwise, `maxHandshakeRecoveries` 3, `jitter` 0.
 
 ### Lifecycle and state
 
 | Member | Notes |
 |---|---|
-| `suspend fun connect()` | Suspends until `Connected`. Throws `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`) or `CancellationException`. Not idempotent: calling it while connected throws `AlreadyConnected`, because a silent no-op hides reconnect-loop bugs. |
+| `suspend fun connect()` | Suspends until `Connected`. Throws `MeshtasticException` (`AlreadyConnected`, `Transport`, `Protocol`, `StorageUnavailable`, `HandshakeTimeout`, `FirmwareTooOld`) or `CancellationException`. With auto-reconnect on, a failed attempt is retried and `connect()` throws only with the cause of `Failed`. Not idempotent: calling it while connected throws `AlreadyConnected`, because a silent no-op hides reconnect-loop bugs. |
+| `fun retryNow(): Boolean` | Ends the auto-reconnect backoff wait; see [`AutoReconnectConfig`](#autoreconnectconfig). |
 | `suspend fun RadioClient.connectAndAwaitReady(timeout: Duration = 30.seconds): ConfigBundle` | Calls `connect()` and returns the committed `ConfigBundle`. Throws `HandshakeTimeout(stage = "connectAndAwaitReady")` when the bundle doesn't arrive within `timeout`. |
 | `suspend fun RadioClient.awaitInitialNodeDb(): Map<NodeId, NodeInfo>` | Waits for the first node map after the handshake commits. |
 | `suspend fun disconnect()` | Idempotent, never throws. Fails every open `MessageHandle` with `Disconnected`, then closes the transport and storage. The same client can `connect()` again afterwards; `sessionEvents` has completed and stays complete. |
 | `suspend fun <T> RadioClient.withConnection(teardownTimeout: Duration = 10.seconds, block: suspend RadioClient.() -> T): T` | Connects, runs `block`, and always disconnects, on success, exception, or cancellation. Teardown runs under `NonCancellable`, bounded by `teardownTimeout`. |
-| `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Connecting → …`. A power-saving device that drops its BLE link by design goes to `DeviceSleeping` instead (see [`DeviceSleeping`](#devicesleeping)). |
+| `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Configuring → …`, and `Failed` when retrying cannot help. A power-saving device that drops its BLE link by design goes to `DeviceSleeping` instead (see [`DeviceSleeping`](#devicesleeping)). |
 | `ownNode: StateFlow<NodeInfo?>` | `null` until `Connected`, then the local node. |
 | `configBundle: StateFlow<ConfigBundle?>` | `null` until `Connected`; cleared on disconnect. `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated by unsolicited config pushes and successful local admin writes. |
 | `channels: StateFlow<List<Channel>?>` | `null` until `Connected`. Updated when `setChannel` succeeds; `admin.listChannels()` re-reads all eight slots. |
@@ -163,13 +180,13 @@ The engine never waits for a collector. All but `sessionEvents` are hot: collect
 
 ### Session receive
 
-Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, channels and nodes. When the handshake reports no channels, the snapshot carries the ones stored for the device. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. The default capacity, 4096 events, holds the stored-history replay that follows `Ready` (up to four packets per node for 250 nodes, each with its node change) while the collector installs the snapshot; a full queue closes the stream with `RadioSessionOverflowException`. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect, or a live renumber of the connected node, starts a new session on the same stream.
+Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, channels and nodes. When the handshake reports no channels, the snapshot carries the ones stored for the device. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. The default capacity, 4096 events, holds the stored-history replay that follows `Ready` (up to four packets per node for 250 nodes, each with its node change) while the collector installs the snapshot; a full queue closes the stream with `RadioSessionOverflowException`; with auto-reconnect on the session also restarts, as below. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect, or a live renumber of the connected node, starts a new session on the same stream.
 
 After `Ready` the stream also carries what the SDK derives, in the same sequence as packets: `NodeChanged` for each node-map change, `ConfigChanged` and `ChannelsChanged` with the whole new bundle or channel list, and `Event` for each `MeshEvent` except `LockdownStatusChanged`, `QueueStatusChanged` and `PacketsDropped`. Events raised during the handshake, such as a `ClientNotification` the firmware queued while no client was connected, `IdentityRebound` or an MQTT client-proxy message, follow `Ready` in receive order among the retained packets. A packet comes before the changes it causes. An acknowledged local admin write appears once the call returns: config and channel writes as `ConfigChanged` or `ChannelsChanged`, and `setOwner`, `setFavorite`, `setIgnored` and `removeNode` as `NodeChanged`. An `editSettings` or `batch` block applies its writes in call order, as the device did. A write whose link was replaced before the call returned is not applied; the new session's handshake reports the device's state. A consumer that projects these into its own store needs no other flow.
 
 Call `requestNodeDbRefresh()` to start a nodes-only download on this connection. The matching completion produces `NodeDbRefreshed` in receive order. Packets continue through the engine during the download. Overlapping requests queue a single follow-up. If the download stalls, the SDK ends the connection to prevent a late response from being attributed to another request.
 
-The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected sequenced event, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. To resume ingestion after overflow or collector cancellation, start a new client and reconcile any missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
+The engine never waits on this queue. When it fills, the collector receives the accepted prefix and then `RadioSessionOverflowException`. The error identifies the affected session and, for a rejected sequenced event, its sequence. A handshake buffer overflow ends the stream before a snapshot can imply complete coverage. With auto-reconnect on and a collector running, the engine also ends the overflowed session and reconnects, counted against `maxHandshakeRecoveries`, or capped at three in a row when that is `null`, so a consumer that keeps falling behind ends in `Failed` rather than restarting forever. With nobody collecting, a restart could not help, and the session carries on with the stream failed. Collect `sessionEvents` again after the exception: the new collection starts with `Ended` for the overflowed session, when it had reached `Ready`, then the next session's `Ready`, whose snapshot replaces what was missed in memory. With auto-reconnect off, or after collector cancellation, start a new client to resume. Either way, reconcile missing history through a source that retained it. Sequence numbers cover the SDK handoff. Loss in firmware or transport buffers can happen before that boundary.
 
 
 Use `sendPaced(packet)` for durable sends that need distinct proof of SDK admission, dispatch and radio queue acceptance. It preserves a supplied wire ID. The next paced packet waits for a matching queue receipt, routing result or five seconds after the transport write. ID-zero queue reports also come from heartbeats and cannot identify a packet. The queue receipt remains unconfirmed when it is lost. Routing results can still settle the message after the queue slot opens.
@@ -363,21 +380,23 @@ public enum class NodeField { Name, Position, SignalQuality, Battery, Telemetry,
 ```kotlin
 public sealed interface ConnectionState {
     public data object Disconnected : ConnectionState
+    public data object Disconnecting : ConnectionState
     public data class Connecting(val attempt: Int) : ConnectionState
     public data class Configuring(val phase: ConfigPhase, val progress: Float) : ConnectionState
     public data object Connected : ConnectionState
-    public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
+    public data class Reconnecting(val cause: MeshtasticException, val attempt: Int, val retryAt: Instant? = null) : ConnectionState
     public data class DeviceSleeping(val since: Instant, val expectedWakeSeconds: Int) : ConnectionState
+    public data class Failed(val cause: MeshtasticException) : ConnectionState
 }
 
 public enum class ConfigPhase { Stage1, Settling, Stage2 }
 
 public val ConnectionState.isUsable: Boolean        // Connected
-public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting; not DeviceSleeping
+public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, Reconnecting; not DeviceSleeping or Disconnecting
 public val ConnectionState.statusMessage: String    // display text
 ```
 
-`progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
+`Disconnecting` is published by `disconnect()` from any state but `Disconnected` (a backoff wait, a suspended provider, `DeviceSleeping` and `Failed` included) and holds while the engine cancels the attempt, ends the reader and closes the transport; `Disconnected` follows before `disconnect()` returns; a second `disconnect()` during that teardown returns at once and leaves `Disconnecting` in place until the first one's teardown ends. A link loss never shows it, and `disconnect()` while `Disconnected` publishes nothing. `Failed` is terminal until `connect()` or `disconnect()`: a non-recoverable transport error or `FirmwareTooOld` with auto-reconnect on or off, or an exhausted cap with it on. `cause` keeps its type, so a `WebSocketTransportException` arrives with its `closeCode`. `progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
 
 ### `DeviceSleeping`
 
@@ -387,7 +406,7 @@ Reported instead of `Reconnecting` or `Disconnected` only when a BLE session dro
 - sensor role with `power.is_power_saving` and `telemetry.environment_measurement_enabled`: deep sleep, `expectedWakeSeconds` is `telemetry.environment_update_interval`, or 3600 when it is 0;
 - router or router-late role, or `power.is_power_saving` on another role, with `metadata.hasWifi`, no WiFi SSID configured, no `network.eth_enabled` on a build with `metadata.hasEthernet`, and `power.ls_secs > 0`: light sleep, `expectedWakeSeconds` is `ls_secs` for every role, a router's included (one day by default). Firmware light-sleeps `wait_bluetooth_secs` after the last `ToRadio` write, so the SDK's 30 s heartbeat keeps a radio with the default 60 s awake.
 
-With auto-reconnect on, the engine keeps retrying with the normal backoff. Attempts made before `since + expectedWakeSeconds + 2 × maxBackoff` do not count against `maxAttempts`; after that the state becomes `Reconnecting` and attempts count. With auto-reconnect off the session ends and the state stays `DeviceSleeping` until `connect()` or `disconnect()`. Pending sends fail with `SendFailure.Disconnected` and `sessionEvents` emits `Ended`, as for any drop.
+With auto-reconnect on, the engine keeps retrying with the normal backoff, and `retryNow()` starts the next attempt at once. Attempts made before `since + expectedWakeSeconds + 2 × maxBackoff` do not count against `maxAttempts`, and neither do handshake timeouts or drops in that window, since a BLE link can survive light sleep and connect while the radio still sleeps; the device counts as asleep until a handshake reaches `Connected`. After the window the state becomes `Reconnecting` and attempts count. With auto-reconnect off the session ends and the state stays `DeviceSleeping` until `connect()` or `disconnect()`. Pending sends fail with `SendFailure.Disconnected` and `sessionEvents` emits `Ended`, as for any drop.
 
 ## Transport specs, identities, and targets
 
@@ -900,13 +919,13 @@ Frames carry the 4-byte stream header on every transport; `WebSocketTransport` s
 | Transport | Construct with |
 |---|---|
 | TCP | `TcpTransport(host, port)` |
-| BLE | `BleTransport(radio)` from `BleScanner.scan()`, on every target; on Android also `BleTransport(address, resilience, builderAction)` (scans for the address before each connect), `BleTransport(address | radio, resilience, refreshGattCacheOnConnect, builderAction)` and `BleTransport(device: BondedBleDevice, …)`; on the JVM `BleTransport(address, builderAction)` with a saved `DiscoveredRadio.address` or a MAC |
+| BLE | `BleTransport(radio)` from `BleScanner.scan()`, on every target; on Android also `BleTransport(address, resilience, builderAction)` (scans for the address before each connect) and `BleTransport(device: BondedBleDevice, …)`; on the JVM `BleTransport(address, builderAction)` with a saved `DiscoveredRadio.address` or a MAC |
 | Serial, JVM | `JvmSerialPorts.open(portName, baudRate)` |
 | Serial, Android | `AndroidSerialPorts.open(portName, baudRate)` after `AndroidSerialPorts.init(context)`, or `AndroidUsbSerialPorts.open(context, deviceName)` |
 | WebSocket | `WebSocketTransport(url, httpClient = null)` for `ws://` or `wss://`; the path defaults to `/api/v1/ws` |
 | Tests | `FakeRadioTransport(identity, frames, autoHandshake, nodeNum)` |
 
-Each serial `open` has an overload taking `onTextLine: (String) -> Unit`, which receives the text the device prints between frames. `BleResilience` (Android) turns on bond-first, an `autoConnect` fallback, and a stale GATT cache refresh. `WebSocketTransport`'s close codes, contested-slot handling, and browser constraints are in its [Module.md](../transport-websocket/Module.md).
+Each serial `open` has an overload taking `onTextLine: (String) -> Unit`, which receives the text the device prints between frames. `BleResilience` (Android) turns on bond-first, an `autoConnect` fallback, a GATT cache refresh when discovery comes back incomplete, and with `refreshGattCacheAfterFailures = n` one refresh per streak of `n` failed connects or links that dropped within 5 s; a link that stays up 5 s re-arms it. `BleTransport.refreshGattCacheOnNextConnect()` asks for one refresh on the next connect that reaches the radio, for use after a firmware update. `WebSocketTransport`'s close codes, contested-slot handling, and browser constraints are in its [Module.md](../transport-websocket/Module.md).
 
 ## Logging
 

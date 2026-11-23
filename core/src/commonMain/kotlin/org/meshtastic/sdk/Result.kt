@@ -179,12 +179,13 @@ public sealed interface SendOutcome {
  * Lifecycle of the SDK's connection to a device.
  *
  * Transitions from [Disconnected] → [Connecting] → [Configuring] → [Connected].
- * May also transition back through [Reconnecting] if the transport drops or hangs.
+ * With auto-reconnect on, a drop or hang goes through [Reconnecting] and back to [Configuring].
+ * An error that retrying cannot fix ends in [Failed], with auto-reconnect on or off.
  *
  * **Device sleep:** a sleeping device's link simply drops. The engine reports
  * [DeviceSleeping] instead of [Reconnecting] only when a fully handshaken session drops and the
  * device's last known configuration says firmware sleeps it (see [DeviceSleeping]). A reboot
- * announcement, a failed first connect and [RadioClient.disconnect] are reported as before.
+ * announcement, a failed first connect and [RadioClient.disconnect] are reported as [Reconnecting] or [Disconnected].
  *
  * @since 0.1.0
  */
@@ -193,6 +194,16 @@ public sealed interface ConnectionState {
      * SDK is not connected and has no active connection attempt.
      */
     public data object Disconnected : ConnectionState
+
+    /**
+     * [RadioClient.disconnect] was called and the engine is tearing the session down: cancelling a
+     * pending attempt or backoff, ending the frame reader and closing the transport. [Disconnected]
+     * follows. An unplanned link loss never shows this state, and a [RadioClient.disconnect] while
+     * already [Disconnected] publishes nothing.
+     *
+     * @since 0.3.0
+     */
+    public data object Disconnecting : ConnectionState
 
     /**
      * Attempting to establish a connection.
@@ -218,9 +229,24 @@ public sealed interface ConnectionState {
      * Connection dropped unexpectedly; attempting automatic reconnect.
      *
      * @param cause the underlying error that triggered reconnection
-     * @param attempt the reconnect attempt count (1-indexed)
+     * @param attempt the reconnect attempt count since the last stable link (1-indexed)
+     * @param retryAt when the engine will make [attempt], from the client's clock; `null` while the
+     *   attempt is in flight, including while the [RadioTransportProvider] is suspended.
+     *   [RadioClient.retryNow] ends the wait early.
      */
-    public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
+    public data class Reconnecting(val cause: MeshtasticException, val attempt: Int, val retryAt: Instant? = null) :
+        ConnectionState
+
+    /**
+     * The engine stopped trying: the transport reported a non-recoverable error, the firmware is
+     * too old ([MeshtasticException.FirmwareTooOld]), or an [AutoReconnectConfig] cap ran out. The
+     * client stays here until [RadioClient.connect] or [RadioClient.disconnect] is called.
+     *
+     * @param cause the error that ended the last attempt, as its own type (a transport module's
+     *   typed `MeshtasticException.Transport` subclass included)
+     * @since 0.3.0
+     */
+    public data class Failed(val cause: MeshtasticException) : ConnectionState
 
     /**
      * The device dropped the link because its power-saving configuration puts it to sleep.
@@ -236,8 +262,10 @@ public sealed interface ConnectionState {
      * [RadioClient.disconnect] is called.
      *
      * Reconnect attempts made before `since` plus [expectedWakeSeconds] plus a grace of twice
-     * [AutoReconnectConfig.maxBackoff] do not count against [AutoReconnectConfig.maxAttempts];
-     * after that the state becomes [Reconnecting].
+     * [AutoReconnectConfig.maxBackoff] do not count against [AutoReconnectConfig.maxAttempts], and
+     * neither does a handshake that times out or drops in that window, since a BLE link can survive
+     * light sleep; the device counts as asleep until a handshake reaches [Connected]. After the window
+     * the state becomes [Reconnecting].
      *
      * @param since when the link drop was observed
      * @param expectedWakeSeconds the longest the device sleeps before it surfaces again:
@@ -253,7 +281,7 @@ public sealed interface ConnectionState {
 public val ConnectionState.isUsable: Boolean
     get() = this is ConnectionState.Connected
 
-/** Whether a connection attempt is actively in progress. */
+/** Whether a connection attempt is actively in progress; `false` for [ConnectionState.Disconnecting], which ends one. */
 public val ConnectionState.isInProgress: Boolean
     get() =
         this is ConnectionState.Connecting ||
@@ -264,11 +292,13 @@ public val ConnectionState.isInProgress: Boolean
 public val ConnectionState.statusMessage: String
     get() = when (this) {
         is ConnectionState.Disconnected -> "Disconnected"
+        is ConnectionState.Disconnecting -> "Disconnecting"
         is ConnectionState.Connecting -> "Connecting (attempt $attempt)"
         is ConnectionState.Configuring -> "Configuring: ${phase.name} (${(progress * 100).toInt()}%)"
         is ConnectionState.Connected -> "Connected"
         is ConnectionState.Reconnecting -> "Reconnecting (attempt $attempt)"
         is ConnectionState.DeviceSleeping -> "Device sleeping"
+        is ConnectionState.Failed -> "Connection failed"
     }
 
 /**
