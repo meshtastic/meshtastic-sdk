@@ -77,8 +77,14 @@ class AdminPacedWriteOutcomeTest {
 
         transport.queueStatus(adminWrites(transport).single(), DUTY_CYCLE_LIMIT)
         runCurrent()
-
         assertEquals(AdminResult.Failed(Routing.Error.DUTY_CYCLE_LIMIT), save.await())
+
+        // Router::send also refuses an oversized packet with TOO_LARGE (7), another result below the ERRNO range.
+        val oversized = async { client.admin.setConfig(router) }
+        runCurrent()
+        transport.queueStatus(adminWrites(transport).last(), TOO_LARGE)
+        runCurrent()
+        assertEquals(AdminResult.Failed(Routing.Error.TOO_LARGE), oversized.await())
         client.disconnect()
     }
 
@@ -155,6 +161,8 @@ class AdminPacedWriteOutcomeTest {
         const val ERRNO_DISABLED = 34
 
         const val DUTY_CYCLE_LIMIT = 9
+
+        const val TOO_LARGE = 7
 
         const val ERRNO_UNKNOWN = 32
 

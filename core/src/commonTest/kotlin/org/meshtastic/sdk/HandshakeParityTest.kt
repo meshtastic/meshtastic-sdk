@@ -278,6 +278,28 @@ class HandshakeParityTest {
         assertEquals(ConnectionState.Disconnected, client.connection.value)
     }
 
+    // The reply proves the firmware answers heartbeats for the rest of the link, whatever frames follow it.
+    @Test
+    fun aHeartbeatReplyKeepsTheWatchdogArmedAcrossLaterFrames() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:heartbeat-then-packet"), autoHandshake = true)
+        val client = buildClient(transport)
+        client.connect()
+        transport.inject {
+            it.queueStatus = QueueStatus.Builder().also { q ->
+                q.free = 16
+                q.maxlen = 16
+            }.build()
+        }
+        runCurrent()
+        transport.injectPacket(replayedPosition(PEER_BASE))
+        runCurrent()
+
+        advanceTimeBy(LIVENESS_TIMEOUT_MS + LIVENESS_CHECK_MS)
+        runCurrent()
+
+        assertEquals(ConnectionState.Disconnected, client.connection.value)
+    }
+
     @Test
     fun aBleLinkWithoutPeriodicHeartbeatsHasNoLivenessWatchdog() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("ble:AA:BB:CC:DD:EE:FF"), autoHandshake = true)
@@ -380,6 +402,39 @@ class HandshakeParityTest {
         assertTrue(failure.message!!.contains("rebooted"))
         assertTrue(events.any { it is MeshEvent.DeviceRebooted })
         assertEquals(1, transport.stage1Requests(), "no in-session want_config_id resend")
+    }
+
+    // A rebooted queued before the request is stale when my_info follows inside the grace: the dump goes on.
+    @Test
+    fun aRebootFollowedByTheDumpWithinTheGraceStillConnects() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:stale-boot-reboot"), autoQueueStatus = true)
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.inject { it.rebooted = true }
+        runCurrent()
+        advanceTimeBy(STAGE1_REBOOT_GRACE_MS / 2)
+        transport.nodeNum = NODE
+        transport.inject { it.my_info = MyNodeInfo.Builder().also { m -> m.my_node_num = NODE }.build() }
+        runCurrent()
+        // The dump is still streaming when the grace would have expired.
+        advanceTimeBy(STAGE1_REBOOT_GRACE_MS)
+        transport.inject { it.channel = Channel.Builder().also { c -> c.index = 0 }.build() }
+        runCurrent()
+        assertFalse(connectJob.isCompleted, "the grace must not end a dump that started")
+
+        transport.inject { it.config_complete_id = NONCE_STAGE1 }
+        runCurrent()
+        repeat(2) {
+            advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+            runCurrent()
+        }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+        assertTrue(connectJob.await().isSuccess)
+        assertEquals(1, transport.stage1Requests())
+        client.disconnect()
     }
 
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->

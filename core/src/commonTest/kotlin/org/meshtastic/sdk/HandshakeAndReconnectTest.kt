@@ -1351,8 +1351,22 @@ class HandshakeAndReconnectTest {
             assertEquals(555, awaitItem().id)
             assertEquals(PortNum.ADMIN_APP, awaitItem().decoded?.portnum)
 
-            // The seed reply latches the passkey and is not offered as a packet.
+            // A local owner reply to some other request (firmware's MeshModule::setReplyTo sets its request_id) is
+            // a packet like any other and leaves the seed pending.
             val seedRequest = transport.outboundPackets().first { adminOf(it)?.get_owner_request == true }
+            transport.injectAdminResponse(
+                requestId = seedRequest.id + 1,
+                response = AdminMessage.Builder().also { wb ->
+                    wb.get_owner_response = User.Builder().also { wb -> wb.long_name = "Other" }.build()
+                    wb.session_passkey = byteArrayOf(9, 9, 9, 9).toByteString()
+                }.build(),
+                fromNode = transport.nodeNum,
+            )
+            drainCurrent()
+            assertEquals(seedRequest.id + 1, awaitItem().decoded?.request_id)
+            assertEquals(null, client.adminSessions.value[NodeId(transport.nodeNum)], "the seed is still pending")
+
+            // The seed reply latches the passkey and is not offered as a packet.
             transport.injectAdminResponse(
                 requestId = seedRequest.id,
                 response = AdminMessage.Builder().also { wb ->

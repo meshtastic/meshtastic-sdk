@@ -94,7 +94,12 @@ class ProtocolLoggingTest {
     // Apps forward SDK logs to Crashlytics and Datadog, so no line at any level may name the radio's address.
     @Test
     fun logsNameTheTransportKindButNotItsAddress() = runTest {
-        for (address in listOf("ble:C2:5D:11:22:33:44", "tcp:192.168.1.42:4403")) {
+        // Any fragment of the address identifies the radio: a MAC octet pair, or an IP octet with its separator.
+        val fragments = mapOf(
+            "ble:C2:5D:11:22:33:44" to listOf("C2:5D", "5D:11", "11:22", "22:33", "33:44"),
+            "tcp:192.168.1.42:4403" to listOf("192.", "168.", ".1.", ".42", ":4403"),
+        )
+        for ((address, parts) in fragments) {
             val sink = RecordingSink()
             val transport = FakeRadioTransport(identity = TransportIdentity(address), autoHandshake = true, nodeNum = 1)
             val client = RadioClient.Builder()
@@ -107,7 +112,7 @@ class ProtocolLoggingTest {
             runCurrent()
             client.disconnect()
 
-            val leaked = sink.entries.filter { it.message.contains(address.substringAfter(':')) }
+            val leaked = sink.entries.filter { e -> parts.any { e.message.contains(it) } }
             assertTrue(leaked.isEmpty(), "address in logs: ${leaked.map { it.message }}")
             val kind = address.substringBefore(':')
             assertTrue(sink.entries.any { it.message.contains("transport=$kind:#") }, "no connect line")
