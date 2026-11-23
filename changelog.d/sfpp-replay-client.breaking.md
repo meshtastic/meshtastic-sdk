@@ -1,0 +1,1 @@
+- `StoreForwardEvent` gained `SfppMessageRecovered`; an exhaustive `when` over it must add a branch.

@@ -9,6 +9,8 @@ package org.meshtastic.sdk
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import org.meshtastic.proto.Data
+import kotlin.time.Instant
 
 /**
  * API for interacting with Store-and-Forward (S&F) nodes on the mesh.
@@ -160,4 +162,41 @@ public sealed interface StoreForwardEvent {
 
         override fun hashCode(): Int = messageHash.contentHashCode() * 31 + rxTime.hashCode()
     }
+
+    /**
+     * A channel text recovered from an SF++ archive's replay, decrypted with the primary channel's key.
+     *
+     * It arrives on this flow only, never on the packet flow, so it touches no node bookkeeping (last
+     * heard, signal, hops, position). A message received or sent live this session is never emitted.
+     * Another copy of a recovered message is emitted again only when it raises the trust flags or
+     * places the message more than two seconds earlier; an unattested copy never moves an attested
+     * placement. Each event carries the best values merged across copies, so for one ([from],
+     * [packetId]) the latest event supersedes earlier ones. Deduplicating against the host's own
+     * store is the host's job.
+     *
+     * @property from the original sender
+     * @property packetId the original packet id
+     * @property channelIndex the channel whose key decrypted it
+     * @property text the message text
+     * @property data the decoded payload, for reply and emoji fields
+     * @property archive the node that replayed it
+     * @property heardAgoSeconds how long before the replay the archive first heard it
+     * @property heardAt receipt time minus [heardAgoSeconds]: where the message belongs in the conversation
+     * @property senderVerified the archive verified the sender's signature and attested that by signing
+     *   or PKI-encrypting its frame
+     * @property timeAttested the archive signed or PKI-encrypted the frame, so [heardAgoSeconds] is its claim
+     * @since 0.3.0
+     */
+    public data class SfppMessageRecovered(
+        val from: NodeId,
+        val packetId: Int,
+        val channelIndex: Int,
+        val text: String,
+        val data: Data,
+        val archive: NodeId,
+        val heardAgoSeconds: Long,
+        val heardAt: Instant,
+        val senderVerified: Boolean,
+        val timeAttested: Boolean,
+    ) : StoreForwardEvent
 }

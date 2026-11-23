@@ -11,7 +11,7 @@ This page sets out what `meshtastic-sdk` protects and what it leaves to the host
 
 ## What's out of scope
 
-- Mesh-side wire crypto. Channel encryption (AES-CTR) and PKI direct-message encryption run in firmware. The SDK holds no PKI private key and decrypts no mesh traffic: the node hands it cleartext over the PhoneAPI ([`protocol.md` §10](./protocol.md#key-material-storage), citing firmware `CryptoEngine.cpp`).
+- Mesh-side wire crypto. Channel encryption (AES-CTR) and PKI direct-message encryption run in firmware. The SDK holds no PKI private key and decrypts no live mesh traffic: the node hands it cleartext over the PhoneAPI ([`protocol.md` §10](./protocol.md#key-material-storage), citing firmware `CryptoEngine.cpp`). SF++ replays are the exception: the SDK decrypts them with the channel key the node already shares with it ([`protocol.md` §9](./protocol.md#sf-replays-the-one-place-the-sdk-decrypts)).
 - The security of the host process. A compromised host process exposes everything.
 - Attacks on the radio link, such as RF jamming or over-the-air replay. The SDK is downstream of them.
 - The MQTT broker and the firmware's MQTT connection. A consumer's own MQTT client owns broker authentication and TLS. In PhoneAPI MQTT proxy mode ([`protocol.md` §14](./protocol.md#14-mqtt-proxy-mode)) the consumer relays bytes and the broker settings live on the node.
