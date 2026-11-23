@@ -29,7 +29,6 @@ internal enum class HandshakeStage {
     Stage1Settling,
     AwaitingLockdown,
     Stage2Draining,
-    SeedingSession,
     Ready,
     ;
 
@@ -39,7 +38,6 @@ internal enum class HandshakeStage {
         Stage1Settling -> "Stage 1 (settling)"
         AwaitingLockdown -> "Awaiting lockdown authorization"
         Stage2Draining -> "Stage 2"
-        SeedingSession -> "Seeding Session"
         Ready -> "Ready"
     }
 }
@@ -179,6 +177,12 @@ internal sealed interface EngineMessage {
      * @param stage the handshake stage that timed out.
      */
     data class HandshakeTimeout(val stage: HandshakeStage, val attempt: Long) : EngineMessage
+
+    /** The grace after a pre-dump `rebooted` in Stage 1 attempt [attempt] has elapsed. */
+    data class Stage1RebootGrace(val attempt: Long) : EngineMessage
+
+    /** No reply to the session passkey seed sent with packet id [requestId]. */
+    data class SessionSeedTimeout(val requestId: Int) : EngineMessage
 
     /**
      * The 100 ms inter-stage settle timer (after Stage 1 sentinel received) has elapsed.

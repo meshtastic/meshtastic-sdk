@@ -18,6 +18,8 @@ val client = RadioClient.Builder()
 
 Without a `LogSink` the SDK is silent: a library that handles keys doesn't write to stderr by default.
 
+Apps forward these lines to crash and analytics backends, so outside protocol logging they carry no payload content and no transport address: the connect line names the transport kind and a 4-hex digest of its identity (`ble:#1a2b`), never the BLE MAC or TCP host.
+
 ### Levels
 
 `LogLevel` has six values. `NONE` is only the off switch for protocol logging.

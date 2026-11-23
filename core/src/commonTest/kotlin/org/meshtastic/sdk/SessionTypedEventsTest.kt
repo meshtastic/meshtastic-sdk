@@ -19,11 +19,15 @@ import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.encodeUtf8
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
+import org.meshtastic.proto.ClientNotification
 import org.meshtastic.proto.Config
 import org.meshtastic.proto.Data
 import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FromRadio
+import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.MqttClientProxyMessage
+import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
 import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.User
@@ -233,7 +237,7 @@ class SessionTypedEventsTest {
     }
 
     @Test
-    fun channelsRestoredFromStorageDuringSeedingArriveInTheReadySnapshot() = runTest {
+    fun storedChannelsFillAReadySnapshotWhoseHandshakeHasNone() = runTest {
         val stored = listOf(
             Channel.Builder().also { wb ->
                 wb.role = Channel.Role.PRIMARY
@@ -263,6 +267,114 @@ class SessionTypedEventsTest {
 
         assertEquals(stored, client.channels.value)
         assertEquals(stored, assertIs<RadioSessionEvent.Ready>(events.first()).channels)
+        client.disconnect()
+    }
+
+    /**
+     * Firmware queues client notifications while no client is connected (`main.cpp` sends the
+     * low-entropy key warning at boot) and hands them out first once Stage 1 completes
+     * (`PhoneAPI::getFromRadio`, `STATE_SEND_PACKETS`: `clientNotification` before `packetForPhone`).
+     */
+    @Test
+    fun handshakeEventsFollowTheReadySnapshotInReceiveOrder() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:handshake-events"), autoQueueStatus = true)
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .sessionReceive()
+            .build()
+        val events = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        val connectJob = backgroundScope.async { client.connect() }
+        runCurrent()
+        transport.nodeNum = LOCAL
+        transport.inject { it.my_info = MyNodeInfo.Builder().also { m -> m.my_node_num = LOCAL }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE1 }
+        runCurrent()
+        val notification = ClientNotification.Builder().also { wb ->
+            wb.level = LogRecord.Level.WARNING
+            wb.message = "low entropy key"
+        }.build()
+        transport.inject { it.clientNotification = notification }
+        transport.injectPacket(textFrom(PEER, id = 950))
+        val proxied = MqttClientProxyMessage.Builder().also { wb -> wb.topic = "msh/test" }.build()
+        transport.inject { it.mqttClientProxyMessage = proxied }
+        repeat(2) {
+            advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
+            runCurrent()
+        }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = LOCAL }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+        connectJob.await()
+
+        assertIs<RadioSessionEvent.Ready>(events.first())
+        val ordered = events.drop(1).mapNotNull { event ->
+            when (event) {
+                is RadioSessionEvent.Event -> (event.event as? MeshEvent.Notification)?.notification
+                    ?: (event.event as? MeshEvent.MqttProxyMessage)?.message
+
+                is RadioSessionEvent.Packet -> event.packet.id.takeIf { it == 950 }
+
+                else -> null
+            }
+        }
+        assertEquals(listOf(notification, 950, proxied), ordered)
+        client.disconnect()
+    }
+
+    // A reconnect skips handleConnect, so channels read for the old device must not outlive its replacement.
+    @Test
+    fun anotherDeviceOnTheTransportNeverInheritsTheStoredChannels() = runTest {
+        val stored = listOf(
+            Channel.Builder().also { wb ->
+                wb.role = Channel.Role.PRIMARY
+                wb.settings = ChannelSettings.Builder().also { it.name = "stored" }.build()
+            }.build(),
+        )
+        val storage = InMemoryStorage()
+        storage.recordOwnNode(NodeId(LOCAL), "2.7.0", null)
+        storage.saveChannels(stored)
+        // The engine saves the bundle with the channels after each handshake; its my_info names the old device.
+        storage.saveConfig(
+            ConfigBundle(
+                myInfo = MyNodeInfo.Builder().also { it.my_node_num = LOCAL }.build(),
+                metadata = DeviceMetadata.Builder().build(),
+                configs = emptyList(),
+                moduleConfigs = emptyList(),
+            ),
+        )
+        // A different radio on the same transport, whose handshakes report no channels.
+        val transport = FakeRadioTransport(
+            identity = TransportIdentity("fake:replaced-device"),
+            autoHandshake = true,
+            nodeNum = OTHER_DEVICE,
+        )
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(PreloadedStorageProvider(storage))
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .autoReconnect(AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0))
+            .sessionReceive()
+            .build()
+        val events = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        client.connect()
+        runCurrent()
+        assertEquals(null, client.channels.value)
+
+        transport.simulateError(IllegalStateException("link lost"))
+        runCurrent()
+        advanceTimeBy(2_000)
+        runCurrent()
+
+        val readies = events.filterIsInstance<RadioSessionEvent.Ready>()
+        assertEquals(2, readies.size, "the reconnect reached Ready: $events")
+        assertEquals(null, readies.last().channels)
+        assertEquals(null, client.channels.value)
         client.disconnect()
     }
 
@@ -361,6 +473,10 @@ class SessionTypedEventsTest {
         runCurrent()
     }
 
+    private fun FakeRadioTransport.inject(block: (FromRadio.Builder) -> Unit) {
+        injectFrame(FromRadio.Builder().also(block).build().toFrame())
+    }
+
     private fun textFrom(node: Int, id: Int): MeshPacket = MeshPacket.Builder().also { wb ->
         wb.id = id
         wb.from = node
@@ -375,6 +491,10 @@ class SessionTypedEventsTest {
     private companion object {
         const val LOCAL = 1
         const val PEER = 0x2222
+        const val OTHER_DEVICE = 0x3333
+        const val NONCE_STAGE1 = 69420
+        const val NONCE_STAGE2 = 69421
+        const val INTER_STAGE_SETTLE_MS = 100L
         val HERE: org.meshtastic.proto.Position = org.meshtastic.proto.Position.Builder().also { wb ->
             wb.latitude_i = 377_749_000
             wb.longitude_i = -1_224_194_000

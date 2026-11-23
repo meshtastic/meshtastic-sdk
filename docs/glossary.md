@@ -49,7 +49,7 @@ Terms used across [protocol.md](./protocol.md), the ADRs, and the public API. Wh
 |---|---|
 | Stage 1 and Stage 2 | The two handshake passes: Stage 1 sends config, channels, and the local node; Stage 2 sends the node database. `Builder.skipNodeDb()` stops after Stage 1. [handshake-fsm.md](./architecture/handshake-fsm.md). |
 | Heartbeat | `ToRadio.heartbeat` with a nonce, sent every 30 s. The nonce changes on every send so firmware doesn't discard it as a duplicate; it counts up from 2. `protocol.md` §16. |
-| Liveness watchdog | The engine ends a session after 60 s without a decoded `FromRadio`. |
+| Liveness watchdog | The engine ends a session after 60 s without a decoded `FromRadio`, once the firmware has answered a heartbeat. |
 | `QueueStatus` | `FromRadio.queueStatus` (`res`, `free`, `maxlen`, `mesh_packet_id`). Acceptance moves a send from `Queued` to `Sent`; a rejection fails it with `QueueRejected`. `protocol.md` §16. |
 | Routing ACK and NAK | A `ROUTING_APP` reply whose `request_id` names a sent packet. An ACK moves `Sent` to `Acked` (unicast) or `Delivered` (broadcast, when a relay is heard); a NAK fails it. `protocol.md` §11. |
 | `want_response` | The flag in `Data` asking the recipient to reply; with `request_id` it's the basis of SDK RPCs. |

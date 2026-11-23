@@ -4,7 +4,7 @@ This page shows the engine's handshake state machine, the implementation of [`..
 
 ## States
 
-The internal `HandshakeStage` enum has six values. The public `ConnectionState.Configuring` projection uses three `ConfigPhase` values (`Stage1`, `Settling`, `Stage2`).
+The internal `HandshakeStage` enum has six values, `AwaitingLockdown` among them. The public `ConnectionState.Configuring` projection uses three `ConfigPhase` values (`Stage1`, `Settling`, `Stage2`).
 
 | `HandshakeStage` | Meaning | Public projection |
 |---|---|---|
@@ -12,12 +12,11 @@ The internal `HandshakeStage` enum has six values. The public `ConnectionState.C
 | `Stage1Draining` | `want_config_id = SPECIAL_NONCE_ONLY_CONFIG (69420)` posted; receiving the Stage 1 response stream (configs, channels, file_info, **no** nodes) | `Configuring(ConfigPhase.Stage1, p)` |
 | `Stage1Settling` | `config_complete_id == 69420` received; settle window elapsing before the inter-stage heartbeat | `Configuring(ConfigPhase.Settling, 0.5f)` |
 | `Stage2Draining` | Inter-stage `Heartbeat` flushed and `want_config_id = SPECIAL_NONCE_ONLY_NODES (69421)` posted; receiving Stage 2 (`OWN_NODEINFO` then `OTHER_NODEINFOS`; `FILEMANIFEST` short-circuits to empty) | `Configuring(ConfigPhase.Stage2, p)` |
-| `SeedingSession` | Issuing `get_owner_request` to seed `session_passkey` for subsequent admin ops | `Configuring(ConfigPhase.Stage2, 0.95f)` |
-| `Ready` | All flows live; heartbeat scheduler started | `Connected` |
+| `Ready` | All flows live; heartbeat scheduler started; `get_owner_request` sent to seed `session_passkey` | `Connected` |
 
 A failure (`MeshtasticException.HandshakeTimeout`, a transport drop) resets `HandshakeStage` to `Idle`; the engine then projects `Reconnecting(cause, attempt)` or `Disconnected`. `progress` never decreases within one connect attempt and comes from received over expected envelope counts.
 
-Timers: Stage 1 sends `want_config_id = 69420` once and times out at 20 s (`STAGE1_TIMEOUT_MS`); it never resends in-session (`protocol.md` §6 host-side rule 8). The settle waits are 100 ms each (`INTER_STAGE_SETTLE_MS`). Stage 2 times out when no frame arrives between two 30 s checks, or at 600 s in total (`STAGE2_PROGRESS_TICK_MS`, `STAGE2_HARD_CAP_MS`). Seeding waits 10 s (`SEED_TIMEOUT_MS`) for `get_owner_response`, then goes `Ready` without the passkey and emits `ProtocolWarning("session passkey seed timed out")`.
+Timers: Stage 1 sends `want_config_id = 69420` once and never resends in-session (`protocol.md` §6 host-side rule 8). It times out after 20 s without a frame of its dump (`STAGE1_TIMEOUT_MS`), measured from the request and re-armed by every frame from `my_info` on, or at 200 s in total (`STAGE1_HARD_CAP_MS`). A `rebooted` frame before `my_info` ends the attempt like a reboot mid-handshake unless `my_info` follows within 2 s (`STAGE1_REBOOT_GRACE_MS`): firmware before 2.8 writes it from the serial console at boot, before it reads input, so the request went to the previous boot. A completion before `my_info` is stale and dropped. The settle waits are 100 ms each (`INTER_STAGE_SETTLE_MS`). Stage 2 times out when no frame arrives between two 30 s checks, or at 600 s in total (`STAGE2_PROGRESS_TICK_MS`, `STAGE2_HARD_CAP_MS`). The passkey seed goes out at the Stage 2 completion and the session is `Ready` at once: firmware starts replaying stored positions and telemetry right after that completion, more packets than the handshake buffer holds. A `get_owner_response` whose `request_id` is the seed's packet id latches the local passkey whenever it arrives and is not offered on `packets`; with none in 10 s (`SEED_TIMEOUT_MS`) the engine emits `ProtocolWarning("session passkey seed timed out")`. Local admin writes need no passkey.
 
 ### Config-only sessions (`RadioClient.Builder.skipNodeDb`)
 
@@ -40,12 +39,9 @@ stateDiagram-v2
     Stage1Settling --> Idle: HandshakeTimeout(Stage1Settling) /\ntransport drop
 
     Stage2Draining --> Stage2Draining: FromRadio.node_info\n(own then peers)
-    Stage2Draining --> SeedingSession: FromRadio.config_complete_id=69421
+    Stage2Draining --> Ready: FromRadio.config_complete_id=69421\n(get_owner_request sent)
     Stage2Draining --> Idle: HandshakeTimeout(Stage2Draining) /\ntransport drop
 
-    SeedingSession --> Ready: AdminMessage.get_owner_response\n(session_passkey latched)
-    SeedingSession --> Ready: SEED_TIMEOUT_MS elapsed\n(no passkey, ProtocolWarning)
-    SeedingSession --> Idle: transport drop
 
     Ready --> Idle: disconnect() /\ntransport drop
     Ready --> [*]
@@ -53,11 +49,11 @@ stateDiagram-v2
 
 ### Stale frames (per protocol.md §6)
 
-While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during the settle window are buffered (up to 64) and replayed after it, and mesh packets that arrive during the handshake are held (up to 64) until `Ready`. `queue_status` frames are discarded and `log_record` frames go straight to `RadioClient.deviceLogs`; neither is buffered.
+While `Idle`, which covers the gap between `transport.connect()` reaching `Connected` and the Stage 1 `want_config_id` going out, the engine drops every inbound frame, because stale `FromRadio` from an earlier PhoneAPI session would corrupt the early state. Once the Stage 1 nonce is on the wire, every frame is dispatched. Frames that arrive during either settle window, before or after the inter-stage heartbeat, are buffered (up to 128) and replayed when that window ends, and mesh packets that arrive during the handshake are held (up to 128) until `Ready`, with the session stream's copies of handshake events among them in receive order. Both hold a full firmware to-phone queue: meshtasticd keeps 100 packets by default (`PortduinoGlue.h`), radios 8 to 32 (`mesh-pb-constants.h`). `queue_status` frames are discarded and `log_record` frames go straight to `RadioClient.deviceLogs`; neither is buffered.
 
 ### Heartbeat in handshake
 
-One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`.
+One heartbeat goes out between the Stage 1 settle and the Stage 2 request, following the Android reference: it lets the node's task queue drain before NodeDB streaming. Its nonce comes from the engine's keep-alive counter, which starts at 2 and is never 0 or 1 (`protocol.md` §16). The 30 s periodic heartbeat starts on entry to `Ready`. Its reply, a `QueueStatus` for packet id 0 from firmware 2.7.4 on, arms the liveness watchdog ([`protocol.md` §16](../protocol.md#16-heartbeat--queue-status)).
 
 ### Clock sync in handshake
 

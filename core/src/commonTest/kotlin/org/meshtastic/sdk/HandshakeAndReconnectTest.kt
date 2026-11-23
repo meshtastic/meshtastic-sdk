@@ -1275,12 +1275,17 @@ class HandshakeAndReconnectTest {
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
 
         client.events.test {
-            // Two past the 64-packet cap: the two oldest are dropped, each observably.
-            repeat(66) { index -> transport.injectAlivePacket(packetId = 1000 + index) }
+            // Two past the cap: the two oldest are dropped, each observably. The fake's inbound buffer holds 128.
+            repeat(HANDSHAKE_PACKET_CAP + 2) { index ->
+                transport.injectAlivePacket(packetId = 1000 + index)
+                if (index % 64 == 63) drainCurrent()
+            }
             drainCurrent()
-            repeat(2) {
-                val dropped = assertIs<MeshEvent.PacketsDropped>(awaitItem())
+            var drops = 0
+            while (drops < 2) {
+                val dropped = awaitItem() as? MeshEvent.PacketsDropped ?: continue
                 assertEquals(DroppedFlow.Packets, dropped.flow)
+                drops++
             }
             cancelAndIgnoreRemainingEvents()
         }
@@ -1299,7 +1304,7 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun packetsAndStrayAdminDuringSeedingAreBufferedUntilOwnerResponse() = runTest {
+    fun packetsAfterStage2CompletionFlowBeforeTheSeedReply() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:seeding-buffer"),
             nowMs = { currentTime },
@@ -1309,14 +1314,16 @@ class HandshakeAndReconnectTest {
         val connectJob = backgroundScope.async { client.connect() }
         drainCurrent()
         // Walk the virtual-time settle windows (Stage-1 settle + heartbeat settle) so the
-        // engine reaches the seeding stage and sends its get_owner_request.
+        // engine completes Stage 2 and sends its get_owner_request.
         repeat(3) {
             advanceTimeBy(INTER_STAGE_SETTLE_MS + 1)
             drainCurrent()
         }
 
         client.packets.test {
-            // Live traffic + a stray (request-shaped) admin packet during the seeding window.
+            connectJob.await()
+            assertEquals(ConnectionState.Connected, client.connection.value)
+            // Live traffic and a stray admin packet before the seed reply go out as they arrive.
             transport.injectAlivePacket(packetId = 555)
             transport.injectFromRadio(
                 org.meshtastic.proto.FromRadio.Builder().also { wb ->
@@ -1341,12 +1348,25 @@ class HandshakeAndReconnectTest {
                 }.build(),
             )
             drainCurrent()
-            expectNoEvents()
-            assertIs<ConnectionState.Configuring>(client.connection.value)
-            assertFalse(connectJob.isCompleted, "Stray admin must not complete the seeding stage")
+            assertEquals(555, awaitItem().id)
+            assertEquals(PortNum.ADMIN_APP, awaitItem().decoded?.portnum)
 
-            // Answer the seed; both buffered packets flush through the Ready pipeline.
+            // A local owner reply to some other request (firmware's MeshModule::setReplyTo sets its request_id) is
+            // a packet like any other and leaves the seed pending.
             val seedRequest = transport.outboundPackets().first { adminOf(it)?.get_owner_request == true }
+            transport.injectAdminResponse(
+                requestId = seedRequest.id + 1,
+                response = AdminMessage.Builder().also { wb ->
+                    wb.get_owner_response = User.Builder().also { wb -> wb.long_name = "Other" }.build()
+                    wb.session_passkey = byteArrayOf(9, 9, 9, 9).toByteString()
+                }.build(),
+                fromNode = transport.nodeNum,
+            )
+            drainCurrent()
+            assertEquals(seedRequest.id + 1, awaitItem().decoded?.request_id)
+            assertEquals(null, client.adminSessions.value[NodeId(transport.nodeNum)], "the seed is still pending")
+
+            // The seed reply latches the passkey and is not offered as a packet.
             transport.injectAdminResponse(
                 requestId = seedRequest.id,
                 response = AdminMessage.Builder().also { wb ->
@@ -1360,9 +1380,8 @@ class HandshakeAndReconnectTest {
                 fromNode = transport.nodeNum,
             )
             drainCurrent()
-            connectJob.await()
-            assertEquals(555, awaitItem().id)
-            assertEquals(PortNum.ADMIN_APP, awaitItem().decoded?.portnum)
+            expectNoEvents()
+            assertIs<AdminSessionStatus.Active>(client.adminSessions.value[NodeId(transport.nodeNum)])
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -1411,6 +1430,47 @@ class HandshakeAndReconnectTest {
             connectJob.await()
             assertEquals(ConnectionState.Connected, client.connection.value)
             assertEquals(777, awaitItem().id, "Settle replay must not drop frames behind a duplicate completion")
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun aPacketAfterTheReconnectHeartbeatReachesTheNewSessionOnce() = runTest {
+        val transport = ScriptedTransport(
+            TransportIdentity("fake:heartbeat-window"),
+            nowMs = { currentTime },
+            replaceInboundOnConnect = true,
+        )
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0),
+            sessionReceiveCapacity = 16,
+        )
+
+        assertNotNull(client.sessionEvents).test {
+            client.connect()
+            val first = assertIs<RadioSessionEvent.Ready>(awaitItem())
+
+            // A reconnecting radio hands over its queued phone packets right after Stage 1
+            // completes, so one lands between the inter-stage heartbeat and the Stage 2 request.
+            transport.packetAfterNextHeartbeat = 4242
+            transport.simulateRecoverableError("link drop")
+            runCurrent()
+            advanceTimeBy(1_000)
+            runCurrent()
+            awaitConnected(client)
+            assertEquals(null, transport.packetAfterNextHeartbeat, "the reconnect handshake sent its heartbeat")
+            transport.injectAlivePacket(4243)
+            drainCurrent()
+
+            assertIs<MeshEvent.TransportError>(assertIs<RadioSessionEvent.Event>(awaitSkippingNodes()).event)
+            assertEquals(RadioSessionEvent.Ended(first.sessionId), awaitItem())
+            val second = assertIs<RadioSessionEvent.Ready>(awaitItem())
+            val held = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
+            assertEquals(second.sessionId to 4242, held.sessionId to held.packet.id)
+            val live = assertIs<RadioSessionEvent.Packet>(awaitSkippingNodes())
+            assertEquals(4243, live.packet.id, "the held packet is delivered exactly once")
+            client.disconnect()
             cancelAndIgnoreRemainingEvents()
         }
     }
@@ -1730,7 +1790,7 @@ class HandshakeAndReconnectTest {
             advanceTimeBy(1_000)
             runCurrent()
             assertEquals(ConfigPhase.Stage2, assertIs<ConnectionState.Configuring>(client.connection.value).phase)
-            repeat(160) { index ->
+            repeat(HANDSHAKE_PACKET_CAP + 1) { index ->
                 transport.injectAlivePacket(1_000 + index)
                 runCurrent()
             }
@@ -1849,6 +1909,9 @@ class HandshakeAndReconnectTest {
         var dropStage1OnNextHandshake: Boolean = false
         var dropStage2OnNextHandshake: Boolean = false
 
+        // One-shot: answers the next heartbeat with this live packet id.
+        var packetAfterNextHeartbeat: Int? = null
+
         override val state: StateFlow<TransportState> = stateFlow
 
         override suspend fun connect() {
@@ -1882,6 +1945,12 @@ class HandshakeAndReconnectTest {
                 NONCE_STAGE2 -> handleStage2Request()
             }
             toRadio.packet?.let(::handleAdminPacket)
+            if (toRadio.heartbeat != null) {
+                packetAfterNextHeartbeat?.let { packetId ->
+                    packetAfterNextHeartbeat = null
+                    injectAlivePacket(packetId)
+                }
+            }
         }
 
         override fun frames(): Flow<Frame> = if (!failableReader) {
@@ -2083,10 +2152,10 @@ class HandshakeAndReconnectTest {
         const val NONCE_STAGE1 = 69420
 
         // MeshEngine.HANDSHAKE_PACKET_BUFFER_CAP
-        const val HANDSHAKE_PACKET_CAP = 64
+        const val HANDSHAKE_PACKET_CAP = 128
 
         // MeshEngine.SETTLE_BUFFER_CAP
-        const val SETTLE_BUFFER_CAP = 64
+        const val SETTLE_BUFFER_CAP = 128
         const val NONCE_STAGE2 = 69421
         const val DEFAULT_NODE_NUM = 1
         const val STAGE2_PROGRESS_TICK_MS = 30_000L

@@ -345,11 +345,10 @@ sequenceDiagram
     Device-->>Phone: FromRadio.node_info × N
     Device-->>Phone: FromRadio(config_complete_id = 69421)
 
-    Note over Phone,Device: Seeding session: admin session key
+    Note over Phone,Device: Connected: replayed history, then normal FromRadio.packet, queue_status, …
     Phone->>Device: AdminMessage(get_owner_request, want_response = true)
+    Device-->>Phone: FromRadio.packet × replayed history
     Device-->>Phone: AdminMessage(get_owner_response, session_passkey)
-
-    Note over Phone,Device: Connected: normal FromRadio.packet, queue_status, …
 ```
 
 
@@ -382,11 +381,11 @@ Under `69421`, Stage 2 sends rows 1 to 3, then row 9 (`OTHER_NODEINFOS` × N), t
    - A client that never requests the NodeDB can stop after the Stage 1 sentinel: firmware enters `STATE_SEND_PACKETS` once it emits `config_complete_id = 69420`, so normal traffic flows without Stage 2. Such a session knows only the node's own `NodeInfo` (row 3) until peers are heard live. The SDK exposes this as `RadioClient.Builder.skipNodeDb()`.
 2. Frames that arrive before the client sends `want_config_id` belong to an earlier session and are discarded, on every transport. Mesh packets that arrive during the handshake are held and delivered once the session is `Connected`; the SDK holds up to 64, dropping the oldest and emitting `MeshEvent.PacketsDropped`.
 3. Between the Stage 1 sentinel and the Stage 2 trigger the client must send `ToRadio.heartbeat` and should wait about 100 ms on each side of it (Android `HandshakeStateMachine`: `delay(100); heartbeatSender.send(); delay(100)`). The wait lets the node's task queue drain before NodeDB streaming starts.
-4. After Stage 2 the client should send `AdminMessage(get_owner_request, want_response = true)`. The reply carries the `session_passkey` that state-changing admin requests need (§13). The SDK waits up to 10 s (`SEED_TIMEOUT_MS`) for it and then goes `Connected` without it, emitting `ProtocolWarning("session passkey seed timed out")`; the Android app sends the request after `Connected` and never fails the connection on it. Local admin writes need no passkey, and a remote node's key is seeded when it first answers `ADMIN_BAD_SESSION_KEY`.
-5. `FromRadio.rebooted = true` is a forced disconnect: clear session state and run both stages again.
+4. After Stage 2 the client should send `AdminMessage(get_owner_request, want_response = true)`. The reply carries the `session_passkey` that state-changing admin requests need (§13). The SDK sends it at the Stage 2 completion and goes `Connected` without waiting, as the Android app does: firmware replays its stored history right after that completion ("Replayed history" below), and the reply queues behind it. A reply whose `request_id` is the seed's packet id (`MeshModule::setReplyTo`) latches the key whenever it arrives; with none in 10 s (`SEED_TIMEOUT_MS`) the SDK emits `ProtocolWarning("session passkey seed timed out")`. Local admin writes need no passkey (`AdminModule.cpp` checks it only when `from != 0`), and a remote node's key is seeded when it first answers `ADMIN_BAD_SESSION_KEY`.
+5. `FromRadio.rebooted = true` is a forced disconnect: clear session state and run both stages again. Firmware before 2.8 writes it from the serial console at boot, before it reads input (`SerialConsole.cpp`, `StreamAPI::emitRebooted`; 2.8 gates it on `canWrite`), so one that arrives before the Stage 1 `my_info` means the request went to the previous boot. The SDK ends that attempt unless `my_info` follows within 2 s, instead of waiting out the Stage 1 timeout.
 6. When a TCP or serial client disconnects, the node resets its `config_nonce` to `0` and clears session state, so a reconnect runs both stages. The SDK treats TCP peer EOF as a transport failure.
 7. Outbound packets queued in the node's router during the handshake are sent after `config_complete_id`. Incoming `MqttClientProxyMessage` from the client is dropped with a warning log during the handshake.
-8. Send `want_config_id` once per stage. `PhoneAPI::handleToRadio` calls `handleStartConfig()` for every `want_config_id` and `handleStartConfig` restarts the state machine with no in-flight guard (`firmware:src/mesh/PhoneAPI.cpp`); BLE drops only a write byte-identical to the previous one (`NimbleBluetooth.cpp`, `lastToRadio`). The Android app removed its in-session resend after a second `want_config_id` crashed a T-Beam on 2.7.25 (`MeshConnectionManagerImpl.scheduleStallGuard`), and recovers a stalled stage with a fresh session instead. The SDK sends Stage 1 once and fails with `HandshakeTimeout` after 20 s (`STAGE1_TIMEOUT_MS`).
+8. Send `want_config_id` once per stage. `PhoneAPI::handleToRadio` calls `handleStartConfig()` for every `want_config_id` and `handleStartConfig` restarts the state machine with no in-flight guard (`firmware:src/mesh/PhoneAPI.cpp`); BLE drops only a write byte-identical to the previous one (`NimbleBluetooth.cpp`, `lastToRadio`). The Android app removed its in-session resend after a second `want_config_id` crashed a T-Beam on 2.7.25 (`MeshConnectionManagerImpl.scheduleStallGuard`), and recovers a stalled stage with a fresh session instead. The SDK sends Stage 1 once and fails with `HandshakeTimeout` after 20 s without a frame of the dump (`STAGE1_TIMEOUT_MS`, re-armed on each frame as Android re-arms its stage guard on progress), or at 200 s in total, Android's 10 x budget ceiling.
 9. Fail a stage on lack of progress, not on its total length: a large NodeDB over BLE streams for minutes. The SDK fails Stage 2 when a 30 s window (`STAGE2_PROGRESS_TICK_MS`) passes with no frame, and ends a stage that keeps streaming without completing at 600 s (`STAGE2_HARD_CAP_MS`), the Android app's ceiling of 10 times its 60 s Stage 2 budget (`STAGE_GUARD_TOTAL_CAP_FACTOR`).
 
 ### Node DB after the handshake
@@ -916,7 +915,7 @@ The SDK exposes this as `AdminApi.editSettings { }` and `AdminApi.batch { }`. Si
 
 ### Managed mode (`is_managed`)
 
-When `Config.SecurityConfig.is_managed` is `true`, firmware ignores admin requests from a local client (`from = 0`) without replying, unless it was built with `MESHTASTIC_PHONEAPI_ACCESS_CONTROL`; a managed node is administered over PKI from an authorized key. The SDK reads the flag from the handshake config and returns `AdminResult.Unauthorized` at once for calls to the local node instead of waiting for a timeout.
+When `Config.SecurityConfig.is_managed` is `true`, firmware ignores admin requests from a local client (`from = 0`) without replying, unless it was built with `MESHTASTIC_PHONEAPI_ACCESS_CONTROL`; a managed node is administered over PKI from an authorized key. The SDK reads the flag from the handshake config and returns `AdminResult.Unauthorized` at once for calls to the local node instead of waiting for a timeout. Firmware built with that flag sends a `lockdown_status` on every link (`PhoneAPI::sendConfigComplete` queues `DISABLED` when lockdown is off), so after one the SDK sends local admin and leaves the decision to the firmware.
 
 ### Admin routing
 
@@ -1081,7 +1080,7 @@ The reference clients' cadence by transport (`Meshtastic-Apple:Transport.swift`,
 
 The SDK sends one every 30 s on every transport once the session is `Connected`, plus the inter-stage heartbeat of §6. `RadioClient.Builder.disableBleHeartbeat()` stops the periodic one on BLE. Apple also restarts its timer on every received packet, which is an optimization; a fixed interval is conformant.
 
-If no `FromRadio` arrives for 60 s (`LIVENESS_TIMEOUT_MS`, twice the heartbeat interval) while `Connected`, the SDK treats the link as stale on any transport: it emits `MeshEvent.TransportError` carrying `MeshtasticException.Transport("liveness timeout")` and moves the session to `Disconnected`. TCP also has a 65 s transport-level read timeout, which covers the handshake, before the engine watchdog starts.
+Firmware answers a heartbeat with a `QueueStatus` whose `mesh_packet_id` is 0 since 2.7.4 (`getFromRadio` in `firmware:src/mesh/PhoneAPI.cpp`, #7506); older firmware sends nothing, so a quiet mesh leaves a healthy link silent. The SDK arms its liveness watchdog once the session has seen such a reply and only while it sends periodic heartbeats on the link. Then, if no `FromRadio` arrives for 60 s (`LIVENESS_TIMEOUT_MS`, twice the heartbeat interval) while `Connected`, the SDK treats the link as stale: it emits `MeshEvent.TransportError` carrying `MeshtasticException.Transport("liveness timeout")` and moves the session to `Disconnected`. `TcpTransport` has no read timeout of its own, for the same reason; the handshake stage timers bound the wait before `Connected`.
 
 Queue status, the node's reply to a heartbeat and to every send, is covered in §12.
 

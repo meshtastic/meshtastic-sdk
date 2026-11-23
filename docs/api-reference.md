@@ -73,7 +73,7 @@ val client = RadioClient {
 
 The handshake normally runs in two stages ([protocol.md §6](./protocol.md#6-handshake-state-machine)). Stage 1 (`want_config_id = 69420`) streams `my_info`, `metadata`, device and module config, channels, and the local `NodeInfo`. Stage 2 (`69421`) streams the whole node database, which dominates connect time on a large mesh over BLE.
 
-`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session seeds the admin session passkey and goes to `Connected`. `ConfigPhase.Stage2` never appears on `connection`.
+`skipNodeDb()` stops after Stage 1: `69421` is never sent, and the session goes to `Connected` and seeds the admin session passkey. `ConfigPhase.Stage2` never appears on `connection`.
 
 | Still works | Degraded |
 |---|---|
@@ -162,9 +162,9 @@ The engine never waits for a collector. All five are hot: collectors share one u
 
 ### Session receive
 
-Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, channels and nodes. When the handshake reports no channels, the snapshot carries the ones stored for the device. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect, or a live renumber of the connected node, starts a new session on the same stream.
+Enable `RadioClient.Builder.sessionReceive()` for an ordered consumer such as an app writing to its own database. Start collecting `client.sessionEvents` before calling `connect()`. A protected radio can first emit `Lockdown` with a status requiring provisioning or authentication. Use `client.tryLockdown(auth)` on that session. The radio reports the result in a subsequent status. Each successful handshake emits `Ready` with the session ID and a snapshot of local identity, config, channels and nodes. When the handshake reports no channels, the snapshot carries the ones stored for the device. Retained handshake packets follow in receive order, then live packets. Sequences start at one per session. The default capacity, 4096 events, holds the stored-history replay that follows `Ready` (up to four packets per node for 250 nodes, each with its node change) while the collector installs the snapshot; a full queue closes the stream with `RadioSessionOverflowException`. `Ended` marks the end of that session; one that stopped at `Lockdown` and never reached `Ready` ends without it. An automatic reconnect, or a live renumber of the connected node, starts a new session on the same stream.
 
-After `Ready` the stream also carries what the SDK derives, in the same sequence as packets: `NodeChanged` for each node-map change, `ConfigChanged` and `ChannelsChanged` with the whole new bundle or channel list, and `Event` for each `MeshEvent` raised after `Ready` except `LockdownStatusChanged`, `QueueStatusChanged` and `PacketsDropped`. `IdentityRebound` fires inside a handshake, so it reaches only `RadioClient.events`; `Ready.myInfo` carries the identity. A packet comes before the changes it causes. An acknowledged local admin write appears once the call returns: config and channel writes as `ConfigChanged` or `ChannelsChanged`, and `setOwner`, `setFavorite`, `setIgnored` and `removeNode` as `NodeChanged`. An `editSettings` or `batch` block applies its writes in call order, as the device did. A write whose link was replaced before the call returned is not applied; the new session's handshake reports the device's state. A consumer that projects these into its own store needs no other flow.
+After `Ready` the stream also carries what the SDK derives, in the same sequence as packets: `NodeChanged` for each node-map change, `ConfigChanged` and `ChannelsChanged` with the whole new bundle or channel list, and `Event` for each `MeshEvent` except `LockdownStatusChanged`, `QueueStatusChanged` and `PacketsDropped`. Events raised during the handshake, such as a `ClientNotification` the firmware queued while no client was connected, `IdentityRebound` or an MQTT client-proxy message, follow `Ready` in receive order among the retained packets. A packet comes before the changes it causes. An acknowledged local admin write appears once the call returns: config and channel writes as `ConfigChanged` or `ChannelsChanged`, and `setOwner`, `setFavorite`, `setIgnored` and `removeNode` as `NodeChanged`. An `editSettings` or `batch` block applies its writes in call order, as the device did. A write whose link was replaced before the call returned is not applied; the new session's handshake reports the device's state. A consumer that projects these into its own store needs no other flow.
 
 Call `requestNodeDbRefresh()` to start a nodes-only download on this connection. The matching completion produces `NodeDbRefreshed` in receive order. Packets continue through the engine during the download. Overlapping requests queue a single follow-up. If the download stalls, the SDK ends the connection to prevent a late response from being attributed to another request.
 
@@ -363,7 +363,7 @@ public val ConnectionState.isInProgress: Boolean    // Connecting, Configuring, 
 public val ConnectionState.statusMessage: String    // display text
 ```
 
-`progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached only after the final stage's `config_complete_id` matches and the session passkey is seeded ([handshake-fsm.md](./architecture/handshake-fsm.md)).
+`progress` runs from 0 to 1 and doesn't decrease within an attempt. `Connected` is reached when the final stage's `config_complete_id` matches; the local session passkey is seeded right after ([handshake-fsm.md](./architecture/handshake-fsm.md)).
 
 ## Transport specs, identities, and targets
 
@@ -664,7 +664,7 @@ public interface RemoteShellApi {
 }
 ```
 
-`send` PKI-encrypts on channel `0` with the key stored for `node`, without `want_ack`, and throws `MeshtasticException.Protocol` when no key is stored. `frames` decodes inbound `REMOTE_SHELL_APP` packets from `node`. Session state and sequencing belong to the caller.
+`send` PKI-encrypts on channel `0` with the key stored for `node`, without `want_ack`, and throws `MeshtasticException.Protocol` when no key is stored. Frames go out one at a time behind the paced radio queue, as `sendPaced` does: NimBLE firmware holds three inbound writes and drops the next. `frames` decodes inbound `REMOTE_SHELL_APP` packets from `node`. Session state and sequencing belong to the caller.
 
 ## `MqttProxyApi`
 

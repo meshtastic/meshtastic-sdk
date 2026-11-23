@@ -1045,12 +1045,13 @@ public class RadioClient internal constructor(
          * Enable [RadioClient.sessionEvents] with a bounded buffer for one collector.
          *
          * A received packet can bring a node change with it, so size [capacity] for about two events
-         * per packet in a burst.
+         * per packet in a burst. The default holds the stored-history replay that follows `Ready`
+         * (up to four packets for each of 250 nodes) while the collector installs the snapshot.
          *
          * @param capacity Maximum number of queued events, including session boundaries.
          * @throws IllegalArgumentException if capacity is nonpositive or unlimited.
          */
-        public fun sessionReceive(capacity: Int = 512): Builder = apply {
+        public fun sessionReceive(capacity: Int = 4096): Builder = apply {
             require(capacity in 1 until Int.MAX_VALUE) { "Session receive capacity must be positive and finite" }
             sessionReceiveCapacity = capacity
         }

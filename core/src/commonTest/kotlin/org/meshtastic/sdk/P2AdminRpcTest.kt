@@ -561,7 +561,7 @@ class P2AdminRpcTest {
     }
 
     @Test
-    fun batchGetterFailureSkipsCommit() = runTest {
+    fun batchGetterFailureStopsBeforeLaterWritesAndStillCommits() = runTest {
         val (transport, client) = connectedClient()
         client.connect()
         runCurrent()
@@ -601,10 +601,11 @@ class P2AdminRpcTest {
 
         val result = deferred.await()
         assertIs<AdminResultException.Timeout>(result.exceptionOrNull())
-        assertTrue(
-            transport.outboundPackets().drop(outboundBefore)
-                .none { adminOf(it)?.commit_edit_settings == true },
-            "batch must not commit after a getter failure",
+        // api-reference.md: a block that throws still commits on the same connection, applying the writes before it.
+        assertEquals(
+            1,
+            transport.outboundPackets().drop(outboundBefore).count { adminOf(it)?.commit_edit_settings == true },
+            "the batch closes the edit it opened",
         )
         assertTrue(
             transport.outboundPackets().drop(outboundBefore)

@@ -90,8 +90,9 @@ sequenceDiagram
     Reader->>Trans: collect()
     Engine->>Trans: connect()
     Trans-->>Engine: TransportState.Connected
-    Engine->>Engine: Stage 1, settle, Stage 2, seed
+    Engine->>Engine: Stage 1, settle, Stage 2
     Engine-->>Client: connectionState = Connected
+    Engine->>Trans: get_owner_request (passkey seed)
     Engine->>HB: launch 30 s heartbeat and liveness ticks
 
     loop steady state

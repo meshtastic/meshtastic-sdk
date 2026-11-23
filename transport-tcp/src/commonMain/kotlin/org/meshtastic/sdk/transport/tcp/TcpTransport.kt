@@ -27,7 +27,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import okio.Buffer
 import okio.ByteString
 import okio.ByteString.Companion.toByteString
@@ -125,9 +124,9 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
 
         try {
             while (!ch.isClosedForRead) {
-                val n = withTimeoutOrNull(READ_TIMEOUT_MS) {
-                    ch.readAvailable(readBuf, 0, readBuf.size)
-                } ?: throw MeshtasticException.Transport("TCP read timeout after ${READ_TIMEOUT_MS}ms")
+                // No read timeout: firmware before 2.7.4 answers nothing on a quiet mesh, so silence is not a dead
+                // link. The engine's liveness watchdog covers a link whose firmware answers heartbeats.
+                val n = ch.readAvailable(readBuf, 0, readBuf.size)
                 if (n < 0) break
                 if (n == 0) continue
 
@@ -210,8 +209,6 @@ public class TcpTransport(private val host: String, private val port: Int = 4403
     }
 
     private companion object {
-        const val READ_TIMEOUT_MS = 65_000L
-
         const val READ_CHUNK_BYTES = 256
 
         val START1: Byte = WireFraming.MAGIC_0

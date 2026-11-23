@@ -255,10 +255,10 @@ class P1EngineHardeningTest {
     // ── P3a-1: liveness watchdog (audit §2.2) ────────────────────────────────
 
     /**
-     * Once the session reaches Ready, if no decoded `FromRadio` envelope arrives for
-     * `2 × HEARTBEAT_INTERVAL_MS` (60 s), the engine MUST emit `MeshEvent.TransportError` and
-     * tear the session down to `Disconnected`. Prevents half-open TCP sockets from hanging the
-     * engine indefinitely.
+     * Once the session reaches Ready and the firmware has answered a heartbeat (2.7.4 and later),
+     * if no decoded `FromRadio` envelope arrives for `2 × HEARTBEAT_INTERVAL_MS` (60 s), the engine
+     * MUST emit `MeshEvent.TransportError` and tear the session down to `Disconnected`. Prevents
+     * half-open TCP sockets from hanging the engine indefinitely.
      */
     @Test
     fun livenessWatchdogTearsDownSilentSession() = runTest {
@@ -276,6 +276,15 @@ class P1EngineHardeningTest {
 
         client.connect()
         assertEquals(ConnectionState.Connected, client.connection.value)
+        // The QueueStatus firmware sends for a heartbeat: packet id 0.
+        transport.injectFrame(
+            encodeFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.queueStatus = org.meshtastic.proto.QueueStatus.Builder().also { it.free = 16 }.build()
+                }.build(),
+            ),
+        )
+        runCurrent()
 
         // Advance past liveness timeout (60s) + one check interval (30s) so the watchdog's
         // while-loop has observed the expired deadline.
@@ -309,6 +318,14 @@ class P1EngineHardeningTest {
 
         client.connect()
         assertEquals(ConnectionState.Connected, client.connection.value)
+        transport.injectFrame(
+            encodeFromRadio(
+                FromRadio.Builder().also { wb ->
+                    wb.queueStatus = org.meshtastic.proto.QueueStatus.Builder().also { it.free = 16 }.build()
+                }.build(),
+            ),
+        )
+        runCurrent()
 
         // Pump a decoded FromRadio every 25s for a total of 100s — twice the check interval,
         // well past the 60s timeout. The watchdog must not fire because each inbound envelope

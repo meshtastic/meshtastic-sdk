@@ -67,6 +67,43 @@ class AdminPacedWriteOutcomeTest {
         client.disconnect()
     }
 
+    // Router::send returns Routing.Error codes below the ERRNO range as the queue result: DUTY_CYCLE_LIMIT (9)
+    // once the hourly TX budget is spent (Router.cpp), the same rejection an RPC already maps through the table.
+    @Test
+    fun aDutyCycleQueueRejectionIsReportedAsThatErrorNotAsRateLimited() = runTest {
+        val (transport, client) = connected()
+        val save = async { client.admin.setConfig(router) }
+        runCurrent()
+
+        transport.queueStatus(adminWrites(transport).single(), DUTY_CYCLE_LIMIT)
+        runCurrent()
+        assertEquals(AdminResult.Failed(Routing.Error.DUTY_CYCLE_LIMIT), save.await())
+
+        // Router::send also refuses an oversized packet with TOO_LARGE (7), another result below the ERRNO range.
+        val oversized = async { client.admin.setConfig(router) }
+        runCurrent()
+        transport.queueStatus(adminWrites(transport).last(), TOO_LARGE)
+        runCurrent()
+        assertEquals(AdminResult.Failed(Routing.Error.TOO_LARGE), oversized.await())
+        client.disconnect()
+    }
+
+    // abortSendAndNak sends the phone the same DUTY_CYCLE_LIMIT as a NAK; the link is still up.
+    @Test
+    fun aDutyCycleNakIsReportedAsThatErrorNotAsUnreachable() = runTest {
+        val (transport, client) = connected()
+        val save = async { client.admin.setConfig(router) }
+        runCurrent()
+
+        val write = adminWrites(transport).single()
+        transport.queueStatus(write, 0)
+        transport.injectRoutingError(write, Routing.Error.DUTY_CYCLE_LIMIT)
+        runCurrent()
+
+        assertEquals(AdminResult.Failed(Routing.Error.DUTY_CYCLE_LIMIT), save.await())
+        client.disconnect()
+    }
+
     @Test
     fun aQueuedWriteWhoseCallerIsCancelledNeverReachesTheRadio() = runTest {
         val (transport, client) = connected()
@@ -122,6 +159,10 @@ class AdminPacedWriteOutcomeTest {
 
     private companion object {
         const val ERRNO_DISABLED = 34
+
+        const val DUTY_CYCLE_LIMIT = 9
+
+        const val TOO_LARGE = 7
 
         const val ERRNO_UNKNOWN = 32
 
