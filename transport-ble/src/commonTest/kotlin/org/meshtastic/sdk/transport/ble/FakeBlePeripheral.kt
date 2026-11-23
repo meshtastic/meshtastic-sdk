@@ -79,6 +79,11 @@ internal class FakeBlePeripheral(
         stateFlow.value = State.Disconnected()
     }
 
+    /** Moves [state] as the radio or the OS would, with no call from the transport. */
+    fun emitState(state: State) {
+        stateFlow.value = state
+    }
+
     override suspend fun maximumWriteValueLengthForType(writeType: WriteType): Int = 512
 
     override suspend fun rssi(): Int = throw UnsupportedOperationException("not used by BleTransport")

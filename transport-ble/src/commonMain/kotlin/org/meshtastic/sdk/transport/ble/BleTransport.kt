@@ -560,7 +560,16 @@ public class BleTransport internal constructor(
     private suspend fun connectOnce() {
         val switch = autoConnectSwitch
         if (switch == null) {
-            peripheral.connect()
+            // Kable's JVM backend rescans without end for a peripheral btleplug dropped from its adapter.
+            try {
+                withTimeout(DIRECT_CONNECT_TIMEOUT_MS) { peripheral.connect() }
+            } catch (e: TimeoutCancellationException) {
+                currentCoroutineContext().ensureActive()
+                throw MeshtasticException.Transport(
+                    "BLE connect to ${identity.raw} did not complete in ${DIRECT_CONNECT_TIMEOUT_MS}ms",
+                    e,
+                )
+            }
             return
         }
         if (!switch.isOn) {
@@ -622,25 +631,28 @@ public class BleTransport internal constructor(
                 else -> TransportState.Connecting
             }
 
-            State.Disconnecting -> TransportState.Disconnected
+            // Kable's JVM backend reports a peer drop as Disconnecting, then Disconnected.
+            State.Disconnecting -> linkLost(current, status = null)
 
-            is State.Disconnected -> {
-                if (current is TransportState.Connected ||
-                    current is TransportState.Bonding ||
-                    (current is TransportState.Connecting && warmupComplete.value)
-                ) {
-                    if (errorPublished.compareAndSet(expect = false, update = true)) {
-                        TransportState.Error(
-                            cause = buildDisconnectError(kableState.status),
-                            recoverable = true,
-                        )
-                    } else {
-                        current
-                    }
-                } else {
-                    TransportState.Disconnected
-                }
-            }
+            is State.Disconnected -> linkLost(current, kableState.status)
+        }
+    }
+
+    /**
+     * The state for a Kable disconnect: a recoverable [TransportState.Error] while the link was up,
+     * because the engine reconnects only on an error. An error already published stays, so a
+     * following Kable state cannot replace it before the engine reads it.
+     */
+    private fun linkLost(current: TransportState, status: State.Disconnected.Status?): TransportState {
+        if (current is TransportState.Error) return current
+        val linkUp = current is TransportState.Connected ||
+            current is TransportState.Bonding ||
+            (current is TransportState.Connecting && warmupComplete.value)
+        if (!linkUp) return TransportState.Disconnected
+        return if (errorPublished.compareAndSet(expect = false, update = true)) {
+            TransportState.Error(cause = buildDisconnectError(status), recoverable = true)
+        } else {
+            current
         }
     }
 
@@ -680,6 +692,10 @@ public class BleTransport internal constructor(
             null
         }
 
+        /**
+         * Bound on one direct connect attempt, the same window the desktop factory scans for an
+         * address (`DESKTOP_SCAN_TIMEOUT`). A stalled attempt fails into [connectWithRetry].
+         */
         internal const val DIRECT_CONNECT_TIMEOUT_MS: Long = 15_000L
         internal const val AUTO_CONNECT_TIMEOUT_MS: Long = 60_000L
         private const val AUTO_CONNECT_SETTLE_MS: Long = 1_000L
