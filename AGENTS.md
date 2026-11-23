@@ -30,7 +30,7 @@ If generated protocol symbols look wrong, check that the pin resolves: `./gradle
 
 - Full gate: `./gradlew check`
 - Unit tests: `./gradlew jvmTest`; `./gradlew jsNodeTest wasmJsNodeTest` (Node.js on `PATH`); `./gradlew jsBrowserTest` (Chrome, or `CHROME_BIN`); on macOS when relevant, `./gradlew iosSimulatorArm64Test`
-- Lint: `./gradlew detekt spotlessCheck`
+- Lint: `./gradlew detekt spotlessCheck`. detekt covers every source set under each module's `src/`; pre-existing findings sit in that module's `detekt-baseline.xml`, so a new finding fails the build. Fix a baselined finding rather than adding to the baseline.
 - Format: `./gradlew spotlessApply`
 - Architecture rules: detekt `ForbiddenImport` and the `:core:verifyModuleBoundary` task, both wired into `check`. See [ADR-008](docs/decisions/008-architecture-enforcement.md) and [`docs/architecture/enforcement.md`](docs/architecture/enforcement.md).
 - API compatibility: `./gradlew checkKotlinAbi`
@@ -44,7 +44,7 @@ Use targeted tasks while iterating, then run `./gradlew check` before finishing.
 - Respect the module boundaries in `docs/architecture/module-graph.md`.
 - `:core` declares no in-tree project dependency; its only proto dependency is the published `org.meshtastic:protobufs` artifact, re-exported through `api`.
 - Don't add transport or storage implementation dependencies to `:core`.
-- The engine is a single-writer actor; don't add mutex, atomic or synchronized patterns on engine paths (ADR-002).
+- The engine is a single-writer actor; don't add mutex, atomic or synchronized patterns on engine paths (ADR-002). detekt's `ForbiddenImport/engine` rule bans `Mutex`, `Semaphore` and `ReentrantLock` in the engine's files; outside them a `Mutex` is allowed (ADR-003).
 - No `java.*` or `android.*` imports in `commonMain`. Use `okio.ByteString` for byte payloads (Wire's runtime type; kotlinx-io is deliberately not a dependency) and `kotlinx-datetime` for time.
 - Transport-side locks and atomics (lifecycle and handle ownership only) are allowed but must carry an inline `// ADR-012: native-handle ownership` or `// ADR-012: lifecycle idempotency` comment; see `docs/decisions/012-transport-threading.md`.
 

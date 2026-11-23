@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:TcpTransport.kt:TcpTransport$override fun frames: Flow&lt;Frame></ID>
+    <ID>LoopWithTooManyJumpStatements:TcpTransport.kt:TcpTransport$while</ID>
+    <ID>RethrowCaughtException:TcpTransport.kt:TcpTransport$throw e</ID>
+  </CurrentIssues>
+</SmellBaseline>

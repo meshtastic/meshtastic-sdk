@@ -118,6 +118,8 @@ subprojects {
 
     extensions.configure<dev.detekt.gradle.extensions.DetektExtension> {
         toolVersion = detektVersion
+        // detekt's default source is src/{main,test}, which KMP modules lack; lint every source set.
+        source.setFrom(files("src"))
         buildUponDefaultConfig = true
         config.setFrom(rootProject.files("config/detekt/detekt.yml"))
         baseline = file("detekt-baseline.xml")

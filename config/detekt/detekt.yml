@@ -38,7 +38,7 @@ style:
     active: false
   WildcardImport:
     active: true
-    excludes: ['**/test/**', '**/*Test.kt', '**/*Spec.kt']
+    excludes: ['**/test/**', '**/*Test/**', '**/*Test.kt', '**/*Spec.kt']
   ReturnCount:
     max: 8
   MaxLineLength:
@@ -49,22 +49,32 @@ style:
   UnusedParameter:
     allowedNames: '(_|ignored|expected|rest|args)'
   ForbiddenImport:
-    # Architecture invariants enforced per ADR-008.
-    #
-    # 1. ADR-002 forbids shared-state synchronization primitives in engine
-    #    paths, because the engine is a single-writer actor. MeshEngine's four
-    #    atomicfu sites (supervisorJobRef, activeConnectDeferred,
-    #    connectionGeneration, nextWireId) are boundary handles, not engine state.
-    # 2. ADR-005 forbids kotlin.Result in public API; engine code shouldn't
-    #    import it either, to keep us honest at the boundary.
+    # Repo-wide import bans (ADR-008). ADR-005 forbids kotlin.Result in public
+    # API; no code imports it, to keep us honest at the boundary.
     active: true
     forbiddenImports:
       - 'kotlinx.io.Buffer'                                # one byte vocabulary: okio (api-reference § API conventions)
       - 'kotlinx.io.bytestring.ByteString'                 # one byte vocabulary: okio
+      - 'kotlin.Result'                                    # ADR-005: forbidden in public API
+  ForbiddenImport/engine:
+    # ADR-002 bans locks in the engine only: the actor owns all engine state
+    # and orders every input, including those from non-suspending sources.
+    # ADR-003 allows Mutex outside the engine; there is no engine package
+    # (ADR-008 note), so the engine is the files the actor runs
+    # (docs/architecture/engine-actor.md). Transport-side locks follow ADR-012
+    # and carry an inline `// ADR-012:` comment, checked in review.
+    # MeshEngine's atomicfu sites are boundary handles, not engine state.
+    active: true
+    includes:
+      - '**/org/meshtastic/sdk/internal/MeshEngine.kt'
+      - '**/org/meshtastic/sdk/internal/EngineMessage.kt'
+      - '**/org/meshtastic/sdk/internal/MeshState.kt'
+      - '**/org/meshtastic/sdk/internal/CommandDispatcher.kt'
+      - '**/org/meshtastic/sdk/WireCodec.kt'
+    forbiddenImports:
       - 'kotlinx.coroutines.sync.Mutex'                    # ADR-002: single-writer actor; no mutexes
       - 'kotlinx.coroutines.sync.Semaphore'                # ADR-002: single-writer actor; no semaphores
       - 'java.util.concurrent.locks.ReentrantLock'         # ADR-002: single-writer actor; no locks
-      - 'kotlin.Result'                                    # ADR-005: forbidden in public API
 
 naming:
   # detekt-compose-rules adds Compose-specific rules but does not disable

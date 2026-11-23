@@ -58,7 +58,7 @@ The `main` ruleset requires nine checks: `test-jvm (17)`, `test-jvm (21)`, `test
 | Gate | CI job | Local command | Enforced by |
 |---|---|---|---|
 | Spotless (formatting) | `test-jvm` | `./gradlew spotlessCheck`, or `./gradlew spotlessApply` to rewrite | Spotless |
-| detekt (static analysis, `ForbiddenImport`) | `test-jvm`, `arch-consistency` | `./gradlew detekt` | detekt with the ADR-008 rules |
+| detekt (static analysis, `ForbiddenImport`) | `test-jvm`, `arch-consistency` | `./gradlew detekt` | detekt with the ADR-008 rules, over every source set under each module's `src/` and against its `detekt-baseline.xml` |
 | JVM tests | `test-jvm` | `./gradlew jvmTest` | `kotlin.test` |
 | Android host tests | `test-android` | `./gradlew :core:testAndroidHostTest` | `kotlin.test` |
 | iOS simulator tests | `test-ios` | `./gradlew :core:iosSimulatorArm64Test` (macOS) | `kotlin.test` on XCTest |

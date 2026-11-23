@@ -62,7 +62,7 @@ The engine owns its state. Consumers and transports reach it by posting messages
 - Deterministic tests: `runTest { … }` advances the engine one message at a time.
 - No reentrancy hazards: the engine never calls a transport while holding a state lock, because there are none.
 
-detekt enforces it (`ForbiddenImport` rules in `config/detekt/detekt.yml` ban `kotlinx.coroutines.sync.{Mutex,Semaphore}` and `java.util.concurrent.locks.ReentrantLock`), along with the [`docs/architecture/enforcement.md`](architecture/enforcement.md) matrix.
+detekt enforces it in the engine's own files (`MeshEngine`, `EngineMessage`, `MeshState`, `CommandDispatcher`, `WireCodec`): the `ForbiddenImport/engine` rule in `config/detekt/detekt.yml` bans `kotlinx.coroutines.sync.{Mutex,Semaphore}` and `java.util.concurrent.locks.ReentrantLock` there. Outside the engine a `Mutex` is allowed; a transport-side one carries its `// ADR-012:` comment, which review checks. See the [`docs/architecture/enforcement.md`](architecture/enforcement.md) matrix.
 
 ## What you may write
 

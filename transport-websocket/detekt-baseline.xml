@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>EmptyWhileBlock:WebSocketTransport.kt:WebSocketTransport${ }</ID>
+    <ID>EmptyWhileBlock:WebSocketTransportTest.kt:WebSocketTransportTest.GatedServer${ }</ID>
+    <ID>LoopWithTooManyJumpStatements:WebSocketTransport.kt:WebSocketTransport$for</ID>
+    <ID>LoopWithTooManyJumpStatements:WebSocketTransportTest.kt:WebSocketTransportTest.ScriptedServer$while</ID>
+    <ID>MaxLineLength:WebSocketTransport.kt:WebSocketTransport$"WebSocket payload $payloadSize B exceeds ${WireFraming.MAX_PAYLOAD_SIZE} B; the node would close with 1009"</ID>
+    <ID>SwallowedException:WebSocketTransport.kt:WebSocketTransport$e: CancellationException</ID>
+    <ID>SwallowedException:WebSocketTransport.kt:WebSocketTransport$e: Exception</ID>
+    <ID>ThrowsCount:WebSocketTransport.kt:WebSocketTransport$override suspend fun connect</ID>
+    <ID>ThrowsCount:WebSocketTransport.kt:WebSocketTransport$override suspend fun send</ID>
+  </CurrentIssues>
+</SmellBaseline>
