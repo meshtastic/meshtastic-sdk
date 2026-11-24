@@ -141,8 +141,8 @@ public sealed interface SendFailure {
         /**
          * The [Routing.Error] that `Router::send` refused the packet with, or `null` when [res] is a
          * value [Routing.Error] does not define or one the firmware reports in two namespaces. Values 32 to 35
-         * are ambiguous: the firmware's `ERRNO_*` enqueue results (`MeshTypes.h:15-19`) and
-         * `Routing.Error.BAD_REQUEST`, `NOT_AUTHORIZED` and `PKI_FAILED` (`Router.cpp:485,571,580,587,650`)
+         * are ambiguous: the firmware's `ERRNO_*` enqueue results (`MeshTypes.h`) and
+         * `Routing.Error.BAD_REQUEST`, `NOT_AUTHORIZED` and `PKI_FAILED` (`Router::send`)
          * share 32 to 34 on `QueueStatus.res`; 35 is only ever `ERRNO_SHOULD_RELEASE`. The range never maps.
          *
          * @since 0.3.0
