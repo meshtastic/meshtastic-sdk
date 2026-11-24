@@ -22,7 +22,7 @@ Firmware closes a TCP connection after 15 minutes (`900_000 ms`) with no `ToRadi
 
 ## Reconnection
 
-`TcpTransport` holds no state across connects: `connect()` can be called again after `disconnect()` or a recoverable error. The transport never reconnects on its own. The engine's supervisor does, when `RadioClient.Builder.autoReconnect(...)` enables it (off by default): exponential backoff from 1 s, doubling, capped at 60 s, with jitter. A host that keeps reconnect policy itself should retry only `recoverable = true` errors.
+`TcpTransport` holds no state across connects: `connect()` can be called again after `disconnect()` or a recoverable error. The transport never reconnects on its own. The engine's supervisor does by default, unless the builder gets `AutoReconnectConfig.Disabled`: exponential backoff from 1 s, doubling, capped at 60 s, with jitter. A host that keeps reconnect policy itself should retry only `recoverable = true` errors.
 
 ## Discovery
 

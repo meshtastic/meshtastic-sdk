@@ -1,1 +1,2 @@
-- `AndroidUsbSerialPorts.prober` is public, so a host that scans USB itself shares the SDK's driver table.
+- `AndroidUsbSerialPorts.prober` is public, so a host that scans USB itself shares the SDK's driver
+  table.
