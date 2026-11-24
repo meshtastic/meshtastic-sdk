@@ -36,7 +36,10 @@ class SessionReceiveTest {
         receive.lockdown(status)
         receive.end()
         runCurrent()
-        val expected = listOf<RadioSessionEvent>(RadioSessionEvent.Lockdown(1L, 1L, status), RadioSessionEvent.Ended(1L))
+        val expected = listOf<RadioSessionEvent>(
+            RadioSessionEvent.Lockdown(1L, 1L, status),
+            RadioSessionEvent.Ended(1L),
+        )
         assertEquals(expected, seen)
 
         // A session that delivered nothing has no id the consumer saw, so it gets no Ended.

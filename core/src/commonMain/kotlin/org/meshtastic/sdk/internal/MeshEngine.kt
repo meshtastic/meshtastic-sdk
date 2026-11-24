@@ -176,7 +176,8 @@ internal class MeshEngine(
     private val sessionCounter = atomic(0L)
 
     private fun beginSession() {
-        sessionReceive?.begin(sessionCounter.incrementAndGet())
+        val id = sessionCounter.incrementAndGet()
+        sessionReceive?.begin(id)
     }
 
     val sessionEvents: Flow<RadioSessionEvent>? = sessionReceive?.events
