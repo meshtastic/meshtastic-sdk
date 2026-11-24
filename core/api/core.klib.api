@@ -1302,6 +1302,8 @@ sealed interface org.meshtastic.sdk/SendFailure { // org.meshtastic.sdk/SendFail
 
         final val res // org.meshtastic.sdk/SendFailure.QueueRejected.res|{}res[0]
             final fun <get-res>(): kotlin/Int // org.meshtastic.sdk/SendFailure.QueueRejected.res.<get-res>|<get-res>(){}[0]
+        final val routingError // org.meshtastic.sdk/SendFailure.QueueRejected.routingError|{}routingError[0]
+            final fun <get-routingError>(): org.meshtastic.proto/Routing.Error? // org.meshtastic.sdk/SendFailure.QueueRejected.routingError.<get-routingError>|<get-routingError>(){}[0]
 
         final fun component1(): kotlin/Int // org.meshtastic.sdk/SendFailure.QueueRejected.component1|component1(){}[0]
         final fun copy(kotlin/Int = ...): org.meshtastic.sdk/SendFailure.QueueRejected // org.meshtastic.sdk/SendFailure.QueueRejected.copy|copy(kotlin.Int){}[0]
@@ -2923,6 +2925,8 @@ final val org.meshtastic.sdk/nextHop // org.meshtastic.sdk/nextHop|@org.meshtast
     final fun (org.meshtastic.proto/MeshPacket).<get-nextHop>(): org.meshtastic.sdk/NodeLastByte? // org.meshtastic.sdk/nextHop.<get-nextHop>|<get-nextHop>@org.meshtastic.proto.MeshPacket(){}[0]
 final val org.meshtastic.sdk/relayNode // org.meshtastic.sdk/relayNode|@org.meshtastic.proto.MeshPacket{}relayNode[0]
     final fun (org.meshtastic.proto/MeshPacket).<get-relayNode>(): org.meshtastic.sdk/NodeLastByte? // org.meshtastic.sdk/relayNode.<get-relayNode>|<get-relayNode>@org.meshtastic.proto.MeshPacket(){}[0]
+final val org.meshtastic.sdk/routingError // org.meshtastic.sdk/routingError|@org.meshtastic.sdk.SendFailure{}routingError[0]
+    final fun (org.meshtastic.sdk/SendFailure).<get-routingError>(): org.meshtastic.proto/Routing.Error? // org.meshtastic.sdk/routingError.<get-routingError>|<get-routingError>@org.meshtastic.sdk.SendFailure(){}[0]
 final val org.meshtastic.sdk/shortName // org.meshtastic.sdk/shortName|@org.meshtastic.proto.NodeInfo{}shortName[0]
     final fun (org.meshtastic.proto/NodeInfo).<get-shortName>(): kotlin/String // org.meshtastic.sdk/shortName.<get-shortName>|<get-shortName>@org.meshtastic.proto.NodeInfo(){}[0]
 final val org.meshtastic.sdk/signalQuality // org.meshtastic.sdk/signalQuality|@org.meshtastic.proto.NodeInfo{}signalQuality[0]
