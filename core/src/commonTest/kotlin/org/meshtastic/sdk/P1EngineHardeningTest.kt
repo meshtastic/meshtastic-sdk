@@ -214,6 +214,7 @@ class P1EngineHardeningTest {
     fun stage2TimeoutSlidesWhenFramesArrive() = runTest {
         val transport = SteppedStage2Transport(TransportIdentity("fake:p1-stage2-slide"))
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
@@ -265,6 +266,7 @@ class P1EngineHardeningTest {
     fun livenessWatchdogTearsDownSilentSession() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:liveness"), autoHandshake = true)
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)

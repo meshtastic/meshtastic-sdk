@@ -33,6 +33,13 @@ public data class Frame(public val bytes: ByteString)
  * `"meshtastic.local"` and `"192.168.1.42"` produces two distinct identities, each with its own
  * storage. See [DeviceStorage.recordOwnNode] for the reset rule that bounds this risk.
  *
+ * **Minting an identity:** the constructor is public because every [RadioTransport] supplies one.
+ * [raw] is the storage key, so it must be stable for the same physical radio across launches and
+ * different for different radios; it is not secret and is not parsed. Start it with a scheme prefix
+ * unique to the transport kind. The SDK uses `ble:`, `tcp:`, `http:`, `serial-android:`, `serial-jvm:`
+ * and `ws:`; a host's own transports (simulators, replays, a browser serial port) pick prefixes
+ * outside that list, such as `mock:`, `replay:` or `serial-web:`.
+ *
  * **Java interop:** properties returning [TransportIdentity] expose
  * non-mangled boxed accessors (e.g. `transport.getIdentity()` instead of
  * `getIdentity-dT_YJr8()`) thanks to `-Xjvm-expose-boxed`. Java callers can

@@ -1,0 +1,1 @@
+- `RadioClient.Builder` reconnects by default. Pass `autoReconnect(AutoReconnectConfig.Disabled)` to keep host-owned reconnect.

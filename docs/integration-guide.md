@@ -56,7 +56,7 @@ val client = RadioClient.Builder()
 client.connect()   // throws MeshtasticException on failure
 ```
 
-`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). Pass `.autoReconnect(AutoReconnectConfig())` for the engine to reconnect after a drop.
+`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). The engine reconnects after a drop by default; pass `.autoReconnect(AutoReconnectConfig.Disabled)` when the host owns reconnect policy.
 
 ## 3. Per-transport setup
 

@@ -25,7 +25,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))
-            implementation(libs.kable)
+            api(libs.kable)
             implementation(libs.atomicfu)
         }
         getByName("androidDeviceTest").dependencies {
