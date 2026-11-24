@@ -81,7 +81,7 @@ public sealed interface SendFailure {
 | `HandshakeFailed` | The send was queued before `Connected` and the handshake failed |
 | `Cancelled` | `MessageHandle.cancel()` before `Sent` |
 | `IdCollision` | The packet's `id` matches an in-flight send; the existing handle is kept |
-| `AckTimeout` | A unicast `want_ack` send got no routing ACK within `Builder.sendTimeout` (default 30 s). Broadcasts never produce it. |
+| `AckTimeout` | A unicast `want_ack` send got no routing ACK within `Builder.sendAckTimeout` (default 30 s). Broadcasts never produce it. |
 | `QueueRejected(res)` | The device's transmit queue rejected the packet; see [`QueueStatus` rejections](#queuestatus-rejections) |
 | `Unknown` | Reserved for engine anomalies |
 

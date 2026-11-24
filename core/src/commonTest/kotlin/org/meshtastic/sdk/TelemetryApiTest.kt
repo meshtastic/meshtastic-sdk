@@ -393,7 +393,7 @@ class TelemetryApiTest {
             .autoSyncTimeOnConnect(false)
             .coroutineContext(backgroundScope.coroutineContext)
             .rpcTimeout(rpcTimeout)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         return transport to client
     }

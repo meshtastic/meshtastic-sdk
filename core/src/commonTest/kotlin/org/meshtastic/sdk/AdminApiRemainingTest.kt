@@ -334,7 +334,7 @@ class AdminApiRemainingTest {
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .rpcTimeout(rpcTimeout)
-            .sendTimeout(rpcTimeout)
+            .sendAckTimeout(rpcTimeout)
             .build()
         return transport to client
     }

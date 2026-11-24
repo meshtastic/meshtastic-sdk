@@ -776,7 +776,7 @@ The node's `ReliableRouter` and `NextHopRouter` retry with backoff. When the nod
 The client's job is to:
 
 1. Track the outbound packet by `id`.
-2. Wait for a `ROUTING_APP` response (ACK or NAK) or a client-side timeout. The SDK fails a unicast `want_ack` send with `SendFailure.AckTimeout` after `RadioClient.Builder.sendTimeout` (default 30 s).
+2. Wait for a `ROUTING_APP` response (ACK or NAK) or a client-side timeout. The SDK fails a unicast `want_ack` send with `SendFailure.AckTimeout` after `RadioClient.Builder.sendAckTimeout` (default 30 s).
 3. Give a send the user retries a new `packet_id`, never the old one.
 
 ### `request_id` / `reply_id`

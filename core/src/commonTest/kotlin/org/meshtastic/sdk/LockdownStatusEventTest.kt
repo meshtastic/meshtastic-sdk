@@ -10,6 +10,7 @@ package org.meshtastic.sdk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -22,6 +23,7 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.LockdownStatus
+import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -311,6 +313,53 @@ class LockdownStatusEventTest {
         assertEquals("liveness timeout", error.message)
     }
 
+    /** Regression: the lockdown write was bounded by the ACK timeout, so a 5 min ACK wait also kept a dead link alive. */
+    @Test
+    fun aStalledLockdownWriteFailsTheLinkAtTheWriteBoundNotTheAckTimeout() = runTest {
+        val fake = FakeRadioTransport(TransportIdentity("fake:locked-write-stalls"), autoHandshake = true)
+        val transport = object : RadioTransport by fake {
+            override suspend fun send(frame: Frame) {
+                val request = runCatching { ToRadio.ADAPTER.decode(frame.bytes.substring(4)) }.getOrNull()
+                val data = request?.packet?.decoded
+                if (data != null && data.portnum == PortNum.ADMIN_APP &&
+                    AdminMessage.ADAPTER.decode(data.payload).lockdown_auth != null
+                ) {
+                    awaitCancellation()
+                }
+                fake.send(frame)
+                if (request?.want_config_id == 69420) fake.reportLockdown(LockdownStatus.State.LOCKED)
+            }
+        }
+        val client = RadioClient.Builder()
+            .sendAckTimeout(5.minutes)
+            .autoReconnect(AutoReconnectConfig.Disabled)
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .build()
+        val events = mutableListOf<MeshEvent>()
+        backgroundScope.launch { client.events.collect { events.add(it) } }
+        val connecting = async { runCatching { client.connect() } }
+        runCurrent()
+
+        assertTrue(client.tryLockdown(LockdownAuth.Builder().also { it.passphrase = "x".encodeUtf8() }.build()))
+        runCurrent()
+        advanceTimeBy(29.seconds)
+        assertFalse(connecting.isCompleted)
+        advanceTimeBy(2.seconds)
+        runCurrent()
+
+        assertTrue(connecting.isCompleted)
+        assertIs<MeshtasticException.Transport>(connecting.await().exceptionOrNull())
+        val transportError = events.filterIsInstance<MeshEvent.TransportError>().lastOrNull()
+        assertNotNull(transportError, "Expected a TransportError event (got: $events)")
+        assertTrue(
+            transportError.error.message?.contains("Lockdown write timed out") == true,
+            "Expected lockdown write diagnostic, got: ${transportError.error.message}",
+        )
+    }
+
     private fun FakeRadioTransport.reportLockdown(state: LockdownStatus.State) {
         injectFrame(
             FromRadio.Builder().also {
@@ -357,7 +406,7 @@ class LockdownStatusEventTest {
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         return transport to client
     }

@@ -42,12 +42,12 @@ class P0ReliabilityTest {
 
     private fun TestScope.buildClient(
         transport: FakeRadioTransport = autoTransport(),
-        sendTimeout: kotlin.time.Duration = 30.seconds,
+        sendAckTimeout: kotlin.time.Duration = 30.seconds,
     ): RadioClient = RadioClient.Builder()
         .transport(transport)
         .storage(InMemoryStorageProvider())
         .coroutineContext(backgroundScope.coroutineContext)
-        .sendTimeout(sendTimeout)
+        .sendAckTimeout(sendAckTimeout)
         .build()
 
     private fun autoTransport() = FakeRadioTransport(
@@ -119,11 +119,11 @@ class P0ReliabilityTest {
         assertTrue(lateUpdateDelivered.isCompleted)
     }
 
-    // ── R-P0-6: unicast want_ack times out after sendTimeout ─────────────────────
+    // ── R-P0-6: unicast want_ack times out after sendAckTimeout ─────────────────────
 
     @Test
     fun testUnicastWantAckTimesOutAfterSendTimeout() = runTest {
-        val client = buildClient(sendTimeout = 5.seconds)
+        val client = buildClient(sendAckTimeout = 5.seconds)
         client.connect()
 
         val handle = client.send(unicastWantAckPacket())
@@ -131,7 +131,7 @@ class P0ReliabilityTest {
         // Engine dispatched the send, transitioned to Sent and armed the ACK timer.
         assertEquals(SendState.Sent, handle.state.value)
 
-        advanceTimeBy(6_000) // exceed the 5s sendTimeout
+        advanceTimeBy(6_000) // exceed the 5s sendAckTimeout
         runCurrent()
 
         val state = handle.state.value
@@ -145,7 +145,7 @@ class P0ReliabilityTest {
 
     @Test
     fun testFireAndForgetBroadcastAutoResolves() = runTest {
-        val client = buildClient(sendTimeout = 1.seconds)
+        val client = buildClient(sendAckTimeout = 1.seconds)
         client.connect()
 
         val handle = client.send(broadcastPacket()) // want_ack=false
@@ -154,7 +154,7 @@ class P0ReliabilityTest {
         // Fire-and-forget broadcasts auto-resolve to Acked once the device accepts the packet.
         assertEquals(SendState.Acked, handle.state.value)
 
-        advanceTimeBy(5_000) // far past the 1s sendTimeout
+        advanceTimeBy(5_000) // far past the 1s sendAckTimeout
         runCurrent()
 
         // Must not degrade to Failed — the auto-resolve is terminal.
@@ -171,7 +171,7 @@ class P0ReliabilityTest {
 
     @Test
     fun testBroadcastWithWantAckTimesOutWithoutImplicitAck() = runTest {
-        val client = buildClient(sendTimeout = 1.seconds)
+        val client = buildClient(sendAckTimeout = 1.seconds)
         client.connect()
 
         val handle = client.send(broadcastWantAckPacket())
@@ -180,7 +180,7 @@ class P0ReliabilityTest {
         // Broadcast with want_ack=true stays in Sent awaiting firmware implicit ACK.
         assertEquals(SendState.Sent, handle.state.value)
 
-        advanceTimeBy(1_500) // past the 1s sendTimeout
+        advanceTimeBy(1_500) // past the 1s sendAckTimeout
         runCurrent()
 
         // Must degrade to Failed(AckTimeout) — no relay overheard the rebroadcast.

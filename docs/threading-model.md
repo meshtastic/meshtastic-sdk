@@ -164,7 +164,7 @@ fun mySendTimesOut() = runTest {
         .storage(InMemoryStorageProvider())
         .coroutineContext(backgroundScope.coroutineContext)
         .clock(TestClock())
-        .sendTimeout(5.seconds)
+        .sendAckTimeout(5.seconds)
         .build()
 
     client.connect()

@@ -140,7 +140,7 @@ class DeviceToolsTest {
             .autoSyncTimeOnConnect(false)
             .coroutineContext(backgroundScope.coroutineContext)
             .rpcTimeout(30.seconds)
-            .sendTimeout(30.seconds)
+            .sendAckTimeout(30.seconds)
             .build()
         return Rig(transport, client).also {
             it.configs["lora"] = Config.Builder().also { c -> c.lora = lora }.build()

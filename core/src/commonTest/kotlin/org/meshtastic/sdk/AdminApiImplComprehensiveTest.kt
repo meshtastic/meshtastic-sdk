@@ -1856,7 +1856,7 @@ class AdminApiImplComprehensiveTest {
         nodeNum: Int = 1,
         storageProvider: StorageProvider = InMemoryStorageProvider(),
         rpcTimeout: Duration = 60.seconds,
-        sendTimeout: Duration = 60.seconds,
+        sendAckTimeout: Duration = 60.seconds,
         frames: List<Frame> = emptyList(),
         autoQueueStatus: Boolean = true,
         bluetoothLink: Boolean = false,
@@ -1875,7 +1875,7 @@ class AdminApiImplComprehensiveTest {
             .autoSyncTimeOnConnect(false)
             .coroutineContext(backgroundScope.coroutineContext)
             .rpcTimeout(rpcTimeout)
-            .sendTimeout(sendTimeout)
+            .sendAckTimeout(sendAckTimeout)
             .build()
         return transport to client
     }

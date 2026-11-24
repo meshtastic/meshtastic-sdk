@@ -27,7 +27,7 @@ The public API has no `kotlin.Result<T>`.
 | `DutyCycleLimit` | The region's duty-cycle limit blocked transmission. | Yes, after seconds to minutes. |
 | `RateLimited` | The device refused a send that followed the previous one on its port too closely; firmware allows one text message every two seconds. | Yes, after a few seconds. |
 | `QueueRejected(res)` | The device's transmit queue rejected the packet, usually because it's full. | Yes, after backing off; pace bulk sends. |
-| `AckTimeout` | No routing ACK within `Builder.sendTimeout` (default 30 s). Broadcasts are exempt. | Yes, after checking connectivity. |
+| `AckTimeout` | No routing ACK within `Builder.sendAckTimeout` (default 30 s). Broadcasts are exempt. | Yes, after checking connectivity. |
 | `Disconnected` | The transport dropped before the send completed. | Reconnect, then resend. |
 | `HandshakeFailed` | The send was queued before `Connected` and the handshake failed. | Reconnect, then resend. |
 | `Cancelled` | `MessageHandle.cancel()` before the packet left the host. | No; the caller asked. |

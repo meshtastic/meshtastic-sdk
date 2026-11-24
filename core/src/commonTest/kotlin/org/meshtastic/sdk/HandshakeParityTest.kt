@@ -565,7 +565,7 @@ class HandshakeParityTest {
         .autoSyncTimeOnConnect(false)
         .coroutineContext(backgroundScope.coroutineContext)
         .rpcTimeout(60.seconds)
-        .sendTimeout(60.seconds)
+        .sendAckTimeout(60.seconds)
         .apply { if (sessionReceive) sessionReceive() }
         .apply(configure)
         .build()

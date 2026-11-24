@@ -120,7 +120,7 @@ public sealed interface SendFailure {
 
     /**
      * Per-send ACK timeout: the device did not produce a `Routing` ACK for a unicast `want_ack`
-     * packet within the configured [RadioClient.Builder.sendTimeout] window.
+     * packet within the configured [RadioClient.Builder.sendAckTimeout] window.
      *
      * Broadcast packets (`to == 0xFFFFFFFF`) never produce this failure; they have no ACK
      * semantics in the Meshtastic protocol.

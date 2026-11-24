@@ -446,7 +446,7 @@ class MeshEngineEdgeCasesTest {
     @Test
     fun encryptedPacketDoesNotAckPendingSend() = runTest {
         val transport = fakeTransport()
-        val client = buildClient(transport = transport, sendTimeout = 5.seconds)
+        val client = buildClient(transport = transport, sendAckTimeout = 5.seconds)
 
         client.connect()
         val handle = client.send(unicastWantAckPacket(toNodeNum = 0x3005))
@@ -533,7 +533,7 @@ class MeshEngineEdgeCasesTest {
     @Test
     fun duplicateRoutingAckRemainsIdempotent() = runTest {
         val transport = fakeTransport()
-        val client = buildClient(transport = transport, sendTimeout = 60.seconds)
+        val client = buildClient(transport = transport, sendAckTimeout = 60.seconds)
 
         client.connect()
         val handle = client.send(unicastWantAckPacket(toNodeNum = 0x4005))
@@ -679,7 +679,7 @@ class MeshEngineEdgeCasesTest {
     @Test
     fun routingAckForOneConcurrentSendDoesNotAffectOthers() = runTest {
         val transport = fakeTransport()
-        val client = buildClient(transport = transport, sendTimeout = 60.seconds)
+        val client = buildClient(transport = transport, sendAckTimeout = 60.seconds)
 
         client.connect()
         val handles = (1..3).map { index ->
@@ -702,13 +702,13 @@ class MeshEngineEdgeCasesTest {
         transport: RadioTransport = fakeTransport(),
         logger: LogSink = LogSink.Silent,
         autoReconnect: AutoReconnectConfig = AutoReconnectConfig.Disabled,
-        sendTimeout: Duration = 30.seconds,
+        sendAckTimeout: Duration = 30.seconds,
     ): RadioClient = RadioClient.Builder()
         .transport(transport)
         .storage(InMemoryStorageProvider())
         .logger(logger)
         .autoReconnect(autoReconnect)
-        .sendTimeout(sendTimeout)
+        .sendAckTimeout(sendAckTimeout)
         .coroutineContext(backgroundScope.coroutineContext)
         .build()
 
