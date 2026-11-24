@@ -68,7 +68,15 @@ internal class UsbSerialForAndroidTransport(
     private val cleanedUp = AtomicBoolean(false)
 
     override suspend fun connect() {
-        check(!cleanedUp.get()) { "UsbSerialForAndroidTransport has been disconnected; construct a new instance" }
+        if (cleanedUp.get()) {
+            // Non-recoverable, so a reconnect over a reused instance ends in Failed instead of retrying forever.
+            val e = MeshtasticException.Transport(
+                "UsbSerialForAndroidTransport is single-use; supply a new one per attempt with a " +
+                    "RadioTransportProvider",
+            )
+            _state.value = TransportState.Error(e, recoverable = false)
+            throw e
+        }
         _state.value = TransportState.Connecting
         try {
             val opened = withContext(ioDispatcher) {

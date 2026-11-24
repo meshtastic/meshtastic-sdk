@@ -908,6 +908,9 @@ public class RadioClient internal constructor(
          * Intended for testing (e.g., `FakeRadioTransport`) and for transport modules that
          * construct their own transport before passing to the builder.
          *
+         * Every reconnect attempt reuses this instance, so it must be able to connect again after a
+         * failure or disconnect. The serial transports cannot; give them a [RadioTransportProvider].
+         *
          * ```kotlin
          * val fake = FakeRadioTransport(identity = TransportIdentity("fake:test"))
          * RadioClient.Builder()

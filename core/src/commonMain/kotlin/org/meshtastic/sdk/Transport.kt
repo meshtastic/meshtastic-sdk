@@ -34,11 +34,15 @@ public data class Frame(public val bytes: ByteString)
  * storage. See [DeviceStorage.recordOwnNode] for the reset rule that bounds this risk.
  *
  * **Minting an identity:** the constructor is public because every [RadioTransport] supplies one.
- * [raw] is the storage key, so it must be stable for the same physical radio across launches and
- * different for different radios; it is not secret and is not parsed. Start it with a scheme prefix
- * unique to the transport kind. The SDK uses `ble:`, `tcp:`, `http:`, `serial-android:`, `serial-jvm:`
- * and `ws:`; a host's own transports (simulators, replays, a browser serial port) pick prefixes
- * outside that list, such as `mock:`, `replay:` or `serial-web:`.
+ * [raw] is the storage key for one transport endpoint: keep it stable for the same endpoint across
+ * launches. It identifies the endpoint, not the radio, so one radio reached over BLE and TCP has two
+ * identities, and radios that take turns on one endpoint share one. It is not parsed, and it is
+ * stored and logged as-is, so never put credentials in it (an HTTP base URL with userinfo would).
+ * Start it with a scheme prefix unique to the transport kind. The SDK uses `ble:`, `tcp:`, `http:`,
+ * `serial-android:`, `serial-jvm:` and `ws:`; a host's own transports (simulators, replays, a browser
+ * serial port) pick prefixes outside that list, such as `mock:`, `replay:` or `serial-web:`. Every
+ * prefix except `ble:` gets four `0x94` wake bytes before the handshake, as a byte-stream link
+ * needs; a self-framing transport that must not receive them uses `ble:`.
  *
  * **Java interop:** properties returning [TransportIdentity] expose
  * non-mangled boxed accessors (e.g. `transport.getIdentity()` instead of
