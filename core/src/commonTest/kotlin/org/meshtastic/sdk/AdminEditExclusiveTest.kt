@@ -394,7 +394,7 @@ class AdminEditExclusiveTest {
             .autoSyncTimeOnConnect(false)
             .coroutineContext(backgroundScope.coroutineContext)
             .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         return transport to client
     }

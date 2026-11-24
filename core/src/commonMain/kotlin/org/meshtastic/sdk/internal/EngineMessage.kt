@@ -226,7 +226,7 @@ internal sealed interface EngineMessage {
 
     /**
      * Per-send ACK timeout fired (R-P0-6). Posted by the engine after the configured
-     * `sendTimeout` elapses with no `Routing` ACK observed for [id]. The handler transitions
+     * `sendAckTimeout` elapses with no `Routing` ACK observed for [id]. The handler transitions
      * the in-flight handle to `SendState.Failed(SendFailure.AckTimeout)` if it is still
      * pending.
      */

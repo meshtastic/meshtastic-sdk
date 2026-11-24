@@ -122,7 +122,7 @@ internal class MeshEngine(
     private val bleHeartbeatEnabled: Boolean,
     private val parentContext: CoroutineContext,
     private val clock: Clock = Clock.System,
-    private val sendTimeout: Duration = 30.seconds,
+    private val sendAckTimeout: Duration = 30.seconds,
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
@@ -4012,7 +4012,7 @@ internal class MeshEngine(
         val scope = engineScope ?: return
         ackTimeoutJobs.remove(id)?.cancel()
         ackTimeoutJobs[id] = scope.launch {
-            delay(sendTimeout)
+            delay(sendAckTimeout)
             inbox.trySend(EngineMessage.SendAckTimeout(id, state))
         }
     }
@@ -4233,7 +4233,7 @@ internal class MeshEngine(
         lockdownWriteMutex.withLock {
             if (lockdownLink.value != link) return
             logProtocolTx(frame)
-            val sent = withTimeoutOrNull(sendTimeout) { target.send(frame) }
+            val sent = withTimeoutOrNull(TRANSPORT_WRITE_TIMEOUT) { target.send(frame) }
             checkNotNull(sent) { "Lockdown write timed out" }
         }
     }
@@ -4678,8 +4678,8 @@ internal class MeshEngine(
         // Mesh packets held until Ready, flushed in one pass; the packets flow buffers as many (128).
         const val HANDSHAKE_PACKET_BUFFER_CAP = 128
 
-        // How long one transport write may take before the link counts as failed. Separate from
-        // sendTimeout, which bounds the wait for a routing ACK.
+        // How long one transport write, a lockdown credential included, may take before the link
+        // counts as failed. Separate from sendAckTimeout, which bounds only the wait for a routing ACK.
         val TRANSPORT_WRITE_TIMEOUT = 30.seconds
 
         // How long the paced queue stays empty after a renumber before the handshake restarts.

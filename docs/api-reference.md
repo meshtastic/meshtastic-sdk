@@ -47,7 +47,7 @@ RadioClient.Builder()
     .autoSyncTimeOnConnect(true)                                       // default: true
     .disableBleHeartbeat()                                             // default: BLE heartbeats on
     .protocolLogging(LogLevel.DEBUG, PayloadRedactor.Default)          // default: LogLevel.NONE
-    .sendTimeout(30.seconds)                                           // default: 30 s, ACK wait per unicast want_ack send
+    .sendAckTimeout(30.seconds)                                        // default: 30 s, ACK wait per unicast want_ack send; transport writes keep a fixed 30 s bound
     .rpcTimeout(30.seconds)                                            // default: 30 s, per admin/telemetry/routing call
     .presenceTimeout(2.hours)                                          // default: 2 h, node offline threshold
     .autoReconnect(AutoReconnectConfig())                              // default: AutoReconnectConfig.Disabled
@@ -299,7 +299,7 @@ public sealed interface SendFailure {
     public data object HandshakeFailed : SendFailure            // queued before Connected, handshake failed
     public data object Cancelled : SendFailure                  // MessageHandle.cancel() before Sent
     public data object IdCollision : SendFailure                // packet id matches an in-flight send
-    public data object AckTimeout : SendFailure                 // no ACK within Builder.sendTimeout
+    public data object AckTimeout : SendFailure                 // no ACK within Builder.sendAckTimeout
     public data class QueueRejected(val res: Int) : SendFailure // device transmit queue rejected it (QueueStatus.res)
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure

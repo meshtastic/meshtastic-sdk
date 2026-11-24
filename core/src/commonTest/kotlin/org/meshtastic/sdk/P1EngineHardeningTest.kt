@@ -69,7 +69,7 @@ class P1EngineHardeningTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
 
@@ -169,7 +169,7 @@ class P1EngineHardeningTest {
             logger = LogSink.Silent,
             bleHeartbeatEnabled = false,
             parentContext = backgroundScope.coroutineContext,
-            sendTimeout = 30.seconds,
+            sendAckTimeout = 30.seconds,
         )
 
         val connectJob = async { runCatching { engine.connect() } }

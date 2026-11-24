@@ -1935,8 +1935,8 @@ public final class org/meshtastic/sdk/RadioClient$Builder {
 	public static synthetic fun protocolLogging$default (Lorg/meshtastic/sdk/RadioClient$Builder;Lorg/meshtastic/sdk/LogLevel;Lorg/meshtastic/sdk/PayloadRedactor;ILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun rpcTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun rpcTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public final fun sendTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
-	public final fun sendTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun sendAckTimeout (Lkotlin/time/Duration;)Lorg/meshtastic/sdk/RadioClient$Builder;
+	public final fun sendAckTimeout-LRDsOJo (J)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun sessionReceive (I)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public static synthetic fun sessionReceive$default (Lorg/meshtastic/sdk/RadioClient$Builder;IILjava/lang/Object;)Lorg/meshtastic/sdk/RadioClient$Builder;
 	public final fun skipNodeDb (Z)Lorg/meshtastic/sdk/RadioClient$Builder;

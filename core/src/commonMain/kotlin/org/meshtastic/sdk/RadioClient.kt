@@ -895,7 +895,7 @@ public class RadioClient internal constructor(
         private var bleHeartbeatEnabled: Boolean = true
         private var protocolLogLevel: LogLevel = LogLevel.NONE
         private var payloadRedactor: PayloadRedactor = PayloadRedactor.Default
-        private var sendTimeout: Duration = 30.seconds
+        private var sendAckTimeout: Duration = 30.seconds
         private var rpcTimeout: Duration = 30.seconds
         private var presenceTimeout: Duration = 2.hours
         private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
@@ -1049,17 +1049,21 @@ public class RadioClient internal constructor(
          * `SendState.Failed(SendFailure.AckTimeout)`. Broadcasts never receive a routing ACK and
          * are not affected by this timeout.
          *
+         * It bounds only the wait for the ACK. A transport write has its own fixed 30 s bound, so
+         * a long value here, such as 5 minutes for a slow mesh, never lengthens how long a stalled
+         * link takes to be declared failed.
+         *
          * Default: 30 seconds.
          *
          * ```kotlin
          * // Aggressive: fail fast in low-latency LANs.
-         * .sendTimeout(5.seconds)
+         * .sendAckTimeout(5.seconds)
          *
          * // Lenient: long mesh paths, sleepy nodes.
-         * .sendTimeout(2.minutes)
+         * .sendAckTimeout(2.minutes)
          * ```
          */
-        public fun sendTimeout(duration: Duration): Builder = apply { sendTimeout = duration }
+        public fun sendAckTimeout(duration: Duration): Builder = apply { sendAckTimeout = duration }
 
         /**
          * Configure the per-RPC timeout for [AdminApi] / [TelemetryApi] / [RoutingApi] calls.
@@ -1157,7 +1161,7 @@ public class RadioClient internal constructor(
                 bleHeartbeatEnabled = bleHeartbeatEnabled,
                 parentContext = coroutineContext,
                 clock = clock,
-                sendTimeout = sendTimeout,
+                sendAckTimeout = sendAckTimeout,
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,
