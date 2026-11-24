@@ -97,7 +97,7 @@ public sealed interface RadioSessionEvent {
         public val nodes: Map<NodeId, NodeInfo>,
     ) : RadioSessionEvent
 
-    /** End of a session that previously emitted [Ready]. */
+    /** End of a session that delivered any event, a [Lockdown]-only session included. */
     public data class Ended(override val sessionId: Long) : RadioSessionEvent
 }
 

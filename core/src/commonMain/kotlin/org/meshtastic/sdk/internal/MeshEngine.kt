@@ -21,6 +21,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -88,6 +89,7 @@ import org.meshtastic.sdk.RadioTransportProvider
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.SessionPasskey
+import org.meshtastic.sdk.SessionScoped
 import org.meshtastic.sdk.StorageProvider
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
@@ -169,7 +171,15 @@ internal class MeshEngine(
             inbox.trySend(EngineMessage.SessionOverflow(sessionId))
         }
     }
-    val sessionEvents = sessionReceive?.events
+
+    // ADR-002 exception: the actor starts sessions; trySendToRadio stamps the tap from caller threads.
+    private val sessionCounter = atomic(0L)
+
+    private fun beginSession() {
+        sessionReceive?.begin(sessionCounter.incrementAndGet())
+    }
+
+    val sessionEvents: Flow<RadioSessionEvent>? = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
@@ -178,14 +188,14 @@ internal class MeshEngine(
 
     // Device logs can arrive at any rate, so a slow collector loses the oldest records instead of
     // slowing the engine, and nothing is replayed.
-    val deviceLogs = MutableSharedFlow<LogRecord>(
+    val deviceLogs = MutableSharedFlow<SessionScoped<LogRecord>>(
         extraBufferCapacity = DEVICE_LOG_BUFFER,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
     // Live mirror: no replay, and a slow collector loses the oldest undelivered frame rather than
     // stalling the engine. With no collector a frame is dropped on emit, so none is retained.
-    val displayFrames = MutableSharedFlow<DisplayMirrorFrame>(
+    val displayFrames = MutableSharedFlow<SessionScoped<DisplayMirrorFrame>>(
         extraBufferCapacity = 2,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -203,7 +213,7 @@ internal class MeshEngine(
     )
 
     /** Every mesh packet queued for the radio, as written. Lossy for the same reason as [rawFromRadio]. */
-    val outboundPackets = MutableSharedFlow<MeshPacket>(
+    val outboundPackets = MutableSharedFlow<SessionScoped<MeshPacket>>(
         extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -1416,7 +1426,7 @@ internal class MeshEngine(
         heartbeatAnswered = false
         localAdminGatedByLink.value = false
         writeLink.value = transport?.let { WriteLink(generation, it) }
-        sessionReceive?.begin()
+        beginSession()
         startFrameReader(generation)
 
         // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
@@ -1683,7 +1693,7 @@ internal class MeshEngine(
 
         // Log records bypass the settle and handshake buffers, so a log burst cannot evict a held frame.
         fromRadio.log_record?.let { record ->
-            deviceLogs.tryEmit(record)
+            deviceLogs.tryEmit(SessionScoped(sessionCounter.value, record))
             return
         }
 
@@ -2872,7 +2882,7 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            deviceLogs.tryEmit(fromRadio.log_record!!)
+            deviceLogs.tryEmit(SessionScoped(sessionCounter.value, fromRadio.log_record!!))
             true
         }
 
@@ -3007,7 +3017,8 @@ internal class MeshEngine(
         when (val outcome = displayFrameReassembler.accept(chunk)) {
             DisplayFrameReassembler.Outcome.Incomplete -> Unit
 
-            is DisplayFrameReassembler.Outcome.Complete -> displayFrames.tryEmit(outcome.frame)
+            is DisplayFrameReassembler.Outcome.Complete ->
+                displayFrames.tryEmit(SessionScoped(sessionCounter.value, outcome.frame))
 
             is DisplayFrameReassembler.Outcome.Dropped ->
                 logger.warn(TAG) { "Dropped display frame chunk: ${outcome.reason}" }
@@ -3521,7 +3532,7 @@ internal class MeshEngine(
         clearNodeDbRefresh()
         sessionReceive?.end()
         resetSessionState()
-        sessionReceive?.begin()
+        beginSession()
         requestStage1Config()
     }
 
@@ -4175,7 +4186,7 @@ internal class MeshEngine(
         val queued =
             outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
         // A lockdown command carries the radio's credential, so it stays off the tap.
-        if (queued && link == null) msg.packet?.let { outboundPackets.tryEmit(it) }
+        if (queued && link == null) msg.packet?.let { outboundPackets.tryEmit(SessionScoped(sessionCounter.value, it)) }
         queued
     } catch (e: Exception) {
         logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }

@@ -41,7 +41,13 @@ class OutboundPacketsTapTest {
         client.connect()
         runCurrent()
         val tapped = mutableListOf<MeshPacket>()
-        backgroundScope.launch { client.outboundPackets.collect { tapped += it } }
+        val sessionIds = mutableListOf<Long>()
+        backgroundScope.launch {
+            client.outboundPackets.collect {
+                tapped += it.value
+                sessionIds += it.sessionId
+            }
+        }
         runCurrent()
         val before = transport.outboundPackets().size
 
@@ -65,6 +71,8 @@ class OutboundPacketsTapTest {
         assertEquals(PortNum.TELEMETRY_APP, rpc.decoded?.portnum)
         assertTrue(rpc.id != 0, "an RPC request is tapped under the id the SDK gave it")
         assertTrue(tapped.all { it.from == OWN_NODE })
+        // Regression: the outbound tap stamped session 0 instead of the first handshake's id.
+        assertEquals(setOf(1L), sessionIds.toSet())
         client.disconnect()
         runCurrent()
     }
@@ -85,7 +93,7 @@ class OutboundPacketsTapTest {
         client.connect()
         runCurrent()
         val tapped = mutableListOf<MeshPacket>()
-        backgroundScope.launch { client.outboundPackets.collect { tapped += it } }
+        backgroundScope.launch { client.outboundPackets.collect { tapped += it.value } }
         runCurrent()
 
         val accepted = client.tryLockdown(

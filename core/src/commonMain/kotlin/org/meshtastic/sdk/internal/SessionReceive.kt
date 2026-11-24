@@ -65,15 +65,11 @@ internal class SessionReceive(
     private var delivering = false
     private var started = false
 
-    // Ended closes only a session that published Ready; a lockdown-only session ends silently.
-    private var readyPublished = false
-
-    // Sessions are numbered here, not by link: a renumber restarts the handshake on the same link.
-    fun begin() {
-        sessionId++
+    // The engine numbers sessions, not the link: a renumber restarts the handshake on the same link.
+    fun begin(id: Long) {
+        sessionId = id
         sequence = 0L
         started = false
-        readyPublished = false
         lost = false
     }
 
@@ -81,7 +77,6 @@ internal class SessionReceive(
         if (lost) return
         delivering = offer(snapshot)
         started = true
-        readyPublished = true
     }
 
     fun lockdown(status: LockdownStatus) {
@@ -116,8 +111,7 @@ internal class SessionReceive(
         if (!started) return
         started = false
         delivering = false
-        if (readyPublished) offer(RadioSessionEvent.Ended(sessionId))
-        readyPublished = false
+        offer(RadioSessionEvent.Ended(sessionId))
     }
 
     fun nodeDbRefreshed(nodes: Map<NodeId, NodeInfo>) {

@@ -215,9 +215,11 @@ public class RadioClient internal constructor(
      * radio accepted it. Admin packets carry session passkeys and the SDK does not redact them; lockdown
      * credentials never appear.
      *
+     * Each item is a [SessionScoped] carrying the id of its session (same numbering as [sessionEvents]).
+     *
      * @since 0.3.0
      */
-    public val outboundPackets: Flow<MeshPacket> = engine.outboundPackets.hide()
+    public val outboundPackets: Flow<SessionScoped<MeshPacket>> = engine.outboundPackets.hide()
 
     /**
      * Ordered handshake snapshots, packets and session boundaries for one consumer.
@@ -232,14 +234,15 @@ public class RadioClient internal constructor(
      * engine also ends that session and reconnects, counted against
      * [AutoReconnectConfig.maxHandshakeRecoveries] (three in a row when that is `null`); collect this
      * property again to resume. The new collection starts with [RadioSessionEvent.Ended] for the
-     * overflowed session when it had reached [RadioSessionEvent.Ready], then the next session's
+     * overflowed session when it had delivered an event, then the next session's
      * `Ready`. With auto-reconnect off the radio keeps processing frames and the stream stays failed:
      * create a new client to restart it. Collector cancellation also ends the stream for good.
      * Delivery sequences measure SDK coverage. The radio or transport may lose packets upstream.
      *
-     * `null` if session receive was left disabled.
+     * Collecting it without [Builder.sessionReceive] fails with [IllegalStateException].
      */
-    public val sessionEvents: Flow<RadioSessionEvent>? = engine.sessionEvents
+    public val sessionEvents: Flow<RadioSessionEvent> =
+        engine.sessionEvents ?: flow { error("Session events are off: call Builder.sessionReceive() before build()") }
 
     /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
@@ -272,11 +275,12 @@ public class RadioClient internal constructor(
      *
      * Hot, no replay. Volume is unbounded, so a collector that falls more than 64 records
      * behind loses the oldest ones; the engine and the other flows never wait for it, and no
-     * [MeshEvent.PacketsDropped] is emitted for logs.
+     * [MeshEvent.PacketsDropped] is emitted for logs. Each item is a [SessionScoped] carrying the id of
+     * its session (same numbering as [sessionEvents]).
      *
      * @since 0.3.0
      */
-    public val deviceLogs: Flow<LogRecord> = engine.deviceLogs.hide()
+    public val deviceLogs: Flow<SessionScoped<LogRecord>> = engine.deviceLogs.hide()
 
     /**
      * Complete frames of the device display, emitted while mirroring is on
@@ -287,11 +291,12 @@ public class RadioClient internal constructor(
      * partially. **Buffering:** no replay, and a buffer of 2 that drops the **oldest** frame when a
      * collector falls behind, so a slow renderer skips to recent frames and never stalls the
      * engine. Frames emitted while nothing collects are discarded. Dropped frames are not
-     * reported on [events].
+     * reported on [events]. Each item is a [SessionScoped] carrying the id of its session (same
+     * numbering as [sessionEvents]).
      *
      * @since 0.3.0
      */
-    public val displayFrames: Flow<DisplayMirrorFrame> = engine.displayFrames.hide()
+    public val displayFrames: Flow<SessionScoped<DisplayMirrorFrame>> = engine.displayFrames.hide()
 
     /**
      * The most recent complete display palette, or `null` until the device sends one this
@@ -327,7 +332,7 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Queue a nodes-only download on the current connection. Requires the optional [sessionEvents] stream.
+     * Queue a nodes-only download on the current connection. Requires [Builder.sessionReceive].
      * A completed download emits [RadioSessionEvent.NodeDbRefreshed]. Requests received during a download
      * coalesce into one follow-up. A stalled download ends the session so a late completion cannot be
      * mistaken for a subsequent download.

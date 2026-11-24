@@ -240,7 +240,7 @@ class SdkOwnedReconnectTest {
         val sessions = mutableListOf<RadioSessionEvent>()
         val unconfined = UnconfinedTestDispatcher(testScheduler)
         backgroundScope.launch(unconfined) {
-            checkNotNull(client.sessionEvents).collect { event ->
+            client.sessionEvents.collect { event ->
                 sessions += event
                 log += "${event::class.simpleName}(${event.sessionId})"
             }
@@ -269,7 +269,7 @@ class SdkOwnedReconnectTest {
     fun aReceiveOverflowRestartsTheSessionAndACollectorResumesOnAFreshStream() = runTest {
         val link = ScriptLink("a", mutableListOf(), { currentTime })
         val client = buildClient(link, config(), sessionCapacity = SMALL_QUEUE)
-        val stream = checkNotNull(client.sessionEvents)
+        val stream = client.sessionEvents
         val stalled = stalledCollector(stream)
         client.connect()
         drain()
@@ -296,7 +296,7 @@ class SdkOwnedReconnectTest {
     fun overflowRestartsCountAgainstMaxHandshakeRecoveriesThoughEachSessionReachedReady() = runTest {
         val link = ScriptLink("a", mutableListOf(), { currentTime })
         val client = buildClient(link, config(maxHandshakeRecoveries = 1), sessionCapacity = SMALL_QUEUE)
-        stalledCollector(checkNotNull(client.sessionEvents))
+        stalledCollector(client.sessionEvents)
         client.connect()
         drain()
 
@@ -315,7 +315,7 @@ class SdkOwnedReconnectTest {
     fun withoutMaxHandshakeRecoveriesTheFourthOverflowInARowFails() = runTest {
         val link = ScriptLink("a", mutableListOf(), { currentTime })
         val client = buildClient(link, config(), sessionCapacity = SMALL_QUEUE)
-        stalledCollector(checkNotNull(client.sessionEvents))
+        stalledCollector(client.sessionEvents)
         client.connect()
         drain()
 
@@ -344,7 +344,7 @@ class SdkOwnedReconnectTest {
 
         assertEquals(ConnectionState.Connected, client.connection.value)
         assertEquals(connects, link.connects.size)
-        val overflow = runCatching { checkNotNull(client.sessionEvents).collect { } }.exceptionOrNull()
+        val overflow = runCatching { client.sessionEvents.collect { } }.exceptionOrNull()
         assertIs<RadioSessionOverflowException>(overflow)
     }
 
@@ -660,7 +660,7 @@ class SdkOwnedReconnectTest {
     fun earlierHandshakeTimeoutsDoNotSpendTheDefaultOverflowLimit() = runTest {
         val link = ScriptLink("a", mutableListOf(), { currentTime })
         val client = buildClient(link, config(maxBackoff = 2.seconds), sessionCapacity = SMALL_QUEUE)
-        stalledCollector(checkNotNull(client.sessionEvents))
+        stalledCollector(client.sessionEvents)
         client.connect()
         drain()
 
