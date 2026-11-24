@@ -3678,9 +3678,7 @@ internal class MeshEngine(
     }
 
     private fun routingFailure(errorReason: Routing.Error): SendFailure = when (errorReason) {
-        Routing.Error.NO_ROUTE,
-        Routing.Error.GOT_NAK,
-        -> SendFailure.NoRoute
+        Routing.Error.NO_ROUTE -> SendFailure.NoRoute
 
         Routing.Error.MAX_RETRANSMIT -> SendFailure.MaxRetransmit
 

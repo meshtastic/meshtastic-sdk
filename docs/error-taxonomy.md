@@ -82,7 +82,7 @@ public sealed interface SendFailure {
 | `Cancelled` | `MessageHandle.cancel()` before `Sent` |
 | `IdCollision` | The packet's `id` matches an in-flight send; the existing handle is kept |
 | `AckTimeout` | A unicast `want_ack` send got no routing ACK within `Builder.sendAckTimeout` (default 30 s). Broadcasts never produce it. |
-| `QueueRejected(res)` | The device's transmit queue rejected the packet; see [`QueueStatus` rejections](#queuestatus-rejections) |
+| `QueueRejected(res)` | The device's transmit queue rejected the packet; see [`QueueStatus` rejections](#queuestatus-rejections); `QueueRejected.routingError` is the typed value and is null for 32 to 35 |
 | `Unknown` | Reserved for engine anomalies |
 
 ### Wire `Routing.Error` to `SendFailure`
@@ -92,12 +92,12 @@ The mapping is in `MeshEngine` and is driven by the Wire-generated `Routing.Erro
 | `Routing.Error` | Result |
 |---|---|
 | `NONE` | `Acked`, or `Delivered` for a broadcast; not a failure |
-| `NO_ROUTE`, `GOT_NAK` | `NoRoute` |
+| `NO_ROUTE` | `NoRoute` |
 | `MAX_RETRANSMIT` | `MaxRetransmit` |
 | `TIMEOUT` | `Timeout` |
 | `DUTY_CYCLE_LIMIT` | `DutyCycleLimit` |
 | `RATE_LIMIT_EXCEEDED` | `RateLimited`. Firmware allows one text message every two seconds. |
-| anything else, including values added to the schema later | `Other(value)` |
+| anything else, including `GOT_NAK` and values added to the schema later | `Other(value)` |
 
 ### `QueueStatus` rejections
 
@@ -134,7 +134,7 @@ RPC paths map a `Routing.Error` before it would become a `SendFailure`:
 
 A remote read whose `MAX_RETRANSMIT` comes from the connected radio keeps waiting for the reply, which can still arrive over another path, and returns `Failed(MAX_RETRANSMIT)` only at its timeout.
 
-Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute`, `MaxRetransmit` and `DutyCycleLimit` become `Failed` with that error; `Disconnected`, `HandshakeFailed`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` with a `Routing.Error` below 32 or above 35 follows the table, as for an RPC, `QueueRejected` with 33 or 34 becomes `Failed(NO_INTERFACE)`, and any other `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table. `NodeUnreachable` therefore means the link was lost or the send never left. Over BLE, a restart-class command to the connected node that the transport wrote before the link dropped returns `Success` (see [protocol.md](protocol.md), edit transactions).
+Setters that complete on a routing ACK map the resulting `SendFailure` instead: `NoRoute`, `MaxRetransmit` and `DutyCycleLimit` become `Failed` with that error; `Disconnected`, `HandshakeFailed`, `Cancelled`, and `IdCollision` become `NodeUnreachable`; `Timeout` and `AckTimeout` become `Timeout`; `QueueRejected` with a `Routing.Error` below 32 or above 35 follows the table, as for an RPC, `QueueRejected` with 33 or 34 becomes `Failed(NO_INTERFACE)`, and any other `QueueRejected` and `RateLimited` become `RateLimited`; `Other` follows the table, so `Other(GOT_NAK)` becomes `Failed(GOT_NAK)`. `NodeUnreachable` therefore means the link was lost or the send never left. Over BLE, a restart-class command to the connected node that the transport wrote before the link dropped returns `Success` (see [protocol.md](protocol.md), edit transactions).
 
 `lockdown` on an `AdminApi` from `forNode(…)` returns `Unauthorized`; it works on the local node only. When the local node's `security.is_managed` is set, most admin calls on the local node, `setTime` among them, return `Unauthorized` without sending, unless the link reported a lockdown status: such firmware is built with PhoneAPI access control and accepts local admin on a link it has authorized.
 

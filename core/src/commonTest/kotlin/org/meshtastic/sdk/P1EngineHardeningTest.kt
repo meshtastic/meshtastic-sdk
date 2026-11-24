@@ -131,7 +131,7 @@ class P1EngineHardeningTest {
         }
 
         assertMapping(Routing.Error.NO_ROUTE, SendFailure.NoRoute)
-        assertMapping(Routing.Error.GOT_NAK, SendFailure.NoRoute)
+        assertMapping(Routing.Error.GOT_NAK, SendFailure.Other(Routing.Error.GOT_NAK))
         assertMapping(Routing.Error.MAX_RETRANSMIT, SendFailure.MaxRetransmit)
         assertMapping(Routing.Error.TIMEOUT, SendFailure.Timeout)
         assertMapping(Routing.Error.DUTY_CYCLE_LIMIT, SendFailure.DutyCycleLimit)

@@ -290,7 +290,7 @@ public sealed interface SendState {
 }
 
 public sealed interface SendFailure {
-    public data object NoRoute : SendFailure                    // Routing.Error NO_ROUTE or GOT_NAK
+    public data object NoRoute : SendFailure                    // Routing.Error NO_ROUTE
     public data object MaxRetransmit : SendFailure              // MAX_RETRANSMIT
     public data object Timeout : SendFailure                    // Routing.Error TIMEOUT
     public data object DutyCycleLimit : SendFailure             // DUTY_CYCLE_LIMIT
@@ -304,6 +304,9 @@ public sealed interface SendFailure {
     public data class Other(val routingError: Routing.Error) : SendFailure
     public data class Unknown(val message: String) : SendFailure
 }
+
+// QueueRejected.routingError: Routing.Error? - null for the ambiguous res values 32 to 35
+public val SendFailure.routingError: Routing.Error?         // the Routing.Error behind a failure, null if none
 
 public sealed interface SendOutcome {
     public data object Success : SendOutcome

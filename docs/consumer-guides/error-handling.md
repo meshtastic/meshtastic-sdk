@@ -21,7 +21,7 @@ The public API has no `kotlin.Result<T>`.
 
 | Variant | Cause | Retry |
 |---|---|---|
-| `NoRoute` | No path to the destination, or a neighbor refused it (`NO_ROUTE`, `GOT_NAK`). | Later; the topology may change. |
+| `NoRoute` | No path to the destination (`NO_ROUTE`). | Later; the topology may change. |
 | `MaxRetransmit` | The device used up its retransmissions. | Yes, after a wait. |
 | `Timeout` | The device reported a routing timeout. | Yes. |
 | `DutyCycleLimit` | The region's duty-cycle limit blocked transmission. | Yes, after seconds to minutes. |
@@ -32,10 +32,10 @@ The public API has no `kotlin.Result<T>`.
 | `HandshakeFailed` | The send was queued before `Connected` and the handshake failed. | Reconnect, then resend. |
 | `Cancelled` | `MessageHandle.cancel()` before the packet left the host. | No; the caller asked. |
 | `IdCollision` | The packet's `id` matches an in-flight send. | No; fix the caller. |
-| `Other(routingError)` | Another `Routing.Error`. | Inspect `routingError`. |
+| `Other(routingError)` | Another `Routing.Error`, including `GOT_NAK`. | Inspect `routingError`. |
 | `Unknown(message)` | An engine anomaly. | Treat as a bug and capture diagnostics. |
 
-`SendFailure.humanMessage()` returns display text for any variant.
+`SendFailure.humanMessage()` returns display text for any variant, and `reason.routingError` gives the typed `Routing.Error` for any failure that has one.
 
 ### Example: one send with retries
 

@@ -38,6 +38,32 @@ class RoutingErrorsTest {
         assertTrue("oops" in SendFailure.Unknown("oops").humanMessage())
     }
 
+    // Regression: the app's hand-kept reverse table drifting from the SDK's failure-to-code mapping.
+    @Test fun sendFailureRoutingErrorNamesTheCodeBehindEachFailure() {
+        assertEquals(Routing.Error.NO_ROUTE, SendFailure.NoRoute.routingError)
+        assertEquals(Routing.Error.MAX_RETRANSMIT, SendFailure.MaxRetransmit.routingError)
+        assertEquals(Routing.Error.TIMEOUT, SendFailure.Timeout.routingError)
+        assertEquals(Routing.Error.DUTY_CYCLE_LIMIT, SendFailure.DutyCycleLimit.routingError)
+        assertEquals(Routing.Error.RATE_LIMIT_EXCEEDED, SendFailure.RateLimited.routingError)
+        assertEquals(Routing.Error.GOT_NAK, SendFailure.Other(Routing.Error.GOT_NAK).routingError)
+        assertNull(SendFailure.Disconnected.routingError)
+        assertNull(SendFailure.Cancelled.routingError)
+        assertNull(SendFailure.AckTimeout.routingError)
+        assertNull(SendFailure.QueueFull.routingError)
+        assertNull(SendFailure.IdCollision.routingError)
+        assertNull(SendFailure.HandshakeFailed.routingError)
+        assertNull(SendFailure.Unknown("x").routingError)
+    }
+
+    // Regression: res 33 (firmware ERRNO_NO_INTERFACES or Routing.Error.NOT_AUTHORIZED) read as NOT_AUTHORIZED.
+    @Test fun queueRejectedRoutingErrorIsNullForAmbiguousRes32To35() {
+        assertEquals(Routing.Error.DUTY_CYCLE_LIMIT, SendFailure.QueueRejected(9).routingError)
+        assertEquals(Routing.Error.PKI_SEND_FAIL_PUBLIC_KEY, SendFailure.QueueRejected(39).routingError)
+        for (res in 32..35) assertNull(SendFailure.QueueRejected(res).routingError, "res=$res")
+        assertNull(SendFailure.QueueRejected(100).routingError)
+        assertNull(SendFailure.QueueRejected(0).routingError)
+    }
+
     @Test fun actionableMessageNeverEmpty() {
         for (e in Routing.Error.entries) {
             val m = e.actionableMessage()
