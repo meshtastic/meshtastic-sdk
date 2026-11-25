@@ -78,14 +78,14 @@ public data class DeviceCapabilities(val firmwareVersion: String?, val excludedM
     /** QR code contact sharing. Since 2.6.8. */
     public val supportsQrCodeSharing: Boolean get() = atLeast(V2_6_8)
 
-    /** Status message module. Since 2.8.0. */
-    public val supportsStatusMessage: Boolean get() = atLeast(V2_8_0)
+    /** Status message module. Since 2.7.20. */
+    public val supportsStatusMessage: Boolean get() = atLeast(V2_7_20)
 
-    /** Traffic management config. Since 3.0.0. */
-    public val supportsTrafficManagementConfig: Boolean get() = atLeast(V3_0_0)
+    /** Traffic management config. Since 2.8.0. */
+    public val supportsTrafficManagementConfig: Boolean get() = atLeast(V2_8_0)
 
-    /** TAK module config. Since 2.7.19. */
-    public val supportsTakConfig: Boolean get() = atLeast(V2_7_19)
+    /** TAK module config. Since 2.8.0. */
+    public val supportsTakConfig: Boolean get() = atLeast(V2_8_0)
 
     /** Location sharing on secondary channels. Since 2.6.10. */
     public val supportsSecondaryChannelLocation: Boolean get() = atLeast(V2_6_10)
@@ -99,8 +99,7 @@ public data class DeviceCapabilities(val firmwareVersion: String?, val excludedM
         val V2_6_10: DeviceVersion = DeviceVersion("2.6.10")
         val V2_7_12: DeviceVersion = DeviceVersion("2.7.12")
         val V2_7_18: DeviceVersion = DeviceVersion("2.7.18")
-        val V2_7_19: DeviceVersion = DeviceVersion("2.7.19")
+        val V2_7_20: DeviceVersion = DeviceVersion("2.7.20")
         val V2_8_0: DeviceVersion = DeviceVersion("2.8.0")
-        val V3_0_0: DeviceVersion = DeviceVersion("3.0.0")
     }
 }
