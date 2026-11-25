@@ -55,4 +55,13 @@ class DeviceCapabilitiesTest {
         assertFalse(capabilities.supportsSecondaryChannelLocation)
         assertFalse(capabilities.supportsEsp32Ota)
     }
+
+    @Test fun moduleConfigFloorsMatchFirmware() {
+        assertFalse(DeviceCapabilities("2.7.19").supportsStatusMessage)
+        assertTrue(DeviceCapabilities("2.7.20").supportsStatusMessage)
+        assertFalse(DeviceCapabilities("2.7.26").supportsTakConfig)
+        assertTrue(DeviceCapabilities("2.8.0").supportsTakConfig)
+        assertFalse(DeviceCapabilities("2.7.26").supportsTrafficManagementConfig)
+        assertTrue(DeviceCapabilities("2.8.0").supportsTrafficManagementConfig)
+    }
 }
