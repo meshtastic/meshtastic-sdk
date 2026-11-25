@@ -81,6 +81,7 @@ import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.PacedMessageHandle
+import org.meshtastic.sdk.PacketTransport
 import org.meshtastic.sdk.PayloadRedactor
 import org.meshtastic.sdk.QueueReceipt
 import org.meshtastic.sdk.RadioSessionEvent
@@ -98,6 +99,7 @@ import org.meshtastic.sdk.WireFraming
 import org.meshtastic.sdk.debug
 import org.meshtastic.sdk.error
 import org.meshtastic.sdk.info
+import org.meshtastic.sdk.transport
 import org.meshtastic.sdk.verbose
 import org.meshtastic.sdk.warn
 import kotlin.coroutines.CoroutineContext
@@ -3164,7 +3166,7 @@ internal class MeshEngine(
                 from = NodeId(packet.from.takeIf { it != 0 } ?: myNodeNum),
                 error = error,
                 fromLocalRadio = local,
-                relayNode = packet.relay_node.takeUnless { it == 0 || heardDirect || packet.via_mqtt },
+                relayNode = packet.relay_node.takeUnless { it == 0 || heardDirect || !relayIsRfHop(packet) },
                 ackProof = packet.ack_proof_status,
             ),
         )
@@ -4740,3 +4742,12 @@ internal class MeshEngine(
         class Event(val event: MeshEvent) : HeldItem
     }
 }
+
+private val LORA_TRANSPORTS =
+    setOf(PacketTransport.Lora, PacketTransport.LoraAlt1, PacketTransport.LoraAlt2, PacketTransport.LoraAlt3)
+
+/**
+ * True when [packet]'s relay byte names the RF hop that delivered it. Firmware zeroes the byte on MQTT downlink but
+ * keeps `via_mqtt` through later LoRa hops; before 2.7.5 it sent no transport, so `via_mqtt` decides alone.
+ */
+private fun relayIsRfHop(packet: MeshPacket): Boolean = packet.transport in LORA_TRANSPORTS || !packet.via_mqtt
