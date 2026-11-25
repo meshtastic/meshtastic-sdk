@@ -674,6 +674,22 @@ class AdminApiImplComprehensiveTest {
         }
     }
 
+    // Regression: setter ack path reporting NO_ROUTE for a NAK.
+    @Test
+    fun setChannelGotNakMapsToFailedWithGotNak() = runTest {
+        val channel = Channel.Builder().also { wb ->
+            wb.index = 1
+            wb.role = Channel.Role.SECONDARY
+        }.build()
+        assertAckedOperation(
+            call = { it.setChannel(channel) },
+            requestMatches = { it.set_channel == channel },
+            expected = AdminResult.Failed(Routing.Error.GOT_NAK),
+        ) { transport, packet ->
+            transport.injectFrame(buildRoutingErrorFrame(packet.id, Routing.Error.GOT_NAK))
+        }
+    }
+
     @Test
     fun setFavoriteTrueSendsSetFavoriteNode() = runTest {
         val node = NodeId(0x01020304)

@@ -64,7 +64,7 @@ public sealed interface SendState {
  */
 public sealed interface SendFailure {
     /**
-     * No route to the destination (from `Routing.Error.NO_ROUTE`).
+     * No route to the destination (from `Routing.Error.NO_ROUTE`; a `GOT_NAK` is [Other]).
      */
     public data object NoRoute : SendFailure
 
@@ -137,10 +137,26 @@ public sealed interface SendFailure {
      * @param res the raw `QueueStatus.res` error code reported by the firmware
      * @since 0.2.0
      */
-    public data class QueueRejected(val res: Int) : SendFailure
+    public data class QueueRejected(val res: Int) : SendFailure {
+        /**
+         * The [Routing.Error] that `Router::send` refused the packet with, or `null` when [res] is a
+         * value [Routing.Error] does not define or one the firmware reports in two namespaces. Values 32 to 35
+         * are ambiguous: the firmware's `ERRNO_*` enqueue results (`MeshTypes.h`) and
+         * `Routing.Error.BAD_REQUEST`, `NOT_AUTHORIZED` and `PKI_FAILED` (`Router::send`)
+         * share 32 to 34 on `QueueStatus.res`; 35 is only ever `ERRNO_SHOULD_RELEASE`. The range never maps.
+         *
+         * @since 0.3.0
+         */
+        public val routingError: Routing.Error?
+            get() = if (res in ERRNO_UNKNOWN..ERRNO_SHOULD_RELEASE) {
+                null
+            } else {
+                Routing.Error.fromValue(res)?.takeIf { it != Routing.Error.NONE }
+            }
+    }
 
     /**
-     * Some other device-reported routing error.
+     * Some other device-reported routing error, including `GOT_NAK`.
      *
      * @param routingError the wire [Routing.Error] enum value
      */
@@ -451,3 +467,6 @@ public sealed class AdminResultException(message: String) : Exception(message) {
     public class RoutingFailed(public val error: Routing.Error) :
         AdminResultException("Routing error: ${error.name}")
 }
+
+private const val ERRNO_UNKNOWN = 32
+private const val ERRNO_SHOULD_RELEASE = 35

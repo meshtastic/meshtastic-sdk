@@ -2282,6 +2282,7 @@ public final class org/meshtastic/sdk/RoutingApi$DefaultImpls {
 
 public final class org/meshtastic/sdk/RoutingErrorsKt {
 	public static final fun actionableMessage (Lorg/meshtastic/proto/Routing$Error;)Ljava/lang/String;
+	public static final fun getRoutingError (Lorg/meshtastic/sdk/SendFailure;)Lorg/meshtastic/proto/Routing$Error;
 	public static final fun humanMessage (Lorg/meshtastic/sdk/SendFailure;)Ljava/lang/String;
 	public static final fun suggestedAction (Lorg/meshtastic/proto/Routing$Error;)Ljava/lang/String;
 }
@@ -2398,6 +2399,7 @@ public final class org/meshtastic/sdk/SendFailure$QueueRejected : org/meshtastic
 	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SendFailure$QueueRejected;IILjava/lang/Object;)Lorg/meshtastic/sdk/SendFailure$QueueRejected;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getRes ()I
+	public final fun getRoutingError ()Lorg/meshtastic/proto/Routing$Error;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
