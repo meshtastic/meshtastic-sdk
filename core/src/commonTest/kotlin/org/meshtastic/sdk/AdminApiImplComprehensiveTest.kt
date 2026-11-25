@@ -1870,6 +1870,7 @@ class AdminApiImplComprehensiveTest {
             linkDropsOnRestartCommands = bluetoothLink,
         )
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(storageProvider)
             .autoSyncTimeOnConnect(false)

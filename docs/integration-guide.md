@@ -53,10 +53,10 @@ val client = RadioClient.Builder()
     .storage(SqlDelightStorageProvider(baseDir = "/var/data"))
     .build()
 
-client.connect()   // throws MeshtasticException on failure
+client.connect()   // returns at Ready; throws MeshtasticException once the client is Failed
 ```
 
-`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). Pass `.autoReconnect(AutoReconnectConfig())` for the engine to reconnect after a drop.
+`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). The engine reconnects after a recoverable drop by default, and a recoverable failure of the first connect is retried too, so `connect()` can stay suspended while the radio is unreachable. Bound it with `AutoReconnectConfig(maxAttempts = n)` or a `withTimeout`, or pass `.autoReconnect(AutoReconnectConfig.Disabled)` when the host owns reconnect policy.
 
 ## 3. Per-transport setup
 

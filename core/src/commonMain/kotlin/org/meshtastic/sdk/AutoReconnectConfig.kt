@@ -16,9 +16,8 @@ import kotlin.time.Duration.Companion.seconds
  * Configure on the [RadioClient.Builder] via
  * [autoReconnect(...)][RadioClient.Builder.autoReconnect].
  *
- * **Default: [Disabled].** The **1.0 release will flip the default to `enabled = true`**; pin
- * a value explicitly here if you want today's "host owns reconnect policy" behaviour to survive
- * that bump.
+ * **Default: enabled.** A [RadioClient.Builder] reconnects with `AutoReconnectConfig()` unless given
+ * another config; pass [Disabled] when the host owns reconnect policy.
  *
  * With the supervisor on, a transport drop, a failed first connect, a handshake timeout, the
  * liveness watchdog and a `FromRadio.rebooted` all lead to [ConnectionState.Reconnecting] and a new
@@ -78,10 +77,7 @@ public data class AutoReconnectConfig(
 
     public companion object {
         /**
-         * Default: auto-reconnect off; the host application owns reconnect policy.
-         *
-         * **Note:** the 1.0 release will flip the default to an enabled config. Pin
-         * [Disabled] here explicitly if you want today's behaviour to survive the bump.
+         * Auto-reconnect off; the host application owns reconnect policy.
          */
         public val Disabled: AutoReconnectConfig = AutoReconnectConfig(enabled = false)
     }

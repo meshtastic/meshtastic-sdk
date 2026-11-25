@@ -32,6 +32,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -100,6 +101,23 @@ class SdkOwnedReconnectTest {
         drain()
         val failed = assertIs<ConnectionState.Failed>(client.connection.value)
         assertIs<MeshtasticException.HandshakeTimeout>(failed.cause)
+    }
+
+    // Regression: the builder default reverting to Disabled leaves a dropped link dead, unlike every shipping client.
+    @Test
+    fun aClientBuiltWithoutAReconnectConfigReconnectsAfterALinkDrop() = runTest {
+        val link = ScriptLink("a", mutableListOf(), { currentTime })
+        val client = buildClient(link, config = null)
+        client.connect()
+
+        link.drop()
+        runCurrent()
+
+        val state = assertIs<ConnectionState.Reconnecting>(client.connection.value)
+        assertEquals(1, state.attempt)
+        val retryAt = assertNotNull(state.retryAt)
+        val waitMs = (retryAt - Instant.fromEpochMilliseconds(currentTime)).inWholeMilliseconds
+        assertTrue(waitMs in 800..1_200, "initialBackoff 1 s with jitter 0.2, was $waitMs ms")
     }
 
     @Test
@@ -704,7 +722,7 @@ class SdkOwnedReconnectTest {
 
     private fun TestScope.buildClient(
         link: ScriptLink,
-        config: AutoReconnectConfig,
+        config: AutoReconnectConfig?,
         provider: RadioTransportProvider? = null,
         sessionCapacity: Int? = null,
     ): RadioClient = RadioClient.Builder()
@@ -717,7 +735,7 @@ class SdkOwnedReconnectTest {
         )
         .coroutineContext(backgroundScope.coroutineContext)
         .autoSyncTimeOnConnect(false)
-        .autoReconnect(config)
+        .apply { config?.let { autoReconnect(it) } }
         .apply { sessionCapacity?.let { sessionReceive(it) } }
         .build()
 

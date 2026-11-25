@@ -27,6 +27,7 @@ import org.meshtastic.cli.BaseCommand
 import org.meshtastic.cli.internal.ExitCodes
 import org.meshtastic.cli.internal.Output
 import org.meshtastic.cli.internal.ProbeTimings
+import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.RadioClient
@@ -292,6 +293,7 @@ private suspend fun runProbeLoop(
             return@repeat
         }
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(SqlDelightStorageProvider(baseDir = ""))
             .apply { if (skipNodeDb) skipNodeDb(true) }

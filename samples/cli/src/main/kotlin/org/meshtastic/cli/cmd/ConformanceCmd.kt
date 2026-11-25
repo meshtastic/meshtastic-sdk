@@ -21,6 +21,7 @@ import org.meshtastic.cli.conformance.Scenarios
 import org.meshtastic.cli.conformance.Transcript
 import org.meshtastic.cli.internal.ExitCodes
 import org.meshtastic.cli.internal.openTransport
+import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
@@ -185,6 +186,7 @@ internal class ConformanceCmd : BaseCommand(name = "conformance") {
         val baseDir = Files.createTempDirectory("cli-conformance-").toAbsolutePath().toString()
         val opened = openTransport(tx.transport)
         return RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(opened.transport)
             .storage(SqlDelightStorageProvider(baseDir = baseDir))
             // The conformance harness owns the connect lifecycle and verifies behaviour

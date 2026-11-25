@@ -560,6 +560,7 @@ class HandshakeParityTest {
         sessionReceive: Boolean = false,
         configure: RadioClient.Builder.() -> Unit = {},
     ): RadioClient = RadioClient.Builder()
+        .autoReconnect(AutoReconnectConfig.Disabled)
         .transport(transport)
         .storage(InMemoryStorageProvider())
         .autoSyncTimeOnConnect(false)

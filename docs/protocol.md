@@ -57,7 +57,7 @@ Firmware closes a TCP connection after 15 minutes (`TCP_IDLE_TIMEOUT_MS` in `fir
 
 When it fires, firmware closes the socket, the transport reads end-of-stream and reports `TransportState.Error(recoverable = true)`, and the session ends.
 
-The SDK sends a `ToRadio.heartbeat` every 30 s once the session is `Connected` (§16), so an SDK session over TCP never reaches the timeout. Reconnecting after any drop is off by default: `RadioClient.Builder.autoReconnect(...)` turns on the engine's backoff supervisor, and [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md#reconnecting) covers reconnecting with and without it.
+The SDK sends a `ToRadio.heartbeat` every 30 s once the session is `Connected` (§16), so an SDK session over TCP never reaches the timeout. Reconnecting after a recoverable drop is on by default (the engine's backoff supervisor) unless the builder gets `AutoReconnectConfig.Disabled`; a non-recoverable transport error ends in `ConnectionState.Failed` instead, and [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md#reconnecting) covers reconnecting with and without it.
 
 ---
 

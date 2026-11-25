@@ -257,6 +257,7 @@ class LockdownStatusEventTest {
             }
         }
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
@@ -294,6 +295,7 @@ class LockdownStatusEventTest {
             }
         }
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)

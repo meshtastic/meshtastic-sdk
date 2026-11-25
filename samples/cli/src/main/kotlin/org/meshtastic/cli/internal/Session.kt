@@ -9,6 +9,7 @@ package org.meshtastic.cli.internal
 
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
+import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.TransportTarget
@@ -51,6 +52,7 @@ internal suspend fun connect(ref: TransportTarget, timeoutMs: Long, out: Output)
     }
 
     val client = RadioClient.Builder()
+        .autoReconnect(AutoReconnectConfig.Disabled)
         .transport(opened.transport)
         .storage(SqlDelightStorageProvider(baseDir = ""))
         .build()

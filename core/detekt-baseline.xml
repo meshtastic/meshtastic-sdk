@@ -74,6 +74,7 @@
     <ID>LargeClass:MeshEngine.kt:MeshEngine</ID>
     <ID>LargeClass:MeshEngineEdgeCasesTest.kt:MeshEngineEdgeCasesTest</ID>
     <ID>LargeClass:P2AdminRpcTest.kt:P2AdminRpcTest</ID>
+    <ID>LargeClass:SdkOwnedReconnectTest.kt:SdkOwnedReconnectTest</ID>
     <ID>LargeClass:StoreForwardProtocolTest.kt:StoreForwardProtocolTest</ID>
     <ID>LargeClass:XModemMachineTest.kt:XModemMachineTest</ID>
     <ID>LongMethod:ConfigBuildersTest.kt:ConfigBuildersTest$@Test fun configBuildersAllowOutOfRangeScalarValuesWithoutCrashing</ID>

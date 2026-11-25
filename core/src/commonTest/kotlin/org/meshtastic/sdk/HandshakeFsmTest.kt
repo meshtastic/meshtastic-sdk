@@ -47,6 +47,7 @@ import kotlin.test.assertTrue
 class HandshakeFsmTest {
 
     private fun TestScope.buildClient(transport: RadioTransport): RadioClient = RadioClient.Builder()
+        .autoReconnect(AutoReconnectConfig.Disabled)
         .transport(transport)
         .storage(InMemoryStorageProvider())
         .coroutineContext(backgroundScope.coroutineContext)

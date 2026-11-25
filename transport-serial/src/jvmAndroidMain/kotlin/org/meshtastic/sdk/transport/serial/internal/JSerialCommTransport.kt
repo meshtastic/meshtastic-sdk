@@ -69,7 +69,14 @@ internal class JSerialCommTransport(
     private val cleanedUp = AtomicBoolean(false)
 
     override suspend fun connect() {
-        check(!cleanedUp.get()) { "JSerialCommTransport has been disconnected; construct a new instance" }
+        if (cleanedUp.get()) {
+            // Non-recoverable, so a reconnect over a reused instance ends in Failed instead of retrying forever.
+            val e = MeshtasticException.Transport(
+                "JSerialCommTransport is single-use; supply a new one per attempt with a RadioTransportProvider",
+            )
+            _state.value = TransportState.Error(e, recoverable = false)
+            throw e
+        }
         _state.value = TransportState.Connecting
         logger.log(LogLevel.DEBUG, TAG, "Connecting to ${port.systemPortName} at $baudRate baud", null)
         try {

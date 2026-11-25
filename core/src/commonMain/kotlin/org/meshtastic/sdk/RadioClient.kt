@@ -898,7 +898,7 @@ public class RadioClient internal constructor(
         private var sendAckTimeout: Duration = 30.seconds
         private var rpcTimeout: Duration = 30.seconds
         private var presenceTimeout: Duration = 2.hours
-        private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
+        private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig()
         private var skipNodeDb: Boolean = false
         private var sessionReceiveCapacity: Int? = null
 
@@ -907,6 +907,9 @@ public class RadioClient internal constructor(
          *
          * Intended for testing (e.g., `FakeRadioTransport`) and for transport modules that
          * construct their own transport before passing to the builder.
+         *
+         * Every reconnect attempt reuses this instance, so it must be able to connect again after a
+         * failure or disconnect. The serial transports cannot; give them a [RadioTransportProvider].
          *
          * ```kotlin
          * val fake = FakeRadioTransport(identity = TransportIdentity("fake:test"))
@@ -1085,9 +1088,8 @@ public class RadioClient internal constructor(
          * Configure the engine's built-in auto-reconnect supervisor.
          *
          * Convenience overload that constructs an [AutoReconnectConfig] from the supplied
-         * tunables. **Default: disabled.** The 1.0 release will flip the default to
-         * `enabled = true`; pin a value here if you want today's "host owns reconnect"
-         * behaviour to survive that bump.
+         * tunables. **Default: enabled** with these tunables. Pass `enabled = false`, or
+         * [AutoReconnectConfig.Disabled] to the other overload, when the host owns reconnect policy.
          */
         public fun autoReconnect(
             enabled: Boolean = true,
