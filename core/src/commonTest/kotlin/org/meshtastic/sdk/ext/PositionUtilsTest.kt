@@ -36,6 +36,17 @@ class PositionUtilsTest {
         assertClose(90.0, PositionUtils.bearing(0.0, 0.0, 0.0, 1.0), 0.0001)
         assertClose(0.0, PositionUtils.bearing(0.0, 0.0, 1.0, 0.0), 0.0001)
     }
+
+    // Catches a changed earth radius: 6_371_000 * pi / 180 m per degree on the mean sphere.
+    @Test fun oneDegreeOfEquatorOnTheMeanSphere() {
+        assertClose(111_194.93, PositionUtils.distance(0.0, 0.0, 0.0, 1.0), 0.01)
+    }
+
+    // Catches losing the + 360 normalization: atan2 returns -90 for due west.
+    @Test fun bearingIsNormalizedToZeroThrough360() {
+        assertClose(180.0, PositionUtils.bearing(0.0, 0.0, -1.0, 0.0), 0.0001)
+        assertClose(270.0, PositionUtils.bearing(0.0, 0.0, 0.0, -1.0), 0.0001)
+    }
 }
 
 private fun assertClose(expected: Double, actual: Double, tolerance: Double) {
