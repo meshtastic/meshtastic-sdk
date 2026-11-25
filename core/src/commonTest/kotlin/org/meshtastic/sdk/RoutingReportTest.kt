@@ -181,7 +181,7 @@ class RoutingReportTest {
             .sessionReceive()
             .build()
         val session = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { session += it } }
+        backgroundScope.launch { client.sessionEvents.collect { session += it } }
         val reports = mutableListOf<MeshEvent.RoutingReport>()
         backgroundScope.launch { client.events.collect { if (it is MeshEvent.RoutingReport) reports += it } }
         client.connect()

@@ -130,7 +130,7 @@ class LockdownStatusEventTest {
             }
         }
         backgroundScope.launch {
-            assertNotNull(client.sessionEvents).collect { sessionEvents.add(it) }
+            client.sessionEvents.collect { sessionEvents.add(it) }
         }
         val connecting = async { client.connect() }
         runCurrent()
@@ -360,6 +360,39 @@ class LockdownStatusEventTest {
             transportError.error.message?.contains("Lockdown write timed out") == true,
             "Expected lockdown write diagnostic, got: ${transportError.error.message}",
         )
+    }
+
+    // Regression: the disconnect path must close a locked session with Ended, not leave it open.
+    @Test
+    fun aLockedSessionThatIsDisconnectedEndsWithEnded() = runTest {
+        val fake = FakeRadioTransport(TransportIdentity("fake:locked-disconnect"), autoHandshake = true)
+        val transport = object : RadioTransport by fake {
+            override suspend fun send(frame: Frame) {
+                val request = runCatching { ToRadio.ADAPTER.decode(frame.bytes.substring(4)) }.getOrNull()
+                fake.send(frame)
+                if (request?.want_config_id == 69420) fake.reportLockdown(LockdownStatus.State.LOCKED)
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .sessionReceive()
+            .build()
+        val events = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
+        val connecting = async { runCatching { client.connect() } }
+        runCurrent()
+
+        client.disconnect()
+        runCurrent()
+
+        val kinds = events.map { it::class }
+        assertEquals(listOf(RadioSessionEvent.Lockdown::class, RadioSessionEvent.Ended::class), kinds)
+        val lockdown = assertIs<RadioSessionEvent.Lockdown>(events[0])
+        assertEquals(lockdown.sessionId, assertIs<RadioSessionEvent.Ended>(events[1]).sessionId)
+        connecting.await()
     }
 
     private fun FakeRadioTransport.reportLockdown(state: LockdownStatus.State) {

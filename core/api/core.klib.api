@@ -1751,6 +1751,22 @@ sealed interface org.meshtastic.sdk/TransportTarget { // org.meshtastic.sdk/Tran
     }
 }
 
+final class <#A: out kotlin/Any?> org.meshtastic.sdk/SessionScoped { // org.meshtastic.sdk/SessionScoped|null[0]
+    constructor <init>(kotlin/Long, #A) // org.meshtastic.sdk/SessionScoped.<init>|<init>(kotlin.Long;1:0){}[0]
+
+    final val sessionId // org.meshtastic.sdk/SessionScoped.sessionId|{}sessionId[0]
+        final fun <get-sessionId>(): kotlin/Long // org.meshtastic.sdk/SessionScoped.sessionId.<get-sessionId>|<get-sessionId>(){}[0]
+    final val value // org.meshtastic.sdk/SessionScoped.value|{}value[0]
+        final fun <get-value>(): #A // org.meshtastic.sdk/SessionScoped.value.<get-value>|<get-value>(){}[0]
+
+    final fun component1(): kotlin/Long // org.meshtastic.sdk/SessionScoped.component1|component1(){}[0]
+    final fun component2(): #A // org.meshtastic.sdk/SessionScoped.component2|component2(){}[0]
+    final fun copy(kotlin/Long = ..., #A = ...): org.meshtastic.sdk/SessionScoped<#A> // org.meshtastic.sdk/SessionScoped.copy|copy(kotlin.Long;1:0){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/SessionScoped.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/SessionScoped.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/SessionScoped.toString|toString(){}[0]
+}
+
 final class org.meshtastic.sdk/AutoReconnectConfig { // org.meshtastic.sdk/AutoReconnectConfig|null[0]
     constructor <init>(kotlin/Boolean = ..., kotlin.time/Duration = ..., kotlin.time/Duration = ..., kotlin/Int? = ..., kotlin/Double = ..., kotlin/Double = ..., kotlin.time/Duration = ..., kotlin/Int? = ...) // org.meshtastic.sdk/AutoReconnectConfig.<init>|<init>(kotlin.Boolean;kotlin.time.Duration;kotlin.time.Duration;kotlin.Int?;kotlin.Double;kotlin.Double;kotlin.time.Duration;kotlin.Int?){}[0]
 
@@ -2341,9 +2357,9 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
     final val connection // org.meshtastic.sdk/RadioClient.connection|{}connection[0]
         final fun <get-connection>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/ConnectionState> // org.meshtastic.sdk/RadioClient.connection.<get-connection>|<get-connection>(){}[0]
     final val deviceLogs // org.meshtastic.sdk/RadioClient.deviceLogs|{}deviceLogs[0]
-        final fun <get-deviceLogs>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/LogRecord> // org.meshtastic.sdk/RadioClient.deviceLogs.<get-deviceLogs>|<get-deviceLogs>(){}[0]
+        final fun <get-deviceLogs>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/SessionScoped<org.meshtastic.proto/LogRecord>> // org.meshtastic.sdk/RadioClient.deviceLogs.<get-deviceLogs>|<get-deviceLogs>(){}[0]
     final val displayFrames // org.meshtastic.sdk/RadioClient.displayFrames|{}displayFrames[0]
-        final fun <get-displayFrames>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/DisplayMirrorFrame> // org.meshtastic.sdk/RadioClient.displayFrames.<get-displayFrames>|<get-displayFrames>(){}[0]
+        final fun <get-displayFrames>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/SessionScoped<org.meshtastic.sdk/DisplayMirrorFrame>> // org.meshtastic.sdk/RadioClient.displayFrames.<get-displayFrames>|<get-displayFrames>(){}[0]
     final val displayPalette // org.meshtastic.sdk/RadioClient.displayPalette|{}displayPalette[0]
         final fun <get-displayPalette>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.proto/DisplayPalette?> // org.meshtastic.sdk/RadioClient.displayPalette.<get-displayPalette>|<get-displayPalette>(){}[0]
     final val events // org.meshtastic.sdk/RadioClient.events|{}events[0]
@@ -2357,7 +2373,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
     final val nodes // org.meshtastic.sdk/RadioClient.nodes|{}nodes[0]
         final fun <get-nodes>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/NodeChange> // org.meshtastic.sdk/RadioClient.nodes.<get-nodes>|<get-nodes>(){}[0]
     final val outboundPackets // org.meshtastic.sdk/RadioClient.outboundPackets|{}outboundPackets[0]
-        final fun <get-outboundPackets>(): kotlinx.coroutines.flow/Flow<org.meshtastic.proto/MeshPacket> // org.meshtastic.sdk/RadioClient.outboundPackets.<get-outboundPackets>|<get-outboundPackets>(){}[0]
+        final fun <get-outboundPackets>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/SessionScoped<org.meshtastic.proto/MeshPacket>> // org.meshtastic.sdk/RadioClient.outboundPackets.<get-outboundPackets>|<get-outboundPackets>(){}[0]
     final val ownNode // org.meshtastic.sdk/RadioClient.ownNode|{}ownNode[0]
         final fun <get-ownNode>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.proto/NodeInfo?> // org.meshtastic.sdk/RadioClient.ownNode.<get-ownNode>|<get-ownNode>(){}[0]
     final val packets // org.meshtastic.sdk/RadioClient.packets|{}packets[0]
@@ -2367,7 +2383,7 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
     final val routing // org.meshtastic.sdk/RadioClient.routing|{}routing[0]
         final fun <get-routing>(): org.meshtastic.sdk/RoutingApi // org.meshtastic.sdk/RadioClient.routing.<get-routing>|<get-routing>(){}[0]
     final val sessionEvents // org.meshtastic.sdk/RadioClient.sessionEvents|{}sessionEvents[0]
-        final fun <get-sessionEvents>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/RadioSessionEvent>? // org.meshtastic.sdk/RadioClient.sessionEvents.<get-sessionEvents>|<get-sessionEvents>(){}[0]
+        final fun <get-sessionEvents>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/RadioSessionEvent> // org.meshtastic.sdk/RadioClient.sessionEvents.<get-sessionEvents>|<get-sessionEvents>(){}[0]
     final val storeForward // org.meshtastic.sdk/RadioClient.storeForward|{}storeForward[0]
         final fun <get-storeForward>(): org.meshtastic.sdk/StoreForwardApi // org.meshtastic.sdk/RadioClient.storeForward.<get-storeForward>|<get-storeForward>(){}[0]
     final val telemetry // org.meshtastic.sdk/RadioClient.telemetry|{}telemetry[0]

@@ -228,7 +228,7 @@ class LiveRenumberTest {
             .sessionReceive()
             .build()
         val events = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
         client.connect()
         runCurrent()
         return Triple(transport, client, events)

@@ -2505,6 +2505,19 @@ public final class org/meshtastic/sdk/SessionPasskey {
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/SessionScoped {
+	public fun <init> (JLjava/lang/Object;)V
+	public final fun component1 ()J
+	public final fun component2 ()Ljava/lang/Object;
+	public final fun copy (JLjava/lang/Object;)Lorg/meshtastic/sdk/SessionScoped;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/SessionScoped;JLjava/lang/Object;ILjava/lang/Object;)Lorg/meshtastic/sdk/SessionScoped;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSessionId ()J
+	public final fun getValue ()Ljava/lang/Object;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/SfppHash {
 	public static final field INSTANCE Lorg/meshtastic/sdk/SfppHash;
 	public final fun compute ([BIII)[B
