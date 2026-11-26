@@ -32,10 +32,12 @@ private data class FirmwareRow(
     val licensed: Boolean,
     val preset: ModemPreset,
     val overrideSlot: Int,
+    val unitChannel: Float = 0f,
+    val bandSplit: Float = 0f,
 )
 
 // Transcribed from firmware RadioInterface.cpp regions[] and its RegionProfile
-// definitions at commit 68f47efd.
+// definitions at commit 68f47efd, with JP updated for ARIB STD-T108 (firmware#11559).
 private val FirmwareCommit68f47efdRows = listOf(
     FirmwareRow(RegionCode.US, 902.0f, 928.0f, 100f, 30, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
     FirmwareRow(RegionCode.EU_433, 433.0f, 434.0f, 10f, 10, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
@@ -43,7 +45,23 @@ private val FirmwareCommit68f47efdRows = listOf(
     FirmwareRow(RegionCode.EU_866, 865.6f, 867.6f, 2.5f, 27, false, false, 0.4f, 0.0375f, false, false, ModemPreset.LITE_FAST, 0),
     FirmwareRow(RegionCode.EU_N_868, 869.4f, 869.65f, 10f, 27, false, false, 0f, 0.0104f, true, false, ModemPreset.NARROW_SLOW, 1),
     FirmwareRow(RegionCode.CN, 470.0f, 510.0f, 100f, 19, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
-    FirmwareRow(RegionCode.JP, 920.5f, 923.5f, 100f, 13, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
+    FirmwareRow(
+        RegionCode.JP,
+        920.5f,
+        923.5f,
+        100f,
+        13,
+        false,
+        false,
+        0f,
+        0f,
+        true,
+        false,
+        ModemPreset.LONG_FAST,
+        0,
+        0.2f,
+        922.3f,
+    ),
     FirmwareRow(RegionCode.ANZ, 915.0f, 928.0f, 100f, 30, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
     FirmwareRow(RegionCode.ANZ_433, 433.05f, 434.79f, 100f, 14, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
     FirmwareRow(RegionCode.RU, 868.7f, 869.2f, 100f, 20, false, false, 0f, 0f, true, false, ModemPreset.LONG_FAST, 0),
@@ -118,6 +136,8 @@ class LoRaFrequencyTest {
             assertEquals(expected.licensed, actual.licensedOnly, m)
             assertEquals(expected.preset, actual.defaultPreset, m)
             assertEquals(expected.overrideSlot, actual.overrideSlot, m)
+            assertEquals(expected.unitChannel, actual.unitChannelMHz, m)
+            assertEquals(expected.bandSplit, actual.bandSplitMHz, m)
         }
     }
 
@@ -363,5 +383,176 @@ class LoRaFrequencyTest {
         val slot = LoRaFrequency.resolveSlot(region, 10, "name")
         assertTrue(slot != null && slot in 1..10)
         assertNull(LoRaFrequency.resolveSlot(region, 0, "name"))
+    }
+
+    @Test
+    fun jpNarrowAndLitePresetsUseFifteen200kHzUnitChannels() {
+        val jp = LoRaRegionInfo.forRegion(RegionCode.JP)
+        for (preset in listOf(ModemPreset.NARROW_SLOW, ModemPreset.LITE_FAST)) {
+            val bwKHz = preset.modemParams().bandwidthKHz
+            assertMHz(0.2f, LoRaFrequency.slotWidthMHz(jp, bwKHz))
+            val plan = LoRaFrequency.plan(config(region = RegionCode.JP, preset = preset, channelNum = 1), "")
+            assertEquals(15, plan.numChannels)
+            assertMHz(920.6f, LoRaFrequency.centerFrequencyMHz(jp, bwKHz, 1))
+            assertMHz(920.8f, LoRaFrequency.centerFrequencyMHz(jp, bwKHz, 2))
+            assertMHz(922.2f, LoRaFrequency.centerFrequencyMHz(jp, bwKHz, 9))
+            assertMHz(922.4f, LoRaFrequency.centerFrequencyMHz(jp, bwKHz, 10))
+            assertMHz(923.4f, LoRaFrequency.centerFrequencyMHz(jp, bwKHz, 15))
+        }
+
+        val narrowSlow = LoRaFrequency.plan(
+            config(region = RegionCode.JP, preset = ModemPreset.NARROW_SLOW),
+            "NarrowSlow",
+        )
+        assertEquals(2, narrowSlow.slot)
+        assertMHz(920.8f, narrowSlow.frequencyMHz)
+
+        val narrowFast = LoRaFrequency.plan(
+            config(region = RegionCode.JP, preset = ModemPreset.NARROW_FAST),
+            "NarrowFast",
+        )
+        assertEquals(11, narrowFast.slot)
+        assertMHz(922.6f, narrowFast.frequencyMHz)
+
+        val liteFast = LoRaFrequency.plan(config(region = RegionCode.JP, preset = ModemPreset.LITE_FAST), "LiteFast")
+        assertEquals(5, liteFast.slot)
+        assertMHz(921.4f, liteFast.frequencyMHz)
+    }
+
+    @Test
+    fun jp250kHzPresetsBondTwoUnitChannelsWithoutCrossing922_3MHz() {
+        val jp = LoRaRegionInfo.forRegion(RegionCode.JP)
+        assertMHz(0.4f, LoRaFrequency.slotWidthMHz(jp, 250f))
+        val plan = LoRaFrequency.plan(config(region = RegionCode.JP, preset = ModemPreset.LONG_FAST), "LongFast")
+        assertEquals(7, plan.numChannels)
+        assertEquals(6, plan.slot)
+        assertMHz(922.9f, plan.frequencyMHz)
+        val expected = listOf(920.7f, 921.1f, 921.5f, 921.9f, 922.5f, 922.9f, 923.3f)
+        expected.forEachIndexed { index, freq ->
+            assertMHz(freq, LoRaFrequency.centerFrequencyMHz(jp, 250f, index + 1), "slot ${index + 1}")
+        }
+    }
+
+    @Test
+    fun jp500kHzTurboPresetsBondThreeUnitChannels() {
+        val jp = LoRaRegionInfo.forRegion(RegionCode.JP)
+        assertMHz(0.6f, LoRaFrequency.slotWidthMHz(jp, 500f))
+        val plan = LoRaFrequency.plan(config(region = RegionCode.JP, preset = ModemPreset.SHORT_TURBO), "ShortTurbo")
+        assertEquals(5, plan.numChannels)
+        assertEquals(1, plan.slot)
+        assertMHz(920.8f, plan.frequencyMHz)
+        val expected = listOf(920.8f, 921.4f, 922.0f, 922.6f, 923.2f)
+        expected.forEachIndexed { index, freq ->
+            assertMHz(freq, LoRaFrequency.centerFrequencyMHz(jp, 500f, index + 1), "slot ${index + 1}")
+        }
+    }
+
+    @Test
+    fun jpCustomBandwidthsAndSlotBoundsFollowUnitChannelGrid() {
+        val jp = LoRaRegionInfo.forRegion(RegionCode.JP)
+
+        val bw203 = LoRaFrequency.plan(config(region = RegionCode.JP, usePreset = false, bandwidth = 200), "Custom")
+        assertEquals(7, bw203.numChannels)
+        assertMHz(920.7f, LoRaFrequency.centerFrequencyMHz(jp, bw203.bandwidthKHz, 1))
+        assertMHz(922.5f, LoRaFrequency.centerFrequencyMHz(jp, bw203.bandwidthKHz, 5))
+
+        val bw406 = LoRaFrequency.plan(config(region = RegionCode.JP, usePreset = false, bandwidth = 400), "Custom")
+        assertEquals(5, bw406.numChannels)
+        assertMHz(920.8f, LoRaFrequency.centerFrequencyMHz(jp, bw406.bandwidthKHz, 1))
+        assertMHz(922.6f, LoRaFrequency.centerFrequencyMHz(jp, bw406.bandwidthKHz, 4))
+
+        val tooWide = LoRaFrequency.plan(config(region = RegionCode.JP, usePreset = false, bandwidth = 2000), "Custom")
+        assertEquals(250f, tooWide.bandwidthKHz)
+        assertEquals(7, tooWide.numChannels)
+
+        assertMHz(920.7f, LoRaFrequency.centerFrequencyMHz(jp, 250f, 0))
+
+        val jpPresets = listOf(
+            ModemPreset.NARROW_SLOW,
+            ModemPreset.LITE_FAST,
+            ModemPreset.LONG_FAST,
+            ModemPreset.SHORT_TURBO,
+        )
+        for (preset in jpPresets) {
+            val bwKHz = preset.modemParams().bandwidthKHz
+            val halfBw = bwKHz / 2000f
+            val count = LoRaFrequency.numChannels(jp, bwKHz)
+            var prevUpper = 0f
+            for (slot in 1..count) {
+                val center = LoRaFrequency.centerFrequencyMHz(jp, bwKHz, slot)
+                val lo = center - halfBw
+                val hi = center + halfBw
+                assertTrue(lo >= jp.freqStartMHz - 1e-4f, "$preset slot $slot lower edge $lo < ${jp.freqStartMHz}")
+                assertTrue(hi <= jp.freqEndMHz + 1e-4f, "$preset slot $slot upper edge $hi > ${jp.freqEndMHz}")
+                if (slot > 1) {
+                    assertTrue(lo >= prevUpper - 1e-4f, "$preset slot $slot overlaps previous ($lo < $prevUpper)")
+                }
+                assertTrue(
+                    hi <= jp.bandSplitMHz + 1e-4f || lo >= jp.bandSplitMHz - 1e-4f,
+                    "$preset slot $slot [$lo, $hi] straddles ${jp.bandSplitMHz}",
+                )
+                prevUpper = hi
+            }
+        }
+    }
+
+    @Test
+    fun jpFallsBackToLegacyUnbondedGridOnPreAribFirmware() {
+        for (ver in listOf("2.8.2.d5f1619", "2.8.2", "2.8.1.8e6a88d", "2.7.18")) {
+            val region = LoRaRegionInfo.forRegion(RegionCode.JP, ver)
+            assertEquals(0f, region.unitChannelMHz, ver)
+            assertEquals(0f, region.bandSplitMHz, ver)
+
+            val longFast = LoRaFrequency.plan(
+                config(region = RegionCode.JP, preset = ModemPreset.LONG_FAST),
+                "LongFast",
+                ver,
+            )
+            assertEquals(12, longFast.numChannels, ver)
+            assertEquals(12, longFast.slot, ver)
+            assertMHz(923.375f, longFast.frequencyMHz, ver)
+
+            val narrowSlow = LoRaFrequency.plan(
+                config(region = RegionCode.JP, preset = ModemPreset.NARROW_SLOW, channelNum = 2),
+                "NarrowSlow",
+                ver,
+            )
+            assertEquals(48, narrowSlow.numChannels, ver)
+            assertEquals(2, narrowSlow.slot, ver)
+            assertMHz(920.59375f, narrowSlow.frequencyMHz, ver)
+
+            val shortTurbo = LoRaFrequency.plan(
+                config(region = RegionCode.JP, preset = ModemPreset.SHORT_TURBO),
+                "ShortTurbo",
+                ver,
+            )
+            assertEquals(6, shortTurbo.numChannels, ver)
+            assertEquals(6, shortTurbo.slot, ver)
+            assertMHz(923.25f, shortTurbo.frequencyMHz, ver)
+        }
+
+        for (ver in listOf("2.8.3.abcdef0", "2.8.3", "2.9.0", "", null)) {
+            val region = LoRaRegionInfo.forRegion(RegionCode.JP, ver)
+            assertEquals(0.2f, region.unitChannelMHz, "$ver")
+            assertEquals(922.3f, region.bandSplitMHz, "$ver")
+
+            val longFast = LoRaFrequency.plan(
+                config(region = RegionCode.JP, preset = ModemPreset.LONG_FAST),
+                "LongFast",
+                ver,
+            )
+            assertEquals(7, longFast.numChannels, "$ver")
+            assertEquals(6, longFast.slot, "$ver")
+            assertMHz(922.9f, longFast.frequencyMHz, "$ver")
+
+            val narrowSlow = LoRaFrequency.plan(
+                config(region = RegionCode.JP, preset = ModemPreset.NARROW_SLOW),
+                "NarrowSlow",
+                ver,
+            )
+            assertEquals(15, narrowSlow.numChannels, "$ver")
+            assertEquals(2, narrowSlow.slot, "$ver")
+            assertMHz(920.8f, narrowSlow.frequencyMHz, "$ver")
+        }
     }
 }

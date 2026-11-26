@@ -813,10 +813,11 @@ public data class LoRaRegionInfo(
     val powerLimitDbm: Int, val freqSwitching: Boolean, val wideLora: Boolean, val spacingMHz: Float,
     val paddingMHz: Float, val audioPermitted: Boolean, val licensedOnly: Boolean,
     val defaultPreset: ModemPreset, val overrideSlot: Int,
+    val unitChannelMHz: Float = 0f, val bandSplitMHz: Float = 0f,
 ) {
     companion object {
         val all: List<LoRaRegionInfo>                      // firmware order, UNSET last
-        fun forRegion(code: RegionCode): LoRaRegionInfo    // no row: the UNSET row, as firmware does
+        fun forRegion(code: RegionCode, firmwareVersion: String? = null): LoRaRegionInfo    // no row: the UNSET row, as firmware does
     }
 }
 
@@ -830,7 +831,7 @@ public object LoRaFrequency {
     fun resolveSlot(region: LoRaRegionInfo, numChannels: Int, channelName: String, channelNum: Int = 0): Int?
     fun hashedChannelName(channelName: String, usePreset: Boolean, preset: ModemPreset): String
     fun centerFrequencyMHz(region: LoRaRegionInfo, bandwidthKHz: Float, slot: Int, frequencyOffsetMHz: Float = 0f): Float
-    fun plan(config: Config.LoRaConfig, primaryChannelName: String): LoRaFrequencyPlan
+    fun plan(config: Config.LoRaConfig, primaryChannelName: String, firmwareVersion: String? = null): LoRaFrequencyPlan
 }
 
 public data class LoRaFrequencyPlan(
@@ -848,6 +849,7 @@ val plan = LoRaFrequency.plan(lora, primaryChannelName = channel.settings.name)
 - `numChannels` isn't clamped to one. A bandwidth far wider than the band rounds to 0; `plan` avoids that for `use_preset = false` by substituting the region default preset's bandwidth, as firmware does.
 - A preset the region doesn't offer isn't substituted. The device clamps it when the config is applied, so a stored config is already legal.
 - A caller holding region data from elsewhere can build a `LoRaRegionInfo` and pass it to the `LoRaFrequency` functions directly.
+- Pass `firmwareVersion` (from `DeviceCapabilities.firmwareVersion`) to `LoRaRegionInfo.forRegion` or `LoRaFrequency.plan` when connected to a radio so `JP` falls back to the legacy unbonded grid on firmware at or below the pre-ARIB threshold (`2.8.2.d5f1619` placeholder).
 
 ## Storage
 

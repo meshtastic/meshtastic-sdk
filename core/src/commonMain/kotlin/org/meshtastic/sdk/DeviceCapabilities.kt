@@ -41,6 +41,16 @@ public data class DeviceVersion(val versionString: String) : Comparable<DeviceVe
 }
 
 /**
+ * Last firmware release predating the JP ARIB STD-T108 200 kHz unit-channel grid and 922.3 MHz
+ * sub-band split (`meshtastic/firmware#11559`).
+ *
+ * TODO(meshtastic/firmware#11559): Placeholder set to the current alpha release (`2.8.2.d5f1619`).
+ * Replace this with the version string of the last non-ARIB-patched firmware release (whether
+ * alpha or beta, whichever is the latest release before #11559 ships) before merging.
+ */
+internal val LAST_LEGACY_JP_SLOT_PLAN_FIRMWARE: DeviceVersion = DeviceVersion("2.8.2.d5f1619")
+
+/**
  * Firmware capability flags derived from a device's reported firmware version and the modules it
  * reports compiled out.
  *
@@ -92,6 +102,15 @@ public data class DeviceCapabilities(val firmwareVersion: String?, val excludedM
 
     /** ESP32 unified OTA. Since 2.7.18. */
     public val supportsEsp32Ota: Boolean get() = atLeast(V2_7_18)
+
+    /**
+     * JP ARIB STD-T108 200 kHz unit-channel slot grid and 922.3 MHz sub-band split. True for
+     * firmware newer than the last pre-ARIB release (`2.8.2.d5f1619` placeholder).
+     *
+     * @since 0.3.0
+     */
+    public val supportsJpAribSlotPlan: Boolean
+        get() = version != null && version > LAST_LEGACY_JP_SLOT_PLAN_FIRMWARE
 
     private companion object {
         val V2_6_8: DeviceVersion = DeviceVersion("2.6.8")

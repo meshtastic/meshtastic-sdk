@@ -49,6 +49,24 @@ public fun ModemPreset.modemParams(wideLora: Boolean = false): ModemParams = whe
 }
 
 /**
+ * Per-region frequency-slot layout for a given modem bandwidth, mirroring firmware `MeshRadio.h`'s
+ * `RegionInfo::SlotPlan`.
+ */
+private class SlotPlan(
+    val width: Float,
+    val count: Int,
+    val firstCenter: Float,
+    val lowerCount: Int,
+    val upperFirstCenter: Float,
+) {
+    fun centerFreq(slotIndex: Int): Float = if (lowerCount < count && slotIndex >= lowerCount) {
+        upperFirstCenter + (slotIndex - lowerCount).toFloat() * width
+    } else {
+        firstCenter + slotIndex.toFloat() * width
+    }
+}
+
+/**
  * The frequency slot count, default slot and center frequency firmware derives from a LoRa configuration.
  *
  * Mirrors `RadioInterface::frequencySlotCount`, `resolveFrequencySlot` and `applyModemConfig`. All arithmetic is
@@ -79,25 +97,68 @@ public object LoRaFrequency {
         else -> code.toFloat()
     }
 
-    /**
-     * Width of one frequency slot in MHz: the region's spacing, both paddings and the modem bandwidth
-     * ([bandwidthKHz], in kHz).
-     * @since 0.3.0
-     */
-    public fun slotWidthMHz(region: LoRaRegionInfo, bandwidthKHz: Float): Float =
-        region.spacingMHz + region.paddingMHz * 2 + bandwidthKHz / 1000
+    private fun effectivePaddingMHz(region: LoRaRegionInfo, bwMHz: Float): Float =
+        if (region.unitChannelMHz > 0f && bwMHz > 0f) {
+            val numUnits = ((bwMHz / region.unitChannelMHz) * (1f - 1e-6f)).toInt() + 1
+            val slotSpan = numUnits.toFloat() * region.unitChannelMHz
+            if (slotSpan > bwMHz) (slotSpan - bwMHz) * 0.5f else 0f
+        } else {
+            region.paddingMHz
+        }
+
+    private fun slotPlan(region: LoRaRegionInfo, bandwidthKHz: Float): SlotPlan {
+        val bwMHz = bandwidthKHz / 1000f
+        val padding = effectivePaddingMHz(region, bwMHz)
+        val width = region.spacingMHz + padding * 2f + bwMHz
+        val centerOffset = bwMHz * 0.5f + padding
+        val lowerFirst = region.freqStartMHz + centerOffset
+        if (region.region == RegionCode.UNSET || width <= 0f || region.freqEndMHz <= region.freqStartMHz) {
+            return SlotPlan(width, 0, lowerFirst, 0, lowerFirst)
+        }
+        val hasBandSplit = region.bandSplitMHz > region.freqStartMHz && region.bandSplitMHz < region.freqEndMHz
+        if (region.unitChannelMHz > 0f || hasBandSplit) {
+            val countSubBand: (Float, Float) -> Int = { subStart, subEnd ->
+                val span = subEnd - subStart
+                if (span + region.spacingMHz <= 0f) {
+                    0
+                } else {
+                    // Absorb ~1 ULP of float32 endpoint cancellation (e.g. 922.3f - 920.5f).
+                    val tol = minOf(subEnd * 1.5e-7f, width * 0.25f)
+                    (((span + region.spacingMHz + tol) / width) * (1f + 1e-6f)).toInt()
+                }
+            }
+            if (hasBandSplit) {
+                val lowerCount = countSubBand(region.freqStartMHz, region.bandSplitMHz)
+                val upperCount = countSubBand(region.bandSplitMHz, region.freqEndMHz)
+                val upperFirst = region.bandSplitMHz + centerOffset
+                val firstCenter = if (lowerCount > 0 || upperCount == 0) lowerFirst else upperFirst
+                return SlotPlan(width, lowerCount + upperCount, firstCenter, lowerCount, upperFirst)
+            }
+            val count = countSubBand(region.freqStartMHz, region.freqEndMHz)
+            return SlotPlan(width, count, lowerFirst, count, lowerFirst)
+        }
+        val span = region.freqEndMHz - region.freqStartMHz + region.spacingMHz
+        val count = (span / width).roundToInt().coerceAtLeast(0)
+        return SlotPlan(width, count, lowerFirst, count, lowerFirst)
+    }
 
     /**
-     * Number of frequency slots in [region] at [bandwidthKHz], rounded half up as firmware does. Not limited to
-     * at least one: a bandwidth far wider than the band rounds to 0. Returns 0 for [LoRaRegionInfo.region]
-     * `UNSET`, which has no band.
+     * Width of one frequency slot in MHz: the region's spacing, both paddings (or bonded unit-channel padding when
+     * [LoRaRegionInfo.unitChannelMHz] is positive) and the modem bandwidth ([bandwidthKHz], in kHz).
      * @since 0.3.0
      */
-    public fun numChannels(region: LoRaRegionInfo, bandwidthKHz: Float): Int {
-        if (region.region == RegionCode.UNSET) return 0
-        val span = region.freqEndMHz - region.freqStartMHz + region.spacingMHz
-        return (span / slotWidthMHz(region, bandwidthKHz)).roundToInt()
+    public fun slotWidthMHz(region: LoRaRegionInfo, bandwidthKHz: Float): Float {
+        val bwMHz = bandwidthKHz / 1000f
+        return region.spacingMHz + effectivePaddingMHz(region, bwMHz) * 2f + bwMHz
     }
+
+    /**
+     * Number of frequency slots in [region] at [bandwidthKHz]. Regions with a unit-channel raster or sub-band split
+     * mirror firmware `RegionInfo::getSlotPlan` (non-straddling sub-band truncation); other regions round half up as
+     * firmware's legacy slot count does. Returns 0 for [LoRaRegionInfo.region] `UNSET`, which has no band.
+     * @since 0.3.0
+     */
+    public fun numChannels(region: LoRaRegionInfo, bandwidthKHz: Float): Int = slotPlan(region, bandwidthKHz).count
 
     /**
      * Picks the 1-based slot firmware uses: [channelNum] when it is within `1..numChannels`, else the region's
@@ -126,8 +187,8 @@ public object LoRaFrequency {
     }
 
     /**
-     * Center frequency in MHz of 1-based [slot]: band start, half a bandwidth, padding, then [slot] minus one slot
-     * widths, plus [frequencyOffsetMHz].
+     * Center frequency in MHz of 1-based [slot], accounting for unit-channel bonding and any [LoRaRegionInfo.bandSplitMHz]
+     * sub-band boundary, plus [frequencyOffsetMHz]. Non-positive slots clamp to slot 1.
      * @since 0.3.0
      */
     public fun centerFrequencyMHz(
@@ -136,30 +197,39 @@ public object LoRaFrequency {
         slot: Int,
         frequencyOffsetMHz: Float = 0f,
     ): Float {
-        val width = slotWidthMHz(region, bandwidthKHz)
-        val freq = region.freqStartMHz + bandwidthKHz / 2000 + region.paddingMHz + (slot - 1).toFloat() * width
-        return freq + frequencyOffsetMHz
+        val plan = slotPlan(region, bandwidthKHz)
+        return plan.centerFreq((slot - 1).coerceAtLeast(0)) + frequencyOffsetMHz
     }
 
     /**
      * Resolves the band, bandwidth, slot count, slot and frequency of [config] for a primary channel named
      * [primaryChannelName] (blank for the default channel).
      *
+     * When [firmwareVersion] is given and parses to a release at or below the last pre-ARIB firmware
+     * (`2.8.2.d5f1619` placeholder), [RegionCode.JP] uses the legacy unbonded slot plan (`12` slots at 250 kHz)
+     * instead of the ARIB STD-T108 200 kHz unit-channel grid (`7` slots at 250 kHz).
+     *
      * With `use_preset` false the bandwidth comes from `bandwidth`, falling back to 250 kHz for 0; one wider than
      * the region's band is replaced by the region default preset's bandwidth. A preset the region does not offer
      * is not substituted. See [LoRaFrequencyPlan] for when slot and frequency are `null`.
      * @since 0.3.0
      */
-    public fun plan(config: LoRaConfig, primaryChannelName: String): LoRaFrequencyPlan {
-        val region = LoRaRegionInfo.forRegion(config.region)
+    public fun plan(
+        config: LoRaConfig,
+        primaryChannelName: String,
+        firmwareVersion: String? = null,
+    ): LoRaFrequencyPlan {
+        val region = LoRaRegionInfo.forRegion(config.region, firmwareVersion)
         var bandwidth = if (config.use_preset) {
             config.modem_preset.modemParams(region.wideLora).bandwidthKHz
         } else {
             bandwidthKHzForCode(config.bandwidth).let { if (it <= 0f) DEFAULT_BANDWIDTH_KHZ else it }
         }
         if (!config.use_preset) {
-            val edges = region.spacingMHz + region.paddingMHz * 2
-            if (region.freqEndMHz - region.freqStartMHz < edges + bandwidth / 1000) {
+            if (
+                region.freqEndMHz - region.freqStartMHz < slotWidthMHz(region, bandwidth) ||
+                (region.region != RegionCode.UNSET && numChannels(region, bandwidth) == 0)
+            ) {
                 bandwidth = bandwidthKHzForCode(
                     bandwidthCodeForKHz(region.defaultPreset.modemParams(region.wideLora).bandwidthKHz),
                 )

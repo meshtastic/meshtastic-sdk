@@ -54,6 +54,7 @@ class DeviceCapabilitiesTest {
         assertFalse(capabilities.supportsTakConfig)
         assertFalse(capabilities.supportsSecondaryChannelLocation)
         assertFalse(capabilities.supportsEsp32Ota)
+        assertFalse(capabilities.supportsJpAribSlotPlan)
     }
 
     @Test fun moduleConfigFloorsMatchFirmware() {
@@ -63,5 +64,7 @@ class DeviceCapabilitiesTest {
         assertTrue(DeviceCapabilities("2.8.0").supportsTakConfig)
         assertFalse(DeviceCapabilities("2.7.26").supportsTrafficManagementConfig)
         assertTrue(DeviceCapabilities("2.8.0").supportsTrafficManagementConfig)
+        assertFalse(DeviceCapabilities("2.8.2.d5f1619").supportsJpAribSlotPlan)
+        assertTrue(DeviceCapabilities("2.8.3").supportsJpAribSlotPlan)
     }
 }
