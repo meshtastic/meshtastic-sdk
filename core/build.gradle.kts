@@ -25,6 +25,9 @@ kotlin {
         commonTest.dependencies {
             implementation(project(":testing"))
         }
+        jvmTest.dependencies {
+            implementation(libs.kotlinxSerializationJson)
+        }
         androidMain.dependencies {
             implementation(libs.coroutinesAndroid)
         }
