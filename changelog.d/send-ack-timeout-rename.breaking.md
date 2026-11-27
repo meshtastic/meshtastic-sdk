@@ -1,1 +1,0 @@
-- `RadioClient.Builder.sendTimeout` is renamed `sendAckTimeout`; it bounds only the wait for a routing ACK.
