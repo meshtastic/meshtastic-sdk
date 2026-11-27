@@ -47,8 +47,10 @@ public object JvmSerialPorts {
      * Default baud is 115 200 — the rate used by Meshtastic firmware.
      *
      * @throws MeshtasticException.Transport if no port by that name exists (the device was
-     *   unplugged, or the name is wrong).
+     *   unplugged, or the name is wrong). jSerialComm checks the name on Linux and macOS; on
+     *   Windows a missing port fails at [RadioTransport.connect] with the same exception.
      */
+    @Throws(MeshtasticException.Transport::class)
     public fun open(portName: String, baudRate: Int = DEFAULT_BAUD): RadioTransport =
         openTransport(portName, baudRate, onTextLine = null)
 
@@ -59,6 +61,7 @@ public object JvmSerialPorts {
      *
      * @since 0.3.0
      */
+    @Throws(MeshtasticException.Transport::class)
     public fun open(portName: String, baudRate: Int, onTextLine: (String) -> Unit): RadioTransport =
         openTransport(portName, baudRate, onTextLine)
 
