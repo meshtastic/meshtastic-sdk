@@ -67,7 +67,7 @@ internal class StoreForwardApiImpl(
                 packetsFlow.map { InternalSignal.Packet(it) },
                 engine.nodes.map { InternalSignal.Node(it) },
                 engine.connectionState.map { InternalSignal.Connection(it) },
-                engine.outboundPackets.map { InternalSignal.Sent(it) },
+                engine.outboundPackets.map { InternalSignal.Sent(it.value) },
             ).collect { signal ->
                 when (signal) {
                     is InternalSignal.Packet -> handlePacket(signal.packet)
