@@ -68,6 +68,16 @@ class BleScannerTest {
         assertEquals(failure, thrown.cause)
     }
 
+    // Regression: the platform scanner was built when scan() was called, so a failure to build it
+    // (Bluetooth off, a missing requirement) escaped unwrapped instead of failing the flow.
+    @Test
+    fun scannerThatCannotBeBuiltFailsTheFlowAsTransportException() = runTest {
+        val failure = IllegalStateException("no adapter")
+        val scan = scanOf { throw failure }
+        val thrown = assertFailsWith<MeshtasticException.Transport> { scan.toList() }
+        assertEquals(failure, thrown.cause)
+    }
+
     @Test
     fun cancellationIsNotWrapped() = runTest {
         val source = flow<RawAdvertisement> { throw CancellationException("stop") }
