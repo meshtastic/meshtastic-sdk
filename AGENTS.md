@@ -21,7 +21,7 @@ These are the source of truth, and the constitution outranks the rest. Link to t
 - JDK 21.
 - Android SDK at the `androidCompileSdk` level in `gradle/libs.versions.toml`, with `ANDROID_HOME` set.
 - Xcode on macOS for the iOS targets.
-- Node.js on `PATH` for the `js` and `wasmJs` targets (`:core`, `:testing`, `:transport-websocket`); the Kotlin plugin is configured not to download one.
+- Node.js on `PATH` for the `js` and `wasmJs` targets (`:core`, `:testing`, `:transport-websocket`, `:transport-ble`); the Kotlin plugin is configured not to download one.
 - No submodules. Protobuf types come from the published `org.meshtastic:protobufs` artifact, pinned as `meshtasticProtobufs` in `gradle/libs.versions.toml`.
 
 If generated protocol symbols look wrong, check that the pin resolves: `./gradlew :core:dependencies --configuration jvmCompileClasspath | grep protobufs`.

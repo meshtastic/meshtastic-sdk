@@ -1,6 +1,6 @@
 # meshtastic-sdk
 
-Kotlin Multiplatform SDK for [Meshtastic](https://meshtastic.org) nodes. It connects to a node over Bluetooth LE, TCP or USB serial from Android, JVM and iOS, and over the node's WebSocket phone API from those targets and from browser or Node.js hosts (Kotlin/JS and Kotlin/Wasm).
+Kotlin Multiplatform SDK for [Meshtastic](https://meshtastic.org) nodes. It connects to a node over Bluetooth LE, TCP or USB serial from Android, JVM and iOS, and from Kotlin/JS and Kotlin/Wasm hosts over the node's WebSocket phone API (browser or Node.js) or Web Bluetooth (browser).
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](LICENSE)
 [![Maven Central](https://img.shields.io/maven-central/v/org.meshtastic/sdk-core)](https://central.sonatype.com/artifact/org.meshtastic/sdk-core)
@@ -19,7 +19,7 @@ Use it to build:
 
 - Companion apps for Android, iOS and desktop.
 - Headless gateways and telemetry collectors on the JVM.
-- Browser and Node.js tools on Kotlin/JS or Kotlin/Wasm, running the engine in-process over `transport-websocket`.
+- Browser and Node.js tools on Kotlin/JS or Kotlin/Wasm, running the engine in-process over `transport-websocket`, or over `transport-ble` in a browser with Web Bluetooth.
 
 The SDK has no UI components, navigation or storage policy. [`docs/decisions/000-charter.md`](docs/decisions/000-charter.md) lists the non-goals.
 
@@ -170,7 +170,7 @@ The [integration guide](docs/integration-guide.md) has per-platform setup: Andro
 
 ## Targets
 
-Every published module builds `jvm`, `androidTarget` (`minSdk = 26`), `iosArm64`, `iosX64` and `iosSimulatorArm64` through the `meshtastic.kmp.library` convention plugin. `core`, `testing` and `transport-websocket` also publish `js` and `wasmJs` klibs through `meshtastic.js.library` ([ADR-017](docs/decisions/017-web-targets.md)). [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md) has the dependency graph.
+Every published module builds `jvm`, `androidTarget` (`minSdk = 26`), `iosArm64`, `iosX64` and `iosSimulatorArm64` through the `meshtastic.kmp.library` convention plugin. `core`, `testing`, `transport-websocket` and `transport-ble` also publish `js` and `wasmJs` klibs through `meshtastic.js.library` ([ADR-017](docs/decisions/017-web-targets.md)). [`docs/architecture/module-graph.md`](docs/architecture/module-graph.md) has the dependency graph.
 
 | Module                     | JVM | Android (`minSdk 26`) | iOS Arm64 | iOS Sim Arm64 | iOS X64 | JS  | Wasm | Notes |
 |----------------------------|:---:|:---------------------:|:---------:|:-------------:|:-------:|:---:|:----:|-------|
@@ -184,7 +184,7 @@ Every published module builds `jvm`, `androidTarget` (`minSdk = 26`), `iosArm64`
 
 ✓ means built and tested in CI. — means no artifact for that target, or no platform API for that transport.
 
-The JS and Wasm klibs (`org.meshtastic:sdk-core-js`, `org.meshtastic:sdk-core-wasm-js`) are compiled into the consumer's own bundle, Compose Multiplatform for web included. `transport-websocket` reaches a node from either, and a host can supply its own `RadioTransport` (Web Bluetooth, Web Serial). CI tests both targets on Node.js, not in a browser.
+The JS and Wasm klibs (`org.meshtastic:sdk-core-js`, `org.meshtastic:sdk-core-wasm-js`) are compiled into the consumer's own bundle, Compose Multiplatform for web included. `transport-websocket` reaches a node from either, `transport-ble` does from a browser with Web Bluetooth through `requestBleTransport()`, and a host can supply its own `RadioTransport` (Web Serial). CI tests both targets on Node.js, not in a browser.
 
 ## Documentation
 
