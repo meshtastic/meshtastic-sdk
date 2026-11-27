@@ -9,11 +9,11 @@ Recipes for embedding `meshtastic-sdk` in an application: dependencies, building
 | `sdk-core`, `sdk-testing` | yes | yes | yes | yes |
 | `sdk-transport-websocket` | yes | yes | yes | yes |
 | `sdk-transport-tcp` | yes | yes | yes | no |
-| `sdk-transport-ble` | yes | yes | yes | no |
+| `sdk-transport-ble` | yes | yes | yes | yes (Web Bluetooth) |
 | `sdk-transport-serial` | yes | yes | no | no |
 | `sdk-storage-sqldelight` | yes | yes | yes | no |
 
-Every Android artifact sets `minSdk = 26` (Android 8.0). A web host runs the engine in the page, connects with `WebSocketTransport`, and stores state with `InMemoryStorageProvider` ([ADR-017](./decisions/017-web-targets.md)).
+Every Android artifact sets `minSdk = 26` (Android 8.0). A web host runs the engine in the page, connects with `WebSocketTransport` or, in a browser with Web Bluetooth, `requestBleTransport()`, and stores state with `InMemoryStorageProvider` ([ADR-017](./decisions/017-web-targets.md)).
 
 ## 1. Add the dependency
 

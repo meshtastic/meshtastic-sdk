@@ -34,9 +34,9 @@ Node support for WebSocket needs firmware pull requests that are not merged yet:
 | macOS (JVM) | ✓ | ✓ (CoreBluetooth through JNA) | ✓ (jSerialComm bundled `.dylib`) | ✓ |
 | Linux (JVM) | ✓ | ✓ (BlueZ 5.x) | ✓ (jSerialComm bundled `.so`) | ✓ |
 | Windows (JVM) | ✓ | ✓ (Windows 10 1709+) | ✓ (jSerialComm bundled `.dll`) | ✓ |
-| Browser and Node.js (JS, Wasm) | — | — | — | ✓ (browser TLS and mixed-content rules apply) |
+| Browser and Node.js (JS, Wasm) | — | ✓ in a browser with Web Bluetooth (secure page; the chooser needs a user gesture) | — | ✓ (browser TLS and mixed-content rules apply) |
 
-Every module declares `jvm`, `android`, `iosArm64`, `iosX64` and `iosSimulatorArm64`. `:core`, `:testing` and `:transport-websocket` also declare `js` and `wasmJs` ([ADR-017](../decisions/017-web-targets.md)). There are no macOS, Linux or Windows native targets.
+Every module declares `jvm`, `android`, `iosArm64`, `iosX64` and `iosSimulatorArm64`. `:core`, `:testing`, `:transport-websocket` and `:transport-ble` also declare `js` and `wasmJs` ([ADR-017](../decisions/017-web-targets.md)). There are no macOS, Linux or Windows native targets.
 
 Per-target Android and foreground-service detail: [`android-platform-constraints.md`](./android-platform-constraints.md).
 
@@ -45,7 +45,7 @@ Per-target Android and foreground-service detail: [`android-platform-constraints
 - For a sample, CLI or test, start with TCP: no permissions, and it works against meshtasticd and any Wi-Fi node.
 - For a phone or tablet app, use BLE. Plan for `TransportState.Bonding` in the UI and add the Android 14+ foreground service.
 - For desktop tooling, a bench setup or an Android USB-OTG accessory, use serial at 115 200 baud; let the user pick from `JvmSerialPorts.list()`.
-- For a browser host, use WebSocket, the only transport with JS and Wasm targets.
+- For a browser host, use WebSocket, or BLE where the browser has Web Bluetooth: `requestBleTransport()` opens its device chooser, since a page cannot scan.
 - HTTP and MQTT are not first-party transports. HTTP is reserved as a `TransportSpec.Http` shape in `Transport.kt`, and MQTT is not a `RadioTransport` by design ([`protocol.md` §14](../protocol.md#14-mqtt-proxy-mode)).
 
 ## Custom transports
