@@ -14,6 +14,7 @@ androidTargetSdk            = "37"
 coroutines                  = "1.8.1"            # compile floor so 1.8.x runtimes (ATAK plugins) load :core, :storage-sqldelight, :transport-serial; Ktor and Kable lift tcp/websocket/ble to 1.11; Renovate holds it
 coroutinesTest              = "1.11.0"           # test-only, so not under the floor; 1.8's wasm runTest needs an interop opt-in on Kotlin 2.4
 kotlinxDatetime             = "0.8.0-0.6.x-compat"
+kotlinxSerializationJson    = "1.13.0"           # test-only (:core jvmTest reads sfpp-vectors.json), never on a published classpath; matches Meshtastic-Android
 atomicfu                    = "0.33.0"
 okio                        = "3.18.2"
 
@@ -72,6 +73,7 @@ coroutinesCore              = { module = "org.jetbrains.kotlinx:kotlinx-coroutin
 coroutinesAndroid           = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android",     version.ref = "coroutines" }
 coroutinesTest              = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test",        version.ref = "coroutinesTest" }
 kotlinxDatetime             = { module = "org.jetbrains.kotlinx:kotlinx-datetime",               version.ref = "kotlinxDatetime" }
+kotlinxSerializationJson    = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json",     version.ref = "kotlinxSerializationJson" }
 atomicfu                    = { module = "org.jetbrains.kotlinx:atomicfu",                       version.ref = "atomicfu" }
 okio                        = { module = "com.squareup.okio:okio",                               version.ref = "okio" }
 

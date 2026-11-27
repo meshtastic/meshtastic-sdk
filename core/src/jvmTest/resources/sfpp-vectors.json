@@ -1,0 +1,120 @@
+{
+  "schema": 1,
+  "generated_from": "MeshtasticFirmware test/test_sfpp_vectors/test_main.cpp (branch sfpp-vectors)",
+  "note": "Expected outputs are fixed literals; apps must reproduce them byte for byte.",
+  "cases": {
+    "hash": [
+      {
+        "name": "broadcast_1_byte",
+        "source": "sfppframe::messageHash",
+        "ciphertext": "42",
+        "to": 4294967295,
+        "from": 287454020,
+        "id": 1432778632,
+        "expected": "f7df5ce7020e1ef464411e7d88ceeb53"
+      },
+      {
+        "name": "dm_1_byte",
+        "source": "sfppframe::messageHash",
+        "ciphertext": "42",
+        "to": 2864434397,
+        "from": 287454020,
+        "id": 1432778632,
+        "expected": "45dd2f59e87e1646aec917d5b91e8e18"
+      },
+      {
+        "name": "broadcast_200_byte",
+        "source": "sfppframe::messageHash",
+        "ciphertext": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d74",
+        "to": 4294967295,
+        "from": 287454020,
+        "id": 1432778632,
+        "expected": "14fb909190fe8edba0c404068a15de30"
+      },
+      {
+        "name": "dm_200_byte",
+        "source": "sfppframe::messageHash",
+        "ciphertext": "030a11181f262d343b424950575e656c737a81888f969da4abb2b9c0c7ced5dce3eaf1f8ff060d141b222930373e454c535a61686f767d848b9299a0a7aeb5bcc3cad1d8dfe6edf4fb020910171e252c333a41484f565d646b727980878e959ca3aab1b8bfc6cdd4dbe2e9f0f7fe050c131a21282f363d444b525960676e757c838a91989fa6adb4bbc2c9d0d7dee5ecf3fa01080f161d242b323940474e555c636a71787f868d949ba2a9b0b7bec5ccd3dae1e8eff6fd040b121920272e353c434a51585f666d74",
+        "to": 2864434397,
+        "from": 287454020,
+        "id": 1432778632,
+        "expected": "c341882de1df7e8747dca21c5a44c507"
+      }
+    ],
+    "ctr": [
+      {
+        "name": "default_key",
+        "source": "CryptoEngine::decrypt (AES-CTR) after Channels::getKey expansion",
+        "psk": "01",
+        "expanded_key": "d4f1bb3a20290759f0bcffabcf4e6901",
+        "from": 287454020,
+        "id": 1432778632,
+        "ciphertext": "7297fe7cfbe83fa35e6ffc4235def389",
+        "expected_plaintext": "6374722064656661756c74206b657921"
+      },
+      {
+        "name": "key256",
+        "source": "CryptoEngine::decrypt (AES-CTR)",
+        "psk": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        "from": 2578103244,
+        "id": 16909060,
+        "ciphertext": "73038f4905cc5b666a083a79934c777c",
+        "expected_plaintext": "637472203235362d626974206b657921"
+      }
+    ],
+    "ccm": [
+      {
+        "name": "aes256_round_trip",
+        "source": "CryptoEngine::encryptPacketCCM / decryptPacketCCM",
+        "psk": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+        "from": 287454020,
+        "to": 2864434397,
+        "id": 1432778632,
+        "plaintext": "736670702063636d20766563746f72207061796c6f6164",
+        "ciphertext_and_tag": "de4eaed1f465b6d1eacc91d2373e284a1279fde7ea95dbd71db87f5582a12685252df1",
+        "expected_plaintext": "736670702063636d20766563746f72207061796c6f6164"
+      },
+      {
+        "name": "tampered_tag",
+        "source": "CryptoEngine::decryptPacketCCM",
+        "psk": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+        "from": 287454020,
+        "to": 2864434397,
+        "id": 1432778632,
+        "ciphertext_and_tag": "de4eaed1f465b6d1eacc91d2373e284a1279fde7ea95dbd71db87f5582a12685252df0",
+        "expect": "fail"
+      }
+    ],
+    "frames": [
+      {
+        "name": "140_byte",
+        "source": "sfppframe::split",
+        "ciphertext": "101316191c1f2225282b2e3134373a3d404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9da0a3a6a9acafb2b5b8bbbec1c4c7cacdd0d3d6d9dcdfe2e5e8ebeef1f4f7fafd000306090c0f1215181b1e2124272a2d303336393c3f4245484b4e5154575a5d606366696c6f7275787b7e8184878a8d909396999c9fa2a5a8abaeb1",
+        "to": 4294967295,
+        "from": 287454020,
+        "id": 1432778632,
+        "heard_ago_s": 7,
+        "origin_verified": true,
+        "frames": [
+          "080d1208296f8748c01ea4fd2a7f101316191c1f2225282b2e3134373a3d404346494c4f5255585b5e6164676a6d707376797c7f8285888b8e9194979a9da0a3a6a9acafb2b5b8bbbec1c4c7cacdd0d3d6d9dcdfe2e5e8ebeef1f4f7fafd000306090c0f1215181b1e2124272a2d303336393c3f4245484b4e5154575a5d606366696c6f7275787b7e8184878a3088ef99ab0540c4e688890188010790018004980101",
+          "080d1208296f8748c01ea4fd2a0d8d909396999c9fa2a5a8abaeb190018104"
+        ]
+      },
+      {
+        "name": "300_byte",
+        "source": "sfppframe::split",
+        "ciphertext": "80858a8f94999ea3a8adb2b7bcc1c6cbd0d5dadfe4e9eef3f8fd02070c11161b20252a2f34393e43484d52575c61666b70757a7f84898e93989da2a7acb1b6bbc0c5cacfd4d9dee3e8edf2f7fc01060b10151a1f24292e33383d42474c51565b60656a6f74797e83888d92979ca1a6abb0b5babfc4c9ced3d8dde2e7ecf1f6fb00050a0f14191e23282d32373c41464b50555a5f64696e73787d82878c91969ba0a5aaafb4b9bec3c8cdd2d7dce1e6ebf0f5faff04090e13181d22272c31363b40454a4f54595e63686d72777c81868b90959a9fa4a9aeb3b8bdc2c7ccd1d6dbe0e5eaeff4f9fe03080d12171c21262b30353a3f44494e53585d62676c71767b80858a8f94999ea3a8adb2b7bcc1c6cbd0d5dadfe4e9eef3f8fd02070c11161b20252a2f34393e43484d5257",
+        "to": 4294967295,
+        "from": 287454020,
+        "id": 1432778632,
+        "heard_ago_s": 7,
+        "origin_verified": true,
+        "frames": [
+          "080d1208fc223b7f49903fee2a7f80858a8f94999ea3a8adb2b7bcc1c6cbd0d5dadfe4e9eef3f8fd02070c11161b20252a2f34393e43484d52575c61666b70757a7f84898e93989da2a7acb1b6bbc0c5cacfd4d9dee3e8edf2f7fc01060b10151a1f24292e33383d42474c51565b60656a6f74797e83888d92979ca1a6abb0b5babfc4c9ced3d8dde2e7ecf1f63088ef99ab0540c4e688890188010790018006980101",
+          "080d1208fc223b7f49903fee2a9501fb00050a0f14191e23282d32373c41464b50555a5f64696e73787d82878c91969ba0a5aaafb4b9bec3c8cdd2d7dce1e6ebf0f5faff04090e13181d22272c31363b40454a4f54595e63686d72777c81868b90959a9fa4a9aeb3b8bdc2c7ccd1d6dbe0e5eaeff4f9fe03080d12171c21262b30353a3f44494e53585d62676c71767b80858a8f94999ea3a8adb2b7bcc1c6cbd0d5dadf90018106",
+          "080d1208fc223b7f49903fee2a18e4e9eef3f8fd02070c11161b20252a2f34393e43484d525790018206"
+        ]
+      }
+    ]
+  }
+}

@@ -2677,6 +2677,41 @@ public final class org/meshtastic/sdk/StoreForwardEvent$SfppLinkProvided : org/m
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class org/meshtastic/sdk/StoreForwardEvent$SfppMessageRecovered : org/meshtastic/sdk/StoreForwardEvent {
+	public synthetic fun <init> (IIILjava/lang/String;Lorg/meshtastic/proto/Data;IJLkotlin/time/Instant;ZZLkotlin/jvm/internal/BoxingConstructorMarker;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lorg/meshtastic/sdk/NodeId;IILjava/lang/String;Lorg/meshtastic/proto/Data;Lorg/meshtastic/sdk/NodeId;JLkotlin/time/Instant;ZZ)V
+	public final fun component1 ()Lorg/meshtastic/sdk/NodeId;
+	public final fun component1-Unx0hic ()I
+	public final fun component10 ()Z
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Lorg/meshtastic/proto/Data;
+	public final fun component6 ()Lorg/meshtastic/sdk/NodeId;
+	public final fun component6-Unx0hic ()I
+	public final fun component7 ()J
+	public final fun component8 ()Lkotlin/time/Instant;
+	public final fun component9 ()Z
+	public final fun copy (Lorg/meshtastic/sdk/NodeId;IILjava/lang/String;Lorg/meshtastic/proto/Data;Lorg/meshtastic/sdk/NodeId;JLkotlin/time/Instant;ZZ)Lorg/meshtastic/sdk/StoreForwardEvent$SfppMessageRecovered;
+	public final fun copy-9mEPpBM (IIILjava/lang/String;Lorg/meshtastic/proto/Data;IJLkotlin/time/Instant;ZZ)Lorg/meshtastic/sdk/StoreForwardEvent$SfppMessageRecovered;
+	public static synthetic fun copy-9mEPpBM$default (Lorg/meshtastic/sdk/StoreForwardEvent$SfppMessageRecovered;IIILjava/lang/String;Lorg/meshtastic/proto/Data;IJLkotlin/time/Instant;ZZILjava/lang/Object;)Lorg/meshtastic/sdk/StoreForwardEvent$SfppMessageRecovered;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArchive ()Lorg/meshtastic/sdk/NodeId;
+	public final fun getArchive-Unx0hic ()I
+	public final fun getChannelIndex ()I
+	public final fun getData ()Lorg/meshtastic/proto/Data;
+	public final fun getFrom ()Lorg/meshtastic/sdk/NodeId;
+	public final fun getFrom-Unx0hic ()I
+	public final fun getHeardAgoSeconds ()J
+	public final fun getHeardAt ()Lkotlin/time/Instant;
+	public final fun getPacketId ()I
+	public final fun getSenderVerified ()Z
+	public final fun getText ()Ljava/lang/String;
+	public final fun getTimeAttested ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/StoreForwardReplaysKt {
 	public static final fun dropDuplicateStoreForwardReplays (Lkotlinx/coroutines/flow/Flow;I)Lkotlinx/coroutines/flow/Flow;
 	public static synthetic fun dropDuplicateStoreForwardReplays$default (Lkotlinx/coroutines/flow/Flow;IILjava/lang/Object;)Lkotlinx/coroutines/flow/Flow;

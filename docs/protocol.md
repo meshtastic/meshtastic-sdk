@@ -496,7 +496,7 @@ None of these has proto presence except where noted, so the SDK reads them throu
 ### Payload paths
 
 - **Outbound from phone**: phone constructs `MeshPacket` with `decoded: Data{...}` populated, sets `id`, `to`, `channel`, etc., wraps in `ToRadio.packet`, sends. Device encrypts (if channel has PSK) or PKI-encrypts (if direct message and recipient has known public key) before air transmission.
-- **Inbound to the client**: the node hands over a `MeshPacket` with either `decoded`, already decrypted on the node (channel PSK and PKI direct messages alike, through `CryptoEngine.cpp`), or `encrypted` when the node could not decrypt it. The SDK holds no keys and drops packets that arrive without `decoded`; PKI keypairs live on the node.
+- **Inbound to the client**: the node hands over a `MeshPacket` with either `decoded`, already decrypted on the node (channel PSK and PKI direct messages alike, through `CryptoEngine.cpp`), or `encrypted` when the node could not decrypt it. The SDK drops packets that arrive without `decoded`; PKI keypairs live on the node. The one exception is an SF++ replay, which the SDK decrypts with the channel key (§9).
 
 > **Pitfall**: a `MeshPacket.id` of `0` is invalid for outbound packets. The device assigns the ID if the phone leaves it `0`, but for ACK correlation the phone usually generates the ID itself.
 
@@ -541,7 +541,7 @@ message Data {
 | `REPLY_APP` | 32 | `payload` is text/emoji reply | both | Modern reply channel |
 | `IP_TUNNEL_APP` | 33 | IP packet bytes | both | Optional IP-over-LoRa |
 | `PAXCOUNTER_APP` | 34 | `Paxcount` | device→phone | Pedestrian counter |
-| `STORE_FORWARD_PLUSPLUS_APP` | 35 | `StoreAndForward` (extended) | both | Store-and-forward v2 |
+| `STORE_FORWARD_PLUSPLUS_APP` | 35 | `StoreForwardPlusPlus` | both | SF++ chain and replay frames (§9) |
 | `NODE_STATUS_APP` | 36 | `StatusMessage` | both | Free-text node status, broadcast on change and on a timer |
 | `MESH_BEACON_APP` | 37 | `MeshBeacon` | both | Beacon-mode broadcast: text plus optional channel and preset offers |
 | `PAGING_APP` | 38 | reserved | — | Acknowledged paging; 2.8.2 defines no payload message |
@@ -638,7 +638,7 @@ The `psk` bytes field is interpreted by length:
 | **1**, value `pskIndex` (`0x02..`) | "Simple" preset: same as default key but with the **last byte replaced by `defaultPsk[15] + (pskIndex - 1)`** (`firmware:src/mesh/Channels.cpp` lines 228–242). So `[0x02]` → last byte `0x02`, `[0x03]` → `0x03`, …, `[0x0A]` → `0x0A`. Firmware imposes no upper bound (the offset is `uint8_t` and wraps), but the reference clients expose this as `simple1`..`simple9` mapped to pskIndex `2`..`10`, a UI convention rather than a wire requirement. |
 | **16** | AES-128 key, used as-is. |
 | **32** | AES-256 key, used as-is. |
-| Other lengths | Invalid; must be rejected. |
+| Other lengths | Zero-padded: 2 to 15 bytes to an AES-128 key, 17 to 31 to an AES-256 key (`Channels::getKey`). |
 
 ### Channel hash (used by device to filter incoming packets)
 
@@ -674,6 +674,21 @@ The plaintext is the **serialized `Data` protobuf** (i.e. the inner message that
 > **Pitfall**: firmware (`initNonce` in `src/mesh/CryptoEngine.cpp`) reads the first 8 nonce bytes as a uint64 `packet_id`. For a uint32 id, write it little-endian into bytes 0 to 3 and zeros into bytes 4 to 7. Describing it as a zero-padded uint32 gives the same bytes but misstates the field width.
 
 AES-CTR has no authentication, so anyone holding the PSK can forge channel traffic undetectably. That is by design: channel members are trusted. Direct messages that need authentication use PKI (§10).
+
+### AES-CCM channels (`use_aead`)
+
+A channel with `ChannelSettings.use_aead` uses AES-CCM with the same key and nonce derivation: the CCM nonce is the first 13 bytes of the CTR nonce (L = 2), the AAD is `from ‖ to` as two uint32 little-endian values, and a 12-byte tag follows the ciphertext. A tag failure drops the packet (`CryptoEngine.cpp` `encryptPacketCCM`/`decryptPacketCCM`, `aes-ccm.cpp`).
+
+### SF++ replays: the one place the SDK decrypts
+
+An SF++ archive replays a stored message to the client as `STORE_FORWARD_PLUSPLUS_APP` `ITEM_FRAME`s carrying the original channel ciphertext, which the node forwards without decrypting. The SDK reassembles and decrypts these itself, with the primary channel's key from the handshake:
+
+- Fields: `message_hash` (first 8 bytes are the key), `message` (one slice), `frame` (tag 18: low byte index, next byte total, 0 for a single frame), and on frame 0 the envelope `encapsulated_from`/`_to`/`_id`, `heard_ago_s` (tag 17) and `origin_verified` (tag 19). Tags 17 to 20 and types 7 to 15 are newer than the pinned protobufs, so the SDK reads them from the raw bytes.
+- A set completes when every index and frame 0 have arrived. Its `SHA-256(ciphertext ‖ to ‖ from ‖ id)` (`to` is broadcast when the envelope says 0) must match the key, or the set is discarded undecrypted. 16 least-recently-used slots, each expiring 120 s after its first frame.
+- The plaintext must decode as `Data` with portnum `TEXT_MESSAGE_APP` and a non-empty, printable UTF-8 payload. Replays addressed to one node are dropped.
+- The result is a `StoreForwardEvent.SfppMessageRecovered`, never a packet, so it changes no node bookkeeping. A `(from, id)` received or sent live this session is never emitted; another copy of a recovered one is emitted again only if it raises the trust flags or places the message (receipt time minus `heard_ago_s`) more than 2 s earlier, and an unattested copy never moves an attested placement. Each event carries the merged best trust and placement, so the latest one for a `(from, id)` supersedes the rest. Trust: `timeAttested` when frame 0's packet is `xeddsa_signed` or `pki_encrypted`, `senderVerified` when that frame also carries `origin_verified`.
+
+Source: firmware `src/modules/Native/SfppFrame.cpp` on the SF++ replay branch.
 
 ---
 

@@ -684,6 +684,7 @@ public sealed interface StoreForwardEvent {
     public data class Heartbeat(val server: NodeId) : StoreForwardEvent
     public data class SfppLinkProvided(val packetId: Int, val from: Int, val to: Int, val messageHash: ByteArray?, val confirmed: Boolean) : StoreForwardEvent
     public data class SfppCanonAnnounced(val messageHash: ByteArray, val rxTime: Long) : StoreForwardEvent
+    public data class SfppMessageRecovered(val from: NodeId, val packetId: Int, val channelIndex: Int, val text: String, val data: Data, val archive: NodeId, val heardAgoSeconds: Long, val heardAt: Instant, val senderVerified: Boolean, val timeAttested: Boolean) : StoreForwardEvent
 }
 ```
 

@@ -33,6 +33,9 @@ import org.meshtastic.sdk.SfppHash
 import org.meshtastic.sdk.StoreForwardApi
 import org.meshtastic.sdk.StoreForwardEvent
 import org.meshtastic.sdk.StoreForwardStats
+import org.meshtastic.sdk.internal.sfpp.SfppFrame
+import org.meshtastic.sdk.internal.sfpp.SfppReplayClient
+import org.meshtastic.sdk.internal.sfpp.SfppWire
 import kotlin.coroutines.CoroutineContext
 import kotlin.time.Duration
 import kotlin.time.Instant
@@ -50,6 +53,7 @@ internal class StoreForwardApiImpl(
     private val knownServers = linkedSetOf<NodeId>()
     private val activeReplays = mutableMapOf<NodeId, ReplayProgress>()
     private val pendingSfppFragments = mutableMapOf<SfppFragmentKey, SfppFragmentState>()
+    private val sfppReplays = SfppReplayClient()
 
     private val _servers = MutableStateFlow<List<NodeId>>(emptyList())
     override val servers = _servers.asStateFlow()
@@ -63,11 +67,13 @@ internal class StoreForwardApiImpl(
                 packetsFlow.map { InternalSignal.Packet(it) },
                 engine.nodes.map { InternalSignal.Node(it) },
                 engine.connectionState.map { InternalSignal.Connection(it) },
+                engine.outboundPackets.map { InternalSignal.Sent(it.value) },
             ).collect { signal ->
                 when (signal) {
                     is InternalSignal.Packet -> handlePacket(signal.packet)
                     is InternalSignal.Node -> handleNodeChange(signal.change)
                     is InternalSignal.Connection -> handleConnection(signal.state)
+                    is InternalSignal.Sent -> handleSent(signal.packet)
                 }
             }
         }
@@ -164,8 +170,23 @@ internal class StoreForwardApiImpl(
 
     private suspend fun handlePacket(packet: MeshPacket) {
         val decoded = packet.decoded ?: return
-        if (decoded.portnum != PortNum.STORE_FORWARD_APP || packet.from == 0) return
+        if (packet.from == 0) return
+        when (decoded.portnum) {
+            PortNum.STORE_FORWARD_PLUSPLUS_APP -> handleSfppPayload(decoded.payload.toByteArray(), packet)
+            PortNum.STORE_FORWARD_APP -> handleStoreForwardPayload(decoded, packet)
+            PortNum.TEXT_MESSAGE_APP -> sfppReplays.markSeen(packet.from, packet.id)
+            else -> Unit
+        }
+    }
 
+    // Our own texts come back from an archive too; the device fills in `from` when we leave it 0.
+    private fun handleSent(packet: MeshPacket) {
+        if (packet.decoded?.portnum != PortNum.TEXT_MESSAGE_APP || packet.id == 0) return
+        val from = if (packet.from != 0) packet.from else engine.myNodeNumOrNull() ?: return
+        sfppReplays.markSeen(from, packet.id)
+    }
+
+    private suspend fun handleStoreForwardPayload(decoded: Data, packet: MeshPacket) {
         val legacy = try {
             StoreAndForward.ADAPTER.decode(decoded.payload)
         } catch (_: Exception) {
@@ -175,15 +196,48 @@ internal class StoreForwardApiImpl(
             handleLegacySf(legacy, packet)
             return
         }
+        handleSfppPayload(decoded.payload.toByteArray(), packet)
+    }
 
-        val sfpp = try {
-            StoreForwardPlusPlus.ADAPTER.decode(decoded.payload)
-        } catch (_: Exception) {
-            null
+    // Types past the chain's are unknown to the pinned Wire enum, which would read them as CANON_ANNOUNCE.
+    private suspend fun handleSfppPayload(payload: ByteArray, packet: MeshPacket) {
+        val raw = SfppWire.decode(payload) ?: return
+        when {
+            raw.type == SfppWire.ITEM_FRAME -> handleItemFrame(raw, packet)
+
+            raw.type in 0..SfppWire.LAST_CHAIN_TYPE -> {
+                val sfpp = try {
+                    StoreForwardPlusPlus.ADAPTER.decode(payload)
+                } catch (_: Exception) {
+                    null
+                }
+                if (sfpp != null) handleSfpp(sfpp)
+            }
+
+            else -> Unit
         }
-        if (sfpp != null) {
-            handleSfpp(sfpp)
-        }
+    }
+
+    private suspend fun handleItemFrame(frame: SfppFrame, packet: MeshPacket) {
+        val attested = packet.xeddsa_signed || packet.pki_encrypted
+        val now = nowProvider()
+        val channels = engine.channelsState.value.orEmpty()
+        val recovered = sfppReplays.onFrame(frame, packet.from, attested, channels, now.toEpochMilliseconds()) ?: return
+        val replay = recovered.replay
+        _events.emit(
+            StoreForwardEvent.SfppMessageRecovered(
+                from = NodeId(replay.from),
+                packetId = replay.id,
+                channelIndex = recovered.channelIndex,
+                text = recovered.text,
+                data = recovered.data,
+                archive = NodeId(replay.archive),
+                heardAgoSeconds = (now.toEpochMilliseconds() - recovered.placedAtMs) / MILLIS_PER_SECOND,
+                heardAt = Instant.fromEpochMilliseconds(recovered.placedAtMs),
+                senderVerified = recovered.senderVerified,
+                timeAttested = recovered.timeAttested,
+            ),
+        )
     }
 
     private suspend fun handleLegacySf(message: StoreAndForward, packet: MeshPacket) {
@@ -444,6 +498,7 @@ internal class StoreForwardApiImpl(
         data class Packet(val packet: MeshPacket) : InternalSignal
         data class Node(val change: NodeChange) : InternalSignal
         data class Connection(val state: ConnectionState) : InternalSignal
+        data class Sent(val packet: MeshPacket) : InternalSignal
     }
 
     private data class ReplayProgress(
@@ -477,5 +532,6 @@ internal class StoreForwardApiImpl(
 
     private companion object {
         const val ALL_HISTORY_WINDOW_MINUTES: Int = 60 * 24 * 365 * 100
+        const val MILLIS_PER_SECOND: Long = 1000
     }
 }
