@@ -8,8 +8,10 @@
 package org.meshtastic.sdk.transport.ble
 
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runTest
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.TransportState
@@ -173,43 +175,95 @@ class BleResilienceTest {
         val events = mutableListOf<String>()
         val peripheral = FakeBlePeripheral(servicesAfterConnect = { meshtasticServices() }, events = events)
         val transport = transport(peripheral)
-        var pending = true
-        transport.shouldRefreshGattCache = { incomplete ->
-            events += "check request"
-            assertFalse(incomplete)
-            pending.also { pending = false }
-        }
         transport.gattCacheRefresher = GattCacheRefresher {
             events += "refresh"
             true
         }
         transport.postConnectHook = { events += "connected hook" }
+        transport.refreshGattCacheOnNextConnect()
 
         transport.connect()
 
-        assertEquals(
-            listOf("connect#1", "check request", "refresh", "disconnect", "connect#2", "connected hook"),
-            events,
-        )
+        assertEquals(listOf("connect#1", "refresh", "disconnect", "connect#2", "connected hook"), events)
 
         transport.disconnect()
         events.clear()
         transport.connect()
 
-        assertEquals(listOf("connect#3", "check request", "connected hook"), events)
+        assertEquals(listOf("connect#3", "connected hook"), events)
         transport.shutdown()
     }
 
     @Test
-    fun failedInitialLinkLeavesTheRefreshRequestUnread() = runTest {
-        val peripheral = FakeBlePeripheral(connectBehavior = { throw MeshtasticException.Transport("no link") })
+    fun aRefreshRequestSurvivesAConnectThatNeverReachedTheRadio() = runTest {
+        var failing = true
+        val peripheral = FakeBlePeripheral(
+            connectBehavior = { if (failing) throw MeshtasticException.Transport("no link") },
+            servicesAfterConnect = { meshtasticServices() },
+        )
         val transport = transport(peripheral)
-        var checks = 0
-        transport.shouldRefreshGattCache = { ++checks > 0 }
-        transport.gattCacheRefresher = GattCacheRefresher { true }
+        var refreshes = 0
+        transport.gattCacheRefresher = GattCacheRefresher {
+            refreshes++
+            true
+        }
+        transport.refreshGattCacheOnNextConnect()
 
         assertFailsWith<MeshtasticException.Transport> { transport.connect() }
-        assertEquals(0, checks)
+        assertEquals(0, refreshes)
+
+        failing = false
+        transport.connect()
+        assertEquals(1, refreshes)
+        transport.shutdown()
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun failureStreakRefreshesOncePerStreakAndAStableLinkRearmsIt() = runTest {
+        var failing = false
+        val peripheral = FakeBlePeripheral(
+            connectBehavior = { if (failing) throw MeshtasticException.Transport("no link") },
+            servicesAfterConnect = { meshtasticServices() },
+        )
+        val transport = transport(peripheral)
+        transport.linkClock = testScheduler.timeSource
+        transport.refreshGattCacheAfterFailures = 2
+        var refreshes = 0
+        transport.gattCacheRefresher = GattCacheRefresher {
+            refreshes++
+            true
+        }
+        suspend fun failConnects(times: Int) {
+            failing = true
+            repeat(times) { assertFailsWith<MeshtasticException.Transport> { transport.connect() } }
+            failing = false
+        }
+
+        // The radio drops a link at once, and the engine disconnects only after its backoff.
+        suspend fun dropAfterBackoff() {
+            peripheral.dropLink()
+            transport.state.first { it is TransportState.Error }
+            advanceTimeBy(BleTransport.LINK_STABLE_MS + 3_000L)
+            transport.disconnect()
+        }
+
+        failConnects(1)
+        transport.connect()
+        assertEquals(0, refreshes, "one failure is below the threshold of two")
+        dropAfterBackoff()
+
+        transport.connect()
+        assertEquals(1, refreshes, "the dropped link was the second failure, however late the disconnect")
+        dropAfterBackoff()
+        transport.connect()
+        assertEquals(1, refreshes, "once per streak")
+
+        advanceTimeBy(BleTransport.LINK_STABLE_MS + 1_000L)
+        transport.disconnect()
+        failConnects(2)
+        transport.connect()
+        assertEquals(2, refreshes, "a link that stayed up re-armed the refresh")
         transport.shutdown()
     }
 

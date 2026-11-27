@@ -108,8 +108,9 @@ public class RadioClient internal constructor(
      * The current connection state.
      *
      * Transitions: [ConnectionState.Disconnected] → [ConnectionState.Connecting] →
-     * [ConnectionState.Configuring] → [ConnectionState.Connected]. May cycle through
-     * [ConnectionState.Reconnecting] on transport drops.
+     * [ConnectionState.Configuring] → [ConnectionState.Connected]. With auto-reconnect on, may
+     * cycle through [ConnectionState.Reconnecting] on transport drops. An error retrying cannot fix
+     * ends in [ConnectionState.Failed], with auto-reconnect on or off.
      */
     public val connection: StateFlow<ConnectionState> = engine.connectionState.asStateFlow()
 
@@ -214,9 +215,11 @@ public class RadioClient internal constructor(
      * radio accepted it. Admin packets carry session passkeys and the SDK does not redact them; lockdown
      * credentials never appear.
      *
+     * Each item is a [SessionScoped] carrying the id of its session (same numbering as [sessionEvents]).
+     *
      * @since 0.3.0
      */
-    public val outboundPackets: Flow<MeshPacket> = engine.outboundPackets.hide()
+    public val outboundPackets: Flow<SessionScoped<MeshPacket>> = engine.outboundPackets.hide()
 
     /**
      * Ordered handshake snapshots, packets and session boundaries for one consumer.
@@ -227,13 +230,19 @@ public class RadioClient internal constructor(
      * shuts down. Collect it directly for ordered delivery.
      *
      * If the SDK loses receive coverage, the stream drains accepted events and then throws
-     * [RadioSessionOverflowException]. The radio continues processing frames. Create a new
-     * client to restart this stream after overflow or collector cancellation. Delivery
-     * sequences measure SDK coverage. The radio or transport may lose packets upstream.
+     * [RadioSessionOverflowException]. With [Builder.autoReconnect] on and a collector running, the
+     * engine also ends that session and reconnects, counted against
+     * [AutoReconnectConfig.maxHandshakeRecoveries] (three in a row when that is `null`); collect this
+     * property again to resume. The new collection starts with [RadioSessionEvent.Ended] for the
+     * overflowed session when it had delivered an event, then the next session's
+     * `Ready`. With auto-reconnect off the radio keeps processing frames and the stream stays failed:
+     * create a new client to restart it. Collector cancellation also ends the stream for good.
+     * Delivery sequences measure SDK coverage. The radio or transport may lose packets upstream.
      *
-     * `null` if session receive was left disabled.
+     * Collecting it without [Builder.sessionReceive] fails with [IllegalStateException].
      */
-    public val sessionEvents: Flow<RadioSessionEvent>? = engine.sessionEvents
+    public val sessionEvents: Flow<RadioSessionEvent> =
+        engine.sessionEvents ?: flow { error("Session events are off: call Builder.sessionReceive() before build()") }
 
     /**
      * Side-channel advisory events: queue status, transport errors, key-verification prompts,
@@ -266,11 +275,12 @@ public class RadioClient internal constructor(
      *
      * Hot, no replay. Volume is unbounded, so a collector that falls more than 64 records
      * behind loses the oldest ones; the engine and the other flows never wait for it, and no
-     * [MeshEvent.PacketsDropped] is emitted for logs.
+     * [MeshEvent.PacketsDropped] is emitted for logs. Each item is a [SessionScoped] carrying the id of
+     * its session (same numbering as [sessionEvents]).
      *
      * @since 0.3.0
      */
-    public val deviceLogs: Flow<LogRecord> = engine.deviceLogs.hide()
+    public val deviceLogs: Flow<SessionScoped<LogRecord>> = engine.deviceLogs.hide()
 
     /**
      * Complete frames of the device display, emitted while mirroring is on
@@ -281,11 +291,12 @@ public class RadioClient internal constructor(
      * partially. **Buffering:** no replay, and a buffer of 2 that drops the **oldest** frame when a
      * collector falls behind, so a slow renderer skips to recent frames and never stalls the
      * engine. Frames emitted while nothing collects are discarded. Dropped frames are not
-     * reported on [events].
+     * reported on [events]. Each item is a [SessionScoped] carrying the id of its session (same
+     * numbering as [sessionEvents]).
      *
      * @since 0.3.0
      */
-    public val displayFrames: Flow<DisplayMirrorFrame> = engine.displayFrames.hide()
+    public val displayFrames: Flow<SessionScoped<DisplayMirrorFrame>> = engine.displayFrames.hide()
 
     /**
      * The most recent complete display palette, or `null` until the device sends one this
@@ -321,7 +332,7 @@ public class RadioClient internal constructor(
     }
 
     /**
-     * Queue a nodes-only download on the current connection. Requires the optional [sessionEvents] stream.
+     * Queue a nodes-only download on the current connection. Requires [Builder.sessionReceive].
      * A completed download emits [RadioSessionEvent.NodeDbRefreshed]. Requests received during a download
      * coalesce into one follow-up. A stalled download ends the session so a late completion cannot be
      * mistaken for a subsequent download.
@@ -395,6 +406,12 @@ public class RadioClient internal constructor(
      *
      * **Idempotency:** throws [MeshtasticException.AlreadyConnected] if already connected.
      *
+     * **Auto-reconnect:** with [Builder.autoReconnect] enabled, a failed first attempt is retried
+     * like a later drop, so this suspends until the first session connects. Once storage has been
+     * activated it throws only when the engine reaches [ConnectionState.Failed] (with that state's
+     * cause) or [disconnect] is called; a storage activation failure still throws
+     * [MeshtasticException.StorageUnavailable] and leaves [ConnectionState.Disconnected], unretried.
+     *
      * @throws MeshtasticException.AlreadyConnected if already connected
      * @throws MeshtasticException.Transport if the transport cannot establish a connection
      * @throws MeshtasticException.Protocol if the handshake fails or data is malformed
@@ -415,8 +432,11 @@ public class RadioClient internal constructor(
      * has completed and stays complete.
      *
      * **Suspend semantics:** suspends until the engine has drained pending failures, the
-     * transport is fully disconnected, and storage is closed. Returns when [connection]
-     * settles on [ConnectionState.Disconnected].
+     * transport is fully disconnected, and storage is closed. [connection] shows
+     * [ConnectionState.Disconnecting] meanwhile, unless it was already
+     * [ConnectionState.Disconnected], and settles on [ConnectionState.Disconnected] before this returns.
+     * A second call while another one's teardown is running returns at once and leaves
+     * [ConnectionState.Disconnecting] in place until that teardown ends.
      *
      * **Cancellation:** the disconnect path runs under
      * [kotlinx.coroutines.NonCancellable] internally for resource release — cancelling the
@@ -426,6 +446,18 @@ public class RadioClient internal constructor(
     public suspend fun disconnect() {
         engine.disconnect()
     }
+
+    /**
+     * Ends the auto-reconnect backoff wait so the next attempt starts now, for example when the app
+     * returns to the foreground or the network comes back. The attempt count and the backoff that
+     * follows are unchanged.
+     *
+     * @return `true` when the client was waiting out a backoff: [ConnectionState.Reconnecting] with a
+     *   `retryAt`, or [ConnectionState.DeviceSleeping] between attempts. `false` otherwise, an
+     *   attempt in flight included, and nothing changes.
+     * @since 0.3.0
+     */
+    public fun retryNow(): Boolean = engine.retryNow()
 
     // ── Outbound ────────────────────────────────────────────────────────────
 
@@ -858,7 +890,8 @@ public class RadioClient internal constructor(
      */
     public class Builder {
 
-        private var radioTransport: RadioTransport? = null
+        private var transportIdentity: TransportIdentity? = null
+        private var transportProvider: RadioTransportProvider? = null
         private var storageProvider: StorageProvider? = null
         private var logSink: LogSink = LogSink.Silent
         private var clock: kotlin.time.Clock = kotlin.time.Clock.System
@@ -867,10 +900,10 @@ public class RadioClient internal constructor(
         private var bleHeartbeatEnabled: Boolean = true
         private var protocolLogLevel: LogLevel = LogLevel.NONE
         private var payloadRedactor: PayloadRedactor = PayloadRedactor.Default
-        private var sendTimeout: Duration = 30.seconds
+        private var sendAckTimeout: Duration = 30.seconds
         private var rpcTimeout: Duration = 30.seconds
         private var presenceTimeout: Duration = 2.hours
-        private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled
+        private var autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig()
         private var skipNodeDb: Boolean = false
         private var sessionReceiveCapacity: Int? = null
 
@@ -879,6 +912,9 @@ public class RadioClient internal constructor(
          *
          * Intended for testing (e.g., `FakeRadioTransport`) and for transport modules that
          * construct their own transport before passing to the builder.
+         *
+         * Every reconnect attempt reuses this instance, so it must be able to connect again after a
+         * failure or disconnect. The serial transports cannot; give them a [RadioTransportProvider].
          *
          * ```kotlin
          * val fake = FakeRadioTransport(identity = TransportIdentity("fake:test"))
@@ -891,7 +927,29 @@ public class RadioClient internal constructor(
          * Future: factory helpers for common transport configurations may allow
          * [TransportSpec] to be used without manually constructing a transport implementation.
          */
-        public fun transport(transport: RadioTransport): Builder = apply { radioTransport = transport }
+        public fun transport(transport: RadioTransport): Builder = transport(transport.identity) { _, _ -> transport }
+
+        /**
+         * Set a [RadioTransportProvider] that supplies the transport for each connection attempt,
+         * so auto-reconnect can replace a link that cannot be reused or wait until the environment
+         * allows one.
+         *
+         * ```kotlin
+         * RadioClient.Builder()
+         *     .transport(TransportIdentity("serial-android:$deviceName")) { _, _ ->
+         *         AndroidUsbSerialPorts.open(context, deviceName)
+         *     }
+         * ```
+         *
+         * @param identity keys storage for every transport the provider returns; it should match
+         *   their [RadioTransport.identity]
+         * @param provider called once per attempt, see [RadioTransportProvider]
+         * @since 0.3.0
+         */
+        public fun transport(identity: TransportIdentity, provider: RadioTransportProvider): Builder = apply {
+            transportIdentity = identity
+            transportProvider = provider
+        }
 
         /**
          * Set the storage provider (required).
@@ -999,17 +1057,21 @@ public class RadioClient internal constructor(
          * `SendState.Failed(SendFailure.AckTimeout)`. Broadcasts never receive a routing ACK and
          * are not affected by this timeout.
          *
+         * It bounds only the wait for the ACK. A transport write has its own fixed 30 s bound, so
+         * a long value here, such as 5 minutes for a slow mesh, never lengthens how long a stalled
+         * link takes to be declared failed.
+         *
          * Default: 30 seconds.
          *
          * ```kotlin
          * // Aggressive: fail fast in low-latency LANs.
-         * .sendTimeout(5.seconds)
+         * .sendAckTimeout(5.seconds)
          *
          * // Lenient: long mesh paths, sleepy nodes.
-         * .sendTimeout(2.minutes)
+         * .sendAckTimeout(2.minutes)
          * ```
          */
-        public fun sendTimeout(duration: Duration): Builder = apply { sendTimeout = duration }
+        public fun sendAckTimeout(duration: Duration): Builder = apply { sendAckTimeout = duration }
 
         /**
          * Configure the per-RPC timeout for [AdminApi] / [TelemetryApi] / [RoutingApi] calls.
@@ -1031,9 +1093,8 @@ public class RadioClient internal constructor(
          * Configure the engine's built-in auto-reconnect supervisor.
          *
          * Convenience overload that constructs an [AutoReconnectConfig] from the supplied
-         * tunables. **Default: disabled.** The 1.0 release will flip the default to
-         * `enabled = true`; pin a value here if you want today's "host owns reconnect"
-         * behaviour to survive that bump.
+         * tunables. **Default: enabled** with these tunables. Pass `enabled = false`, or
+         * [AutoReconnectConfig.Disabled] to the other overload, when the host owns reconnect policy.
          */
         public fun autoReconnect(
             enabled: Boolean = true,
@@ -1042,7 +1103,8 @@ public class RadioClient internal constructor(
             maxAttempts: Int? = null,
             backoffMultiplier: Double = 2.0,
             jitter: Double = 0.2,
-            recoveryStep: ReconnectRecoveryStep? = null,
+            stableAfter: Duration = Duration.ZERO,
+            maxHandshakeRecoveries: Int? = null,
         ): Builder = apply {
             autoReconnectConfig = AutoReconnectConfig(
                 enabled = enabled,
@@ -1051,7 +1113,8 @@ public class RadioClient internal constructor(
                 maxAttempts = maxAttempts,
                 backoffMultiplier = backoffMultiplier,
                 jitter = jitter,
-                recoveryStep = recoveryStep,
+                stableAfter = stableAfter,
+                maxHandshakeRecoveries = maxHandshakeRecoveries,
             )
         }
 
@@ -1095,16 +1158,17 @@ public class RadioClient internal constructor(
         public fun build(): RadioClient {
             val storage = requireNotNull(storageProvider) { "storage() is required" }
 
-            val transport: RadioTransport = requireNotNull(radioTransport) { "transport() is required" }
+            val provider = requireNotNull(transportProvider) { "transport() is required" }
 
             val engine = MeshEngine(
-                transport = transport,
+                identity = checkNotNull(transportIdentity),
+                transportProvider = provider,
                 storageProvider = storage,
                 logger = logSink,
                 bleHeartbeatEnabled = bleHeartbeatEnabled,
                 parentContext = coroutineContext,
                 clock = clock,
-                sendTimeout = sendTimeout,
+                sendAckTimeout = sendAckTimeout,
                 presenceTimeout = presenceTimeout,
                 autoReconnectConfig = autoReconnectConfig,
                 skipNodeDb = skipNodeDb,

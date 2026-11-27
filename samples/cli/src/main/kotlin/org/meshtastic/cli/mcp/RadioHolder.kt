@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.meshtastic.cli.internal.NoDeviceException
 import org.meshtastic.cli.internal.openTransport
+import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.RadioClient
 import org.meshtastic.sdk.TransportTarget
@@ -73,6 +74,7 @@ internal class RadioHolder(scope: CoroutineScope) {
             toolError("transport-open: ${e::class.simpleName}: ${e.message}", e)
         }
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(opened.transport)
             .storage(SqlDelightStorageProvider(baseDir = ""))
             .build()

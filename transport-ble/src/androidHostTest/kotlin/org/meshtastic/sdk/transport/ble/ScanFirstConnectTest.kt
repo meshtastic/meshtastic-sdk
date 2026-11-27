@@ -113,7 +113,7 @@ class ScanFirstConnectTest {
     }
 
     @Test
-    fun refreshCallbackRefreshesAScanFirstLinkAndWaitsThreeSecondsBeforeReconnecting() = runTest {
+    fun requestedRefreshRefreshesAScanFirstLinkAndWaitsThreeSecondsBeforeReconnecting() = runTest {
         var scans = 0
         var refreshedAt = -1L
         val connectedAt = mutableListOf<Long>()
@@ -127,14 +127,12 @@ class ScanFirstConnectTest {
             builderAction = {},
             isBonded = { true },
             scanOnce = { "advertisement-${++scans}" },
-        ) { _, _ -> peripheral }.withGattRefreshCallback(
-            resilience = BleResilience.None,
-            refreshGattCacheOnConnect = { true },
-            refresher = GattCacheRefresher {
-                refreshedAt = testScheduler.currentTime
-                true
-            },
-        )
+        ) { _, _ -> peripheral }
+        transport.gattCacheRefresher = GattCacheRefresher {
+            refreshedAt = testScheduler.currentTime
+            true
+        }
+        transport.refreshGattCacheOnNextConnect()
 
         transport.connect()
 

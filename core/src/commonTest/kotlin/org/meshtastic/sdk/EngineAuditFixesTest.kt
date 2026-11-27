@@ -97,7 +97,7 @@ class EngineAuditFixesTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
 
@@ -132,7 +132,7 @@ class EngineAuditFixesTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
 
@@ -162,7 +162,7 @@ class EngineAuditFixesTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
 
@@ -193,7 +193,7 @@ class EngineAuditFixesTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
 
@@ -228,7 +228,7 @@ class EngineAuditFixesTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(5.seconds)
+            .sendAckTimeout(5.seconds)
             .build()
         client.connect()
 

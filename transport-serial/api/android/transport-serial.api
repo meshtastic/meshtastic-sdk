@@ -12,6 +12,7 @@ public final class org/meshtastic/sdk/transport/serial/AndroidSerialPorts {
 public final class org/meshtastic/sdk/transport/serial/AndroidUsbSerialPorts {
 	public static final field DEFAULT_BAUD I
 	public static final field INSTANCE Lorg/meshtastic/sdk/transport/serial/AndroidUsbSerialPorts;
+	public final fun getProber ()Lcom/hoho/android/usbserial/driver/UsbSerialProber;
 	public final fun list (Landroid/content/Context;)Ljava/util/List;
 	public final fun open (Landroid/content/Context;Landroid/hardware/usb/UsbDevice;ILorg/meshtastic/sdk/LogSink;)Lorg/meshtastic/sdk/RadioTransport;
 	public final fun open (Landroid/content/Context;Landroid/hardware/usb/UsbDevice;ILorg/meshtastic/sdk/LogSink;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/RadioTransport;

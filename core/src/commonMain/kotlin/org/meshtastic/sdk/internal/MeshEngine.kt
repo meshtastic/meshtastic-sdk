@@ -18,11 +18,15 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -77,13 +81,16 @@ import org.meshtastic.sdk.NodeChange
 import org.meshtastic.sdk.NodeField
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.PacedMessageHandle
+import org.meshtastic.sdk.PacketTransport
 import org.meshtastic.sdk.PayloadRedactor
 import org.meshtastic.sdk.QueueReceipt
 import org.meshtastic.sdk.RadioSessionEvent
 import org.meshtastic.sdk.RadioTransport
+import org.meshtastic.sdk.RadioTransportProvider
 import org.meshtastic.sdk.SendFailure
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.SessionPasskey
+import org.meshtastic.sdk.SessionScoped
 import org.meshtastic.sdk.StorageProvider
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportState
@@ -92,6 +99,7 @@ import org.meshtastic.sdk.WireFraming
 import org.meshtastic.sdk.debug
 import org.meshtastic.sdk.error
 import org.meshtastic.sdk.info
+import org.meshtastic.sdk.transport
 import org.meshtastic.sdk.verbose
 import org.meshtastic.sdk.warn
 import kotlin.coroutines.CoroutineContext
@@ -111,13 +119,14 @@ import kotlin.time.Instant
  * posting [EngineMessage]s to [inbox] — never by writing to state directly.
  */
 internal class MeshEngine(
-    private val transport: RadioTransport,
+    private val identity: TransportIdentity,
+    private val transportProvider: RadioTransportProvider,
     private val storageProvider: StorageProvider,
     private val logger: LogSink,
     private val bleHeartbeatEnabled: Boolean,
     private val parentContext: CoroutineContext,
     private val clock: Clock = Clock.System,
-    private val sendTimeout: Duration = 30.seconds,
+    private val sendAckTimeout: Duration = 30.seconds,
     private val presenceTimeout: Duration = 2.hours,
     private val autoReconnectConfig: AutoReconnectConfig = AutoReconnectConfig.Disabled,
     private val skipNodeDb: Boolean = false, // config-only connect (see handleHeartbeatSettleComplete)
@@ -157,8 +166,23 @@ internal class MeshEngine(
         extraBufferCapacity = 128,
         onBufferOverflow = BufferOverflow.SUSPEND,
     )
-    private val sessionReceive = sessionReceiveCapacity?.let { SessionReceive(it) }
-    val sessionEvents = sessionReceive?.events
+
+    // With auto-reconnect on, an overflow restarts the session so the consumer resumes on a fresh stream.
+    private val sessionReceive = sessionReceiveCapacity?.let { capacity ->
+        SessionReceive(capacity, restartOnOverflow = autoReconnectConfig.enabled) { sessionId ->
+            inbox.trySend(EngineMessage.SessionOverflow(sessionId))
+        }
+    }
+
+    // ADR-002 exception: the actor starts sessions; trySendToRadio stamps the tap from caller threads.
+    private val sessionCounter = atomic(0L)
+
+    private fun beginSession() {
+        val id = sessionCounter.incrementAndGet()
+        sessionReceive?.begin(id)
+    }
+
+    val sessionEvents: Flow<RadioSessionEvent>? = sessionReceive?.events
 
     val events = MutableSharedFlow<MeshEvent>(
         extraBufferCapacity = 64,
@@ -167,14 +191,14 @@ internal class MeshEngine(
 
     // Device logs can arrive at any rate, so a slow collector loses the oldest records instead of
     // slowing the engine, and nothing is replayed.
-    val deviceLogs = MutableSharedFlow<LogRecord>(
+    val deviceLogs = MutableSharedFlow<SessionScoped<LogRecord>>(
         extraBufferCapacity = DEVICE_LOG_BUFFER,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
     // Live mirror: no replay, and a slow collector loses the oldest undelivered frame rather than
     // stalling the engine. With no collector a frame is dropped on emit, so none is retained.
-    val displayFrames = MutableSharedFlow<DisplayMirrorFrame>(
+    val displayFrames = MutableSharedFlow<SessionScoped<DisplayMirrorFrame>>(
         extraBufferCapacity = 2,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -192,7 +216,7 @@ internal class MeshEngine(
     )
 
     /** Every mesh packet queued for the radio, as written. Lossy for the same reason as [rawFromRadio]. */
-    val outboundPackets = MutableSharedFlow<MeshPacket>(
+    val outboundPackets = MutableSharedFlow<SessionScoped<MeshPacket>>(
         extraBufferCapacity = 256,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
@@ -227,6 +251,10 @@ internal class MeshEngine(
 
     // ADR-002 exception: lifecycle idempotency; set while one connect() decides whether and when its run starts.
     private val admitting = atomic(false)
+
+    // ADR-002 exception: lifecycle idempotency; set by disconnect(), which waits for Disconnected, so cleanup
+    // must not settle on a terminal state.
+    private val disconnectRequested = atomic(false)
 
     // The boundary handles one run owns, so its cleanup cannot close or clear a later run's.
     private class RunHandles(
@@ -267,8 +295,18 @@ internal class MeshEngine(
     private var frameReaderJob: Job? = null
     private var receiveGeneration = 0L
 
-    // receiveGeneration, readable by the outbound writer.
-    private val writeGeneration = atomic(0L)
+    // The link the outbound writer sends on: receiveGeneration and the transport it was opened on.
+    private class WriteLink(val generation: Long, val transport: RadioTransport)
+
+    // ADR-002 exception: the actor publishes each new link here for the outbound writer and RadioClient.
+    private val writeLink = atomic<WriteLink?>(null)
+
+    // The transport of the current or last attempt; actor-owned, replaced only between attempts.
+    private var transport: RadioTransport? = null
+    private var transportObserver: Job? = null
+
+    // A connect() on [transport] returned and no drop has been handled since.
+    private var linkUp = false
     private var stage1DumpStarted = false
     private var nodeDbRefreshDumpStarted = false
 
@@ -456,6 +494,38 @@ internal class MeshEngine(
     private var reconnectAttempt: Int = 0
     private var autoReconnectInProgress: Boolean = false
 
+    // The tick the backoff wait will deliver; retryNow() delivers it early.
+    private var pendingTick: EngineMessage.ReconnectTick? = null
+        set(value) {
+            field = value
+            retryTicket.value = value
+        }
+
+    // ADR-002 exception: pendingTick, readable by retryNow() on the caller's thread.
+    private val retryTicket = atomic<EngineMessage.ReconnectTick?>(null)
+    private var attemptToken = 0L
+    private var attemptJob: Job? = null
+
+    // ADR-002 exception: the link the running attempt opened, set off the actor, so cleanup can close it
+    // when the attempt's result never reaches the actor.
+    private val attemptLink = atomic<RadioTransport?>(null)
+
+    // Sessions restarted in a row after a handshake or liveness timeout, a handshake protocol error or a
+    // receive overflow. A session that reached Ready and then ended for any other reason resets it.
+    private var handshakeRecoveries = 0
+    private var readyThisSession = false
+
+    // Overflow restarts in a row, against DEFAULT_OVERFLOW_RESTARTS when maxHandshakeRecoveries is null.
+    private var overflowRestarts = 0
+    private var stableJob: Job? = null
+
+    // A drop judged a by-design sleep: attempts before its wake bound has passed go to
+    // `sleepAttempts`, outside maxAttempts. `terminalState` is the state cleanup settles on instead
+    // of Disconnected: a sleep with auto-reconnect off, or Failed.
+    private var sleeping: ConnectionState.DeviceSleeping? = null
+    private var sleepAttempts: Int = 0
+    private var terminalState: ConnectionState? = null
+
     // Dispatcher is engine-actor-owned; mutated only inside processMessage. RPC wire ids share
     // the same allocator as user-facing sends so a getConfig can never collide with a sendText.
     private val dispatcher = CommandDispatcher(logger)
@@ -483,10 +553,15 @@ internal class MeshEngine(
         val sup = SupervisorJob(parentContext[Job])
         var admitted = false
         try {
-            if (supervisorJobRef.value != null) throw MeshtasticException.AlreadyConnected()
-            // Published before the wait below, so a disconnect() during it cancels this attempt. It also lets a
+            val running = supervisorJobRef.value
+            // Failed is published just before its run is cancelled; any other live run refuses a second connect().
+            if (running != null && connectionState.value !is ConnectionState.Failed) {
+                throw MeshtasticException.AlreadyConnected()
+            }
+            // Published before the waits below, so a disconnect() during them cancels this attempt. It also lets a
             // disconnect() complete the awaiter if the actor is cancelled before it processes EngineMessage.Connect.
             activeConnectDeferred.value = connectDeferred
+            running?.join()
             val previous = lastRun.value
             // A failed or cancelled connect() returns before its run's cleanup has closed the channels and reset state.
             previous?.join()
@@ -503,6 +578,8 @@ internal class MeshEngine(
                 outboundRef.value = Channel(Channel.UNLIMITED)
             }
             runStartProbe?.invoke()
+            // After the previous run's cleanup, which a disconnect() may still have been waiting on.
+            disconnectRequested.value = false
             startRun(RunHandles(sup, connectDeferred, inboxRef.value, outboundRef.value))
             admitted = true
         } finally {
@@ -546,17 +623,17 @@ internal class MeshEngine(
             for ((frame, link, paced, generation) in outbound) {
                 if (paced != null && paced.generation != readySendGeneration.value) continue
                 // A frame queued for a replaced link must not go out on its successor.
-                if (generation != writeGeneration.value) continue
+                val target = writeLink.value?.takeIf { it.generation == generation }?.transport ?: continue
                 try {
                     if (link == null) {
                         logProtocolTx(frame)
                         // A stalled write would hold the paced queue while inbound frames keep the watchdog quiet.
-                        withTimeoutOrNull(TRANSPORT_WRITE_TIMEOUT) { transport.send(frame) }
+                        withTimeoutOrNull(TRANSPORT_WRITE_TIMEOUT) { target.send(frame) }
                             ?: throw MeshtasticException.Transport(
                                 "Transport write timed out after $TRANSPORT_WRITE_TIMEOUT",
                             )
                     } else {
-                        writeLockdownFrame(frame, link)
+                        writeLockdownFrame(frame, link, target)
                     }
                     // Completed here, not on the actor, so the evidence exists before a link drop is processed.
                     paced?.written?.complete(Unit)
@@ -573,18 +650,21 @@ internal class MeshEngine(
             }
         }
 
-        scope.launch(CoroutineName("meshtastic-transport-observer")) {
-            transport.state.collect { state ->
-                // A state update already in flight can reach the observer after the actor closes its inbox.
-                inbox.trySend(EngineMessage.TransportStateChanged(state))
-            }
-        }
-
         // A disconnect() that already ran closed or abandoned this inbox; it also failed the awaiter.
         run.inbox.trySend(EngineMessage.Connect(run.connected))
     }
 
     suspend fun disconnect() {
+        disconnectRequested.value = true
+        // Engine writes stop here (publishState), so teardown shows Disconnecting until cleanup ends it.
+        while (true) {
+            val state = connectionState.value
+            if (state == ConnectionState.Disconnected ||
+                connectionState.compareAndSet(state, ConnectionState.Disconnecting)
+            ) {
+                break
+            }
+        }
         // complete any in-flight connect() awaiter BEFORE we cancel the supervisor.
         // was cancelled first), cleanup() runs but its `pendingConnectDeferred` was never
         // assigned, so the awaiter would otherwise hang forever.
@@ -593,12 +673,36 @@ internal class MeshEngine(
         )
         val job = supervisorJobRef.getAndSet(null)
         if (job == null) {
-            // Already disconnected; just ensure state is consistent
-            connectionState.value = ConnectionState.Disconnected
+            // Another disconnect() whose teardown is still running publishes Disconnected when it ends.
+            if (lastRun.value?.isCompleted != false) {
+                connectionState.compareAndSet(ConnectionState.Disconnecting, ConnectionState.Disconnected)
+            }
             return
         }
         job.cancel()
-        connectionState.first { it == ConnectionState.Disconnected }
+        // Cleanup runs as the run's child, so this returns after it. A run cancelled before connect()
+        // launched it has no cleanup to end Disconnecting.
+        job.join()
+        // A later connect() owns the state once it has replaced this run.
+        if (lastRun.value === job) {
+            connectionState.compareAndSet(ConnectionState.Disconnecting, ConnectionState.Disconnected)
+        }
+    }
+
+    // Once disconnect() has published Disconnecting, a message the actor is still draining must not replace it.
+    // The compare-and-set loses to a Disconnecting published between the read and the write.
+    private fun publishState(state: ConnectionState) {
+        while (!disconnectRequested.value) {
+            val current = connectionState.value
+            if (current == ConnectionState.Disconnecting || connectionState.compareAndSet(current, state)) return
+        }
+    }
+
+    // Only a backoff wait can be cut short; an attempt in flight, Reconnecting or DeviceSleeping, cannot.
+    fun retryNow(): Boolean {
+        // Bound to the wait the caller saw, so a request that lands after a later backoff began does not end it.
+        val tick = retryTicket.value ?: return false
+        return inbox.trySend(EngineMessage.RetryNow(tick)).isSuccess
     }
 
     fun trySend(packet: MeshPacket, id: MessageId, stateFlow: MutableStateFlow<SendState>) {
@@ -716,7 +820,7 @@ internal class MeshEngine(
     fun connectionGeneration(): Long = connectionGeneration.value
 
     val linkDropsOnRestartCommands: Boolean
-        get() = transport.linkDropsOnRestartCommands
+        get() = writeLink.value?.transport?.linkDropsOnRestartCommands ?: false
 
     fun isConnectedAtGeneration(generation: Long): Boolean =
         connectionGeneration.value == generation && connectionState.value == ConnectionState.Connected
@@ -826,7 +930,8 @@ internal class MeshEngine(
         //    serial; 15 min on TCP) before considering the streamed-API client gone.
         //    Best-effort: only attempt if the transport reached Connected, bound by a short
         //    timeout, and swallow all errors so teardown always completes.
-        if (transport.state.value is TransportState.Connected) {
+        val link = transport
+        if (link?.state?.value is TransportState.Connected) {
             try {
                 withTimeoutOrNull(GOODBYE_TIMEOUT_MS) {
                     val encoded = WireCodec.encodeToRadio(
@@ -836,7 +941,7 @@ internal class MeshEngine(
                     )
                     val goodbye = Frame(encoded.toByteString())
                     logProtocolTx(goodbye)
-                    transport.send(goodbye)
+                    link.send(goodbye)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -846,9 +951,14 @@ internal class MeshEngine(
         }
 
         try {
-            transport.disconnect()
+            link?.disconnect()
         } catch (_: Exception) {
         }
+        attemptLink.getAndSet(null)?.takeIf { it !== link }?.let { disconnectQuietly(it) }
+        transport = null
+        transportObserver = null
+        writeLink.value = null
+        linkUp = false
 
         supervisorJobRef.compareAndSet(run.job, null)
         configSaves?.close()
@@ -886,7 +996,15 @@ internal class MeshEngine(
 
         reconnectJob?.cancel()
         reconnectJob = null
+        pendingTick = null
+        attemptJob = null
+        stableJob = null
+        handshakeRecoveries = 0
+        overflowRestarts = 0
+        readyThisSession = false
         reconnectAttempt = 0
+        sleepAttempts = 0
+        sleeping = null
         autoReconnectInProgress = false
         renumberedTo = null
         heldRenumberAck = null
@@ -897,7 +1015,12 @@ internal class MeshEngine(
 
         dispatcher.cancelAll(AdminResult.NodeUnreachable)
 
-        connectionState.value = ConnectionState.Disconnected
+        // A disconnect() waits for Disconnected; the compare keeps a terminal state only when nothing wrote over it.
+        val terminal = terminalState
+        terminalState = null
+        if (terminal == null || disconnectRequested.value || !connectionState.compareAndSet(terminal, terminal)) {
+            connectionState.value = ConnectionState.Disconnected
+        }
         logger.debug(TAG) { "Cleanup complete — session torn down" }
     }
 
@@ -917,9 +1040,8 @@ internal class MeshEngine(
 
             is EngineMessage.NodeDbRefreshTimeout -> {
                 if (nodeDbRefresh != null && msg.request == nodeDbRefreshRequest) {
-                    handleDisconnect(
-                        EngineMessage.Disconnect(MeshtasticException.Transport("Node database refresh timed out")),
-                    )
+                    val cause = MeshtasticException.Transport("Node database refresh timed out")
+                    if (!recoverSession(cause)) handleDisconnect(EngineMessage.Disconnect(cause))
                 }
             }
 
@@ -1006,7 +1128,33 @@ internal class MeshEngine(
             is EngineMessage.ReconnectTick -> handleReconnectTick(msg)
 
             is EngineMessage.ReconnectAttemptResult -> handleReconnectAttemptResult(msg)
+
+            is EngineMessage.RetryNow -> handleRetryNow(msg)
+
+            is EngineMessage.LinkStable -> handleLinkStable(msg)
+
+            is EngineMessage.SessionOverflow -> handleSessionOverflow(msg)
         }
+    }
+
+    private fun handleRetryNow(msg: EngineMessage.RetryNow) {
+        val tick = pendingTick?.takeIf { it === msg.tick } ?: return
+        reconnectJob?.cancel()
+        handleReconnectTick(tick)
+    }
+
+    private fun handleSessionOverflow(msg: EngineMessage.SessionOverflow) {
+        // A session that has already ended, or is ending, is restarting anyway.
+        if (!linkUp || handshakeStage == HandshakeStage.Idle || msg.sessionId != sessionReceive?.sessionId) return
+        logger.warn(TAG) { "Session receive overflowed in session ${msg.sessionId}; restarting the session" }
+        recoverSession(
+            MeshtasticException.Transport("Session receive overflowed in session ${msg.sessionId}"),
+            overflow = true,
+        )
+    }
+
+    private fun handleLinkStable(msg: EngineMessage.LinkStable) {
+        if (handshakeStage == HandshakeStage.Ready && msg.generation == receiveGeneration) resetFailureStreak()
     }
 
     private fun handlePostRpc(msg: EngineMessage.PostRpc) {
@@ -1151,23 +1299,23 @@ internal class MeshEngine(
     private suspend fun handleConnect(msg: EngineMessage.Connect) {
         connectionGeneration.incrementAndGet()
         pendingConnectDeferred = msg.deferred
-        connectionState.value = ConnectionState.Connecting(1)
+        publishState(ConnectionState.Connecting(1))
         // reset watchdog gate so a prior session's `disconnecting = true` doesn't stick.
         disconnecting = false
-        logger.info(TAG) { "Connect requested (transport=${transport.identity.forLog()})" }
+        logger.info(TAG) { "Connect requested (transport=${identity.forLog()})" }
 
         try {
-            storage = storageProvider.activate(transport.identity)
+            storage = storageProvider.activate(identity)
         } catch (e: CancellationException) {
             throw e
         } catch (e: MeshtasticException) {
-            connectionState.value = ConnectionState.Disconnected
+            publishState(ConnectionState.Disconnected)
             msg.deferred.completeExceptionally(e)
             pendingConnectDeferred = null
             return
         } catch (e: Exception) {
             val ex = MeshtasticException.StorageUnavailable(e.message ?: "storage activation failed", e)
-            connectionState.value = ConnectionState.Disconnected
+            publishState(ConnectionState.Disconnected)
             msg.deferred.completeExceptionally(ex)
             pendingConnectDeferred = null
             return
@@ -1215,24 +1363,59 @@ internal class MeshEngine(
             offlineNodes.clear()
         }
 
-        try {
-            transport.connect()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: MeshtasticException) {
-            connectionState.value = ConnectionState.Disconnected
-            msg.deferred.completeExceptionally(e)
-            pendingConnectDeferred = null
-            return
-        } catch (e: Exception) {
-            val ex = MeshtasticException.Transport(e.message ?: "transport connect failed", e)
-            connectionState.value = ConnectionState.Disconnected
-            msg.deferred.completeExceptionally(ex)
-            pendingConnectDeferred = null
-            return
-        }
-
+        if (!openFirstTransport(msg.deferred)) return
+        linkUp = true
         startStage1Handshake()
+    }
+
+    /** Opens and connects the transport for the attempt [connect] starts; false when it failed and was handled. */
+    private suspend fun openFirstTransport(deferred: CompletableDeferred<Unit>): Boolean {
+        var opened: RadioTransport? = null
+        try {
+            opened = transportProvider.open(0, null)
+            installTransport(opened)
+            opened.connect()
+            return true
+        } catch (e: Exception) {
+            // Only the actor's own cancellation ends the run; a provider's timeout fails the attempt.
+            if (e is CancellationException) currentCoroutineContext().ensureActive()
+            val ex =
+                e as? MeshtasticException ?: MeshtasticException.Transport(e.message ?: "transport connect failed", e)
+            val tagged = MeshtasticException.tag(ex, transportIdentity = identity, operation = "connect")
+            when {
+                isTerminal(opened, tagged) -> failSession(tagged)
+
+                // The first attempt is retried like a later drop; connect() waits for Ready or Failed.
+                autoReconnectConfig.enabled -> scheduleReconnect(tagged)
+
+                else -> {
+                    publishState(ConnectionState.Disconnected)
+                    deferred.completeExceptionally(ex)
+                    pendingConnectDeferred = null
+                }
+            }
+            return false
+        }
+    }
+
+    // A failed connect retrying cannot fix: firmware too old, or a transport reporting a non-recoverable error.
+    private fun isTerminal(link: RadioTransport?, cause: MeshtasticException? = null): Boolean =
+        cause is MeshtasticException.FirmwareTooOld || terminalError(link) != null
+
+    private fun terminalError(link: RadioTransport?): TransportState.Error? =
+        (link?.state?.value as? TransportState.Error)?.takeIf { !it.recoverable }
+
+    /** Makes [link] the engine's transport and observes its state, replacing the previous observer. */
+    private fun installTransport(link: RadioTransport) {
+        if (link === transport && transportObserver != null) return
+        transportObserver?.cancel()
+        transport = link
+        transportObserver = engineScope?.launch(CoroutineName("meshtastic-transport-observer")) {
+            link.state.collect { state ->
+                // A state update already in flight can reach the observer after the actor closes its inbox.
+                inbox.trySend(EngineMessage.TransportStateChanged(state, link))
+            }
+        }
     }
 
     /**
@@ -1245,14 +1428,14 @@ internal class MeshEngine(
         firmwareUpdateAdvised = false
         heartbeatAnswered = false
         localAdminGatedByLink.value = false
-        writeGeneration.value = generation
-        sessionReceive?.begin()
+        writeLink.value = transport?.let { WriteLink(generation, it) }
+        beginSession()
         startFrameReader(generation)
 
         // Stream-based transports (TCP, Serial) require 4 wake bytes (0x94) before the first
         // want_config_id to resync the firmware's frame decoder after an unclean disconnect.
         // BLE doesn't need this since each GATT write is self-framing.
-        if (!transport.identity.raw.startsWith("ble:")) {
+        if (!identity.raw.startsWith("ble:")) {
             val wakeBytes = byteArrayOf(0x94.toByte(), 0x94.toByte(), 0x94.toByte(), 0x94.toByte())
             outbound.trySend(OutboundFrame(Frame(wakeBytes.toByteString()), generation = generation))
         }
@@ -1265,7 +1448,7 @@ internal class MeshEngine(
         stage1DumpStarted = false
         lockdownLink.value = null
         handshakeStage = HandshakeStage.Stage1Draining
-        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage1, 0f)
+        publishState(ConnectionState.Configuring(ConfigPhase.Stage1, 0f))
         // Sent once per session: firmware's handleStartConfig has no re-entry guard (protocol.md §6),
         // so a silent Stage 1 ends in HandshakeTimeout and a fresh session, never an in-session resend.
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE1 }.build())
@@ -1303,6 +1486,7 @@ internal class MeshEngine(
         generation == receiveGeneration && handshakeStage != HandshakeStage.Idle
 
     private fun startFrameReader(generation: Long) {
+        val link = transport ?: return
         // Subscribe before sending Stage 1 so transports with a hot flow can deliver an
         // immediate response. Yield after the first frame so a preloaded transport returns
         // control to the actor even while it still has frames to read.
@@ -1310,7 +1494,7 @@ internal class MeshEngine(
             engineScope?.launch(CoroutineName("meshtastic-frame-reader"), start = CoroutineStart.UNDISPATCHED) {
                 var firstFrame = true
                 try {
-                    transport.frames().collect { frame ->
+                    link.frames().collect { frame ->
                         inbox.send(EngineMessage.FrameRx(frame, generation))
                         if (firstFrame) {
                             firstFrame = false
@@ -1331,11 +1515,21 @@ internal class MeshEngine(
     // A transport that throws from frames() or send() never publishes TransportState.Error, so
     // this is the only place its failure meets the reconnect policy.
     private fun handleLinkFailure(cause: MeshtasticException) {
-        if (!autoReconnectConfig.enabled || disconnecting) {
-            handleDisconnect(EngineMessage.Disconnect(cause))
+        if (!linkUp) return
+        // The transport may report a non-recoverable error after its failed write or read reached the actor.
+        terminalError(transport)?.let { error ->
+            val terminal = error.cause as? MeshtasticException
+                ?: MeshtasticException.Transport(error.cause.message ?: "transport error", error.cause)
+            failSession(MeshtasticException.tag(terminal, transportIdentity = identity, operation = "engine.link"))
             return
         }
-        val tagged = MeshtasticException.tag(cause, transportIdentity = transport.identity, operation = "engine.link")
+        val sleep = judgeSleepOnDrop(cause, recoverable = true)
+        if (!autoReconnectConfig.enabled || disconnecting) {
+            handleDisconnect(EngineMessage.Disconnect(cause))
+            sleep?.let(::settleTerminalSleep)
+            return
+        }
+        val tagged = MeshtasticException.tag(cause, transportIdentity = identity, operation = "engine.link")
         emitEvent(MeshEvent.TransportError(tagged))
         scheduleReconnect(tagged)
     }
@@ -1352,7 +1546,10 @@ internal class MeshEngine(
         // the pre-disconnect cycle can't re-enter the handshake after teardown begins.
         reconnectJob?.cancel()
         reconnectJob = null
+        pendingTick = null
         autoReconnectInProgress = false
+        sleeping = null
+        terminalState = null
 
         if (msg.cause != null) {
             // Typed causes (HandshakeTimeout, StorageUnavailable) reach observers as themselves.
@@ -1360,7 +1557,7 @@ internal class MeshEngine(
                 MeshEvent.TransportError(
                     MeshtasticException.tag(
                         msg.cause,
-                        transportIdentity = transport.identity,
+                        transportIdentity = identity,
                         operation = "engine.disconnect",
                     ),
                 ),
@@ -1499,7 +1696,7 @@ internal class MeshEngine(
 
         // Log records bypass the settle and handshake buffers, so a log burst cannot evict a held frame.
         fromRadio.log_record?.let { record ->
-            deviceLogs.tryEmit(record)
+            deviceLogs.tryEmit(SessionScoped(sessionCounter.value, record))
             return
         }
 
@@ -1542,8 +1739,19 @@ internal class MeshEngine(
     }
 
     private fun handleDeviceRebooted() {
-        logger.warn(TAG) { "Device rebooted — forcing disconnect" }
         emitEvent(MeshEvent.DeviceRebooted())
+        if (autoReconnectConfig.enabled && !disconnecting) {
+            logger.warn(TAG) { "Device rebooted; reconnecting" }
+            val cause = MeshtasticException.tag(
+                MeshtasticException.Transport("Device rebooted"),
+                transportIdentity = identity,
+                operation = "engine.reboot",
+            )
+            if (handshakeStage != HandshakeStage.Ready) failPreSendQueueWith(SendFailure.HandshakeFailed)
+            scheduleReconnect(cause)
+            return
+        }
+        logger.warn(TAG) { "Device rebooted — forcing disconnect" }
         handshakeStage = HandshakeStage.Idle
         lockdownLink.value = null
         readySendGeneration.value = null
@@ -1679,7 +1887,7 @@ internal class MeshEngine(
                 logger.info(TAG) { "Stage 1 complete; entering 100 ms settle" }
                 clearStage1Timers()
                 handshakeStage = HandshakeStage.Stage1Settling
-                connectionState.value = ConnectionState.Configuring(ConfigPhase.Settling, 0.5f)
+                publishState(ConnectionState.Configuring(ConfigPhase.Settling, 0.5f))
                 val attempt = handshakeAttempt
                 engineScope?.launch {
                     delay(INTER_STAGE_SETTLE_MS)
@@ -1740,16 +1948,11 @@ internal class MeshEngine(
         }
         val cause = MeshtasticException.tag(
             MeshtasticException.FirmwareTooOld(required = required, present = present),
-            transportIdentity = transport.identity,
+            transportIdentity = identity,
             operation = "handshake",
         )
         emitEvent(MeshEvent.TransportError(cause))
-        handshakeStage = HandshakeStage.Idle
-        failPreSendQueueWith(SendFailure.HandshakeFailed)
-        val deferred = pendingConnectDeferred
-        pendingConnectDeferred = null
-        deferred?.completeExceptionally(cause)
-        supervisorJobRef.value?.cancel()
+        failSession(cause)
     }
 
     /**
@@ -1805,7 +2008,7 @@ internal class MeshEngine(
             logger.info(TAG) { "Handshake ended after Stage 1 (config-only; NodeDB skipped)" }
             return
         }
-        connectionState.value = ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f)
+        publishState(ConnectionState.Configuring(ConfigPhase.Stage2, 0.5f))
         sendToRadio(ToRadio.Builder().also { wb -> wb.want_config_id = NONCE_STAGE2 }.build())
         handshakeStage = HandshakeStage.Stage2Draining
 
@@ -2197,11 +2400,27 @@ internal class MeshEngine(
         handshakeStage = HandshakeStage.Ready
         lockdownLink.value = myNodeNum.takeIf { it != 0 }?.let { LockdownLink(receiveGeneration, it) }
 
-        // failure starts a fresh backoff schedule.
-        reconnectAttempt = 0
+        // The backoff starts over once the session proves stable; the restart count when it ends without an overflow.
+        readyThisSession = true
+        // A sleeping radio may stay awake for less than stableAfter; its next sleep starts the backoff over.
+        sleepAttempts = 0
+        sleeping = null
         reconnectJob?.cancel()
         reconnectJob = null
+        pendingTick = null
         autoReconnectInProgress = false
+        stableJob?.cancel()
+        stableJob = null
+        val stableAfter = autoReconnectConfig.stableAfter
+        if (stableAfter == Duration.ZERO) {
+            resetFailureStreak()
+        } else {
+            val generation = receiveGeneration
+            stableJob = engineScope?.launch {
+                delay(stableAfter)
+                inbox.trySend(EngineMessage.LinkStable(generation))
+            }
+        }
 
         // C1: snapshot + clear preSendQueue BEFORE we publish ConnectionState.Connected.
         // Subscribers that react to Connected by calling RadioClient.send post a fresh
@@ -2213,7 +2432,7 @@ internal class MeshEngine(
         preSendQueue.clear()
 
         readySendGeneration.value = receiveGeneration
-        connectionState.value = ConnectionState.Connected
+        publishState(ConnectionState.Connected)
         sessionReceive?.let { receive ->
             receive.ready(
                 RadioSessionEvent.Ready(
@@ -2666,7 +2885,7 @@ internal class MeshEngine(
         stage: HandshakeStage,
     ): Boolean = when {
         fromRadio.log_record != null -> {
-            deviceLogs.tryEmit(fromRadio.log_record!!)
+            deviceLogs.tryEmit(SessionScoped(sessionCounter.value, fromRadio.log_record!!))
             true
         }
 
@@ -2801,7 +3020,8 @@ internal class MeshEngine(
         when (val outcome = displayFrameReassembler.accept(chunk)) {
             DisplayFrameReassembler.Outcome.Incomplete -> Unit
 
-            is DisplayFrameReassembler.Outcome.Complete -> displayFrames.tryEmit(outcome.frame)
+            is DisplayFrameReassembler.Outcome.Complete ->
+                displayFrames.tryEmit(SessionScoped(sessionCounter.value, outcome.frame))
 
             is DisplayFrameReassembler.Outcome.Dropped ->
                 logger.warn(TAG) { "Dropped display frame chunk: ${outcome.reason}" }
@@ -2946,7 +3166,7 @@ internal class MeshEngine(
                 from = NodeId(packet.from.takeIf { it != 0 } ?: myNodeNum),
                 error = error,
                 fromLocalRadio = local,
-                relayNode = packet.relay_node.takeUnless { it == 0 || heardDirect || packet.via_mqtt },
+                relayNode = packet.relay_node.takeUnless { it == 0 || heardDirect || !relayIsRfHop(packet) },
                 ackProof = packet.ack_proof_status,
             ),
         )
@@ -3124,34 +3344,107 @@ internal class MeshEngine(
     }
 
     private fun handleTransportStateChanged(msg: EngineMessage.TransportStateChanged) {
-        when (val s = msg.state) {
-            is TransportState.Error -> {
-                logger.warn(TAG, s.cause) { "Transport error: ${s.cause.message}" }
-                val cause = MeshtasticException.tag(
-                    s.cause as? MeshtasticException
-                        ?: MeshtasticException.Transport(s.cause.message ?: "transport error", s.cause),
-                    transportIdentity = transport.identity,
-                    operation = "transport.observe",
-                )
-                emitEvent(MeshEvent.TransportError(cause))
-
-                // branch on whether the engine should attempt reconnect.
-                val retriable = autoReconnectConfig.enabled &&
-                    s.recoverable &&
-                    s.cause !is MeshtasticException.FirmwareTooOld &&
-                    !disconnecting
-                if (retriable) {
-                    scheduleReconnect(cause)
-                } else {
-                    if (handshakeStage == HandshakeStage.Ready) {
-                        connectionState.value = ConnectionState.Reconnecting(cause, 1)
-                    }
-                    supervisorJobRef.value?.cancel()
-                }
-            }
-
-            else -> logger.verbose(TAG) { "Transport state → ${msg.state}" }
+        val s = msg.state
+        // Only the live link's errors end a session: a failed attempt reports through its own outcome,
+        // and a replaced transport's late updates are stale.
+        if (s !is TransportState.Error || msg.source !== transport || !linkUp) {
+            logger.verbose(TAG) { "Transport state → $s" }
+            return
         }
+        logger.warn(TAG, s.cause) { "Transport error: ${s.cause.message}" }
+        val cause = MeshtasticException.tag(
+            s.cause as? MeshtasticException
+                ?: MeshtasticException.Transport(s.cause.message ?: "transport error", s.cause),
+            transportIdentity = identity,
+            operation = "transport.observe",
+        )
+        emitEvent(MeshEvent.TransportError(cause))
+
+        // Judged before scheduleReconnect resets the handshake stage and the config bundle.
+        val sleep = judgeSleepOnDrop(s.cause, s.recoverable)
+        when {
+            !s.recoverable || cause is MeshtasticException.FirmwareTooOld -> failSession(cause)
+
+            autoReconnectConfig.enabled && !disconnecting -> scheduleReconnect(cause)
+
+            else -> {
+                linkUp = false
+                sessionReceive?.end()
+                sleep?.let(::settleTerminalSleep)
+                supervisorJobRef.value?.cancel()
+            }
+        }
+    }
+
+    /**
+     * Ends the session for good with [ConnectionState.Failed]: no Reconnecting is published, a pending
+     * [connect] throws [cause], and cleanup keeps Failed as the final state.
+     */
+    private fun failSession(cause: MeshtasticException) {
+        logger.warn(TAG, cause) { "Connection failed; not retrying" }
+        linkUp = false
+        writeLink.value = null
+        clearNodeDbRefresh()
+        sessionReceive?.end()
+        reconnectJob?.cancel()
+        reconnectJob = null
+        pendingTick = null
+        autoReconnectInProgress = false
+        sleeping = null
+        if (handshakeStage != HandshakeStage.Ready) failPreSendQueueWith(SendFailure.HandshakeFailed)
+        handshakeStage = HandshakeStage.Idle
+        readySendGeneration.value = null
+        lockdownLink.value = null
+        val failed = ConnectionState.Failed(cause)
+        terminalState = failed
+        // Published before connect() is released, so a caller that catches its throw already reads Failed.
+        publishState(failed)
+        val deferred = pendingConnectDeferred
+        pendingConnectDeferred = null
+        deferred?.completeExceptionally(cause)
+        supervisorJobRef.value?.cancel()
+    }
+
+    /**
+     * Restarts the session after an engine-detected stall ([cause]: a handshake or liveness timeout, a
+     * handshake protocol error or a session receive overflow) when auto-reconnect is on. Returns false
+     * when it is off, leaving the teardown to the caller.
+     */
+    private fun recoverSession(cause: MeshtasticException, overflow: Boolean = false): Boolean {
+        if (!autoReconnectConfig.enabled || disconnecting) return false
+        // A session that reached Ready and then stalled is a restart the cap counts, so only a drop resets it.
+        readyThisSession = false
+        val tagged = MeshtasticException.tag(cause, transportIdentity = identity, operation = "engine.recover")
+        // A radio that kept its link through light sleep accepts the connect but stays silent until it wakes.
+        if (!inSleepWindow()) {
+            val cap = autoReconnectConfig.maxHandshakeRecoveries
+            // With no cap set, a collector that keeps falling behind would otherwise restart the session forever.
+            val overflowCapped = cap == null && overflow && overflowRestarts >= DEFAULT_OVERFLOW_RESTARTS
+            if (overflowCapped || (cap != null && handshakeRecoveries >= cap)) {
+                failSession(tagged)
+                return true
+            }
+            handshakeRecoveries += 1
+            overflowRestarts = if (overflow) overflowRestarts + 1 else 0
+        }
+        if (handshakeStage != HandshakeStage.Ready) failPreSendQueueWith(SendFailure.HandshakeFailed)
+        scheduleReconnect(tagged)
+        return true
+    }
+
+    // Every drop out of a Ready session is judged here, whichever way it was noticed: a transport error, a failed
+    // write or read, or the liveness watchdog. A reboot has already reset the stage.
+    private fun judgeSleepOnDrop(cause: Throwable, recoverable: Boolean): ConnectionState.DeviceSleeping? {
+        if (handshakeStage != HandshakeStage.Ready || !recoverable || disconnecting) return null
+        if (cause is MeshtasticException.FirmwareTooOld) return null
+        val expectation = sleepExpectation(identity, configBundleState.value) ?: return null
+        return ConnectionState.DeviceSleeping(clock.now(), expectation.expectedWakeSeconds).also { sleeping = it }
+    }
+
+    // With no reconnect to follow, cleanup settles on this instead of Disconnected.
+    private fun settleTerminalSleep(sleep: ConnectionState.DeviceSleeping) {
+        publishState(sleep)
+        terminalState = sleep
     }
 
     // Session state a new handshake must not inherit. Engine scope, storage, the supervisor and
@@ -3180,6 +3473,8 @@ internal class MeshEngine(
         heartbeatJob = null
         presenceJob?.cancel()
         presenceJob = null
+        stableJob?.cancel()
+        stableJob = null
 
         // Fail in-flight sends — their wire IDs won't survive the device-side session restart.
         for ((_, stateFlow) in pendingSends) {
@@ -3240,86 +3535,150 @@ internal class MeshEngine(
         clearNodeDbRefresh()
         sessionReceive?.end()
         resetSessionState()
-        sessionReceive?.begin()
+        beginSession()
         requestStage1Config()
     }
 
     private fun scheduleReconnect(cause: MeshtasticException) {
+        if (readyThisSession) {
+            handshakeRecoveries = 0
+            overflowRestarts = 0
+        }
+        readyThisSession = false
+        linkUp = false
+        // A frame still queued for this link must not reach the transport once it is reconnected.
+        writeLink.value = null
         clearNodeDbRefresh()
         sessionReceive?.end()
         frameReaderJob?.cancel()
         val cap = autoReconnectConfig.maxAttempts
-        if (cap != null && reconnectAttempt >= cap) {
-            logger.warn(TAG, cause) {
-                "Auto-reconnect attempt cap ($cap) exhausted; tearing down session"
-            }
-            connectionState.value = ConnectionState.Disconnected
-            supervisorJobRef.value?.cancel()
+        // A sleep gets attempts outside the cap until its wake bound plus a grace has passed.
+        val freeAttempt = inSleepWindow()
+        if (!freeAttempt && cap != null && reconnectAttempt >= cap) {
+            logger.warn(TAG, cause) { "Auto-reconnect attempt cap ($cap) exhausted" }
+            failSession(cause)
             return
         }
-        reconnectAttempt += 1
+        if (freeAttempt) sleepAttempts += 1 else reconnectAttempt += 1
         autoReconnectInProgress = true
         resetSessionState()
 
-        connectionState.value = ConnectionState.Reconnecting(cause, reconnectAttempt)
-
-        val backoff = computeBackoff(reconnectAttempt)
+        val attempt = reconnectAttempt + sleepAttempts
+        val backoff = computeBackoff(attempt)
+        publishState(sleeping ?: ConnectionState.Reconnecting(cause, reconnectAttempt, clock.now() + backoff))
         logger.info(TAG, cause) {
-            "Auto-reconnect attempt $reconnectAttempt scheduled in ${backoff.inWholeMilliseconds} ms"
+            "Auto-reconnect attempt $attempt scheduled in ${backoff.inWholeMilliseconds} ms"
         }
+        val tick = EngineMessage.ReconnectTick(cause, attempt)
+        pendingTick = tick
         reconnectJob?.cancel()
         reconnectJob = engineScope?.launch {
             delay(backoff)
-            inbox.trySend(EngineMessage.ReconnectTick(cause, reconnectAttempt))
+            inbox.trySend(tick)
         }
     }
 
     private fun handleReconnectTick(msg: EngineMessage.ReconnectTick) {
-        if (!autoReconnectInProgress) return
+        if (!autoReconnectInProgress || msg !== pendingTick) return
         val scope = engineScope ?: return
+        pendingTick = null
+        reconnectJob = null
+        if (sleeping == null) publishState(ConnectionState.Reconnecting(msg.cause, reconnectAttempt))
+        val previous = transport
         val previousReader = frameReaderJob
-        scope.launch {
+        val token = ++attemptToken
+        attemptJob = scope.launch(CoroutineName("meshtastic-reconnect-attempt")) {
+            var opened: RadioTransport? = null
             val outcome = try {
+                // Serialized with credential writes, so a queued lockdown command never reaches the next link.
                 lockdownWriteMutex.withLock {
-                    autoReconnectConfig.recoveryStep?.recover(msg.attempt, msg.cause)
-                    runCatching { transport.disconnect() }
+                    disconnectQuietly(previous)
                     previousReader?.join()
-                    transport.connect()
+                    val next = transportProvider.open(msg.attempt, msg.cause)
+                    opened = next
+                    attemptLink.value = next
+                    next.connect()
                 }
-                EngineMessage.ReconnectAttemptResult(success = true, cause = null)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: MeshtasticException) {
-                EngineMessage.ReconnectAttemptResult(success = false, cause = e)
+                EngineMessage.ReconnectAttemptResult(token, opened, cause = null)
             } catch (e: Exception) {
+                if (e is CancellationException && !currentCoroutineContext().isActive) {
+                    // Torn down mid-attempt: a link opened for a session that no longer exists must not stay up.
+                    withContext(NonCancellable) { disconnectQuietly(opened) }
+                    throw e
+                }
+                // A provider's own timeout (TimeoutCancellationException) fails the attempt, it doesn't end the engine.
+                val cause = e as? MeshtasticException
+                    ?: MeshtasticException.Transport(e.message ?: "reconnect attempt failed", e)
                 EngineMessage.ReconnectAttemptResult(
-                    success = false,
-                    cause = MeshtasticException.tag(
-                        MeshtasticException.Transport(e.message ?: "reconnect attempt failed", e),
-                        transportIdentity = transport.identity,
-                        operation = "engine.reconnect",
-                    ),
+                    token,
+                    opened,
+                    MeshtasticException.tag(cause, transportIdentity = identity, operation = "engine.reconnect"),
                 )
             }
             inbox.trySend(outcome)
         }
     }
 
+    private suspend fun disconnectQuietly(link: RadioTransport?) {
+        try {
+            link?.disconnect()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.debug(TAG, e) { "Transport disconnect failed: ${e.message}" }
+        }
+    }
+
     private fun handleReconnectAttemptResult(msg: EngineMessage.ReconnectAttemptResult) {
-        if (!autoReconnectInProgress) return
-        if (msg.success) {
-            logger.info(TAG) { "Auto-reconnect attempt $reconnectAttempt succeeded" }
-            livenessBudgetMs = LIVENESS_TIMEOUT_MS
-            startStage1Handshake()
-        } else {
-            val cause = msg.cause ?: MeshtasticException.tag(
-                MeshtasticException.Transport("reconnect attempt failed"),
-                transportIdentity = transport.identity,
+        if (!autoReconnectInProgress || msg.token != attemptToken) return
+        attemptJob = null
+        attemptLink.value = null
+        msg.transport?.let(::installTransport)
+        val link = msg.transport
+        val failure = msg.cause ?: (link?.state?.value as? TransportState.Error)?.let { error ->
+            MeshtasticException.tag(
+                error.cause as? MeshtasticException
+                    ?: MeshtasticException.Transport(error.cause.message ?: "transport error", error.cause),
+                transportIdentity = identity,
                 operation = "engine.reconnect",
             )
-            logger.warn(TAG, cause) { "Auto-reconnect attempt $reconnectAttempt failed; rescheduling" }
-            scheduleReconnect(cause)
         }
+        if (failure == null && link != null) {
+            logger.info(TAG) { "Auto-reconnect attempt ${reconnectAttempt + sleepAttempts} succeeded" }
+            // The link can come up while the radio still sleeps; only Ready proves it awake.
+            linkUp = true
+            livenessBudgetMs = LIVENESS_TIMEOUT_MS
+            startStage1Handshake()
+            return
+        }
+        val cause = failure ?: MeshtasticException.tag(
+            MeshtasticException.Transport("reconnect attempt failed"),
+            transportIdentity = identity,
+            operation = "engine.reconnect",
+        )
+        if (isTerminal(link, cause)) {
+            failSession(cause)
+            return
+        }
+        logger.warn(TAG, cause) { "Auto-reconnect attempt ${reconnectAttempt + sleepAttempts} failed; rescheduling" }
+        scheduleReconnect(cause)
+    }
+
+    /**
+     * True while [sleeping] is set and its wake bound plus grace has not passed; clears [sleeping] once
+     * it has. Attempts and handshake restarts inside the window count against no cap.
+     */
+    private fun inSleepWindow(): Boolean {
+        val sleep = sleeping ?: return false
+        val windowEnd = sleep.since + sleep.expectedWakeSeconds.seconds + autoReconnectConfig.maxBackoff * 2
+        if (clock.now() < windowEnd) return true
+        sleeping = null
+        return false
+    }
+
+    // Only a session that stayed up for stableAfter ends the failure streak.
+    private fun resetFailureStreak() {
+        reconnectAttempt = 0
     }
 
     private fun computeBackoff(attempt: Int): kotlin.time.Duration {
@@ -3333,18 +3692,11 @@ internal class MeshEngine(
     }
 
     private fun routingFailure(errorReason: Routing.Error): SendFailure = when (errorReason) {
-        Routing.Error.NO_ROUTE,
-        Routing.Error.GOT_NAK,
-        -> SendFailure.NoRoute
-
+        Routing.Error.NO_ROUTE -> SendFailure.NoRoute
         Routing.Error.MAX_RETRANSMIT -> SendFailure.MaxRetransmit
-
         Routing.Error.TIMEOUT -> SendFailure.Timeout
-
         Routing.Error.DUTY_CYCLE_LIMIT -> SendFailure.DutyCycleLimit
-
         Routing.Error.RATE_LIMIT_EXCEEDED -> SendFailure.RateLimited
-
         else -> SendFailure.Other(errorReason)
     }
 
@@ -3667,7 +4019,7 @@ internal class MeshEngine(
         val scope = engineScope ?: return
         ackTimeoutJobs.remove(id)?.cancel()
         ackTimeoutJobs[id] = scope.launch {
-            delay(sendTimeout)
+            delay(sendAckTimeout)
             inbox.trySend(EngineMessage.SendAckTimeout(id, state))
         }
     }
@@ -3700,7 +4052,7 @@ internal class MeshEngine(
         flushDirtyHeartbeats()
     }
 
-    private fun sendsPeriodicHeartbeats(): Boolean = bleHeartbeatEnabled || !transport.identity.raw.startsWith("ble:")
+    private fun sendsPeriodicHeartbeats(): Boolean = bleHeartbeatEnabled || !identity.raw.startsWith("ble:")
 
     private fun sendKeepaliveHeartbeat(): Int {
         val nonce = heartbeatNonce
@@ -3748,6 +4100,7 @@ internal class MeshEngine(
         failPreSendQueueWith(SendFailure.HandshakeFailed)
 
         val cause = MeshtasticException.HandshakeTimeout(msg.stage.toDisplayName())
+        if (recoverSession(cause)) return
         val deferred = pendingConnectDeferred
         pendingConnectDeferred = null
         deferred?.completeExceptionally(cause)
@@ -3778,6 +4131,14 @@ internal class MeshEngine(
         if (livenessBudgetMs >= 0) return
         logger.warn(TAG) { "Liveness timeout — no FromRadio for ${LIVENESS_TIMEOUT_MS}ms" }
         val cause = MeshtasticException.Transport("liveness timeout", cause = null)
+        val sleep = judgeSleepOnDrop(cause, recoverable = true)
+        if (autoReconnectConfig.enabled) {
+            val tagged = MeshtasticException.tag(cause, transportIdentity = identity, operation = "engine.liveness")
+            emitEvent(MeshEvent.TransportError(tagged))
+            // A sleeping device's silence is its sleep, not a stall to count against maxHandshakeRecoveries.
+            if (sleep != null) scheduleReconnect(tagged) else recoverSession(tagged)
+            return
+        }
         // A connect() still waiting on a lockdown unlock fails with the same cause.
         pendingConnectDeferred?.let { deferred ->
             pendingConnectDeferred = null
@@ -3786,14 +4147,17 @@ internal class MeshEngine(
         }
         // handleDisconnect emits the TransportError event for us and cancels the supervisor.
         handleDisconnect(EngineMessage.Disconnect(cause))
+        sleep?.let(::settleTerminalSleep)
     }
 
     private fun failHandshakeWithProtocol(reason: String) {
         logger.error(TAG) { reason }
+        val cause = MeshtasticException.Protocol(reason)
+        // scheduleReconnect resets the stage to Idle, so a settle replay stops here too.
+        if (recoverSession(cause)) return
         // Terminal before the cancel lands, so a settle replay stops instead of carrying the handshake on.
         handshakeStage = HandshakeStage.Idle
         failPreSendQueueWith(SendFailure.HandshakeFailed)
-        val cause = MeshtasticException.Protocol(reason)
         val deferred = pendingConnectDeferred
         pendingConnectDeferred = null
         deferred?.completeExceptionally(cause)
@@ -3825,7 +4189,7 @@ internal class MeshEngine(
         val queued =
             outbound.trySend(OutboundFrame(Frame(encoded.toByteString()), link, pacedSend, receiveGeneration)).isSuccess
         // A lockdown command carries the radio's credential, so it stays off the tap.
-        if (queued && link == null) msg.packet?.let { outboundPackets.tryEmit(it) }
+        if (queued && link == null) msg.packet?.let { outboundPackets.tryEmit(SessionScoped(sessionCounter.value, it)) }
         queued
     } catch (e: Exception) {
         logger.warn(TAG, e) { "Failed to encode outbound ToRadio: ${e.message}" }
@@ -3870,13 +4234,13 @@ internal class MeshEngine(
         trySendToRadio(ToRadio.Builder().also { it.packet = packet }.build(), link)
     }
 
-    private suspend fun writeLockdownFrame(frame: Frame, link: LockdownLink) {
+    private suspend fun writeLockdownFrame(frame: Frame, link: LockdownLink, target: RadioTransport) {
         // Serialize credential writes with physical reconnection, so a queued command
         // cannot reach a radio that has replaced its original link.
         lockdownWriteMutex.withLock {
             if (lockdownLink.value != link) return
             logProtocolTx(frame)
-            val sent = withTimeoutOrNull(sendTimeout) { transport.send(frame) }
+            val sent = withTimeoutOrNull(TRANSPORT_WRITE_TIMEOUT) { target.send(frame) }
             checkNotNull(sent) { "Lockdown write timed out" }
         }
     }
@@ -4269,6 +4633,9 @@ internal class MeshEngine(
         // Timeouts (ms).
         const val STAGE1_TIMEOUT_MS = 20_000L
 
+        // Overflow restarts in a row when maxHandshakeRecoveries is null: Meshtastic-Android's MAX_RECOVERY_RESTARTS.
+        const val DEFAULT_OVERFLOW_RESTARTS = 3
+
         // Android stops re-arming a stage guard after 10 x its budget (STAGE_GUARD_TOTAL_CAP_FACTOR).
         const val STAGE1_HARD_CAP_MS = STAGE1_TIMEOUT_MS * 10
 
@@ -4318,8 +4685,8 @@ internal class MeshEngine(
         // Mesh packets held until Ready, flushed in one pass; the packets flow buffers as many (128).
         const val HANDSHAKE_PACKET_BUFFER_CAP = 128
 
-        // How long one transport write may take before the link counts as failed. Separate from
-        // sendTimeout, which bounds the wait for a routing ACK.
+        // How long one transport write, a lockdown credential included, may take before the link
+        // counts as failed. Separate from sendAckTimeout, which bounds only the wait for a routing ACK.
         val TRANSPORT_WRITE_TIMEOUT = 30.seconds
 
         // How long the paced queue stays empty after a renumber before the handshake restarts.
@@ -4375,3 +4742,12 @@ internal class MeshEngine(
         class Event(val event: MeshEvent) : HeldItem
     }
 }
+
+private val LORA_TRANSPORTS =
+    setOf(PacketTransport.Lora, PacketTransport.LoraAlt1, PacketTransport.LoraAlt2, PacketTransport.LoraAlt3)
+
+/**
+ * True when [packet]'s relay byte names the RF hop that delivered it. Firmware zeroes the byte on MQTT downlink but
+ * keeps `via_mqtt` through later LoRa hops; before 2.7.5 it sent no transport, so `via_mqtt` decides alone.
+ */
+private fun relayIsRfHop(packet: MeshPacket): Boolean = packet.transport in LORA_TRANSPORTS || !packet.via_mqtt

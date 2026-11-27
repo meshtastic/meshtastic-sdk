@@ -33,6 +33,17 @@ public data class Frame(public val bytes: ByteString)
  * `"meshtastic.local"` and `"192.168.1.42"` produces two distinct identities, each with its own
  * storage. See [DeviceStorage.recordOwnNode] for the reset rule that bounds this risk.
  *
+ * **Minting an identity:** the constructor is public because every [RadioTransport] supplies one.
+ * [raw] is the storage key for one transport endpoint: keep it stable for the same endpoint across
+ * launches. It identifies the endpoint, not the radio, so one radio reached over BLE and TCP has two
+ * identities, and radios that take turns on one endpoint share one. It is not parsed, and it is
+ * stored and logged as-is, so never put credentials in it (an HTTP base URL with userinfo would).
+ * Start it with a scheme prefix unique to the transport kind. The SDK uses `ble:`, `tcp:`, `http:`,
+ * `serial-android:`, `serial-jvm:` and `ws:`; a host's own transports (simulators, replays, a browser
+ * serial port) pick prefixes outside that list, such as `mock:`, `replay:` or `serial-web:`. Every
+ * prefix except `ble:` gets four `0x94` wake bytes before the handshake, as a byte-stream link
+ * needs; a self-framing transport that must not receive them uses `ble:`.
+ *
  * **Java interop:** properties returning [TransportIdentity] expose
  * non-mangled boxed accessors (e.g. `transport.getIdentity()` instead of
  * `getIdentity-dT_YJr8()`) thanks to `-Xjvm-expose-boxed`. Java callers can
@@ -253,4 +264,38 @@ public interface RadioTransport {
      * disconnects.
      */
     public val state: StateFlow<TransportState>
+}
+
+/**
+ * Supplies the [RadioTransport] for each connection attempt; pass one to
+ * [RadioClient.Builder.transport].
+ *
+ * The engine calls [open] when [RadioClient.connect] starts (`attempt = 0`, `cause = null`) and
+ * before every auto-reconnect attempt (`attempt` is the number shown in
+ * [ConnectionState.Reconnecting], `cause` the failure being recovered from). By then the previous
+ * transport has been disconnected and its frame reader has finished. The engine then calls
+ * `connect()` on what [open] returned.
+ *
+ * Return the same instance every time when the transport keeps state across attempts
+ * (`BleTransport`, `WebSocketTransport`), or a fresh one when a link cannot be reused, such as a
+ * USB serial port that re-enumerated. The engine disconnects an instance it stops using but never
+ * closes or shuts it down; that stays with the provider.
+ *
+ * [open] may suspend until the environment allows a connection, for example until Bluetooth is on
+ * or a USB permission is granted. While it is suspended the state is [ConnectionState.Reconnecting]
+ * with `retryAt = null` ([ConnectionState.Connecting] for `attempt = 0`, [ConnectionState.DeviceSleeping]
+ * while a sleeping device is retried), and waiting does not use up an attempt. Throwing fails the
+ * attempt like a failed `connect()`, a [kotlinx.coroutines.CancellationException] from the
+ * provider's own timeout included; only cancelling the client ends it.
+ *
+ * @since 0.3.0
+ */
+public fun interface RadioTransportProvider {
+    /**
+     * Returns the transport for this attempt.
+     *
+     * @param attempt `0` for the attempt [RadioClient.connect] starts, then the 1-based reconnect attempt
+     * @param cause the failure that started this reconnect attempt; `null` for `attempt = 0`
+     */
+    public suspend fun open(attempt: Int, cause: MeshtasticException?): RadioTransport
 }

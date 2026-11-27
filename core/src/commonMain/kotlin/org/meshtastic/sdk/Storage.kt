@@ -327,6 +327,10 @@ public interface DeviceStorage : AutoCloseable {
  * @property expiresAtEpochMs absolute expiry time in epoch milliseconds (UTC); a [DeviceStorage.loadSessionPasskey]
  *   implementation must return `null` once the wall-clock has advanced past this value.
  *
+ * [toString] omits [bytes]: the passkey authorizes admin writes.
+ *
  * @since 0.1.0
  */
-public data class SessionPasskey(public val bytes: okio.ByteString, public val expiresAtEpochMs: Long)
+public data class SessionPasskey(public val bytes: okio.ByteString, public val expiresAtEpochMs: Long) {
+    override fun toString(): String = "SessionPasskey(bytes=<redacted>, expiresAtEpochMs=$expiresAtEpochMs)"
+}

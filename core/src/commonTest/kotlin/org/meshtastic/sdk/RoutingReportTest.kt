@@ -58,6 +58,43 @@ class RoutingReportTest {
         }
     }
 
+    // A gateway rebroadcast keeps via_mqtt and stamps its own byte; our radio marks it TRANSPORT_LORA.
+    @Test
+    fun `an ACK that crossed MQTT then arrived over LoRa names its relay`() = runTest {
+        withClient { transport, reports, _ ->
+            transport.injectPacket(
+                routing(from = PEER, requestId = EARLIER_SESSION_ID, error = Routing.Error.NONE) {
+                    hop_start = 3
+                    hop_limit = 1
+                    relay_node = RELAY_BYTE
+                    via_mqtt = true
+                    transport_mechanism = MeshPacket.TransportMechanism.TRANSPORT_LORA
+                },
+            )
+            runCurrent()
+
+            assertEquals(RELAY_BYTE, reports.single().relayNode)
+        }
+    }
+
+    // Firmware before 2.7.5 sends no transport, so via_mqtt alone means the byte is not an RF hop.
+    @Test
+    fun `an MQTT ACK without a transport names no relay`() = runTest {
+        withClient { transport, reports, _ ->
+            transport.injectPacket(
+                routing(from = PEER, requestId = EARLIER_SESSION_ID, error = Routing.Error.NONE) {
+                    hop_start = 3
+                    hop_limit = 1
+                    relay_node = RELAY_BYTE
+                    via_mqtt = true
+                },
+            )
+            runCurrent()
+
+            assertNull(reports.single().relayNode)
+        }
+    }
+
     @Test
     fun `an ACK heard with no hops used names no relay`() = runTest {
         withClient { transport, reports, _ ->
@@ -181,7 +218,7 @@ class RoutingReportTest {
             .sessionReceive()
             .build()
         val session = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { session += it } }
+        backgroundScope.launch { client.sessionEvents.collect { session += it } }
         val reports = mutableListOf<MeshEvent.RoutingReport>()
         backgroundScope.launch { client.events.collect { if (it is MeshEvent.RoutingReport) reports += it } }
         client.connect()

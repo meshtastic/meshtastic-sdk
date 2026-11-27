@@ -69,7 +69,7 @@ class P1EngineHardeningTest {
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
 
@@ -131,7 +131,7 @@ class P1EngineHardeningTest {
         }
 
         assertMapping(Routing.Error.NO_ROUTE, SendFailure.NoRoute)
-        assertMapping(Routing.Error.GOT_NAK, SendFailure.NoRoute)
+        assertMapping(Routing.Error.GOT_NAK, SendFailure.Other(Routing.Error.GOT_NAK))
         assertMapping(Routing.Error.MAX_RETRANSMIT, SendFailure.MaxRetransmit)
         assertMapping(Routing.Error.TIMEOUT, SendFailure.Timeout)
         assertMapping(Routing.Error.DUTY_CYCLE_LIMIT, SendFailure.DutyCycleLimit)
@@ -163,12 +163,13 @@ class P1EngineHardeningTest {
         // Transport that connects but never responds to Stage 1 → Stage 1 watchdog fires.
         val transport = SilentTransport(TransportIdentity("fake:p1-pre-send"))
         val engine = MeshEngine(
-            transport = transport,
+            identity = transport.identity,
+            transportProvider = { _, _ -> transport },
             storageProvider = InMemoryStorageProvider(),
             logger = LogSink.Silent,
             bleHeartbeatEnabled = false,
             parentContext = backgroundScope.coroutineContext,
-            sendTimeout = 30.seconds,
+            sendAckTimeout = 30.seconds,
         )
 
         val connectJob = async { runCatching { engine.connect() } }
@@ -213,6 +214,7 @@ class P1EngineHardeningTest {
     fun stage2TimeoutSlidesWhenFramesArrive() = runTest {
         val transport = SteppedStage2Transport(TransportIdentity("fake:p1-stage2-slide"))
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
@@ -264,6 +266,7 @@ class P1EngineHardeningTest {
     fun livenessWatchdogTearsDownSilentSession() = runTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:liveness"), autoHandshake = true)
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)

@@ -57,7 +57,7 @@ Firmware closes a TCP connection after 15 minutes (`TCP_IDLE_TIMEOUT_MS` in `fir
 
 When it fires, firmware closes the socket, the transport reads end-of-stream and reports `TransportState.Error(recoverable = true)`, and the session ends.
 
-The SDK sends a `ToRadio.heartbeat` every 30 s once the session is `Connected` (§16), so an SDK session over TCP never reaches the timeout. Reconnecting after any drop is off by default: `RadioClient.Builder.autoReconnect(...)` turns on the engine's backoff supervisor, and [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md#reconnecting) covers reconnecting with and without it.
+The SDK sends a `ToRadio.heartbeat` every 30 s once the session is `Connected` (§16), so an SDK session over TCP never reaches the timeout. Reconnecting after a recoverable drop is on by default (the engine's backoff supervisor) unless the builder gets `AutoReconnectConfig.Disabled`; a non-recoverable transport error ends in `ConnectionState.Failed` instead, and [`consumer-guides/error-handling.md`](consumer-guides/error-handling.md#reconnecting) covers reconnecting with and without it.
 
 ---
 
@@ -180,6 +180,17 @@ While the node is in any `STATE_SEND_*` state other than `STATE_SEND_PACKETS`, a
 - Pairing uses numeric comparison with a 6-digit PIN, which the node shows on its display if it has one and logs. `config.bluetooth.fixed_pin` sets a static PIN.
 - The OS manages pairing and bonding. The SDK surfaces it as `TransportState.Bonding` and does not drive it, except for the opt-in bond-first step in `BleResilience` on Android.
 - nRF52 platforms pair through `NRF52Bluetooth.cpp`; ESP32 platforms use NimBLE.
+
+### Power-saving sleep drops the BLE link
+
+Firmware sends nothing before it sleeps; the BLE link drops. Whether a device sleeps follows from config the handshake delivers, and the SDK reports such a drop as `ConnectionState.DeviceSleeping`.
+
+- Light sleep is ESP32 only, on builds with `HAS_WIFI`: a router or router-late role, or `power.is_power_saving` on any role but tracker, TAK tracker and sensor, unless `isWifiAvailable()` holds at boot (`PowerFSM.cpp:491-512`): WiFi enabled with an SSID, or `eth_enabled` on a `USE_WS5500` or `USE_CH390D` build (`WiFiAPClient.cpp:339-356`). Every ESP32 variant with `HAS_ETHERNET`, which `metadata.hasEthernet` reports (`main.cpp:1334`), defines one of those, and `configuration.h:470-472` requires `HAS_ETHERNET` for both.
+- Firmware enters light sleep `wait_bluetooth_secs` after the last `ToRadio` write, 60 s by default and one second for a router (`Default.h:29`): every write fires `EVENT_CONTACT_FROM_PHONE` (`PhoneAPI.cpp:519`), and its `DARK -> DARK` transition restarts the `DARK -> LS` timer (`PowerFSM.cpp:470`, `:502-506`). The SDK's 30 s heartbeat (§16) therefore keeps a radio with the default `wait_bluetooth_secs` awake; a connected client sees the radio sleep only when `wait_bluetooth_secs` is shorter than its heartbeat interval or it stops writing.
+- The BLE controller stays enabled through light sleep: on ESP32 `setBluetoothEnable(false)`, called before each sleep (`sleep.cpp:224`) and in `nbEnter`, acts only on enable (`main-esp32.cpp:122-150`). The radio sleeps in 30 s chunks with a 100 ms wake between them (`PowerFSM.cpp:32`, `:159-184`) and answers nothing, so the link drops when the central's supervision timeout lapses during a chunk, which takes seconds on Android, or after the radio wakes. A central with a longer timeout can keep the link through the whole sleep; the SDK's liveness watchdog then ends the session.
+- A client wakes to `DARK` within `ls_secs` (`PowerFSM.cpp:159`, `:386`); a router wakes to `NB` within `ls_secs` (one day by default, `Default.h:31`) and returns to `LS` after `min_wake_secs` (`:386`, `:497-499`). `nbEnter` calls `setBluetoothEnable(false)` (`:264-272`), a no-op on ESP32, so a router is reachable over BLE while awake like a client. A USB host with the console open vetoes the sleep (`:159-170`).
+- `metadata.hasWifi` is the build's `HAS_WIFI` (`main.cpp:1333`). Firmware reports `power.ls_secs` with 0 replaced by the default, 300 s or one day for a router (`PhoneAPI.cpp:807-808`, `Default.h:31`); builds before firmware#12145 report the default even when another value is stored.
+- Deep sleep: a tracker or TAK tracker with `is_power_saving` sleeps `position.position_broadcast_secs` after each position it sends (`PositionModule.cpp:483-497`, `:548-555`); a sensor with `is_power_saving` sleeps `telemetry.environment_update_interval` after each reading, only while environment measurement is on (`EnvironmentTelemetry.cpp:400-418`, `:918-925`). Either interval is one hour when 0 (`Default.cpp:12-20`, `Default.h:19-20`). The device restarts on wake, by timer on ESP32 (`main-esp32.cpp:508-509`) and by `delay` and reset on nRF52 (`main-nrf52.cpp:602-608`). It posts a `POSITION_SENT_SLEEPING` or `TELEMETRY_SENT_SLEEPING` client notification first.
 
 ---
 
@@ -780,7 +791,7 @@ The node's `ReliableRouter` and `NextHopRouter` retry with backoff. When the nod
 The client's job is to:
 
 1. Track the outbound packet by `id`.
-2. Wait for a `ROUTING_APP` response (ACK or NAK) or a client-side timeout. The SDK fails a unicast `want_ack` send with `SendFailure.AckTimeout` after `RadioClient.Builder.sendTimeout` (default 30 s).
+2. Wait for a `ROUTING_APP` response (ACK or NAK) or a client-side timeout. The SDK fails a unicast `want_ack` send with `SendFailure.AckTimeout` after `RadioClient.Builder.sendAckTimeout` (default 30 s).
 3. Give a send the user retries a new `packet_id`, never the old one.
 
 ### `request_id` / `reply_id`
@@ -1057,9 +1068,9 @@ Download (device to host) and upload (host to device):
 
 When the node reboots (`AdminMessage.reboot_seconds`, a power cycle) or enters DFU mode (`enter_dfu_mode_request`, `ota_request`), the PhoneAPI connection is lost and has to be re-established from scratch.
 
-- On TCP, the node can be unreachable for 5 to 30 s. `connect()` fails until it is back; with `RadioClient.Builder.autoReconnect(...)` enabled the engine retries with exponential backoff and jitter.
+- On TCP, the node can be unreachable for 5 to 30 s. `connect()` fails until it is back; with `RadioClient.Builder.autoReconnect(...)` enabled the engine retries with exponential backoff and jitter, and treats `FromRadio.rebooted` and the drop that follows as one reconnect attempt. The radio session still ends: `sessionEvents` emits `Ended` for it, then `Ready` with a new `sessionId`, and consumers process that boundary as for any reconnect.
 - On serial, boot text before the node re-enters PhoneAPI mode is absorbed by the resync state machine (§2). The SDK sends wake bytes on every TCP and serial connect, so a framer left mid-frame is reset.
-- On BLE, the node drops the GATT connection and the peripheral disappears for a while. A new `connect()` re-establishes GATT and drains `fromradio` from the top; no other resync is needed.
+- On BLE, the node drops the GATT connection and the peripheral disappears for a while. A new `connect()` re-establishes GATT and drains `fromradio` from the top; no other resync is needed. A firmware update can change the GATT table Android has cached; call `BleTransport.refreshGattCacheOnNextConnect()` before reconnecting after one.
 
 The first connection after a reboot is indistinguishable from a cold connect, so both handshake stages run. A client that persisted the NodeDB can compare the incoming `node_info` stream with its stored view to spot changes. Firmware clears its last-write dedup buffer on connect; the SDK's heartbeat counter keeps counting for the life of the engine.
 

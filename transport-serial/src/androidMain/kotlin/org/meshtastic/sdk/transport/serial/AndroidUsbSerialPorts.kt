@@ -50,9 +50,12 @@ public object AndroidUsbSerialPorts {
     /**
      * usb-serial-for-android's default table plus the native USB-CDC boards Meshtastic-Android
      * adds: RAK4631, LilyGo T-Beam v1.1, and the nRF52840 CDC identity shared by the T-Echo and
-     * the Elecrow ThinkNode M3/M4/M6.
+     * the Elecrow ThinkNode M3/M4/M6. [list] and [open] use it; a host that scans USB itself uses it
+     * too, so its device list and the SDK's agree.
+     *
+     * @since 0.3.0
      */
-    private val prober: UsbSerialProber by lazy {
+    public val prober: UsbSerialProber by lazy {
         UsbSerialProber(
             UsbSerialProber.getDefaultProbeTable().apply {
                 addProduct(VID_ADAFRUIT, PID_RAK4631, CdcAcmSerialDriver::class.java)

@@ -40,7 +40,7 @@ The node serves one client at a time. When a session ends the transport publishe
 
 The transport never reconnects; that belongs to the engine's `AutoReconnectConfig`. Two firmware behaviors are tracked across `connect()` calls on one instance:
 
-- **Contested slot:** ESP32 aborts a displaced client without a close frame when it can't write, so a 4001 may never arrive. After five sessions in a row that open and then end without a close frame within 30 seconds, the end is `recoverable = false` with `slotContested = true`. A session of 30 seconds or more, an end with a close frame, or `disconnect()` resets the count; a connect that never opened doesn't count.
+- **Contested slot:** ESP32 aborts a displaced client without a close frame when it can't write, so a 4001 may never arrive. After five sessions in a row that open and then end without a close frame within 30 seconds, the end is `recoverable = false` with `slotContested = true`. A session of 30 seconds or more, an end with a close frame, or `disconnect()` of a live session resets the count; the `disconnect()` the engine makes after a session ended with an error, before it reconnects, keeps it, and a connect that never opened doesn't count. The engine ends a session that ends `recoverable = false` in `ConnectionState.Failed` with this exception as its cause.
 - **1013:** the next `connect()` waits until 30 seconds after that session ended, staying in `Connecting`; `disconnect()` ends the wait.
 
 On JVM, Android and iOS the SDK-created client times out a connect after 30 seconds. An ESP32 node drops a client that stops reading for 10 seconds, which arrives as a dropped connection.

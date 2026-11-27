@@ -14,11 +14,12 @@ public final class org/meshtastic/sdk/transport/ble/BleConstants {
 public final class org/meshtastic/sdk/transport/ble/BleResilience {
 	public static final field Companion Lorg/meshtastic/sdk/transport/ble/BleResilience$Companion;
 	public fun <init> ()V
-	public fun <init> (ZZZ)V
-	public synthetic fun <init> (ZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (ZZZLjava/lang/Integer;)V
+	public synthetic fun <init> (ZZZLjava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getAutoConnectFallback ()Z
 	public final fun getBondFirst ()Z
+	public final fun getRefreshGattCacheAfterFailures ()Ljava/lang/Integer;
 	public final fun getRefreshStaleGattCache ()Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -48,6 +49,7 @@ public final class org/meshtastic/sdk/transport/ble/BleTransport : org/meshtasti
 	public fun getIdentity-4ZdAOzE ()Ljava/lang/String;
 	public fun getLinkDropsOnRestartCommands ()Z
 	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
+	public final fun refreshGattCacheOnNextConnect ()V
 	public fun send (Lorg/meshtastic/sdk/Frame;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public final fun shutdown ()V
 }
@@ -59,9 +61,7 @@ public final class org/meshtastic/sdk/transport/ble/BleTransportFactoryKt {
 
 public final class org/meshtastic/sdk/transport/ble/BleTransport_androidKt {
 	public static final fun BleTransport (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
-	public static final fun BleTransport (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static final fun BleTransport (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
-	public static final fun BleTransport (Lorg/meshtastic/sdk/transport/ble/DiscoveredRadio;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static synthetic fun BleTransport$default (Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 	public static synthetic fun BleTransport$default (Ljava/lang/String;Lorg/meshtastic/sdk/transport/ble/BleResilience;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Lorg/meshtastic/sdk/transport/ble/BleTransport;
 }

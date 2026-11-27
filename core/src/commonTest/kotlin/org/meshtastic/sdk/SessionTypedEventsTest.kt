@@ -261,7 +261,7 @@ class SessionTypedEventsTest {
             .sessionReceive()
             .build()
         val events = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
         client.connect()
         runCurrent()
 
@@ -286,7 +286,7 @@ class SessionTypedEventsTest {
             .sessionReceive()
             .build()
         val events = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
         val connectJob = backgroundScope.async { client.connect() }
         runCurrent()
         transport.nodeNum = LOCAL
@@ -361,7 +361,7 @@ class SessionTypedEventsTest {
             .sessionReceive()
             .build()
         val events = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
         client.connect()
         runCurrent()
         assertEquals(null, client.channels.value)
@@ -455,7 +455,7 @@ class SessionTypedEventsTest {
             .apply { if (presenceTimeout.isFinite()) presenceTimeout(presenceTimeout) }
             .build()
         val events = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { client.sessionEvents?.collect { events += it } }
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
         client.connect()
         runCurrent()
         assertIs<RadioSessionEvent.Ready>(events.first())

@@ -158,13 +158,92 @@ class HandshakeAndReconnectTest {
                 }.build(),
             )
             drainCurrent()
-            val record = awaitItem()
+            val record = awaitItem().value
             assertEquals("hello", record.message)
             assertEquals("Router", record.source)
             assertEquals(1_700_000_000, record.time)
             assertEquals(LogRecord.Level.WARNING, record.level)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    // Regression: the stream was null, so callers hit an NPE or checkNotNull instead of a collectible failure.
+    @Test
+    fun sessionEventsFailsWithAnErrorNamingSessionReceiveWhenItIsNotEnabled() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:session-off"), nowMs = { currentTime })
+        val client = buildClient(transport)
+
+        val error = runCatching { client.sessionEvents.first() }.exceptionOrNull()
+
+        assertIs<IllegalStateException>(error)
+        assertTrue(error.message.orEmpty().contains("sessionReceive"))
+    }
+
+    // Regression: a stale or constant session id on side items sends a log to the wrong app session at a reconnect.
+    @Test
+    fun deviceLogsCarryTheIdOfTheSessionTheyArrivedIn() = runTest {
+        val transport = ScriptedTransport(
+            TransportIdentity("fake:log-session-ids"),
+            nowMs = { currentTime },
+            replaceInboundOnConnect = true,
+        )
+        val client = buildClient(
+            transport = transport,
+            autoReconnect = AutoReconnectConfig(enabled = true, initialBackoff = 1.seconds, jitter = 0.0),
+            sessionReceiveCapacity = 16,
+        )
+        val readies = mutableListOf<RadioSessionEvent.Ready>()
+        backgroundScope.launch {
+            client.sessionEvents.collect { if (it is RadioSessionEvent.Ready) readies += it }
+        }
+        val logs = mutableListOf<SessionScoped<LogRecord>>()
+        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+
+        client.connect()
+        drainCurrent()
+        injectLog(transport, "a")
+        drainCurrent()
+        transport.simulateRecoverableError("link drop")
+        runCurrent()
+        advanceTimeBy(1_000)
+        runCurrent()
+        awaitConnected(client)
+        drainCurrent()
+        injectLog(transport, "b")
+        drainCurrent()
+
+        assertEquals(2, readies.size)
+        val a = logs.single { it.value.message == "a" }
+        val b = logs.single { it.value.message == "b" }
+        assertEquals(readies[0].sessionId, a.sessionId)
+        assertEquals(readies[1].sessionId, b.sessionId)
+        assertTrue(a.sessionId != b.sessionId)
+        client.disconnect()
+    }
+
+    // Regression: the counter lived inside SessionReceive, so a client with receive off stamped 0.
+    @Test
+    fun sessionIdsExistWithoutSessionReceive() = runTest {
+        val transport = ScriptedTransport(TransportIdentity("fake:ids-without-receive"), nowMs = { currentTime })
+        val client = buildClient(transport)
+        val logs = mutableListOf<SessionScoped<LogRecord>>()
+        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+
+        client.connect()
+        drainCurrent()
+        injectLog(transport, "first")
+        drainCurrent()
+
+        assertEquals(1L, logs.single { it.value.message == "first" }.sessionId)
+        client.disconnect()
+    }
+
+    private fun injectLog(transport: ScriptedTransport, message: String) {
+        transport.injectFromRadio(
+            org.meshtastic.proto.FromRadio.Builder().also { wb ->
+                wb.log_record = LogRecord.Builder().also { lr -> lr.message = message }.build()
+            }.build(),
+        )
     }
 
     @Test
@@ -203,7 +282,7 @@ class HandshakeAndReconnectTest {
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
 
         val logs = mutableListOf<LogRecord>()
-        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+        backgroundScope.launch { client.deviceLogs.collect { logs += it.value } }
         client.events.test {
             client.packets.test {
                 repeat(HANDSHAKE_PACKET_CAP) { index -> transport.injectAlivePacket(packetId = 3000 + index) }
@@ -254,14 +333,14 @@ class HandshakeAndReconnectTest {
         val error = assertIs<MeshtasticException.FirmwareTooOld>(connectJob.await().exceptionOrNull())
         assertEquals(20315, error.required)
         assertEquals(20314, error.present)
-        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals(ConnectionState.Failed(error), client.connection.value)
         assertEquals(1, errors.size)
         assertIs<MeshtasticException.FirmwareTooOld>(errors.single().error)
 
         advanceTimeBy(120_000L)
         drainCurrent()
         assertTrue(transport.reconnectAttemptTimes().isEmpty(), "FirmwareTooOld must not be retried")
-        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertIs<ConnectionState.Failed>(client.connection.value)
     }
 
     @Test
@@ -874,7 +953,7 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun recoveryStepRunsAfterBackoffAndBeforeEachConnect() = runTest {
+    fun providerOpensEachAttemptAfterBackoffAndBeforeConnect() = runTest {
         val transport = ScriptedTransport(
             identity = TransportIdentity("fake:reconnect-recovery"),
             nowMs = { currentTime },
@@ -888,11 +967,14 @@ class HandshakeAndReconnectTest {
                 initialBackoff = 1.seconds,
                 maxBackoff = 8.seconds,
                 jitter = 0.0,
-                recoveryStep = { attempt, cause ->
+            ),
+            provider = { attempt, cause ->
+                if (attempt > 0) {
                     assertIs<MeshtasticException.Transport>(cause)
                     recoveries += attempt to currentTime
-                },
-            ),
+                }
+                transport
+            },
         )
         client.connect()
         runCurrent()
@@ -911,7 +993,7 @@ class HandshakeAndReconnectTest {
     }
 
     @Test
-    fun recoveryStepFailureCountsAsFailedAttempt() = runTest {
+    fun providerFailureCountsAsFailedAttempt() = runTest {
         val transport = ScriptedTransport(TransportIdentity("fake:reconnect-recovery-fail"), nowMs = { currentTime })
         var calls = 0
         val client = buildClient(
@@ -921,11 +1003,14 @@ class HandshakeAndReconnectTest {
                 initialBackoff = 1.seconds,
                 maxBackoff = 8.seconds,
                 jitter = 0.0,
-                recoveryStep = { _, _ ->
+            ),
+            provider = { attempt, _ ->
+                if (attempt > 0) {
                     calls += 1
                     if (calls == 1) throw IllegalStateException("usb permission pending")
-                },
-            ),
+                }
+                transport
+            },
         )
         client.connect()
         runCurrent()
@@ -1065,7 +1150,7 @@ class HandshakeAndReconnectTest {
         drainCurrent()
 
         assertEquals(3, transport.reconnectAttemptTimes().size)
-        assertEquals(ConnectionState.Disconnected, client.connection.value)
+        assertEquals("attempt-3", assertIs<ConnectionState.Failed>(client.connection.value).cause.message)
     }
 
     @Test
@@ -1447,7 +1532,7 @@ class HandshakeAndReconnectTest {
             sessionReceiveCapacity = 16,
         )
 
-        assertNotNull(client.sessionEvents).test {
+        client.sessionEvents.test {
             client.connect()
             val first = assertIs<RadioSessionEvent.Ready>(awaitItem())
 
@@ -1484,7 +1569,7 @@ class HandshakeAndReconnectTest {
         )
         val client = buildClient(transport)
         val logs = mutableListOf<LogRecord>()
-        backgroundScope.launch { client.deviceLogs.collect { logs += it } }
+        backgroundScope.launch { client.deviceLogs.collect { logs += it.value } }
         val connectJob = backgroundScope.async { client.connect() }
         runCurrent()
         transport.injectFromRadio(
@@ -1563,7 +1648,7 @@ class HandshakeAndReconnectTest {
             sessionReceiveCapacity = 8,
         )
 
-        assertNotNull(client.sessionEvents).test {
+        client.sessionEvents.test {
             val connect = backgroundScope.async { client.connect() }
             advanceTimeBy(1_000)
             runCurrent()
@@ -1614,7 +1699,7 @@ class HandshakeAndReconnectTest {
         val transport = ScriptedTransport(TransportIdentity("fake:node-db-refresh"), nowMs = { currentTime })
         val client = buildClient(transport, sessionReceiveCapacity = 16)
 
-        assertNotNull(client.sessionEvents).test {
+        client.sessionEvents.test {
             assertFalse(client.requestNodeDbRefresh())
             client.connect()
             val ready = assertIs<RadioSessionEvent.Ready>(awaitItem())
@@ -1668,7 +1753,7 @@ class HandshakeAndReconnectTest {
         val transport = ScriptedTransport(TransportIdentity("fake:node-db-timeout"), nowMs = { currentTime })
         val client = buildClient(transport, sessionReceiveCapacity = 8)
 
-        assertNotNull(client.sessionEvents).test {
+        client.sessionEvents.test {
             client.connect()
             val ready = assertIs<RadioSessionEvent.Ready>(awaitItem())
             transport.autoCompleteStage2 = false
@@ -1698,7 +1783,7 @@ class HandshakeAndReconnectTest {
         val status = QueueStatus.Builder().also { it.mesh_packet_id = 201 }.build()
         val notice = org.meshtastic.proto.ClientNotification.Builder().also { it.message = "low battery" }.build()
 
-        assertNotNull(client.sessionEvents).test {
+        client.sessionEvents.test {
             client.connect()
             val snapshot = assertIs<RadioSessionEvent.Ready>(awaitItem())
             transport.injectAlivePacket(201)
@@ -1729,7 +1814,7 @@ class HandshakeAndReconnectTest {
         val events = mutableListOf<RadioSessionEvent>()
         val collection = backgroundScope.async {
             runCatching {
-                assertNotNull(client.sessionEvents).collect {
+                client.sessionEvents.collect {
                     events += it
                     releaseCollector.await()
                 }
@@ -1785,7 +1870,7 @@ class HandshakeAndReconnectTest {
         )
         val client = buildClient(transport, sessionReceiveCapacity = 256)
 
-        assertNotNull(client.sessionEvents).test {
+        client.sessionEvents.test {
             val connect = backgroundScope.async { client.connect() }
             advanceTimeBy(1_000)
             runCurrent()
@@ -1812,8 +1897,9 @@ class HandshakeAndReconnectTest {
         transport: RadioTransport,
         autoReconnect: AutoReconnectConfig = AutoReconnectConfig.Disabled,
         sessionReceiveCapacity: Int? = null,
+        provider: RadioTransportProvider? = null,
     ): RadioClient = RadioClient.Builder()
-        .transport(transport)
+        .apply { if (provider == null) transport(transport) else transport(transport.identity, provider) }
         .storage(InMemoryStorageProvider())
         .clock(SchedulerClock { currentTime })
         .coroutineContext(backgroundScope.coroutineContext)

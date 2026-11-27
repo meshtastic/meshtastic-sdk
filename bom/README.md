@@ -64,7 +64,7 @@ Each artifact is constrained to the BOM's own version, which axion-release deriv
 | Artifact | Module | Purpose |
 |---|---|---|
 | `org.meshtastic:sdk-core` | `:core` | `RadioClient`, the engine and the public API; re-exports the `org.meshtastic:protobufs` types. |
-| `org.meshtastic:sdk-transport-ble` | `:transport-ble` | Bluetooth LE GATT transport (Kable). Android, iOS, JVM. |
+| `org.meshtastic:sdk-transport-ble` | `:transport-ble` | Bluetooth LE GATT transport (Kable). Android, iOS, JVM, JS, Wasm (Web Bluetooth). |
 | `org.meshtastic:sdk-transport-tcp` | `:transport-tcp` | TCP transport on port 4403 (Ktor) and mDNS discovery. Android, iOS, JVM. |
 | `org.meshtastic:sdk-transport-websocket` | `:transport-websocket` | WebSocket phone API transport (Ktor client). Android, iOS, JVM, JS, Wasm. |
 | `org.meshtastic:sdk-transport-serial` | `:transport-serial` | USB serial transport (jSerialComm, usb-serial-for-android). JVM and Android. |

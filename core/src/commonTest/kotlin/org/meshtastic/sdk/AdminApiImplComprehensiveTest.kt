@@ -674,6 +674,22 @@ class AdminApiImplComprehensiveTest {
         }
     }
 
+    // Regression: setter ack path reporting NO_ROUTE for a NAK.
+    @Test
+    fun setChannelGotNakMapsToFailedWithGotNak() = runTest {
+        val channel = Channel.Builder().also { wb ->
+            wb.index = 1
+            wb.role = Channel.Role.SECONDARY
+        }.build()
+        assertAckedOperation(
+            call = { it.setChannel(channel) },
+            requestMatches = { it.set_channel == channel },
+            expected = AdminResult.Failed(Routing.Error.GOT_NAK),
+        ) { transport, packet ->
+            transport.injectFrame(buildRoutingErrorFrame(packet.id, Routing.Error.GOT_NAK))
+        }
+    }
+
     @Test
     fun setFavoriteTrueSendsSetFavoriteNode() = runTest {
         val node = NodeId(0x01020304)
@@ -1856,7 +1872,7 @@ class AdminApiImplComprehensiveTest {
         nodeNum: Int = 1,
         storageProvider: StorageProvider = InMemoryStorageProvider(),
         rpcTimeout: Duration = 60.seconds,
-        sendTimeout: Duration = 60.seconds,
+        sendAckTimeout: Duration = 60.seconds,
         frames: List<Frame> = emptyList(),
         autoQueueStatus: Boolean = true,
         bluetoothLink: Boolean = false,
@@ -1870,12 +1886,13 @@ class AdminApiImplComprehensiveTest {
             linkDropsOnRestartCommands = bluetoothLink,
         )
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(storageProvider)
             .autoSyncTimeOnConnect(false)
             .coroutineContext(backgroundScope.coroutineContext)
             .rpcTimeout(rpcTimeout)
-            .sendTimeout(sendTimeout)
+            .sendAckTimeout(sendAckTimeout)
             .build()
         return transport to client
     }

@@ -51,7 +51,7 @@ class P2AdminRpcTest {
             .autoSyncTimeOnConnect(false) // tests verify behavior explicitly; opt out of autosync.
             .coroutineContext(backgroundScope.coroutineContext)
             .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         return transport to client
     }
@@ -350,7 +350,7 @@ class P2AdminRpcTest {
                 override fun now() = frozen
             })
             .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         client.connect()
         runCurrent()

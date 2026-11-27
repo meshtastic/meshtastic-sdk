@@ -148,7 +148,7 @@ class HandshakeParityTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:large-replay"), autoQueueStatus = true)
         val client = buildClient(transport, sessionReceive = true)
         val session = mutableListOf<RadioSessionEvent>()
-        val sessionJob = backgroundScope.async { runCatching { client.sessionEvents!!.collect { session += it } } }
+        val sessionJob = backgroundScope.async { runCatching { client.sessionEvents.collect { session += it } } }
         val received = mutableListOf<MeshPacket>()
         backgroundScope.launch { client.packets.collect { received += it } }
         val connectJob = backgroundScope.async { runCatching { client.connect() } }
@@ -183,7 +183,7 @@ class HandshakeParityTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:meshtasticd-backlog"), autoQueueStatus = true)
         val client = buildClient(transport, sessionReceive = true)
         val session = mutableListOf<RadioSessionEvent>()
-        val sessionJob = backgroundScope.async { runCatching { client.sessionEvents!!.collect { session += it } } }
+        val sessionJob = backgroundScope.async { runCatching { client.sessionEvents.collect { session += it } } }
         val connectJob = backgroundScope.async { runCatching { client.connect() } }
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
         transport.completeStage1()
@@ -213,7 +213,7 @@ class HandshakeParityTest {
         var packets = 0
         val sessionJob = backgroundScope.async {
             runCatching {
-                client.sessionEvents!!.collect { event ->
+                client.sessionEvents.collect { event ->
                     if (event is RadioSessionEvent.Ready) installed.await()
                     if (event is RadioSessionEvent.Packet) packets++
                 }
@@ -492,7 +492,7 @@ class HandshakeParityTest {
         val transport = FakeRadioTransport(TransportIdentity("fake:settle-mismatch"), autoQueueStatus = true)
         val client = buildClient(transport, sessionReceive = true) { skipNodeDb() }
         val session = mutableListOf<RadioSessionEvent>()
-        backgroundScope.launch { runCatching { client.sessionEvents!!.collect { session += it } } }
+        backgroundScope.launch { runCatching { client.sessionEvents.collect { session += it } } }
         val connectJob = backgroundScope.async { runCatching { client.connect() } }
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
         transport.completeStage1()
@@ -560,12 +560,13 @@ class HandshakeParityTest {
         sessionReceive: Boolean = false,
         configure: RadioClient.Builder.() -> Unit = {},
     ): RadioClient = RadioClient.Builder()
+        .autoReconnect(AutoReconnectConfig.Disabled)
         .transport(transport)
         .storage(InMemoryStorageProvider())
         .autoSyncTimeOnConnect(false)
         .coroutineContext(backgroundScope.coroutineContext)
         .rpcTimeout(60.seconds)
-        .sendTimeout(60.seconds)
+        .sendAckTimeout(60.seconds)
         .apply { if (sessionReceive) sessionReceive() }
         .apply(configure)
         .build()

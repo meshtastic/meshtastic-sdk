@@ -111,3 +111,37 @@ public fun SendFailure.humanMessage(): String = when (this) {
     is SendFailure.Other -> routingError.actionableMessage()
     is SendFailure.Unknown -> "Unknown send failure: $message"
 }
+
+/**
+ * The [Routing.Error] this failure stands for, or `null` for a failure that no routing packet or queue
+ * receipt produced (disconnects, cancellation, [SendFailure.AckTimeout], [SendFailure.QueueFull],
+ * [SendFailure.IdCollision], [SendFailure.HandshakeFailed], [SendFailure.Unknown]).
+ * [SendFailure.Timeout] reads as `TIMEOUT` even when the SDK raised it locally.
+ *
+ * @since 0.3.0
+ */
+public val SendFailure.routingError: Routing.Error?
+    get() = when (this) {
+        SendFailure.NoRoute -> Routing.Error.NO_ROUTE
+
+        SendFailure.MaxRetransmit -> Routing.Error.MAX_RETRANSMIT
+
+        SendFailure.Timeout -> Routing.Error.TIMEOUT
+
+        SendFailure.DutyCycleLimit -> Routing.Error.DUTY_CYCLE_LIMIT
+
+        SendFailure.RateLimited -> Routing.Error.RATE_LIMIT_EXCEEDED
+
+        is SendFailure.Other -> this.routingError
+
+        is SendFailure.QueueRejected -> this.routingError
+
+        SendFailure.AckTimeout,
+        SendFailure.Disconnected,
+        SendFailure.HandshakeFailed,
+        SendFailure.Cancelled,
+        SendFailure.IdCollision,
+        SendFailure.QueueFull,
+        is SendFailure.Unknown,
+        -> null
+    }

@@ -16,6 +16,7 @@ import org.meshtastic.sdk.Frame
 import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.MessageId
 import org.meshtastic.sdk.QueueReceipt
+import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.SendState
 import org.meshtastic.sdk.TransportState
 import kotlin.time.Duration
@@ -84,8 +85,8 @@ internal sealed interface EngineMessage {
     /** A read or write failure on a particular transport connection. */
     data class LinkFailed(val cause: MeshtasticException, val generation: Long) : EngineMessage
 
-    /** Transport connection state changed (posted by the transport-state observer coroutine). */
-    data class TransportStateChanged(val state: TransportState) : EngineMessage
+    /** [source]'s connection state changed (posted by that transport's state observer). */
+    class TransportStateChanged(val state: TransportState, val source: RadioTransport) : EngineMessage
 
     // ── Outbound ───────────────────────────────────────────────────────────
 
@@ -225,7 +226,7 @@ internal sealed interface EngineMessage {
 
     /**
      * Per-send ACK timeout fired (R-P0-6). Posted by the engine after the configured
-     * `sendTimeout` elapses with no `Routing` ACK observed for [id]. The handler transitions
+     * `sendAckTimeout` elapses with no `Routing` ACK observed for [id]. The handler transitions
      * the in-flight handle to `SendState.Failed(SendFailure.AckTimeout)` if it is still
      * pending.
      */
@@ -233,11 +234,24 @@ internal sealed interface EngineMessage {
 
     // ── Auto-reconnect (DX-7 / COV-4) ──────────────────────────────────────
 
-    /** Backoff window expired; supervisor should attempt the next reconnect cycle. */
-    data class ReconnectTick(val cause: MeshtasticException, val attempt: Int) : EngineMessage
+    /** Backoff window expired; matched by identity, so a tick the supervisor has replaced is ignored. */
+    class ReconnectTick(val cause: MeshtasticException, val attempt: Int) : EngineMessage
 
-    /** Outcome of a reconnect attempt initiated by [ReconnectTick]. */
-    data class ReconnectAttemptResult(val success: Boolean, val cause: MeshtasticException?) : EngineMessage
+    /**
+     * Outcome of reconnect attempt [token]: [transport] is what the provider opened (`null` when
+     * [org.meshtastic.sdk.RadioTransportProvider.open] failed), [cause] is `null` on success.
+     */
+    class ReconnectAttemptResult(val token: Long, val transport: RadioTransport?, val cause: MeshtasticException?) :
+        EngineMessage
+
+    /** [org.meshtastic.sdk.RadioClient.retryNow]: end the backoff wait that [tick] ends, if it is still pending. */
+    class RetryNow(val tick: ReconnectTick) : EngineMessage
+
+    /** The session receive queue overflowed in session [sessionId]; with auto-reconnect on, the session restarts. */
+    data class SessionOverflow(val sessionId: Long) : EngineMessage
+
+    /** The session on link [generation] has stayed connected for `AutoReconnectConfig.stableAfter`. */
+    data class LinkStable(val generation: Long) : EngineMessage
 }
 
 /** An acknowledged admin write to the connected node, mirrored on the SDK's session state. */

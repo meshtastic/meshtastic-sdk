@@ -10,6 +10,7 @@ package org.meshtastic.sdk
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -22,6 +23,7 @@ import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.Heartbeat
 import org.meshtastic.proto.LockdownAuth
 import org.meshtastic.proto.LockdownStatus
+import org.meshtastic.proto.PortNum
 import org.meshtastic.proto.QueueStatus
 import org.meshtastic.proto.ToRadio
 import org.meshtastic.sdk.testing.FakeRadioTransport
@@ -128,7 +130,7 @@ class LockdownStatusEventTest {
             }
         }
         backgroundScope.launch {
-            assertNotNull(client.sessionEvents).collect { sessionEvents.add(it) }
+            client.sessionEvents.collect { sessionEvents.add(it) }
         }
         val connecting = async { client.connect() }
         runCurrent()
@@ -255,6 +257,7 @@ class LockdownStatusEventTest {
             }
         }
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
@@ -292,6 +295,7 @@ class LockdownStatusEventTest {
             }
         }
         val client = RadioClient.Builder()
+            .autoReconnect(AutoReconnectConfig.Disabled)
             .transport(transport)
             .storage(InMemoryStorageProvider())
             .coroutineContext(backgroundScope.coroutineContext)
@@ -309,6 +313,86 @@ class LockdownStatusEventTest {
         assertTrue(connecting.isCompleted)
         val error = assertIs<MeshtasticException.Transport>(connecting.await().exceptionOrNull())
         assertEquals("liveness timeout", error.message)
+    }
+
+    /** Regression: the lockdown write was bounded by the ACK timeout, so a 5 min ACK wait also kept a dead link alive. */
+    @Test
+    fun aStalledLockdownWriteFailsTheLinkAtTheWriteBoundNotTheAckTimeout() = runTest {
+        val fake = FakeRadioTransport(TransportIdentity("fake:locked-write-stalls"), autoHandshake = true)
+        val transport = object : RadioTransport by fake {
+            override suspend fun send(frame: Frame) {
+                val request = runCatching { ToRadio.ADAPTER.decode(frame.bytes.substring(4)) }.getOrNull()
+                val data = request?.packet?.decoded
+                if (data != null && data.portnum == PortNum.ADMIN_APP &&
+                    AdminMessage.ADAPTER.decode(data.payload).lockdown_auth != null
+                ) {
+                    awaitCancellation()
+                }
+                fake.send(frame)
+                if (request?.want_config_id == 69420) fake.reportLockdown(LockdownStatus.State.LOCKED)
+            }
+        }
+        val client = RadioClient.Builder()
+            .sendAckTimeout(5.minutes)
+            .autoReconnect(AutoReconnectConfig.Disabled)
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .build()
+        val events = mutableListOf<MeshEvent>()
+        backgroundScope.launch { client.events.collect { events.add(it) } }
+        val connecting = async { runCatching { client.connect() } }
+        runCurrent()
+
+        assertTrue(client.tryLockdown(LockdownAuth.Builder().also { it.passphrase = "x".encodeUtf8() }.build()))
+        runCurrent()
+        advanceTimeBy(29.seconds)
+        assertFalse(connecting.isCompleted)
+        advanceTimeBy(2.seconds)
+        runCurrent()
+
+        assertTrue(connecting.isCompleted)
+        assertIs<MeshtasticException.Transport>(connecting.await().exceptionOrNull())
+        val transportError = events.filterIsInstance<MeshEvent.TransportError>().lastOrNull()
+        assertNotNull(transportError, "Expected a TransportError event (got: $events)")
+        assertTrue(
+            transportError.error.message?.contains("Lockdown write timed out") == true,
+            "Expected lockdown write diagnostic, got: ${transportError.error.message}",
+        )
+    }
+
+    // Regression: the disconnect path must close a locked session with Ended, not leave it open.
+    @Test
+    fun aLockedSessionThatIsDisconnectedEndsWithEnded() = runTest {
+        val fake = FakeRadioTransport(TransportIdentity("fake:locked-disconnect"), autoHandshake = true)
+        val transport = object : RadioTransport by fake {
+            override suspend fun send(frame: Frame) {
+                val request = runCatching { ToRadio.ADAPTER.decode(frame.bytes.substring(4)) }.getOrNull()
+                fake.send(frame)
+                if (request?.want_config_id == 69420) fake.reportLockdown(LockdownStatus.State.LOCKED)
+            }
+        }
+        val client = RadioClient.Builder()
+            .transport(transport)
+            .storage(InMemoryStorageProvider())
+            .coroutineContext(backgroundScope.coroutineContext)
+            .autoSyncTimeOnConnect(false)
+            .sessionReceive()
+            .build()
+        val events = mutableListOf<RadioSessionEvent>()
+        backgroundScope.launch { client.sessionEvents.collect { events += it } }
+        val connecting = async { runCatching { client.connect() } }
+        runCurrent()
+
+        client.disconnect()
+        runCurrent()
+
+        val kinds = events.map { it::class }
+        assertEquals(listOf(RadioSessionEvent.Lockdown::class, RadioSessionEvent.Ended::class), kinds)
+        val lockdown = assertIs<RadioSessionEvent.Lockdown>(events[0])
+        assertEquals(lockdown.sessionId, assertIs<RadioSessionEvent.Ended>(events[1]).sessionId)
+        connecting.await()
     }
 
     private fun FakeRadioTransport.reportLockdown(state: LockdownStatus.State) {
@@ -357,7 +441,7 @@ class LockdownStatusEventTest {
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         return transport to client
     }

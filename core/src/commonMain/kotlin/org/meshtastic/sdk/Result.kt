@@ -8,6 +8,7 @@
 package org.meshtastic.sdk
 
 import org.meshtastic.proto.Routing
+import kotlin.time.Instant
 
 /**
  * Lifecycle state of a packet sent via [RadioClient.send].
@@ -63,7 +64,7 @@ public sealed interface SendState {
  */
 public sealed interface SendFailure {
     /**
-     * No route to the destination (from `Routing.Error.NO_ROUTE`).
+     * No route to the destination (from `Routing.Error.NO_ROUTE`; a `GOT_NAK` is [Other]).
      */
     public data object NoRoute : SendFailure
 
@@ -119,7 +120,7 @@ public sealed interface SendFailure {
 
     /**
      * Per-send ACK timeout: the device did not produce a `Routing` ACK for a unicast `want_ack`
-     * packet within the configured [RadioClient.Builder.sendTimeout] window.
+     * packet within the configured [RadioClient.Builder.sendAckTimeout] window.
      *
      * Broadcast packets (`to == 0xFFFFFFFF`) never produce this failure; they have no ACK
      * semantics in the Meshtastic protocol.
@@ -136,10 +137,26 @@ public sealed interface SendFailure {
      * @param res the raw `QueueStatus.res` error code reported by the firmware
      * @since 0.2.0
      */
-    public data class QueueRejected(val res: Int) : SendFailure
+    public data class QueueRejected(val res: Int) : SendFailure {
+        /**
+         * The [Routing.Error] that `Router::send` refused the packet with, or `null` when [res] is a
+         * value [Routing.Error] does not define or one the firmware reports in two namespaces. Values 32 to 35
+         * are ambiguous: the firmware's `ERRNO_*` enqueue results (`MeshTypes.h`) and
+         * `Routing.Error.BAD_REQUEST`, `NOT_AUTHORIZED` and `PKI_FAILED` (`Router::send`)
+         * share 32 to 34 on `QueueStatus.res`; 35 is only ever `ERRNO_SHOULD_RELEASE`. The range never maps.
+         *
+         * @since 0.3.0
+         */
+        public val routingError: Routing.Error?
+            get() = if (res in ERRNO_UNKNOWN..ERRNO_SHOULD_RELEASE) {
+                null
+            } else {
+                Routing.Error.fromValue(res)?.takeIf { it != Routing.Error.NONE }
+            }
+    }
 
     /**
-     * Some other device-reported routing error.
+     * Some other device-reported routing error, including `GOT_NAK`.
      *
      * @param routingError the wire [Routing.Error] enum value
      */
@@ -178,13 +195,13 @@ public sealed interface SendOutcome {
  * Lifecycle of the SDK's connection to a device.
  *
  * Transitions from [Disconnected] → [Connecting] → [Configuring] → [Connected].
- * May also transition back through [Reconnecting] if the transport drops or hangs.
+ * With auto-reconnect on, a drop or hang goes through [Reconnecting] and back to [Configuring].
+ * An error that retrying cannot fix ends in [Failed], with auto-reconnect on or off.
  *
- * **Device sleep is not represented:** devices do not announce sleep on the wire (the PhoneAPI
- * simply goes silent). The SDK cannot reliably distinguish "device sleeping for ls_secs" from
- * "transport hung". Sleep timing is observable via `Config.power.ls_secs` from the handshake; when
- * the device stops responding, the state machine transitions through [Reconnecting] just as for
- * any other disconnect.
+ * **Device sleep:** a sleeping device's link simply drops. The engine reports
+ * [DeviceSleeping] instead of [Reconnecting] only when a fully handshaken session drops and the
+ * device's last known configuration says firmware sleeps it (see [DeviceSleeping]). A reboot
+ * announcement, a failed first connect and [RadioClient.disconnect] are reported as [Reconnecting] or [Disconnected].
  *
  * @since 0.1.0
  */
@@ -193,6 +210,16 @@ public sealed interface ConnectionState {
      * SDK is not connected and has no active connection attempt.
      */
     public data object Disconnected : ConnectionState
+
+    /**
+     * [RadioClient.disconnect] was called and the engine is tearing the session down: cancelling a
+     * pending attempt or backoff, ending the frame reader and closing the transport. [Disconnected]
+     * follows. An unplanned link loss never shows this state, and a [RadioClient.disconnect] while
+     * already [Disconnected] publishes nothing.
+     *
+     * @since 0.3.0
+     */
+    public data object Disconnecting : ConnectionState
 
     /**
      * Attempting to establish a connection.
@@ -218,16 +245,59 @@ public sealed interface ConnectionState {
      * Connection dropped unexpectedly; attempting automatic reconnect.
      *
      * @param cause the underlying error that triggered reconnection
-     * @param attempt the reconnect attempt count (1-indexed)
+     * @param attempt the reconnect attempt count since the last stable link (1-indexed)
+     * @param retryAt when the engine will make [attempt], from the client's clock; `null` while the
+     *   attempt is in flight, including while the [RadioTransportProvider] is suspended.
+     *   [RadioClient.retryNow] ends the wait early.
      */
-    public data class Reconnecting(val cause: MeshtasticException, val attempt: Int) : ConnectionState
+    public data class Reconnecting(val cause: MeshtasticException, val attempt: Int, val retryAt: Instant? = null) :
+        ConnectionState
+
+    /**
+     * The engine stopped trying: the transport reported a non-recoverable error, the firmware is
+     * too old ([MeshtasticException.FirmwareTooOld]), or an [AutoReconnectConfig] cap ran out. The
+     * client stays here until [RadioClient.connect] or [RadioClient.disconnect] is called.
+     *
+     * @param cause the error that ended the last attempt, as its own type (a transport module's
+     *   typed `MeshtasticException.Transport` subclass included)
+     * @since 0.3.0
+     */
+    public data class Failed(val cause: MeshtasticException) : ConnectionState
+
+    /**
+     * The device dropped the link because its power-saving configuration puts it to sleep.
+     *
+     * Reported only for a BLE drop out of a fully handshaken session, however the engine notices
+     * it (a transport error, a failed write or read, or the liveness watchdog), when the last
+     * known config shows firmware sleeping that link by design: a tracker role with
+     * `is_power_saving`, or a sensor role with `is_power_saving` and environment measurement on
+     * (deep sleep, the device restarts on wake), or a router role or `is_power_saving` on a
+     * WiFi-capable build with no WiFi or Ethernet configured (ESP32 light sleep). With
+     * auto-reconnect enabled the engine keeps trying to reach the device; with it disabled the
+     * session ends and this is the terminal state until [RadioClient.connect] or
+     * [RadioClient.disconnect] is called.
+     *
+     * Reconnect attempts made before `since` plus [expectedWakeSeconds] plus a grace of twice
+     * [AutoReconnectConfig.maxBackoff] do not count against [AutoReconnectConfig.maxAttempts], and
+     * neither does a handshake that times out or drops in that window, since a BLE link can survive
+     * light sleep; the device counts as asleep until a handshake reaches [Connected]. After the window
+     * the state becomes [Reconnecting].
+     *
+     * @param since when the link drop was observed
+     * @param expectedWakeSeconds the longest the device sleeps before it surfaces again:
+     *   `Config.position.position_broadcast_secs` for a tracker,
+     *   `ModuleConfig.telemetry.environment_update_interval` for a sensor (firmware's one hour when
+     *   either is 0), `Config.power.ls_secs` for light sleep, a router's included
+     * @since 0.3.0
+     */
+    public data class DeviceSleeping(val since: Instant, val expectedWakeSeconds: Int) : ConnectionState
 }
 
 /** Whether the connection is fully established and ready for use. */
 public val ConnectionState.isUsable: Boolean
     get() = this is ConnectionState.Connected
 
-/** Whether a connection attempt is actively in progress. */
+/** Whether a connection attempt is actively in progress; `false` for [ConnectionState.Disconnecting], which ends one. */
 public val ConnectionState.isInProgress: Boolean
     get() =
         this is ConnectionState.Connecting ||
@@ -238,10 +308,13 @@ public val ConnectionState.isInProgress: Boolean
 public val ConnectionState.statusMessage: String
     get() = when (this) {
         is ConnectionState.Disconnected -> "Disconnected"
+        is ConnectionState.Disconnecting -> "Disconnecting"
         is ConnectionState.Connecting -> "Connecting (attempt $attempt)"
         is ConnectionState.Configuring -> "Configuring: ${phase.name} (${(progress * 100).toInt()}%)"
         is ConnectionState.Connected -> "Connected"
         is ConnectionState.Reconnecting -> "Reconnecting (attempt $attempt)"
+        is ConnectionState.DeviceSleeping -> "Device sleeping"
+        is ConnectionState.Failed -> "Connection failed"
     }
 
 /**
@@ -394,3 +467,6 @@ public sealed class AdminResultException(message: String) : Exception(message) {
     public class RoutingFailed(public val error: Routing.Error) :
         AdminResultException("Routing error: ${error.name}")
 }
+
+private const val ERRNO_UNKNOWN = 32
+private const val ERRNO_SHOULD_RELEASE = 35

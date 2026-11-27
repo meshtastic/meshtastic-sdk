@@ -45,7 +45,7 @@ class DisplayMirrorTest {
             .coroutineContext(backgroundScope.coroutineContext)
             .autoSyncTimeOnConnect(false)
             .rpcTimeout(60.seconds)
-            .sendTimeout(60.seconds)
+            .sendAckTimeout(60.seconds)
             .build()
         return transport to client
     }
@@ -127,7 +127,13 @@ class DisplayMirrorTest {
     fun injectedChunksProduceOneCompleteFrame() = runTest {
         val (transport, client) = connectedClient()
         val frames = mutableListOf<DisplayMirrorFrame>()
-        backgroundScope.launch { client.displayFrames.collect { frames.add(it) } }
+        val scopedFrames = mutableListOf<SessionScoped<DisplayMirrorFrame>>()
+        backgroundScope.launch {
+            client.displayFrames.collect {
+                scopedFrames.add(it)
+                frames.add(it.value)
+            }
+        }
         client.connect()
         runCurrent()
         try {
@@ -141,6 +147,8 @@ class DisplayMirrorTest {
             assertEquals(data.toByteString(), frame.data)
             assertEquals(128, frame.width)
             assertEquals(3, frame.frameId)
+            // Regression: display frames stamped with session 0 instead of the first handshake's id.
+            assertEquals(1L, scopedFrames.single().sessionId)
         } finally {
             runCatching { client.disconnect() }
         }
@@ -150,7 +158,7 @@ class DisplayMirrorTest {
     fun gappedChunksProduceNoFrame() = runTest {
         val (transport, client) = connectedClient()
         val frames = mutableListOf<DisplayMirrorFrame>()
-        backgroundScope.launch { client.displayFrames.collect { frames.add(it) } }
+        backgroundScope.launch { client.displayFrames.collect { frames.add(it.value) } }
         client.connect()
         runCurrent()
         try {

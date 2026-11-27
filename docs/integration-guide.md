@@ -9,11 +9,11 @@ Recipes for embedding `meshtastic-sdk` in an application: dependencies, building
 | `sdk-core`, `sdk-testing` | yes | yes | yes | yes |
 | `sdk-transport-websocket` | yes | yes | yes | yes |
 | `sdk-transport-tcp` | yes | yes | yes | no |
-| `sdk-transport-ble` | yes | yes | yes | no |
+| `sdk-transport-ble` | yes | yes | yes | yes (Web Bluetooth) |
 | `sdk-transport-serial` | yes | yes | no | no |
 | `sdk-storage-sqldelight` | yes | yes | yes | no |
 
-Every Android artifact sets `minSdk = 26` (Android 8.0). A web host runs the engine in the page, connects with `WebSocketTransport`, and stores state with `InMemoryStorageProvider` ([ADR-017](./decisions/017-web-targets.md)).
+Every Android artifact sets `minSdk = 26` (Android 8.0). A web host runs the engine in the page, connects with `WebSocketTransport` or, in a browser with Web Bluetooth, `requestBleTransport()`, and stores state with `InMemoryStorageProvider` ([ADR-017](./decisions/017-web-targets.md)).
 
 ## 1. Add the dependency
 
@@ -53,10 +53,10 @@ val client = RadioClient.Builder()
     .storage(SqlDelightStorageProvider(baseDir = "/var/data"))
     .build()
 
-client.connect()   // throws MeshtasticException on failure
+client.connect()   // returns at Ready; throws MeshtasticException once the client is Failed
 ```
 
-`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). Pass `.autoReconnect(AutoReconnectConfig())` for the engine to reconnect after a drop.
+`transport(...)` and `storage(...)` are required; everything else has a default ([api-reference.md, Construction](./api-reference.md#construction)). The engine reconnects after a recoverable drop by default, and a recoverable failure of the first connect is retried too, so `connect()` can stay suspended while the radio is unreachable. Bound it with `AutoReconnectConfig(maxAttempts = n)` or a `withTimeout`, or pass `.autoReconnect(AutoReconnectConfig.Disabled)` when the host owns reconnect policy.
 
 ## 3. Per-transport setup
 
@@ -89,7 +89,7 @@ On Android, `BleTransport(address = "AA:BB:CC:DD:EE:FF")` finds the radio by a s
 
 On the JVM, `BleTransport(address = ...)` takes the `DiscoveredRadio.address` saved from a scan on the same host, or a MAC on Linux and Windows. Kable's identifier is BlueZ's device path wrapped in JSON on Linux (`{"object_path":"/org/bluez/hci0/dev_C2_5D_2D_C4_E5_6E"}`), the MAC on Windows and a CoreBluetooth UUID on macOS, which exposes no MAC. A valid identifier for the host is used directly; anything else makes `connect()` scan for up to 15 seconds and connect to the first radio whose identifier matches, exactly or by MAC, or fail with `MeshtasticException.Transport`.
 
-For a firmware update, pass `refreshGattCacheOnConnect` to the Android address factory, or to `BleTransport(radio, resilience, refreshGattCacheOnConnect, builderAction)` for a radio you scanned yourself. The callback can consume a pending refresh for that radio after its next successful link, before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic.
+After a firmware update, call `BleTransport.refreshGattCacheOnNextConnect()` on Android: the next connect that reaches the radio refreshes the GATT cache before PhoneAPI traffic begins. An update can require this refresh even when the cached table still includes every required characteristic. `BleResilience(refreshGattCacheAfterFailures = 6)` also refreshes once when reconnects keep failing, for a cache that went stale while the radio was away.
 
 Platform requirements:
 
