@@ -15,7 +15,7 @@ meshtastic-sdk publishes every `org.meshtastic:sdk-*` artifact, `sdk-bom` includ
 ## Cutting a release
 
 1. Pick `X.Y.Z` per [`docs/versioning.md`](docs/versioning.md).
-2. Run the conformance sweep against a node. The meshtastic-mcp simulated TCP node is acceptable:
+2. Run the conformance sweep against a real radio, with a second one as `--peer-node`. The meshtastic-mcp simulated TCP node never acks a text send, so cs2 and cs7 time out against it:
 
    ```shell
    ./gradlew :samples:cli:installDist

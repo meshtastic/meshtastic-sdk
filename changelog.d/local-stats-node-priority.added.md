@@ -1,2 +1,0 @@
-- `TelemetryApi.requestLocalStats(node)` asks a remote node for its `LocalStats`; firmware answers.
-- The send builder takes `priority(MeshPacket.Priority)`.
