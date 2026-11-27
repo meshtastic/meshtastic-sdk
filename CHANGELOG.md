@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-27
+
+### Fixed
+
+- `BleScanner.scan()` builds the platform scanner when the flow is collected, so a scanner that
+  cannot be built fails the flow with `MeshtasticException.Transport` instead of throwing from
+  `scan()` unwrapped.
+- `JvmSerialPorts.open` fails with `MeshtasticException.Transport` for a port that does not
+  exist, as `AndroidSerialPorts.open` does, instead of jSerialComm's
+  `SerialPortInvalidPortException`.
+
 ## [0.3.0] - 2026-11-27
 
 ### Breaking
