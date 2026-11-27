@@ -24,6 +24,7 @@ import org.meshtastic.cli.internal.openTransport
 import org.meshtastic.sdk.AutoReconnectConfig
 import org.meshtastic.sdk.NodeId
 import org.meshtastic.sdk.RadioClient
+import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.storage.sqldelight.SqlDelightStorageProvider
 import java.nio.file.Files
 import java.nio.file.Path
@@ -184,10 +185,14 @@ internal class ConformanceCmd : BaseCommand(name = "conformance") {
      */
     private suspend fun openClient(): RadioClient {
         val baseDir = Files.createTempDirectory("cli-conformance-").toAbsolutePath().toString()
-        val opened = openTransport(tx.transport)
+        val first = openTransport(tx.transport).transport
+        var unused: RadioTransport? = first
         return RadioClient.Builder()
             .autoReconnect(AutoReconnectConfig.Disabled)
-            .transport(opened.transport)
+            // Serial transports are single-use, so cs6's reconnect needs a fresh one.
+            .transport(first.identity) { _, _ ->
+                unused?.also { unused = null } ?: openTransport(tx.transport).transport
+            }
             .storage(SqlDelightStorageProvider(baseDir = baseDir))
             // The conformance harness owns the connect lifecycle and verifies behaviour
             // explicitly; opt out of the auto setTime so it doesn't perturb timing.
