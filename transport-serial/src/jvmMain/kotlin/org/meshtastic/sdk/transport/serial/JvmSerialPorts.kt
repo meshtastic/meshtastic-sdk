@@ -7,6 +7,8 @@
  */
 package org.meshtastic.sdk.transport.serial
 
+import com.fazecast.jSerialComm.SerialPortInvalidPortException
+import org.meshtastic.sdk.MeshtasticException
 import org.meshtastic.sdk.RadioTransport
 import org.meshtastic.sdk.TransportIdentity
 import org.meshtastic.sdk.TransportSpec
@@ -43,6 +45,9 @@ public object JvmSerialPorts {
     /**
      * Build a [RadioTransport] that opens the named serial port at [baudRate].
      * Default baud is 115 200 — the rate used by Meshtastic firmware.
+     *
+     * @throws MeshtasticException.Transport if no port by that name exists (the device was
+     *   unplugged, or the name is wrong).
      */
     public fun open(portName: String, baudRate: Int = DEFAULT_BAUD): RadioTransport =
         openTransport(portName, baudRate, onTextLine = null)
@@ -58,7 +63,11 @@ public object JvmSerialPorts {
         openTransport(portName, baudRate, onTextLine)
 
     private fun openTransport(portName: String, baudRate: Int, onTextLine: ((String) -> Unit)?): RadioTransport {
-        val port = JSerialPort.getCommPort(portName)
+        val port = try {
+            JSerialPort.getCommPort(portName)
+        } catch (e: SerialPortInvalidPortException) {
+            throw MeshtasticException.Transport("Serial port `$portName` not found", e)
+        }
         val identity = TransportIdentity.of(TransportSpec.SerialJvm(portName))
         return JSerialCommTransport(port, identity, baudRate, onTextLine = onTextLine)
     }
