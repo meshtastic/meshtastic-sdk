@@ -17,7 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `scan()` unwrapped.
 - `JvmSerialPorts.open` fails with `MeshtasticException.Transport` for a port that does not
   exist, as `AndroidSerialPorts.open` does, instead of jSerialComm's
-  `SerialPortInvalidPortException`.
+  `SerialPortInvalidPortException`. That is on Linux and macOS; on Windows jSerialComm does not
+  check the name, and a missing port fails at `connect()` with the same exception.
 
 ## [0.3.0] - 2026-11-27
 
