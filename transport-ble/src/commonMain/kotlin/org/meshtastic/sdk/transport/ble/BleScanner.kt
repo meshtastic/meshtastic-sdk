@@ -12,6 +12,8 @@ import com.juul.kable.Scanner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import org.meshtastic.sdk.MeshtasticException
 
@@ -54,14 +56,21 @@ public object BleScanner {
      *
      * @since 0.3.0
      */
-    public fun scan(): Flow<DiscoveredRadio> = Scanner {
-        filters {
-            match { services = listOf(BleConstants.MESH_SERVICE_UUID) }
-        }
-    }.advertisements
-        .map { ad -> ad.toRawAdvertisement() }
-        .asDiscoveredRadios()
+    public fun scan(): Flow<DiscoveredRadio> = scanOf {
+        Scanner {
+            filters {
+                match { services = listOf(BleConstants.MESH_SERVICE_UUID) }
+            }
+        }.advertisements.map { ad -> ad.toRawAdvertisement() }
+    }
 }
+
+/**
+ * The scan flow over [advertisements], which runs at collection: a platform scanner that cannot
+ * be built fails the flow as [MeshtasticException.Transport] rather than throwing from `scan()`.
+ */
+internal fun scanOf(advertisements: () -> Flow<RawAdvertisement>): Flow<DiscoveredRadio> =
+    flow { emitAll(advertisements()) }.asDiscoveredRadios()
 
 /** Platform-neutral view of one advertisement, so the mapping is testable without Kable types. */
 internal class RawAdvertisement(
