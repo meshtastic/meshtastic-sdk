@@ -1875,6 +1875,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getDisplayFrames ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getDisplayPalette ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getEvents ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getFileManifest ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getFiles ()Lorg/meshtastic/sdk/FileTransferApi;
 	public final fun getFromRadio ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getMqttProxy ()Lorg/meshtastic/sdk/MqttProxyApi;

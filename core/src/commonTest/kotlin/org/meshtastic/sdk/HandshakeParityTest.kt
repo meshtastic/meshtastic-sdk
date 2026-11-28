@@ -19,6 +19,7 @@ import okio.ByteString.Companion.toByteString
 import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.Data
+import org.meshtastic.proto.FileInfo
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.HardwareModel
 import org.meshtastic.proto.MeshPacket
@@ -537,6 +538,62 @@ class HandshakeParityTest {
         assertIs<AdminSessionStatus.Active>(client.adminSessions.value[NodeId(NODE)])
         assertFalse(received.any { it.decoded?.portnum == PortNum.ADMIN_APP }, "the late seed reply is consumed")
         client.disconnect()
+    }
+
+    // Regression: the manifest was reachable only as a one-shot Ready.files or event, so a plain RadioClient consumer had none.
+    @Test
+    fun fileManifestHoldsTheHandshakeFilesInArrivalOrder() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:file-manifest"), autoQueueStatus = true)
+        val client = buildClient(transport)
+        assertEquals(emptyList(), client.fileManifest.value)
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        val a = FileInfo.Builder().also { f ->
+            f.file_name = "a.uf2"
+            f.size_bytes = 10
+        }.build()
+        val b = FileInfo.Builder().also { f ->
+            f.file_name = "b.bin"
+            f.size_bytes = 20
+        }.build()
+        // Out of name and size order, so only the device's order passes.
+        transport.inject { it.fileInfo = b }
+        transport.inject { it.fileInfo = a }
+        transport.completeStage1()
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+        transport.answerSeed()
+        runCurrent()
+        assertTrue(connectJob.await().isSuccess)
+
+        assertEquals(listOf(b, a), client.fileManifest.value)
+        client.disconnect()
+    }
+
+    // Regression: a prior device's manifest surviving into the next session.
+    @Test
+    fun fileManifestIsClearedWhenTheSessionEnds() = runTest {
+        val transport = FakeRadioTransport(TransportIdentity("fake:file-manifest-clear"), autoQueueStatus = true)
+        val client = buildClient(transport)
+        val connectJob = backgroundScope.async { runCatching { client.connect() } }
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage1 }
+        transport.inject { it.fileInfo = FileInfo.Builder().also { f -> f.file_name = "a.uf2" }.build() }
+        transport.completeStage1()
+        client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
+        transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
+        transport.inject { it.config_complete_id = NONCE_STAGE2 }
+        runCurrent()
+        transport.answerSeed()
+        runCurrent()
+        assertTrue(connectJob.await().isSuccess)
+        assertTrue(client.fileManifest.value.isNotEmpty())
+
+        client.disconnect()
+        runCurrent()
+
+        assertEquals(emptyList(), client.fileManifest.value)
     }
 
     private fun replayedPosition(from: Int): MeshPacket = MeshPacket.Builder().also { wb ->

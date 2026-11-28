@@ -138,6 +138,7 @@ Suggested policy for an app: `initialBackoff` 1 s (3 s for BLE, which needs the 
 | `connection: StateFlow<ConnectionState>` | `Disconnected → Connecting → Configuring → Connected`; after a drop with auto-reconnect on, `Reconnecting → Configuring → …`, and `Failed` when retrying cannot help. A power-saving device that drops its BLE link by design goes to `DeviceSleeping` instead (see [`DeviceSleeping`](#devicesleeping)). |
 | `ownNode: StateFlow<NodeInfo?>` | `null` until `Connected`, then the local node. |
 | `configBundle: StateFlow<ConfigBundle?>` | `null` until `Connected`; cleared on disconnect. `MyNodeInfo`, `DeviceMetadata`, configs, module configs, and `DeviceUIConfig`. Updated by unsolicited config pushes and successful local admin writes. |
+| `fileManifest: StateFlow<List<FileInfo>>` | Empty until `Connected` and after the session ends; the device's `FileInfo` list from the handshake, in the order sent. |
 | `channels: StateFlow<List<Channel>?>` | `null` until `Connected`. Updated when `setChannel` succeeds; `admin.listChannels()` re-reads all eight slots. |
 | `adminSessions: StateFlow<Map<NodeId, AdminSessionStatus>>` | Admin session state per node, keyed by the node that issued the passkey. See [Admin sessions](#admin-sessions). |
 | `fun adminSessionStatus(node: NodeId): Flow<AdminSessionStatus>` | `adminSessions` for one node, `NoSession` when absent; emits the current value, then changes. |

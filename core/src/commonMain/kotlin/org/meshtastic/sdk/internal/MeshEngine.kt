@@ -145,6 +145,9 @@ internal class MeshEngine(
      */
     val configBundleState = MutableStateFlow<ConfigBundle?>(null)
 
+    /** The device's file manifest from the active session's handshake, empty before Ready and after the session ends. */
+    val fileManifestState = MutableStateFlow<List<FileInfo>>(emptyList())
+
     /**
      * Channel list for the active session, seeded from the handshake or from storage on
      * reconnect. `null` until [ConnectionState.Connected] is reached.
@@ -1011,6 +1014,7 @@ internal class MeshEngine(
         staleNumberWrite = null
         regionWrite = null
         configBundleState.value = null
+        fileManifestState.value = emptyList()
         channelsState.value = null
 
         dispatcher.cancelAll(AdminResult.NodeUnreachable)
@@ -2135,6 +2139,7 @@ internal class MeshEngine(
                 // below must not gate visibility (real-device storage latency loses that
                 // race; caught by MeshtasticBleConformanceTest).
                 meshState.configBundle?.let { configBundleState.value = it }
+                fileManifestState.value = pendingFiles.values.toList()
                 if (pendingChannels.isNotEmpty()) {
                     channelsState.value = pendingChannels.toList()
                 }
@@ -3457,6 +3462,7 @@ internal class MeshEngine(
         clearSessionPasskeys()
         dispatcher.cancelAll(AdminResult.NodeUnreachable)
         configBundleState.value = null
+        fileManifestState.value = emptyList()
         lastMqttConnected = null
         clearPendingHandshake()
         for ((_, job) in ackTimeoutJobs) job.cancel()
