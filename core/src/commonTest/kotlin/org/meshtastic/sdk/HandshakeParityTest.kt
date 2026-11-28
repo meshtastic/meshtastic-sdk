@@ -556,8 +556,9 @@ class HandshakeParityTest {
             f.file_name = "b.bin"
             f.size_bytes = 20
         }.build()
-        transport.inject { it.fileInfo = a }
+        // Out of name and size order, so only the device's order passes.
         transport.inject { it.fileInfo = b }
+        transport.inject { it.fileInfo = a }
         transport.completeStage1()
         client.connection.first { it is ConnectionState.Configuring && it.phase == ConfigPhase.Stage2 }
         transport.inject { it.node_info = NodeInfo.Builder().also { n -> n.num = NODE }.build() }
@@ -567,7 +568,7 @@ class HandshakeParityTest {
         runCurrent()
         assertTrue(connectJob.await().isSuccess)
 
-        assertEquals(listOf(a, b), client.fileManifest.value)
+        assertEquals(listOf(b, a), client.fileManifest.value)
         client.disconnect()
     }
 
