@@ -154,6 +154,7 @@ Every engine change keeps these. The handshake gates (session-ready only on the 
 - Inbound dedup drops a `MeshPacket` whose `(from, to, channel, id)` matches one of the last 256 keys; a packet with `id == 0` or `from == 0` skips the check.
 - A `MeshPacket` with no decoded payload never reaches `packets`, and the engine emits a `MeshEvent.ProtocolWarning` for it at most once a minute.
 - An unsolicited admin message from the local device (`request_id == 0`) updates `channels` or `configBundle` in memory and in storage, and emits `MeshEvent.ExternalConfigChange`.
+- The connected node's answer to an admin read the engine correlates (`get_config_response`, `get_module_config_response`, `get_channel_response`) updates `configBundle` or `channels` in memory and in storage before the read returns, only when it changes them, and emits no `MeshEvent.ExternalConfigChange`.
 - Teardown clears the dedup set, admin sessions, pending sends (failed with `Disconnected`), pending admin requests (`NodeUnreachable`), `configBundle` and `channels`. An auto-reconnect cycle clears the dedup set, pending sends and `configBundle`, and keeps storage, `channels` and admin sessions.
 - One outbound writer drains an unlimited `Channel<Frame>` in FIFO order, so concurrent sends never reorder on the wire.
 - Mesh delivery retries belong to the device. The engine never re-sends a packet after `Sent`; `MessageHandle.retry()` and `retryWith` are new sends the caller starts.

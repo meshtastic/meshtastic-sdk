@@ -12,11 +12,13 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okio.ByteString.Companion.encodeUtf8
+import org.meshtastic.proto.AdminMessage
 import org.meshtastic.proto.Channel
 import org.meshtastic.proto.ChannelSettings
 import org.meshtastic.proto.ClientNotification
@@ -26,6 +28,7 @@ import org.meshtastic.proto.DeviceMetadata
 import org.meshtastic.proto.FromRadio
 import org.meshtastic.proto.LogRecord
 import org.meshtastic.proto.MeshPacket
+import org.meshtastic.proto.ModuleConfig
 import org.meshtastic.proto.MqttClientProxyMessage
 import org.meshtastic.proto.MyNodeInfo
 import org.meshtastic.proto.NodeInfo
@@ -169,6 +172,138 @@ class SessionTypedEventsTest {
         assertEquals(377_749_000, moved.node.position?.latitude_i)
         val config = assertIs<RadioSessionEvent.ConfigChanged>(events.last())
         assertEquals(true, config.bundle.configs.firstNotNullOf { it.position }.fixed_position)
+        client.disconnect()
+    }
+
+    @Test
+    fun aLocalReadAnswerReplacesTheValueAnAckedWriteMirrored() = runTest {
+        val storage = InMemoryStorage()
+        val (transport, client, events) = connected(storage = storage)
+        val written = Config.LoRaConfig.Builder().also { wb ->
+            wb.region = Config.LoRaConfig.RegionCode.EU_868
+            wb.use_preset = true
+            wb.spread_factor = 11
+            wb.coding_rate = 9
+        }.build()
+        ackLastAdmin(transport) { client.admin.setConfig(Config.Builder().also { it.lora = written }.build()) }
+        // AdminModule stores an out-of-range coding rate as LORA_CR_DEFAULT and answers a get with what it stores.
+        val stored = written.newBuilder().also { it.coding_rate = 5 }.build()
+
+        val answered = answerLastRead(transport, configAnswer(Config.Builder().also { it.lora = stored }.build())) {
+            client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)
+        }
+
+        assertEquals(stored, assertIs<AdminResult.Success<Config>>(answered).value.lora)
+        assertEquals(stored, client.configBundle.value?.configs?.firstNotNullOfOrNull { it.lora })
+        val changed = events.filterIsInstance<RadioSessionEvent.ConfigChanged>().last()
+        assertEquals(stored, changed.bundle.configs.firstNotNullOf { it.lora })
+        assertEquals(stored, storage.loadConfig()?.configs?.firstNotNullOfOrNull { it.lora })
+        assertTrue(events.none { (it as? RadioSessionEvent.Event)?.event is MeshEvent.ExternalConfigChange })
+        client.disconnect()
+    }
+
+    @Test
+    fun aReadAnswerEqualToAnAckedWriteEmitsNoSecondConfigChanged() = runTest {
+        val (transport, client, events) = connected()
+        val fixed = positionConfig(fixed = true)
+        ackLastAdmin(transport) { client.admin.setConfig(fixed) }
+        val changesAfterWrite = events.count { it is RadioSessionEvent.ConfigChanged }
+
+        answerLastRead(transport, configAnswer(fixed)) {
+            client.admin.getConfig(AdminMessage.ConfigType.POSITION_CONFIG)
+        }
+
+        assertEquals(1, changesAfterWrite)
+        assertEquals(changesAfterWrite, events.count { it is RadioSessionEvent.ConfigChanged })
+        client.disconnect()
+    }
+
+    @Test
+    fun aLocalModuleConfigReadAnswerReplacesThatSection() = runTest {
+        val (transport, client, events) = connected()
+        val mqtt = ModuleConfig.Builder().also { wb ->
+            wb.mqtt = ModuleConfig.MQTTConfig.Builder().also { it.enabled = true }.build()
+        }.build()
+
+        answerLastRead(transport, AdminMessage.Builder().also { it.get_module_config_response = mqtt }.build()) {
+            client.admin.getModuleConfig(AdminMessage.ModuleConfigType.MQTT_CONFIG)
+        }
+
+        assertEquals(listOf(mqtt), client.configBundle.value?.moduleConfigs)
+        val changed = events.filterIsInstance<RadioSessionEvent.ConfigChanged>().single()
+        assertEquals(listOf(mqtt), changed.bundle.moduleConfigs)
+        client.disconnect()
+    }
+
+    @Test
+    fun aLocalChannelReadReplacesThatChannelAndARepeatChangesNothing() = runTest {
+        val (transport, client, events) = connected()
+        val renamed = Channel.Builder().also { wb ->
+            wb.role = Channel.Role.PRIMARY
+            wb.settings = ChannelSettings.Builder().also { it.name = "ops" }.build()
+        }.build()
+
+        repeat(2) {
+            answerLastRead(transport, AdminMessage.Builder().also { it.get_channel_response = renamed }.build()) {
+                client.admin.getChannel(ChannelIndex(0))
+            }
+        }
+
+        assertEquals(listOf(renamed), client.channels.value)
+        assertEquals(listOf(renamed), events.filterIsInstance<RadioSessionEvent.ChannelsChanged>().single().channels)
+        client.disconnect()
+    }
+
+    @Test
+    fun aRemoteNodesReadAnswerLeavesTheSessionsConfigAlone() = runTest {
+        val (transport, client, events) = connected()
+        val before = client.configBundle.value
+        val us = Config.Builder().also { wb ->
+            wb.lora = Config.LoRaConfig.Builder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+        }.build()
+
+        val answered = answerLastRead(transport, configAnswer(us), fromNode = PEER) {
+            client.admin.forNode(NodeId(PEER)).getConfig(AdminMessage.ConfigType.LORA_CONFIG)
+        }
+
+        assertEquals(AdminResult.Success(us), answered)
+        assertEquals(before, client.configBundle.value)
+        assertTrue(events.none { it is RadioSessionEvent.ConfigChanged })
+        client.disconnect()
+    }
+
+    @Test
+    fun aLocalReadReturnsWithItsAnswerAlreadyInTheConfigBundle() = runTest {
+        val (transport, client, _) = connected()
+        val us = Config.LoRaConfig.Builder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+        val before = transport.outboundPackets().size
+        // Unconfined: the caller resumes inside the engine's handling of the answer, as on a thread pool.
+        val seen = async(UnconfinedTestDispatcher(testScheduler)) {
+            client.admin.getConfig(AdminMessage.ConfigType.LORA_CONFIG)
+            client.configBundle.value?.configs?.firstNotNullOfOrNull { it.lora }
+        }
+        runCurrent()
+        val read = transport.outboundPackets().drop(before).last { it.decoded?.portnum == PortNum.ADMIN_APP }
+        transport.injectAdminResponse(read.id, configAnswer(Config.Builder().also { it.lora = us }.build()))
+        runCurrent()
+
+        assertEquals(us, seen.await())
+        client.disconnect()
+    }
+
+    @Test
+    fun anUncorrelatedLocalAnswerChangesNothing() = runTest {
+        val (transport, client, events) = connected()
+        val before = client.configBundle.value
+        val us = Config.Builder().also { wb ->
+            wb.lora = Config.LoRaConfig.Builder().also { it.region = Config.LoRaConfig.RegionCode.US }.build()
+        }.build()
+
+        transport.injectAdminResponse(requestId = 4242, response = configAnswer(us))
+        runCurrent()
+
+        assertEquals(before, client.configBundle.value)
+        assertTrue(events.none { it is RadioSessionEvent.ConfigChanged })
         client.disconnect()
     }
 
@@ -472,6 +607,24 @@ class SessionTypedEventsTest {
         assertIs<AdminResult.Success<Unit>>(result.await())
         runCurrent()
     }
+
+    // Runs [call] and answers its admin get as AdminModule does: from [fromNode], with the get's id as request_id.
+    private suspend fun <T> TestScope.answerLastRead(
+        transport: FakeRadioTransport,
+        answer: AdminMessage,
+        fromNode: Int = LOCAL,
+        call: suspend () -> AdminResult<T>,
+    ): AdminResult<T> {
+        val before = transport.outboundPackets().size
+        val result = async { call() }
+        runCurrent()
+        val read = transport.outboundPackets().drop(before).last { it.decoded?.portnum == PortNum.ADMIN_APP }
+        transport.injectAdminResponse(read.id, answer, fromNode = fromNode)
+        runCurrent()
+        return result.await()
+    }
+
+    private fun configAnswer(config: Config) = AdminMessage.Builder().also { it.get_config_response = config }.build()
 
     private fun FakeRadioTransport.inject(block: (FromRadio.Builder) -> Unit) {
         injectFrame(FromRadio.Builder().also(block).build().toFrame())
