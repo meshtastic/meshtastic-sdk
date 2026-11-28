@@ -451,7 +451,7 @@ public sealed interface TransportTarget {
 
 | Helper | Module | Does |
 |---|---|---|
-| `BleScanner.scan(): Flow<DiscoveredRadio>` | `transport-ble` | Scans for the Meshtastic service UUID. The host holds the Bluetooth permissions. |
+| `BleScanner.scan(): Flow<DiscoveredRadio>` | `transport-ble` | Scans for the Meshtastic service UUID. The host holds the Bluetooth permissions. On Android a scan started after 5 starts in 30 seconds fails with `MeshtasticException.Transport`, since the OS would silence it; the address scan in `BleTransport(address)` shares that quota. |
 | `bleAdvertisementMatches(needle, name, peripheralName, identifier)` | `transport-ble` | Case-insensitive substring match; a MAC needle also matches a BlueZ object path such as `/org/bluez/hci0/dev_34_B7_DA_62_18_C5`. An empty needle matches everything. |
 | `bondedBleDevices(context): List<BondedBleDevice>` | `transport-ble`, Android | The host's bonded devices, without scanning; every bonded device, not only radios. Needs `BLUETOOTH_CONNECT` on API 31+. |
 | `JvmSerialPorts.findMeshtastic(): List<SerialPortInfo>` | `transport-serial`, JVM | Ports whose USB vendor ID is in `MESHTASTIC_USB_VENDOR_IDS`. |
