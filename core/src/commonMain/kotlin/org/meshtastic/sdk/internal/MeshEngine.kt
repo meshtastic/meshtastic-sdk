@@ -66,6 +66,7 @@ import org.meshtastic.sdk.CongestionMetrics
 import org.meshtastic.sdk.ConnectionState
 import org.meshtastic.sdk.DeviceStorage
 import org.meshtastic.sdk.DeviceVersion
+import org.meshtastic.sdk.DisplayImage
 import org.meshtastic.sdk.DisplayMirrorFrame
 import org.meshtastic.sdk.DroppedFlow
 import org.meshtastic.sdk.ExternalChangeKind
@@ -206,8 +207,12 @@ internal class MeshEngine(
     /** Latest complete display palette for the session, `null` until the device sends one. */
     val displayPalette = MutableStateFlow<DisplayPalette?>(null)
 
+    /** Latest validated display image for the session, `null` until a frame lands and after the session ends. */
+    val displayImage = MutableStateFlow<DisplayImage?>(null)
+
     private val displayFrameReassembler = DisplayFrameReassembler()
     private val displayPaletteReassembler = DisplayPaletteReassembler()
+    private val displayCompositor = DisplayCompositor()
 
     /** Every decoded inbound envelope, unfiltered. Lossy by design so a slow tap never stalls the engine. */
     val rawFromRadio = MutableSharedFlow<FromRadio>(
@@ -3020,8 +3025,17 @@ internal class MeshEngine(
         when (val outcome = displayFrameReassembler.accept(chunk)) {
             DisplayFrameReassembler.Outcome.Incomplete -> Unit
 
-            is DisplayFrameReassembler.Outcome.Complete ->
+            is DisplayFrameReassembler.Outcome.Complete -> {
                 displayFrames.tryEmit(SessionScoped(sessionCounter.value, outcome.frame))
+                val image = displayCompositor.accept(outcome.frame)
+                if (image != null) {
+                    displayImage.value = image
+                } else {
+                    logger.warn(TAG) {
+                        "Dropped display frame ${outcome.frame.frameId}: geometry does not match its bytes"
+                    }
+                }
+            }
 
             is DisplayFrameReassembler.Outcome.Dropped ->
                 logger.warn(TAG) { "Dropped display frame chunk: ${outcome.reason}" }
@@ -3031,7 +3045,9 @@ internal class MeshEngine(
     private fun resetDisplayMirror() {
         displayFrameReassembler.reset()
         displayPaletteReassembler.reset()
+        displayCompositor.reset()
         displayPalette.value = null
+        displayImage.value = null
     }
 
     private fun warnUnhandledVariant(variant: String, stage: HandshakeStage) {

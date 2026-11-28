@@ -14,7 +14,8 @@ import org.meshtastic.proto.DisplayFrame
  * One fully reassembled frame of the device display, delivered on [RadioClient.displayFrames].
  *
  * The SDK joins the firmware's `FromRadio.display_frame` chunks and hands over the bytes as sent;
- * it does not decode, decompress or composite them. An incomplete frame is never delivered.
+ * it does not decode or decompress them, and [RadioClient.displayImage] composites partial rectangles
+ * for a consumer that wants a whole image. An incomplete frame is never delivered.
  *
  * [data] is laid out per [format]: `MONO_VLSB` is 1 bit per pixel in vertical LSB-first pages
  * (`byte index = x + (y / 8) * width`, `bit index = y % 8`); `RGB565` is little-endian, tightly

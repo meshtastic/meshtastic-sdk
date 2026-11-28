@@ -69,6 +69,23 @@ class DisplayMirrorTest {
             }.build()
         }.build().toFrame()
 
+    private fun rectChunk(frameId: Int, rx: Int, ry: Int, rw: Int, rh: Int, fill: Int): Frame =
+        FromRadio.Builder().also { wb ->
+            wb.display_frame = DisplayFrame.Builder().also { wb ->
+                wb.width = 8
+                wb.height = 4
+                wb.format = DisplayFrame.Format.RGB565
+                wb.frame_id = frameId
+                wb.offset = 0
+                wb.total_size = rw * rh * 2
+                wb.data_ = ByteArray(rw * rh * 2) { fill.toByte() }.toByteString()
+                wb.rect_x = rx
+                wb.rect_y = ry
+                wb.rect_width = rw
+                wb.rect_height = rh
+            }.build()
+        }.build().toFrame()
+
     private suspend fun TestScope.assertAcked(
         call: suspend (AdminApi) -> AdminResult<Unit>,
         matches: (AdminMessage) -> Boolean,
@@ -233,5 +250,44 @@ class DisplayMirrorTest {
         client.disconnect()
         runCurrent()
         assertNull(client.displayPalette.value)
+    }
+
+    // Regression: engine not feeding the compositor, or not clearing the image when the session ends.
+    @Test
+    fun displayImageCompositesRectsAndClearsWhenTheSessionEnds() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        assertNull(client.displayImage.value)
+        transport.injectFrame(rectChunk(1, 0, 0, 2, 1, 0x11))
+        transport.injectFrame(rectChunk(2, 4, 2, 2, 1, 0x22))
+        runCurrent()
+        val image = assertNotNull(client.displayImage.value)
+        val bytes = image.pixels.toByteArray()
+        assertEquals(2, image.frameId)
+        assertEquals(8 * 4 * 2, bytes.size)
+        assertTrue((0 until 4).all { bytes[it] == 0x11.toByte() })
+        assertTrue(((2 * 8 + 4) * 2 until (2 * 8 + 4) * 2 + 4).all { bytes[it] == 0x22.toByte() })
+        client.disconnect()
+        runCurrent()
+        assertNull(client.displayImage.value)
+    }
+
+    // Regression: a dropped frame clearing or replacing the current image.
+    @Test
+    fun malformedFrameKeepsThePreviousDisplayImage() = runTest {
+        val (transport, client) = connectedClient()
+        client.connect()
+        runCurrent()
+        try {
+            transport.injectFrame(rectChunk(1, 0, 0, 2, 1, 0x11))
+            runCurrent()
+            val first = assertNotNull(client.displayImage.value)
+            transport.injectFrame(rectChunk(2, 0, 0, 9, 1, 0x22))
+            runCurrent()
+            assertEquals(first, client.displayImage.value)
+        } finally {
+            runCatching { client.disconnect() }
+        }
     }
 }

@@ -1946,6 +1946,34 @@ final class org.meshtastic.sdk/DeviceVersion : kotlin/Comparable<org.meshtastic.
     }
 }
 
+final class org.meshtastic.sdk/DisplayImage { // org.meshtastic.sdk/DisplayImage|null[0]
+    constructor <init>(kotlin/Int, kotlin/Int, org.meshtastic.proto/DisplayFrame.Format, kotlin/Int, kotlin/Int, okio/ByteString) // org.meshtastic.sdk/DisplayImage.<init>|<init>(kotlin.Int;kotlin.Int;org.meshtastic.proto.DisplayFrame.Format;kotlin.Int;kotlin.Int;okio.ByteString){}[0]
+
+    final val format // org.meshtastic.sdk/DisplayImage.format|{}format[0]
+        final fun <get-format>(): org.meshtastic.proto/DisplayFrame.Format // org.meshtastic.sdk/DisplayImage.format.<get-format>|<get-format>(){}[0]
+    final val frameId // org.meshtastic.sdk/DisplayImage.frameId|{}frameId[0]
+        final fun <get-frameId>(): kotlin/Int // org.meshtastic.sdk/DisplayImage.frameId.<get-frameId>|<get-frameId>(){}[0]
+    final val height // org.meshtastic.sdk/DisplayImage.height|{}height[0]
+        final fun <get-height>(): kotlin/Int // org.meshtastic.sdk/DisplayImage.height.<get-height>|<get-height>(){}[0]
+    final val paletteSignature // org.meshtastic.sdk/DisplayImage.paletteSignature|{}paletteSignature[0]
+        final fun <get-paletteSignature>(): kotlin/Int // org.meshtastic.sdk/DisplayImage.paletteSignature.<get-paletteSignature>|<get-paletteSignature>(){}[0]
+    final val pixels // org.meshtastic.sdk/DisplayImage.pixels|{}pixels[0]
+        final fun <get-pixels>(): okio/ByteString // org.meshtastic.sdk/DisplayImage.pixels.<get-pixels>|<get-pixels>(){}[0]
+    final val width // org.meshtastic.sdk/DisplayImage.width|{}width[0]
+        final fun <get-width>(): kotlin/Int // org.meshtastic.sdk/DisplayImage.width.<get-width>|<get-width>(){}[0]
+
+    final fun component1(): kotlin/Int // org.meshtastic.sdk/DisplayImage.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // org.meshtastic.sdk/DisplayImage.component2|component2(){}[0]
+    final fun component3(): org.meshtastic.proto/DisplayFrame.Format // org.meshtastic.sdk/DisplayImage.component3|component3(){}[0]
+    final fun component4(): kotlin/Int // org.meshtastic.sdk/DisplayImage.component4|component4(){}[0]
+    final fun component5(): kotlin/Int // org.meshtastic.sdk/DisplayImage.component5|component5(){}[0]
+    final fun component6(): okio/ByteString // org.meshtastic.sdk/DisplayImage.component6|component6(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin/Int = ..., org.meshtastic.proto/DisplayFrame.Format = ..., kotlin/Int = ..., kotlin/Int = ..., okio/ByteString = ...): org.meshtastic.sdk/DisplayImage // org.meshtastic.sdk/DisplayImage.copy|copy(kotlin.Int;kotlin.Int;org.meshtastic.proto.DisplayFrame.Format;kotlin.Int;kotlin.Int;okio.ByteString){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // org.meshtastic.sdk/DisplayImage.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // org.meshtastic.sdk/DisplayImage.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // org.meshtastic.sdk/DisplayImage.toString|toString(){}[0]
+}
+
 final class org.meshtastic.sdk/DisplayMirrorFrame { // org.meshtastic.sdk/DisplayMirrorFrame|null[0]
     constructor <init>(kotlin/Int, kotlin/Int, org.meshtastic.proto/DisplayFrame.Format, kotlin/Int, okio/ByteString, kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ..., kotlin/Int = ...) // org.meshtastic.sdk/DisplayMirrorFrame.<init>|<init>(kotlin.Int;kotlin.Int;org.meshtastic.proto.DisplayFrame.Format;kotlin.Int;okio.ByteString;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int;kotlin.Int){}[0]
 
@@ -2360,6 +2388,8 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun <get-deviceLogs>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/SessionScoped<org.meshtastic.proto/LogRecord>> // org.meshtastic.sdk/RadioClient.deviceLogs.<get-deviceLogs>|<get-deviceLogs>(){}[0]
     final val displayFrames // org.meshtastic.sdk/RadioClient.displayFrames|{}displayFrames[0]
         final fun <get-displayFrames>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/SessionScoped<org.meshtastic.sdk/DisplayMirrorFrame>> // org.meshtastic.sdk/RadioClient.displayFrames.<get-displayFrames>|<get-displayFrames>(){}[0]
+    final val displayImage // org.meshtastic.sdk/RadioClient.displayImage|{}displayImage[0]
+        final fun <get-displayImage>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.sdk/DisplayImage?> // org.meshtastic.sdk/RadioClient.displayImage.<get-displayImage>|<get-displayImage>(){}[0]
     final val displayPalette // org.meshtastic.sdk/RadioClient.displayPalette|{}displayPalette[0]
         final fun <get-displayPalette>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.proto/DisplayPalette?> // org.meshtastic.sdk/RadioClient.displayPalette.<get-displayPalette>|<get-displayPalette>(){}[0]
     final val events // org.meshtastic.sdk/RadioClient.events|{}events[0]

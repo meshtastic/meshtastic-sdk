@@ -309,6 +309,20 @@ public class RadioClient internal constructor(
     public val displayPalette: StateFlow<org.meshtastic.proto.DisplayPalette?> =
         engine.displayPalette.asStateFlow()
 
+    /**
+     * The device display as one validated image: a `MONO_VLSB` frame as delivered, or the `RGB565` panel with every
+     * completed partial-update rectangle painted onto it. `null` until a frame lands this session and after the session
+     * ends. A frame whose geometry contradicts its bytes is dropped and the previous image stays.
+     *
+     * Frames arrive only after [AdminApi.setDisplayMirror] or [AdminApi.requestDisplayFrame]. The image and the canvas
+     * behind it, up to about 2 MiB each for the largest accepted panel, are kept from the first frame until the session
+     * ends, including after the host turns mirroring off. It carries no session id; it is cleared when the session ends,
+     * as [displayPalette] is. Use [displayFrames] for the raw, ordered frames.
+     *
+     * @since 0.3.2
+     */
+    public val displayImage: StateFlow<DisplayImage?> = engine.displayImage.asStateFlow()
+
     // ── On-demand query ─────────────────────────────────────────────────────
 
     /**
