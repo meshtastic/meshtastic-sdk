@@ -38,9 +38,11 @@ public fun MeshPacket.redacted(): MeshPacket {
         PortNum.ADMIN_APP -> runCatching { AdminMessage.ADAPTER.decode(data.payload) }
             .map { AdminMessage.ADAPTER.encodeByteString(it.redacted()) }
             .getOrDefault(EMPTY)
+
         PortNum.MESH_BEACON_APP -> runCatching { MeshBeacon.ADAPTER.decode(data.payload) }
             .map { MeshBeacon.ADAPTER.encodeByteString(it.redacted()) }
             .getOrDefault(EMPTY)
+
         else -> return this
     }
     return newBuilder().also { b -> b.decoded = data.newBuilder().also { it.payload = payload }.build() }.build()
