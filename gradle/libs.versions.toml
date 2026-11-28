@@ -27,7 +27,7 @@ sqliteWasm                  = "3.51.2-build9"
 
 # --- Transports ---
 kable                       = "0.46.0"           # tracks Kotlin; klib ABI must match our `kotlin` pin above
-ktor                        = "3.6.1"            # matches Meshtastic-Android
+ktor                        = "3.6.2"            # matches Meshtastic-Android
 jSerialComm                 = "2.11.4"
 jmdns                       = "3.6.5"            # Apache-2.0; JVM mDNS discovery in transport-tcp, matches Meshtastic-Android
 usbSerialForAndroid         = "3.12.0"           # JitPack only; compileOnly in transport-serial, matches Meshtastic-Android
