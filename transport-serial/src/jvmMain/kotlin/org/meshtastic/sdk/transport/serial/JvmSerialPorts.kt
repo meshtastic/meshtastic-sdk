@@ -32,14 +32,8 @@ public object JvmSerialPorts {
     /** Enumerate all serial ports visible to the host operating system. */
     public fun list(): List<SerialPortInfo> {
         val ports = JSerialPort.getCommPorts().map { it.toSerialPortInfo() }
-        // TX-12 (audit): drop /dev/tty.* on macOS — they're the DCD-blocking
-        // siblings of the /dev/cu.* call-out devices and would hang openPort()
-        // forever against a USB-CDC Meshtastic radio.
-        return if (isMacOs()) {
-            ports.filterNot { it.name.startsWith("/dev/tty.") }
-        } else {
-            ports
-        }
+        val kept = withoutDialInDuplicates(ports.map { it.name }, isMacOs()).toSet()
+        return ports.filter { it.name in kept }
     }
 
     /**
@@ -105,3 +99,7 @@ public object JvmSerialPorts {
 
     private fun isMacOs(): Boolean = System.getProperty("os.name")?.startsWith("Mac", ignoreCase = true) == true
 }
+
+/** [names] without the macOS `tty.*` siblings of the `cu.*` call-out ports; any other host keeps every port. */
+internal fun withoutDialInDuplicates(names: List<String>, isMacOs: Boolean): List<String> =
+    if (isMacOs) names.filterNot { it.startsWith("tty.") } else names
