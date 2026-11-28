@@ -97,7 +97,11 @@ class BleScannerTest {
     fun oneCollectionReservesOneScanStart() = runTest {
         var reserves = 0
         val scan = scanOf(reserveStart = { reserves++ }) {
-            flowOf(RawAdvertisement("AA", null, -50), RawAdvertisement("BB", null, -60), RawAdvertisement("CC", null, -70))
+            flowOf(
+                RawAdvertisement("AA", null, -50),
+                RawAdvertisement("BB", null, -60),
+                RawAdvertisement("CC", null, -70),
+            )
         }
         assertEquals(3, scan.toList().size)
         assertEquals(1, reserves)
