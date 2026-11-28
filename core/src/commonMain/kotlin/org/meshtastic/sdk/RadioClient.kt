@@ -212,8 +212,8 @@ public class RadioClient internal constructor(
      *
      * Hot, no replay, and lossy: a collector that falls more than 256 packets behind loses the oldest, so
      * the engine never waits on it. Emission means the packet was queued for the transport, not that the
-     * radio accepted it. Admin packets carry session passkeys and the SDK does not redact them; lockdown
-     * credentials never appear.
+     * radio accepted it. Admin packets carry session passkeys and the SDK does not redact them; pass a
+     * logged packet through [MeshPacket.redacted] first; lockdown credentials never appear.
      *
      * Each item is a [SessionScoped] carrying the id of its session (same numbering as [sessionEvents]).
      *
@@ -259,7 +259,8 @@ public class RadioClient internal constructor(
      *
      * Hot, no replay, and lossy: a collector that falls more than 256 envelopes behind loses the
      * oldest, so the engine is never stalled by a slow tap. Envelopes can carry channel PSKs and
-     * node positions; the SDK does not redact or persist them.
+     * node positions; the SDK does not persist them, and [Config.redacted], [ModuleConfig.redacted],
+     * [Channel.redacted] and [MeshPacket.redacted] clear the credentials before a host logs one.
      *
      * @since 0.3.0
      */
