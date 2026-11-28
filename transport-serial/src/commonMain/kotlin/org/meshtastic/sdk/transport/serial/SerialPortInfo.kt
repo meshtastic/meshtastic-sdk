@@ -26,7 +26,7 @@ public enum class SerialPortTransport {
  * Metadata for a single serial port discovered via jSerialComm.
  *
  * Identifier shape differs between targets:
- *   - On the JVM, [name] is a port-name string (e.g. `/dev/cu.usbserial-1410`,
+ *   - On the JVM, [name] is a port-name string (e.g. `cu.usbserial-1410`,
  *     `COM3`) suitable for `SerialPort.getCommPort`.
  *   - On Android, [name] is the USB device name from `UsbDevice.getDeviceName`
  *     (e.g. `/dev/bus/usb/001/004`), and the host must additionally hold
