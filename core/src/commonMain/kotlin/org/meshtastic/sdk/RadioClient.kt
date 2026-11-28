@@ -136,7 +136,7 @@ public class RadioClient internal constructor(
      * sends no `FileInfo` after it. Each received `FileInfo`, a repeated one included, is also reported as a
      * [MeshEvent.FileInfoReceived], which a session stream delivers after Ready.
      *
-     * @since 0.3.2
+     * @since 0.4.0
      */
     public val fileManifest: StateFlow<List<org.meshtastic.proto.FileInfo>> = engine.fileManifestState.asStateFlow()
 
