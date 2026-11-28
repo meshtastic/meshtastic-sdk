@@ -133,8 +133,8 @@ public class RadioClient internal constructor(
      * The device's file manifest from this session's config download, one [FileInfo][org.meshtastic.proto.FileInfo]
      * per file in the order the device sent them, a repeated `file_name` kept once. Empty before [ConnectionState.Connected]
      * and after the session ends, so a stale manifest never leaks into a new session. Set once per handshake; firmware
-     * sends no `FileInfo` after it. Each file is also reported once as a [MeshEvent.FileInfoReceived], which a session
-     * stream delivers after Ready.
+     * sends no `FileInfo` after it. Each received `FileInfo`, a repeated one included, is also reported as a
+     * [MeshEvent.FileInfoReceived], which a session stream delivers after Ready.
      *
      * @since 0.3.2
      */
