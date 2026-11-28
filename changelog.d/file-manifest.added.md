@@ -1,0 +1,1 @@
+- `RadioClient.fileManifest` holds the device's file manifest from the handshake, cleared when the session ends.
