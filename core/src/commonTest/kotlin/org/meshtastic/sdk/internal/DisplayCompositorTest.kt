@@ -57,7 +57,9 @@ class DisplayCompositorTest {
     // mesh.proto DisplayFrame: a zero rect_width or rect_height means the full panel on that axis.
     @Test
     fun `a zero rect width or height means the full panel on that axis`() {
-        val bytes = assertNotNull(DisplayCompositor().accept(rect(8, 4, 0, 1, 8, 2, 0x5C).copy(rectWidth = 0))).pixels.toByteArray()
+        val bytes = assertNotNull(
+            DisplayCompositor().accept(rect(8, 4, 0, 1, 8, 2, 0x5C).copy(rectWidth = 0)),
+        ).pixels.toByteArray()
         assertEquals(true, bytes.allEqual(0x5C, 8 * 2 until 3 * 8 * 2))
         assertEquals(true, bytes.allEqual(0, 0 until 8 * 2))
         assertEquals(true, bytes.allEqual(0, 3 * 8 * 2 until 4 * 8 * 2))

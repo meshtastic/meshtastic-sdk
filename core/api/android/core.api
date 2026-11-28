@@ -622,6 +622,27 @@ public final class org/meshtastic/sdk/DeviceVersion$Companion {
 	public final fun getMIN_SUPPORTED ()Lorg/meshtastic/sdk/DeviceVersion;
 }
 
+public final class org/meshtastic/sdk/DisplayImage {
+	public fun <init> (IILorg/meshtastic/proto/DisplayFrame$Format;IILokio/ByteString;)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()Lorg/meshtastic/proto/DisplayFrame$Format;
+	public final fun component4 ()I
+	public final fun component5 ()I
+	public final fun component6 ()Lokio/ByteString;
+	public final fun copy (IILorg/meshtastic/proto/DisplayFrame$Format;IILokio/ByteString;)Lorg/meshtastic/sdk/DisplayImage;
+	public static synthetic fun copy$default (Lorg/meshtastic/sdk/DisplayImage;IILorg/meshtastic/proto/DisplayFrame$Format;IILokio/ByteString;ILjava/lang/Object;)Lorg/meshtastic/sdk/DisplayImage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFormat ()Lorg/meshtastic/proto/DisplayFrame$Format;
+	public final fun getFrameId ()I
+	public final fun getHeight ()I
+	public final fun getPaletteSignature ()I
+	public final fun getPixels ()Lokio/ByteString;
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
 public final class org/meshtastic/sdk/DisplayMirrorFrame {
 	public fun <init> (IILorg/meshtastic/proto/DisplayFrame$Format;ILokio/ByteString;IIIII)V
 	public synthetic fun <init> (IILorg/meshtastic/proto/DisplayFrame$Format;ILokio/ByteString;IIIIIILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -1873,6 +1894,7 @@ public final class org/meshtastic/sdk/RadioClient {
 	public final fun getConnection ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getDeviceLogs ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getDisplayFrames ()Lkotlinx/coroutines/flow/Flow;
+	public final fun getDisplayImage ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getDisplayPalette ()Lkotlinx/coroutines/flow/StateFlow;
 	public final fun getEvents ()Lkotlinx/coroutines/flow/Flow;
 	public final fun getFiles ()Lorg/meshtastic/sdk/FileTransferApi;
