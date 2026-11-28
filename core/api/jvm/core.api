@@ -2148,6 +2148,15 @@ public abstract interface class org/meshtastic/sdk/RadioTransportProvider {
 	public abstract fun open (ILorg/meshtastic/sdk/MeshtasticException;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 }
 
+public final class org/meshtastic/sdk/RedactionKt {
+	public static final fun redacted (Lorg/meshtastic/proto/Channel;)Lorg/meshtastic/proto/Channel;
+	public static final fun redacted (Lorg/meshtastic/proto/ClientNotification;)Lorg/meshtastic/proto/ClientNotification;
+	public static final fun redacted (Lorg/meshtastic/proto/Config;)Lorg/meshtastic/proto/Config;
+	public static final fun redacted (Lorg/meshtastic/proto/DeviceUIConfig;)Lorg/meshtastic/proto/DeviceUIConfig;
+	public static final fun redacted (Lorg/meshtastic/proto/MeshPacket;)Lorg/meshtastic/proto/MeshPacket;
+	public static final fun redacted (Lorg/meshtastic/proto/ModuleConfig;)Lorg/meshtastic/proto/ModuleConfig;
+}
+
 public abstract interface class org/meshtastic/sdk/RemoteShellApi {
 	public abstract fun frames-LO_6HKw (I)Lkotlinx/coroutines/flow/Flow;
 	public abstract fun newSessionId ()I

@@ -66,7 +66,7 @@ A custom `PayloadRedactor` overrides `describe(FromRadio)` and `describe(ToRadio
 
 `RadioClient.fromRadio: Flow<FromRadio>` carries every decoded inbound envelope, unfiltered and unredacted: handshake frames, config, channels, log records, and packets. Use it for recorders and protocol analyzers that need more than `packets`.
 
-The tap is hot, has no replay, and never slows the engine: a collector more than 256 envelopes behind loses the oldest, unreported. Envelopes can carry channel PSKs and node positions, and the SDK neither redacts nor persists them, so treat a recording as secret.
+The tap is hot, has no replay, and never slows the engine: a collector more than 256 envelopes behind loses the oldest, unreported. Envelopes can carry channel PSKs and node positions, and the SDK neither redacts nor persists them, so treat a recording as secret. `MeshPacket`, `Config`, `ModuleConfig`, `Channel`, `ClientNotification` and `DeviceUIConfig` each have a `redacted()` extension that clears the credentials before a host logs or persists one; see [security.md](./security.md).
 
 ## Device logs
 

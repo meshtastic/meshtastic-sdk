@@ -88,7 +88,7 @@ A follow-up artifact accepting a SQLCipher driver (`:storage-sqldelight-cipher`)
 - The engine's own log calls do not interpolate channel PSKs or session passkeys.
 - `Builder.protocolLogging(level, redactor)` is off by default (`LogLevel.NONE`). Its default `PayloadRedactor.Default` renders each envelope as its variant, routing metadata and flow-control counters only: no payload bytes, text, positions, PSKs, passkeys, keys, config values or file contents. A custom `PayloadRedactor` sees whole envelopes and is responsible for what it prints.
 - `RadioClient.fromRadio` emits raw envelopes, including channel PSKs and positions, unredacted. A consumer that records it is storing key material.
-- Wire-generated `toString()` does not redact `bytes` fields, so logging a `Channel` or `Config` prints its PSK.
+- Wire-generated `toString()` does not redact `bytes` fields, so logging a `Channel` or `Config` prints its PSK. `Channel.redacted()`, `Config.redacted()` and the other `redacted()` extensions clear these before a host logs one.
 
 PSK redaction is a code-review invariant: reviewers reject any new log call that interpolates `psk` or `session_passkey`. No automated rule proves it.
 
