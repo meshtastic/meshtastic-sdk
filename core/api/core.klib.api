@@ -2364,6 +2364,8 @@ final class org.meshtastic.sdk/RadioClient { // org.meshtastic.sdk/RadioClient|n
         final fun <get-displayPalette>(): kotlinx.coroutines.flow/StateFlow<org.meshtastic.proto/DisplayPalette?> // org.meshtastic.sdk/RadioClient.displayPalette.<get-displayPalette>|<get-displayPalette>(){}[0]
     final val events // org.meshtastic.sdk/RadioClient.events|{}events[0]
         final fun <get-events>(): kotlinx.coroutines.flow/Flow<org.meshtastic.sdk/MeshEvent> // org.meshtastic.sdk/RadioClient.events.<get-events>|<get-events>(){}[0]
+    final val fileManifest // org.meshtastic.sdk/RadioClient.fileManifest|{}fileManifest[0]
+        final fun <get-fileManifest>(): kotlinx.coroutines.flow/StateFlow<kotlin.collections/List<org.meshtastic.proto/FileInfo>> // org.meshtastic.sdk/RadioClient.fileManifest.<get-fileManifest>|<get-fileManifest>(){}[0]
     final val files // org.meshtastic.sdk/RadioClient.files|{}files[0]
         final fun <get-files>(): org.meshtastic.sdk/FileTransferApi // org.meshtastic.sdk/RadioClient.files.<get-files>|<get-files>(){}[0]
     final val fromRadio // org.meshtastic.sdk/RadioClient.fromRadio|{}fromRadio[0]
