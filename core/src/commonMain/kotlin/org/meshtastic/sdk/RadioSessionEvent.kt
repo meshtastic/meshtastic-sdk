@@ -65,7 +65,10 @@ public sealed interface RadioSessionEvent {
         public val change: NodeChange,
     ) : RadioSessionEvent
 
-    /** The whole config bundle after a change following [Ready], from an acknowledged write or another client. */
+    /**
+     * The whole config bundle after a change following [Ready]: an acknowledged write, a read the connected node
+     * answered with other values, or another client.
+     */
     public data class ConfigChanged(
         override val sessionId: Long,
         public val sequence: Long,

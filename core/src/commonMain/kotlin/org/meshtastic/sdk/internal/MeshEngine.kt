@@ -2840,9 +2840,10 @@ internal class MeshEngine(
         mergeLivePacketIntoNodeDb(packet, decoded)
         emitPacketOrLog(packet)
         if (correlatedAdminResponse) {
-            // Install the key before completing the RPC, so its caller can immediately use the session.
+            // Before completing the RPC: its caller resumes with the key installed and the answer applied.
             latchSessionPasskey(packet.from.takeIf { it != 0 } ?: myNodeNum, adminMsg, receivedAt)
             adminReplyTargets.remove(decoded.request_id)
+            mergeLocalReadAnswer(packet, adminMsg)
         }
         val connectionStatus = adminMsg?.get_device_connection_status_response
         if (connectionStatus != null && (packet.from == 0 || packet.from == myNodeNum)) {
@@ -3273,6 +3274,26 @@ internal class MeshEngine(
             emitEvent(MeshEvent.ExternalConfigChange(ExternalChangeKind.MODULE_CONFIG))
             return
         }
+    }
+
+    // AdminModule answers a get from the phone with what it stores, which can differ from what an acked write sent.
+    // An answer equal to the session's copy, such as the read-back of that write, changes and emits nothing.
+    private fun mergeLocalReadAnswer(packet: MeshPacket, adminMsg: AdminMessage) {
+        if (packet.from != 0 && packet.from != myNodeNum) return
+        adminMsg.get_channel_response?.let { channel ->
+            if (channelsState.value?.getOrNull(channel.index) != channel) updateChannelAndPersist(channel)
+            return
+        }
+        val current = configBundleState.value ?: return
+        val configs =
+            adminMsg.get_config_response?.let { mergeConfigs(current.configs, listOf(it)) } ?: current.configs
+        val moduleConfigs =
+            adminMsg.get_module_config_response?.let { mergeModuleConfigs(current.moduleConfigs, listOf(it)) }
+                ?: current.moduleConfigs
+        if (configs == current.configs && moduleConfigs == current.moduleConfigs) return
+        val updated = current.copy(configs = configs, moduleConfigs = moduleConfigs)
+        commitConfigBundle(updated)
+        configSaves?.trySend(updated)
     }
 
     /**
