@@ -31,7 +31,10 @@ import org.meshtastic.sdk.MeshtasticException
  *   Use the web target's `requestBleTransport()` for the browser's device chooser.
  *
  * If a requirement is missing, or Bluetooth is off or unavailable, collecting [scan] fails with
- * [MeshtasticException.Transport] whose `cause` is the underlying platform exception.
+ * [MeshtasticException.Transport] whose `cause` is the underlying platform exception. On Android that
+ * includes a scan started when the app has already used its 5 scan starts in the last 30 seconds, which
+ * the OS would otherwise answer with silence; the error says when to retry. The limit is shared with the
+ * address scan inside `BleTransport(address)` on Android.
  *
  * @since 0.3.0
  */
@@ -69,8 +72,13 @@ public object BleScanner {
  * The scan flow over [advertisements], which runs at collection: a platform scanner that cannot
  * be built fails the flow as [MeshtasticException.Transport] rather than throwing from `scan()`.
  */
-internal fun scanOf(advertisements: () -> Flow<RawAdvertisement>): Flow<DiscoveredRadio> =
-    flow { emitAll(advertisements()) }.asDiscoveredRadios()
+internal fun scanOf(
+    reserveStart: suspend () -> Unit = ::reserveScanStart,
+    advertisements: () -> Flow<RawAdvertisement>,
+): Flow<DiscoveredRadio> = flow {
+    reserveStart()
+    emitAll(advertisements())
+}.asDiscoveredRadios()
 
 /** Platform-neutral view of one advertisement, so the mapping is testable without Kable types. */
 internal class RawAdvertisement(

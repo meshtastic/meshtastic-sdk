@@ -8,6 +8,7 @@
 package org.meshtastic.sdk.transport.ble
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.toList
@@ -76,6 +77,30 @@ class BleScannerTest {
         val scan = scanOf { throw failure }
         val thrown = assertFailsWith<MeshtasticException.Transport> { scan.toList() }
         assertEquals(failure, thrown.cause)
+    }
+
+    // Regression: the guard wrapped or swallowed by asDiscoveredRadios, or the platform scan built before reserving.
+    @Test
+    fun rejectedScanStartFailsAsTheTransportExceptionAndStartsNoScan() = runTest {
+        var scans = 0
+        val scan = scanOf(reserveStart = { throw MeshtasticException.Transport("quota") }) {
+            scans++
+            emptyFlow()
+        }
+        val thrown = assertFailsWith<MeshtasticException.Transport> { scan.toList() }
+        assertEquals("quota", thrown.message)
+        assertEquals(0, scans)
+    }
+
+    // Regression: reserving per advertisement would exhaust the quota in seconds.
+    @Test
+    fun oneCollectionReservesOneScanStart() = runTest {
+        var reserves = 0
+        val scan = scanOf(reserveStart = { reserves++ }) {
+            flowOf(RawAdvertisement("AA", null, -50), RawAdvertisement("BB", null, -60), RawAdvertisement("CC", null, -70))
+        }
+        assertEquals(3, scan.toList().size)
+        assertEquals(1, reserves)
     }
 
     @Test

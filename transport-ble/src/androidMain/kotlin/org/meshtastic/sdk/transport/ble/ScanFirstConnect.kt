@@ -96,7 +96,10 @@ internal fun createAndroidScanFirstBleTransport(
     resilience = resilience,
     builderAction = builderAction,
     isBonded = { isBondedOnHost(address) },
-    scanOnce = { scanForAddress(address) },
+    scanOnce = {
+        reserveScanStart()
+        scanForAddress(address)
+    },
 ) { located, configure ->
     when (located) {
         is LocatedRadio.Advertised -> Peripheral(located.advertisement, configure)
